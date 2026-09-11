@@ -11,18 +11,18 @@
 - [x] Baralho salvo no localStorage — v0.10.0.
 - [x] Efeitos visuais (starfield, explosões, rastro, muzzle flash, vinheta) — v0.11.0.
 - [x] Mira estilo Star Fox 64 (lock-on, resposta direta, reticle visual) — v0.12.0.
+## Mira com curso próprio + nave mais calma — v0.13.0
 
-## Mira estilo Star Fox 64 — v0.12.0
+O usuário reportou que "a mira está exatamente na mesma posição da nave" e pediu que ela (1) se movesse mais que a nave, (2) chegasse nas extremidades antes da nave, (3) mantivesse o lock-on (que será usado pra um tiro carregado no futuro). Leva cirúrgica:
 
-Pedido do usuário: "deixar o movimento da mira mais semelhante ao movimento de mira de Star Fox 64... de um jeito mais simples de controlar também, movendo a mira corretamente". Três mudanças cirúrgicas, nenhuma altera o combate:
-
-- **`rail.js`** — `LATERAL_ACCEL_RATE` de 20 → 35. Como a mira é derivada da posição do nariz, a nave (e portanto a mira) leva ~0,03s pra responder ao stick em vez de ~0,05s. Fica snappy sem perder o peso. `LATERAL_SPEED` também subiu levemente, 32 → 34.
-- **`combat.js`** — refatoração do lock-on. Antes, a mira assistida era calculada só dentro de `fire()`, no instante do disparo. Agora: função `findLockOnTarget(origin, direction)` extraída, chamada **todos os frames** dentro de `update()` (que passou a aceitar `aimOrigin`/`aimDirection` no `opts`). O resultado fica cacheado em `currentLockOn` e é exposto via `getLockOnTarget()`. `fire()` reusa o cache em vez de recalcular — mira e tiro saem do **mesmo** cálculo, então nunca dessincronizam.
-- **`main.js`** — a posição da mira agora depende do lock-on: se há alvo travado, a mira pula pra cima dele (via `lockOn.mesh.position` projetada na tela); senão, cai no livre-arbítrio antigo (`nose + RETICLE_AHEAD_DISTANCE`). Também chama `hud.setReticleLocked()` a cada frame.
-- **`hud.js`** — novo `setReticleLocked(bool)` que alterna a classe `.locked` no elemento da mira.
-- **`index.html`** — CSS de `.reticle.locked`: cor verde `#6bffb0`, anel maior (34px → 44px), brilho, e animação `reticle-lock-pulse` (0.5s, alternando entre escala 1 e 1.12). Sem a classe, a mira é branca como antes.
-- **Sensação resultante**: quando você passa o retículo perto de um alvo de pergunta, ele **trava** no alvo e fica verde pulsante, sinalizando que o tiro vai acertar. Soltando o alvo (afastando a nave), volta ao branco e ao livre-arbítrio. É o mesmo feedback visual do SF64.
-- **Versão**: v0.11.0 → v0.12.0.
+- **`rail.js`**: `LATERAL_SPEED` 34 → 26 (nave mais calma, sem ficar lenta demais). Novo método público `getPlayerLateral()` que expõe `{ x, y }` crus do jogador, ANTES de qualquer offset de trilho/câmera.
+- **`main.js`**: nova constante `RETICLE_LATERAL_MULT = 4`. Quando não há lock-on, a mira agora é calculada a partir da posição lateral CRUA amplificada 4x (em vez de partir do nariz da nave, como era antes). Resultado: com a nave na metade do curso, a mira está no dobro do caminho; com a nave no máximo, a mira já passou da borda visível. A mira tem curso próprio de verdade, não anda colada no nariz.
+- **Lock-on mantido sem alteração** — quando há alvo travado (aim assist detecta), a mira pula pra cima do alvo e fica verde pulsante, como na v0.12.0. O usuário confirmou que quer esse comportamento preservado pra um futuro tiro carregado.
+- **Não mexido**: `combat.js`, `hud.js`, `effects.js`, `anki.js`, `quiz.js`, `storage.js`. Nenhuma lógica de combate ou pontuação mudou.
+- **Valores de ajuste fácil**, caso o usuário queira calibrar:
+  - `RETICLE_LATERAL_MULT` em `main.js` → quanto a mira amplifica o movimento lateral (4 = bem solto; 2 ou 3 = mais contido).
+  - `LATERAL_SPEED` em `rail.js` → velocidade da nave no eixo lateral (26 = atual; 20 = mais lenta; 32 = volta perto do original).
+- **Versão**: v0.12.0 → v0.13.0.
 ## Efeitos visuais — v0.11.0
 
 Pedido do usuário: "queria adicionar mais efeitos visuais, está tudo muito bland". O jogo tinha luz ambiente, um sol direcional, um grid de chão e um fundo preto liso — funcional, mas sem nenhuma camada visual. Cinco efeitos adicionados, todos sem tocar em jogabilidade:
