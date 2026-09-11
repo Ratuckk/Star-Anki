@@ -450,4 +450,226 @@ function mountGame(session) {
     goldenTimer = randomGoldenInterval()
   }
 
-  function enterGolden
+  function enterGoldenRecall() {
+    goldenCard = pickBonusCard(deck, session)
+    phase = 'goldenRecall'
+    phaseTimer = RECALL_MS
+    rail.setAdvancing(false)
+    hud.setQuestion(goldenCard.question)
+    hud.setAlternatives(null)
+    hud.setFeedback(null)
+  }
+
+  function enterGoldenAlternatives() {
+    const result = buildBonusQuestion(goldenCard, deck.allCards)
+    questionResult = result
+    phase = 'goldenAlternatives'
+    phaseTimer = ALT_MS
+    hud.setQuestion(result.card.question)
+    hud.setAlternatives(result.alternatives)
+    combat.spawnQuizTargets(result.alternatives)
+  }
+
+  function settleQuestion(outcome, isBoss) {
+    combat.clearQuizTargets()
+    if (isBoss) rail.exitArena()
+    const resolution = resolveAnswer(session, outcome)
+    applySpeedProgression(outcome.type)
+
+    const correct = outcome.type === 'correct'
+    if (correct) applyBuff()
+    else applyDifficulty()
+    if (isBoss && !correct) applyBossDifficulty()
+
+    history = recordResult(history, outcome.card.guid, correct)
+    saveHistory(history)
+    sessionResults.push({ guid: outcome.card.guid, correct })
+
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setBossActive(false)
+    hud.setFeedback({
+      correct: outcome.type === 'correct',
+      correctAnswer: outcome.card.answer,
+      points: resolution.points,
+      comboMultiplier: resolution.comboMultiplier,
+      shields: resolution.shieldsRemaining,
+    })
+
+    pendingSectorOver = resolution.sectorOver
+    phase = 'resolution'
+    phaseTimer = FEEDBACK_MS
+  }
+
+  function settleGoldenBonus(outcome) {
+    combat.clearQuizTargets()
+    const correct = outcome.type === 'correct'
+    if (correct) applyBuff()
+
+    history = recordResult(history, outcome.card.guid, correct)
+    saveHistory(history)
+    sessionResults.push({ guid: outcome.card.guid, correct })
+
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      bonus: true,
+    })
+
+    phase = 'goldenResolution'
+    phaseTimer = FEEDBACK_MS
+  }
+
+  function endSector() {
+    teardown()
+    renderEndScreen(getSummary(session))
+  }
+
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+  window.addEventListener('resize', onResize)
+
+  function teardown() {
+    stopped = true
+    cancelAnimationFrame(rafId)
+    window.removeEventListener('resize', onResize)
+    input.dispose()
+    effects.dispose()
+    combat.dispose()
+    renderer.dispose()
+    hud.unmount()
+  }
+
+  function tick(now) {
+    if (stopped) return
+    rafId = requestAnimationFrame(tick)
+    const dt = Math.min((now - lastTime) / 1000, 0.1)
+    lastTime = now
+
+    const inputState = input.update()
+
+    if (inputState.pressed.has('Escape') || inputState.pressed.has('KeyP') || inputState.pressed.has('GamepadStart')) {
+      paused = !paused
+      hud.setPaused(paused)
+    }
+    if (paused) return
+
+    rail.update(dt, inputState)
+    const playerPos = rail.getPlayerPosition()
+    const noseFrame = rail.getFrameAt(0)
+    const nosePos = rail.getShipNosePosition()
+
+    const aimDirection = camera.getWorldDirection(new THREE.Vector3())
+    if (inputState.firing) combat.tryFire(nosePos, aimDirection)
+
+    const aimPoint = nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    const ndc = aimPoint.project(camera)
+    hud.setReticlePosition(THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1), THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1))
+
+    const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
+    const events = combat.update(dt, playerPos, { enemiesActive })
+
+    // efeitos visuais: rastro do motor sempre ativo (a nave está sempre se movendo, em trilho ou
+    // arena), com cadência proporcional ao boost atual
+    effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
+
+    if (events.enemyKillPoints) session.score += events.enemyKillPoints
+    if (events.bonusKillPoints) session.score += events.bonusKillPoints
+    if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
+
+    invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
+    if (events.enemyHits > 0 && invincibleTimer <= 0) {
+      session.shields = Math.max(0, session.shields - 1)
+      invincibleTimer = INVINCIBILITY_MS
+      hud.damageFlash()
+      if (session.shields <= 0) {
+        endSector()
+        return
+      }
+    }
+    rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
+
+    if (phase === 'combat' || phase === 'goldenArena') {
+      enemyTimer -= dt * 1000
+      if (enemyTimer <= 0) {
+        if (phase === 'combat' && Math.random() < TIME_ENEMY_SPAWN_CHANCE) combat.spawnTimeEnemy()
+        else combat.spawnEnemy()
+        enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+      }
+    }
+
+    if (phase === 'combat') {
+      if (!isBossCycle) {
+        bonusTimer -= dt * 1000
+        if (bonusTimer <= 0) {
+          combat.spawnBonusTarget()
+          bonusTimer = randomBonusInterval()
+        }
+
+        goldenTimer -= dt * 1000
+        if (goldenTimer <= 0) enterGoldenArena()
+      }
+
+      if (phase === 'combat') {
+        cycleTimer -= dt * 1000
+        hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
+        if (cycleTimer <= 0) enterRecall()
+      }
+    } else if (phase === 'recall') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        if (isBossCycle) enterBossArena()
+        else enterAlternatives()
+      }
+    } else if (phase === 'alternatives') {
+      processAnswerPhase(events, inputState, dt, altTotalMs, 'normal')
+    } else if (phase === 'boss') {
+      processAnswerPhase(events, inputState, dt, arenaTotalMs, 'boss')
+    } else if (phase === 'goldenArena') {
+      if (events.goldenSpecialHit) {
+        exitGoldenArenaVisuals()
+        enterGoldenRecall()
+      } else {
+        goldenArenaTimer -= dt * 1000
+        if (goldenArenaTimer <= 0) {
+          exitGoldenArenaVisuals()
+          resumeCombatFromGolden()
+        }
+      }
+    } else if (phase === 'goldenRecall') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) enterGoldenAlternatives()
+    } else if (phase === 'goldenAlternatives') {
+      processAnswerPhase(events, inputState, dt, ALT_MS, 'golden')
+    } else if (phase === 'resolution') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        if (pendingSectorOver) {
+          endSector()
+          return
+        }
+        enterCombat()
+      }
+    } else if (phase === 'goldenResolution') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) resumeCombatFromGolden()
+    }
+
+    if (stopped) return
+
+    hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+    renderer.render(scene, camera)
+  }
+
+  enterCombat()
+  hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+  lastTime = performance.now()
+  rafId = requestAnimationFrame(tick)
+}
+
+restart()
