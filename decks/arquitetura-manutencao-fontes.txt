@@ -1,0 +1,26 @@
+Fontes das 24 perguntas extras (arquitetura-extra-001 a 024) — conferência posterior, não usar como spoiler.
+
+arquitetura-extra-001	O que é a memória cache L1?	A mais rápida e pequena, junto ao núcleo.	https://www.lenovo.com/us/en/glossary/what-is-cache-memory/
+arquitetura-extra-002	Como é a cache L2 comparada à L1?	Maior, porém mais lenta que a L1.	https://www.howtogeek.com/891526/l1-vs-l2-vs-l3-cache/
+arquitetura-extra-003	Qual nível de cache é compartilhado entre os núcleos?	A cache L3.	https://www.lenovo.com/us/en/glossary/what-is-cache-memory/
+arquitetura-extra-004	Na arquitetura von Neumann, o que dados e instruções compartilham?	O mesmo espaço de memória.	https://en.wikipedia.org/wiki/Von_Neumann_architecture
+arquitetura-extra-005	Qual componente da CPU faz operações aritméticas e lógicas?	ULA (Unidade Lógica e Aritmética).	https://www.geeksforgeeks.org/computer-organization-architecture/computer-organization-von-neumann-architecture/
+arquitetura-extra-006	Qual componente da CPU coordena a execução das instruções?	Unidade de Controle (UC).	https://www.geeksforgeeks.org/computer-organization-architecture/computer-organization-von-neumann-architecture/
+arquitetura-extra-007	O que é RAID 0?	Distribui dados em discos (striping), sem redundância.	https://www.thegeekstuff.com/2010/08/raid-levels-tutorial/
+arquitetura-extra-008	O que é RAID 1?	Espelhamento: duplica os dados em 2 discos.	https://www.thegeekstuff.com/2010/08/raid-levels-tutorial/
+arquitetura-extra-009	Quantos discos o RAID 5 exige no mínimo?	3 discos, com paridade distribuída.	https://www.thegeekstuff.com/2010/08/raid-levels-tutorial/
+arquitetura-extra-010	O que o RAID 10 combina?	Striping (RAID 0) com espelhamento (RAID 1).	https://www.liquidweb.com/blog/raid-level-1-5-6-10/
+arquitetura-extra-011	O que o conector ATX de 24 pinos alimenta?	A placa-mãe, a partir da fonte.	https://www.computerhope.com/jargon/a/atxstyle.htm
+arquitetura-extra-012	Quantos pinos tem um conector de dados SATA?	7 pinos.	https://help.moddiy.com/en/article/sata-data-cable-connectors-pinouts-1u1jv7u/
+arquitetura-extra-013	O que é o barramento PCI Express (PCIe)?	Barramento serial de expansão de alta velocidade.	https://techterms.com/definition/pci_express
+arquitetura-extra-014	Para que o PCIe é tipicamente usado?	GPUs e SSDs de alta performance.	https://www.dell.com/support/kbdoc/en-us/000123517/what-is-pci-and-pci-express-kb-article-161614
+arquitetura-extra-015	O que é overclock?	Aumentar o clock além do especificado de fábrica.	https://www.codecademy.com/resources/blog/how-to-overclock-cpu
+arquitetura-extra-016	Qual o principal risco do overclock sem boa refrigeração?	Superaquecimento e dano ao componente.	https://scotcomp.medium.com/overclocking-balancing-performance-gains-with-potential-risks-fab7f31385ab
+arquitetura-extra-017	O que significa a sigla DDR (memória RAM)?	Double Data Rate.	https://www.inmotionhosting.com/blog/ddr4-vs-ddr5/
+arquitetura-extra-018	O que cada módulo de DDR5 tem que a DDR4 não tem?	PMIC próprio (regulador de energia).	https://www.corsair.com/us/en/explorer/diy-builder/memory/is-ddr5-better-than-ddr4/
+arquitetura-extra-019	O que é o slot M.2?	Form factor compacto para SSDs e placas.	https://en.wikipedia.org/wiki/M.2
+arquitetura-extra-020	O que é NVMe?	Protocolo de armazenamento rápido via PCIe.	https://www.makeuseof.com/what-is-an-nvme-slot-what-it-looks-like/
+arquitetura-extra-021	Quantos pinos tem um conector HDMI padrão?	19 pinos.	https://www.4xem.com/blogs/blog/demystifying-hdmi-hdmi-vs-displayport-vs-vga
+arquitetura-extra-022	Quantos pinos tem um conector DisplayPort?	20 pinos.	https://www.4xem.com/blogs/blog/demystifying-hdmi-hdmi-vs-displayport-vs-vga
+arquitetura-extra-023	Para que servem os beep codes na inicialização?	Indicar erros de hardware durante o POST.	https://www.computerhope.com/beep.htm
+arquitetura-extra-024	Para que serve o ar comprimido (gas duster) na manutenção?	Remover poeira sem usar água ou contato.	https://en.wikipedia.org/wiki/Gas_duster

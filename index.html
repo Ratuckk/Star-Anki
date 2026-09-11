@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Star Anki</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0b0d12;
+    color: #f5f5f7;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  #app {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+  }
+  h1, h2 { line-height: 1.2; }
+  .version-tag {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #7fe0ff;
+    background: #16202b;
+    border: 1px solid #2c4a5c;
+    border-radius: 6px;
+    padding: 0.15rem 0.5rem;
+    margin-left: 0.6rem;
+    vertical-align: middle;
+  }
+  label { display: block; margin: 1.25rem 0 0.4rem; font-weight: 600; }
+  textarea, input[type="file"] {
+    width: 100%;
+    font-size: 1rem;
+    font-family: inherit;
+    color: #f5f5f7;
+    background: #171a21;
+    border: 1px solid #333944;
+    border-radius: 8px;
+    padding: 0.6rem;
+  }
+  textarea { resize: vertical; }
+  button {
+    font-size: 1.05rem;
+    font-family: inherit;
+    font-weight: 600;
+    color: #0b0d12;
+    background: #5ce1ff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.7rem 1.2rem;
+    margin-top: 1rem;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  #load-message {
+    min-height: 1.4em;
+    margin-top: 0.8rem;
+    color: #ff8080;
+    font-weight: 600;
+  }
+  .missed-list { margin-top: 1rem; padding-left: 1.2rem; color: #c7ccd4; }
+  .missed-list li { margin-bottom: 0.5rem; }
+
+  /* seção do baralho salvo (localStorage). Aparece quando há um baralho lembrado de
+     uma sessão anterior, acima do formulário de arquivo/colar. */
+  .saved-deck-section {
+    margin-top: 1.25rem;
+    padding: 1rem 1.1rem;
+    background: #16202b;
+    border: 1px solid #2c4a5c;
+    border-radius: 10px;
+  }
+  .saved-deck-section .saved-deck-title {
+    margin: 0;
+    font-weight: 700;
+    color: #7fe0ff;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .saved-deck-section .saved-deck-info {
+    margin: 0.4rem 0 0.9rem;
+    color: #c7ccd4;
+    font-size: 0.95rem;
+  }
+  .saved-deck-section.invalid .saved-deck-title { color: #ff8080; }
+  .saved-deck-section.invalid .saved-deck-info { color: #ff8080; }
+  .saved-deck-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .saved-deck-actions button { margin-top: 0; }
+  .btn-secondary {
+    background: transparent;
+    color: #c7ccd4;
+    border: 1px solid #333944;
+  }
+  .btn-secondary:hover { background: #1e242e; filter: none; }
+  .load-separator {
+    position: relative;
+    margin: 1.5rem 0 1rem;
+    color: #6a7382;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .load-separator::before, .load-separator::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 30%;
+    height: 1px;
+    background: #2a313c;
+  }
+  .load-separator::before { left: 0; }
+  .load-separator::after { right: 0; }
+
+  .painel-progress { color: #9aa4b2; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+  .painel-question { font-size: 1.4rem; font-weight: 700; }
+  .painel-answer { font-size: 1.2rem; color: #6bffb0; margin-top: 1rem; }
+  .painel-actions { display: flex; gap: 1rem; }
+  .painel-actions button { margin-top: 1rem; }
+
+  #game-screen {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: #0b0d12;
+  }
+  #scene-root { position: absolute; inset: 0; }
+  #scene-root canvas { display: block; }
+
+  .reticle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 34px;
+    height: 34px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .reticle-ring {
+    position: absolute;
+    inset: 0;
+    border: 2px solid #f5f5f7;
+    border-radius: 50%;
+    opacity: 0.85;
+  }
+  .reticle::before, .reticle::after {
+    content: '';
+    position: absolute;
+    background: #f5f5f7;
+  }
+  .reticle::before { top: 50%; left: -6px; right: -6px; height: 2px; transform: translateY(-1px); }
+  .reticle::after { left: 50%; top: -6px; bottom: -6px; width: 2px; transform: translateX(-1px); }
+
+  .hud-status {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    color: #f5f5f7;
+    font: 600 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    text-shadow: 0 1px 3px #000;
+    pointer-events: none;
+  }
+  /* barra de escudos: 10 pips criados por hud.js (setStatus). Sem estas regras os divs ficavam
+     invisíveis (block-level vazios, sem tamanho/cor), então o jogador não via a vida durante o
+     combate — só no painel de feedback depois de cada pergunta. */
+  .hud-health-bar {
+    position: absolute;
+    top: 52px;
+    left: 12px;
+    display: flex;
+    gap: 3px;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 3px #000);
+  }
+  .hud-health-pip {
+    width: 10px;
+    height: 16px;
+    border: 1px solid #333944;
+    border-radius: 2px;
+    background: rgba(20, 24, 32, 0.7);
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .hud-health-pip.filled {
+    background: #6bffb0;
+    border-color: #6bffb0;
+    box-shadow: 0 0 5px rgba(107, 255, 176, 0.6);
+  }
+  .hud-question {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 70vw;
+    margin: 0;
+    text-align: center;
+    color: #f5f5f7;
+    font-size: 1.3rem;
+    font-weight: 700;
+    text-shadow: 0 1px 4px #000;
+    pointer-events: none;
+  }
+  .hud-legend {
+    position: absolute;
+    right: 12px;
+    top: 70px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: none;
+  }
+  .hud-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(11, 13, 18, 0.7);
+    border: 2px solid #333944;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    color: #f5f5f7;
+    max-width: 220px;
+  }
+  .hud-legend-item svg { flex-shrink: 0; }
+  .hud-legend-text { font-size: 0.9rem; font-weight: 600; }
+  .hud-feedback {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    background: rgba(11, 13, 18, 0.8);
+    padding: 1.2rem 1.8rem;
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  .hud-feedback .feedback { font-size: 1.8rem; font-weight: 700; margin: 0; }
+  .hud-feedback .feedback.correct { color: #6bffb0; }
+  .hud-feedback .feedback.wrong { color: #ff8080; }
+  .hud-feedback .feedback-answer { margin: 0.5rem 0 0; font-size: 1.1rem; color: #f5f5f7; }
+  .hud-feedback .feedback-stats { margin: 0.5rem 0 0; color: #9aa4b2; }
+  .hud-countdown {
+    position: absolute;
+    top: 14%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #cfe0f0;
+    font-size: 1.7rem;
+    font-weight: 700;
+    text-shadow: 0 2px 8px #000;
+    pointer-events: none;
+    transition: color 0.2s, font-size 0.2s;
+  }
+  .hud-countdown.urgent {
+    color: #ffd166;
+    font-size: 4rem;
+    font-weight: 800;
+    text-shadow: 0 2px 10px #000;
+  }
+  .hud-boss-banner {
+    position: absolute;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ff6b5a;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-shadow: 0 1px 4px #000;
+    pointer-events: none;
+  }
+  .hud-golden-banner {
+    position: absolute;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd700;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-shadow: 0 1px 4px #000;
+    pointer-events: none;
+  }
+  .hud-pause {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(11, 13, 18, 0.6);
+    color: #f5f5f7;
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="load-screen">
+    <h1>Star Anki <span class="version-tag">v0.10.0</span></h1>
+    <p>Carregue um baralho exportado do Anki (formato .txt, notas com campos separados).</p>
+
+    <div id="saved-deck-section" class="saved-deck-section" hidden>
+      <p class="saved-deck-title">Baralho salvo</p>
+      <p id="saved-deck-info" class="saved-deck-info"></p>
+      <div class="saved-deck-actions">
+        <button id="saved-deck-use-btn">Usar baralho salvo</button>
+        <button id="saved-deck-forget-btn" class="btn-secondary">Esquecer</button>
+      </div>
+    </div>
+
+    <div id="load-separator" class="load-separator" hidden>ou carregar outro</div>
+
+    <label for="file-input">Arquivo .txt</label>
+    <input type="file" id="file-input" accept=".txt">
+    <label for="paste-textarea">Ou cole o texto exportado</label>
+    <textarea id="paste-textarea" rows="8" placeholder="Cole aqui o conteúdo exportado do Anki"></textarea>
+    <button id="load-btn">Carregar baralho</button>
+    <div id="load-message" role="alert"></div>
+  </div>
+  <div id="sector-end-screen" hidden></div>
+  <div id="painel-screen" hidden></div>
+</div>
+<div id="game-screen" hidden></div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
