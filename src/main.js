@@ -20,8 +20,34 @@ const SPEED_STEP = 0.05
 const BOOST_EVERY_CORRECT = 2
 const GROUND_Y = -10
 
-const INVINCIBILITY_MS = 1200
+const INVINCIBILITY_MS = 1500
 const INVINCIBILITY_FLICKER_MS = 90
+
+// ============ ESCUDO ============
+// camada de defesa em FRENTE à barra de saúde: aguenta SHIELD_MAX hits sem tirar saúde; ao
+// esgotar, entra em recarga por SHIELD_RECHARGE_MS e só volta ao máximo de uma vez, no fim da
+// recarga (não regenera incrementalmente). Valores pensados pra serem ajustáveis por buffs do
+// roguelike no futuro (fase 4) — por isso ficam como variáveis mutáveis dentro de mountGame,
+// não como constantes de session (session é sobre pontuação/progresso do baralho).
+const SHIELD_MAX = 2
+const SHIELD_RECHARGE_MS = 5000
+
+// ============ SHAKE AO LEVAR HIT ============
+const HIT_SHAKE_DURATION_MS = 300
+const SHIP_SHAKE_MAGNITUDE = 0.3
+const CAMERA_SHAKE_MAGNITUDE = 0.5
+
+// ============ BACKGROUND POR "NÍVEL" ============
+// cores escuras variadas, trocadas a cada pergunta (session.pointer) — só ilusão de ambientes
+// diferentes, não muda jogabilidade nenhuma
+const LEVEL_BACKGROUNDS = [
+  0x0b0d12, // padrão: cinza-azulado escuro
+  0x120b18, // roxo escuro
+  0x0b1812, // verde escuro
+  0x18110b, // marrom/laranja escuro
+  0x0b1218, // azul petróleo escuro
+  0x180b0f, // vinho escuro
+]
 
 // ============ MIRA ============
 // A mira vive em espaço de MUNDO, ancorada no NARIZ da nave. Ela tem física PRÓPRIA e um
@@ -104,7 +130,7 @@ function handlePlayDeck(deckId) {
   deckText = entry.text
   sessionResults = []
   painelDone = false
-  mountGame(createSession(deck, { history, startingShields: getSettings().startingHealth }))
+  mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
 }
 
 function restart() {
@@ -234,7 +260,8 @@ function mountGame(session) {
   // lidas uma vez por sessão — a tela de configurações só é acessível fora do jogo, então não
   // precisa reler a cada frame
   const bindings = getBindings()
-  const maxShields = session.shields
+  const maxHealth = session.health
+  const maxLives = session.lives
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
   let debugVisible = false
@@ -242,6 +269,10 @@ function mountGame(session) {
   let infiniteAmmoActive = false
   let hitboxesActive = false
   let slowMoActive = false
+
+  let shieldCharges = SHIELD_MAX
+  let shieldRechargeTimer = 0
+  let hitShakeTimer = 0
 
   let phase = null
   let phaseTimer = 0
@@ -415,6 +446,11 @@ function mountGame(session) {
     hud.setFeedback(null)
     hud.setCountdown(null)
     hud.setBossActive(false)
+
+    // background/fog trocam de cor a cada pergunta — ilusão de "nível" diferente, cosmético
+    const bg = LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length]
+    scene.background.set(bg)
+    scene.fog.color.set(bg)
   }
 
   function enterRecall() {
@@ -502,6 +538,18 @@ function mountGame(session) {
     combat.spawnQuizTargets(result.alternatives)
   }
 
+  // saúde zerada consome 1 vida e reabastece a saúde (e o escudo); zerar as vidas é que
+  // realmente acaba a run. Chamar isso é seguro mesmo com saúde > 0 (vira no-op).
+  function applyHealthLoss() {
+    if (session.health > 0) return false
+    session.lives -= 1
+    if (session.lives <= 0) return true
+    session.health = maxHealth
+    shieldCharges = SHIELD_MAX
+    shieldRechargeTimer = 0
+    return false
+  }
+
   function settleQuestion(outcome, isBoss) {
     combat.clearQuizTargets()
     if (isBoss) rail.exitArena()
@@ -525,10 +573,11 @@ function mountGame(session) {
       correctAnswer: outcome.card.answer,
       points: resolution.points,
       comboMultiplier: resolution.comboMultiplier,
-      shields: resolution.shieldsRemaining,
+      health: resolution.healthRemaining,
     })
 
-    pendingSectorOver = resolution.sectorOver
+    const outOfLives = applyHealthLoss()
+    pendingSectorOver = resolution.sectorOver || outOfLives
     phase = 'resolution'
     phaseTimer = FEEDBACK_MS
   }
@@ -595,6 +644,9 @@ function mountGame(session) {
       hud.debug.setVisible(debugVisible)
     }
     if (paused) return
+
+    hitShakeTimer = Math.max(0, hitShakeTimer - dt * 1000)
+    rail.setShakeIntensity(hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
     rail.update(dt, inputState)
     const playerPos = rail.getPlayerPosition()
@@ -673,14 +725,29 @@ function mountGame(session) {
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
 
+    // recarga do escudo: só começa a contar quando ele esgota de vez (0 cargas), e ao terminar
+    // volta pro máximo de uma vez (não regenera carga por carga)
+    if (shieldCharges <= 0 && shieldRechargeTimer > 0) {
+      shieldRechargeTimer = Math.max(0, shieldRechargeTimer - dt * 1000)
+      if (shieldRechargeTimer <= 0) shieldCharges = SHIELD_MAX
+    }
+
     invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
     if (events.enemyHits > 0 && invincibleTimer <= 0 && !godMode) {
-      session.shields = Math.max(0, session.shields - 1)
       invincibleTimer = INVINCIBILITY_MS
+      hitShakeTimer = HIT_SHAKE_DURATION_MS
       hud.damageFlash()
-      if (session.shields <= 0) {
-        endSector()
-        return
+
+      if (shieldCharges > 0) {
+        // escudo absorve o hit — saúde intocada
+        shieldCharges -= 1
+        if (shieldCharges <= 0) shieldRechargeTimer = SHIELD_RECHARGE_MS
+      } else {
+        session.health = Math.max(0, session.health - 1)
+        if (applyHealthLoss()) {
+          endSector()
+          return
+        }
       }
     }
     rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
@@ -753,7 +820,18 @@ function mountGame(session) {
 
     if (stopped) return
 
-    hud.setStatus({ shields: session.shields, maxShields, score: session.score, combo: session.comboMultiplier })
+    hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
+    hud.setLives(session.lives, maxLives)
+    hud.setShield(shieldCharges, SHIELD_MAX, shieldRechargeTimer / SHIELD_RECHARGE_MS)
+
+    // shake de câmera: aplicado por último, só na posição de render — não interfere em nenhum
+    // cálculo de jogo (mira, colisão) feito mais acima neste mesmo frame
+    if (hitShakeTimer > 0) {
+      const t = hitShakeTimer / HIT_SHAKE_DURATION_MS
+      camera.position.x += (Math.random() * 2 - 1) * CAMERA_SHAKE_MAGNITUDE * t
+      camera.position.y += (Math.random() * 2 - 1) * CAMERA_SHAKE_MAGNITUDE * t
+    }
+
     renderer.render(scene, camera)
   }
 
@@ -774,9 +852,21 @@ function mountGame(session) {
     forceCorrect: () => forceAnswerOutcome(true),
     forceWrong: () => forceAnswerOutcome(false),
     addScore: () => { session.score += 100 },
-    heal: () => { session.shields = Math.min(maxShields, session.shields + 1) },
-    damage: () => { session.shields = Math.max(0, session.shields - 1) },
-    fullHeal: () => { session.shields = maxShields },
+    heal: () => { session.health = Math.min(maxHealth, session.health + 1) },
+    damage: () => {
+      session.health = Math.max(0, session.health - 1)
+      if (applyHealthLoss()) endSector()
+    },
+    fullHeal: () => { session.health = maxHealth },
+    loseLife: () => {
+      session.lives = Math.max(0, session.lives - 1)
+      hud.setLives(session.lives, maxLives)
+      if (session.lives <= 0) endSector()
+    },
+    rechargeShield: () => {
+      shieldCharges = SHIELD_MAX
+      shieldRechargeTimer = 0
+    },
     godMode: () => {
       godMode = !godMode
       hud.debug.setToggleActive('godMode', godMode)
@@ -807,7 +897,9 @@ function mountGame(session) {
   })
 
   enterCombat()
-  hud.setStatus({ shields: session.shields, maxShields, score: session.score, combo: session.comboMultiplier })
+  hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
+  hud.setLives(session.lives, maxLives)
+  hud.setShield(shieldCharges, SHIELD_MAX, 0)
   lastTime = performance.now()
   rafId = requestAnimationFrame(tick)
 }

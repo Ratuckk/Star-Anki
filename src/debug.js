@@ -13,6 +13,8 @@ export const DEBUG_ACTIONS = [
   { id: 'heal', label: 'Curar 1' },
   { id: 'damage', label: 'Causar 1 dano' },
   { id: 'fullHeal', label: 'Recarregar vida ao máximo' },
+  { id: 'loseLife', label: 'Perder 1 vida' },
+  { id: 'rechargeShield', label: 'Recarregar escudo' },
   { id: 'godMode', label: 'God mode', toggle: true },
   { id: 'infiniteAmmo', label: 'Tiro infinito', toggle: true },
   { id: 'maxBuffs', label: 'Aplicar buffs máximos' },

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import { buildDeck, generateDistractors } from './anki.js'
-import { createSession, nextQuestion, resolveAnswer, getSummary } from './quiz.js'
+import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const fixturePath = path.join(__dirname, 'fixtures', 'sample-export.txt')
@@ -111,10 +111,11 @@ for (let i = 0; i < 25; i++) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. sessão de quiz: combo, escudos, timeout
+// 6. sessão de quiz: combo, saúde, timeout
 // ---------------------------------------------------------------------------
 const session = createSession(deck)
-assert.strictEqual(session.shields, 3, 'sessão deveria começar com 3 escudos')
+assert.strictEqual(session.health, STARTING_HEALTH, `sessão deveria começar com ${STARTING_HEALTH} de saúde`)
+assert.strictEqual(session.lives, STARTING_LIVES, `sessão deveria começar com ${STARTING_LIVES} vidas`)
 assert.strictEqual(session.comboMultiplier, 1, 'sessão deveria começar com combo 1.0')
 assert.ok(session.queue.length >= 4, 'fila da sessão deveria ter pelo menos 4 cartas')
 
@@ -130,25 +131,25 @@ function resolveAt(type, extra = {}) {
 // 2 acertos seguidos -> combo sobe 0.15 por vez
 const r1 = resolveAt('correct')
 assert.strictEqual(r1.comboMultiplier, 1.15, `combo após 1º acerto deveria ser 1.15, obteve ${r1.comboMultiplier}`)
-assert.strictEqual(session.shields, 3, 'acerto não deveria tirar escudo')
+assert.strictEqual(session.health, STARTING_HEALTH, 'acerto não deveria tirar saúde')
 
 const r2 = resolveAt('correct')
 assert.strictEqual(r2.comboMultiplier, 1.3, `combo após 2º acerto deveria ser 1.30, obteve ${r2.comboMultiplier}`)
-assert.strictEqual(session.shields, 3, 'acerto não deveria tirar escudo')
+assert.strictEqual(session.health, STARTING_HEALTH, 'acerto não deveria tirar saúde')
 assert.ok(r2.points > r1.points, 'pontos do 2º acerto deveriam ser maiores devido ao combo mais alto')
 
-// 1 erro -> zera combo e tira 1 escudo
+// 1 erro -> zera combo e tira 1 de saúde
 const r3 = resolveAt('wrong')
 assert.strictEqual(r3.comboMultiplier, 1, `combo deveria zerar para 1.0 após erro, obteve ${r3.comboMultiplier}`)
-assert.strictEqual(session.shields, 2, `esperava 2 escudos após 1 erro, obteve ${session.shields}`)
-assert.strictEqual(r3.shieldsRemaining, 2)
+assert.strictEqual(session.health, STARTING_HEALTH - 1, `esperava ${STARTING_HEALTH - 1} de saúde após 1 erro, obteve ${session.health}`)
+assert.strictEqual(r3.healthRemaining, STARTING_HEALTH - 1)
 assert.strictEqual(r3.comboBroken, true, 'erro deveria quebrar o combo (comboBroken=true)')
 
-// 1 timeout -> conta como erro (zera combo) mas NÃO tira escudo
+// 1 timeout -> conta como erro (zera combo) mas NÃO tira saúde
 const r4 = resolveAt('timeout')
 assert.strictEqual(r4.comboMultiplier, 1, 'combo deveria continuar em 1.0 após timeout')
-assert.strictEqual(session.shields, 2, `timeout não deveria tirar escudo, esperava continuar em 2, obteve ${session.shields}`)
-assert.strictEqual(r4.shieldsRemaining, 2)
+assert.strictEqual(session.health, STARTING_HEALTH - 1, `timeout não deveria tirar saúde, esperava continuar em ${STARTING_HEALTH - 1}, obteve ${session.health}`)
+assert.strictEqual(r4.healthRemaining, STARTING_HEALTH - 1)
 assert.strictEqual(r4.comboBroken, true, 'timeout também deveria contar como quebra de combo')
 
 // ---------------------------------------------------------------------------

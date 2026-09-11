@@ -1,12 +1,13 @@
 ## Pendências agora
 
-- [ ] Fase 3: sistema de vidas (3) sobre a barra de saúde, escudo com recarga, invencibilidade com piscar, screen-shake, backgrounds por nível.
 - [ ] Fase 4: roguelike de cartas (ofensivo/defensivo/utilitário), nave-cosmética extra, tiro carregado teleguiado, giro-desvio Z/C.
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados", mas nenhum arquivo existia neste projeto antes da v0.14.0 (criei um do zero — ver seção v0.14.0). Se existir um segundo em outro lugar, perguntar ao usuário onde, pra manter sincronizado.
 - [ ] `src/selftest.mjs` linha 117 espera `session.shields === 3`, mas `STARTING_SHIELDS` é 10 — desatualizado desde antes desta sessão (não mexi, fora de escopo da v0.14.0).
 - [ ] Testar o build atual com o baralho real do usuário.
 - [ ] Usuário escolher (se quiser) qual das ideias de inimigo futuro (ver seção abaixo) implementar em seguida.
 - [ ] Reconfirmar ao vivo que tiro certeiro no dourado especial = +50 sem tocar combo/escudo.
+- [x] Gameplay de dano/vida: vidas, escudo, invencibilidade, shake, backgrounds — v0.16.0 (Fase 3 do pedido grande).
+- [x] Repositório conectado ao GitHub (`github.com/Ratuckk/Star-Anki`), push automático a partir de agora.
 - [x] Ambiente de testes: launcher com auto-shutdown do servidor — v0.15.0 (Fase 2 do pedido grande).
 - [x] Bugfix: feedback do bônus dourado ficava preso na tela após resolver — v0.14.1.
 - [x] Pré-jogo, baralhos múltiplos, debug, editor, keybindings + gamepad — v0.14.0 (Fase 1 do pedido grande).
@@ -18,6 +19,32 @@
 - [x] Baralho salvo no localStorage — v0.10.0.
 - [x] Efeitos visuais (starfield, explosões, rastro, muzzle flash, vinheta) — v0.11.0.
 - [x] Mira estilo Star Fox 64 (lock-on, resposta direta, reticle visual) — v0.12.0.
+## Gameplay de dano/vida: vidas, escudo, invencibilidade, shake, backgrounds — v0.16.0
+
+Fase 3 do pedido grande. Implementa a cascata de dano já alinhada com o usuário: **Escudo → Saúde → Vida**.
+
+- **Renomeação `shields` → `health`**: o campo antigo `session.shields` (o pool de 10 hits que já existia) virou `session.health` em todo lugar (`quiz.js`, `hud.js`, `main.js`, `selftest.mjs`). Isso liberou o nome "shield/escudo" pra a camada de defesa nova, sem ambiguidade. `STARTING_SHIELDS` → `STARTING_HEALTH` (ainda 10), e um novo `STARTING_LIVES = 3` em `quiz.js`. De quebra, corrigi a asserção pré-existente e desatualizada em `selftest.mjs` que esperava `session.shields === 3` (era o valor de vidas, não de saúde — resquício de uma versão anterior do jogo).
+- **Vidas** (`session.lives`, 3 iniciais): saúde zerada consome 1 vida e reabastece a saúde (e o escudo) ao máximo; zerar as vidas é que termina a run de verdade. A decisão fica em `applyHealthLoss()` (closure em `main.js`), chamada tanto no hit de inimigo em tempo real (`tick()`) quanto ao errar uma pergunta (`settleQuestion()`, via `resolveAnswer` que só decrementa `session.health` — quem decide game-over agora é sempre `main.js`, não `quiz.js`). `nextQuestion()` em `quiz.js` passou a checar `session.lives <= 0` em vez de saúde, já que saúde em 0 agora é um estado transitório (sempre resolvido antes da próxima pergunta ser pedida).
+- **Escudo** (`shieldCharges`/`shieldRechargeTimer`, estado local em `mountGame` — não faz parte de `session` porque não é sobre pontuação/progresso, é uma mecânica de defesa em tempo real): aguenta `SHIELD_MAX = 2` hits sem tocar a saúde; ao esgotar (chegar a 0), entra em recarga de `SHIELD_RECHARGE_MS = 5000` e só volta ao máximo de uma vez no fim (não regenera carga por carga). Fica como variável mutável de propósito — é onde a Fase 4 (roguelike) vai plugar os buffs de "mais cargas"/"recarga mais rápida".
+- **Invencibilidade**: `INVINCIBILITY_MS` 1200 → 1500 (pedido: "1 segundo e meio"). O piscar da nave já existia (`rail.setShipVisible` com flicker) — não mexido.
+- **Screen-shake + nave chacoalhando**: `HIT_SHAKE_DURATION_MS = 300`, decaindo linearmente. Câmera: jitter aplicado por último no `tick()`, só na posição de render (depois de tudo que depende de `camera.position` já ter sido calculado — mira, barras de vida de inimigo — então não distorce nada de jogabilidade). Nave: `rail.js` ganhou `setShakeIntensity(magnitude)` — `main.js` decide a curva de decaimento e passa o valor a cada frame; `rail.js` só aplica um jitter na posição RENDERIZADA da nave, depois de já orientada (não mexe em `playerX`/`playerY`/`lastPlayerPos`, que são o que colisão e mira usam — shake é 100% cosmético).
+- **Backgrounds por "nível"**: paleta de 6 cores escuras (`LEVEL_BACKGROUNDS` em `main.js`), trocada a cada `enterCombat()` com base em `session.pointer % 6` — dá a ilusão de ambientes diferentes a cada pergunta do setor, sem mudar nada de jogabilidade (`scene.background` e `scene.fog.color`).
+- **Explosão ao destruir inimigo**: já existia (`effects.explosion()`, feito na v0.11.0) — conferido, cobre todos os casos (inimigo comum, redutor de tempo, alvo de pergunta, bônus, dourado, e agora também o inimigo "tanque" do debug).
+- **HUD nova**: `hud-lives-bar` (triângulos ciano, ícone de "nave extra") e `hud-shield-bar` (círculos azuis + barrinha de recarga) empilhados entre o placar e a barra de saúde — todos usando o mesmo padrão de pool de pips já existente. `hud.setLives(lives, maxLives)` e `hud.setShield(charges, maxCharges, rechargeFrac)` são novos métodos, chamados a cada frame do `tick()` igual o `setStatus` já existente.
+- **Debug**: `Causar 1 dano` agora aciona a mesma cascata de vida real (antes só mexia em `session.health` direto, sem consumir vida ao chegar em 0 — inconsistente com o hit de verdade; corrigido depois de pegar isso testando ao vivo). Dois botões novos: `Perder 1 vida` (força a cascata sem precisar zerar a saúde primeiro) e `Recarregar escudo`.
+- **Testado ao vivo**: escudo absorve hit sem tocar saúde (2→1→0 cargas) → barra de recarga aparece e enche → volta a 2/2 → saúde zerada via debug reabastece sozinha e tira 1 vida (confirmado lendo `session.lives` via o próprio HUD, inclusive descobri e documentei que o HUD só repinta no próximo `tick()`, que fica bem mais lento com a aba em segundo plano — não é bug, é throttling de `requestAnimationFrame` do navegador) → última vida perdida termina a run ("Setor concluído"), sem erros no console em nenhum momento.
+- **Não mexido**: `src/anki.js`, `src/effects.js`, roguelike/tiro carregado/movimentação avançada (fase 4).
+
+**Versão**: v0.15.0 → v0.16.0.
+
+## Repositório conectado ao GitHub
+
+Projeto agora tem `.git` local (não tinha antes) conectado a `github.com/Ratuckk/Star-Anki`, que já existia com o histórico até a v0.13.0 (mesma origem — "tudo que tá lá foi o que iniciamos por aqui"). Reconciliei sem perder histórico: `git init -b main` + `git remote add origin` + `git fetch` + `git reset origin/main` (reset misto, não toca nos arquivos locais) — daí as mudanças da v0.14.0 em diante apareceram como diffs prontos pra commitar em cima do histórico existente, sem sobrescrever nada.
+
+Pegadinha de autenticação: o `gh` da máquina estava logado como conta **Ziaker** (permissão só de leitura nesse repo específico). O dono de fato é **Ratuckk** — precisou `gh auth login --web` pra trocar de conta antes de conseguir dar push. Se aparecer erro de permissão num push futuro, primeiro conferir `gh auth status` (qual conta está ativa).
+
+**O usuário pediu push automático daqui pra frente** — documentado no `CLAUDE.md` (seção "Git"): a partir de agora, toda entrega (fim de fase, bugfix) recebe commit + `git push origin main` sem pedir confirmação a cada vez. Só continuo seguindo as regras normais de segurança git (nunca force-push, revisar `git status` antes de `git add -A`).
+
 ## Ambiente de testes: launcher com auto-shutdown — v0.15.0
 
 Fase 2 do pedido grande: "crie um programa que rode o jogo, fechar ele deve obrigatoriamente e forçadamente fechar o servidor também."

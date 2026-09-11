@@ -98,6 +98,11 @@ export function createRailController(camera, scene) {
   let arenaPitch = 0
   let arenaRoll = 0
 
+  // chacoalhar visual da nave ao levar hit — main.js decide a intensidade/decaimento a cada
+  // frame; aqui só aplicamos um jitter na posição RENDERIZADA (depois de já ter orientado a
+  // nave), então não afeta playerX/playerY/lastPlayerPos usados pra colisão/mira
+  let shakeMagnitude = 0
+
   const ship = buildShip()
   ship.position.copy(lastFrame.position)
   scene.add(ship)
@@ -115,6 +120,12 @@ export function createRailController(camera, scene) {
     const right = new THREE.Vector3().crossVectors(forward, WORLD_UP).normalize()
     const up = new THREE.Vector3().crossVectors(right, forward).normalize()
     return { position, forward, right, up }
+  }
+
+  function applyShakeJitter() {
+    if (shakeMagnitude <= 0) return
+    ship.position.x += (Math.random() * 2 - 1) * shakeMagnitude
+    ship.position.y += (Math.random() * 2 - 1) * shakeMagnitude
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -159,6 +170,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(up)
     ship.lookAt(arenaPos.clone().add(forward))
     ship.rotateZ(arenaRoll)
+    applyShakeJitter()
 
     const camTarget = arenaPos.clone()
       .addScaledVector(forward, -CAM_BEHIND)
@@ -213,6 +225,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(frame.up)
     ship.lookAt(playerPos.clone().add(frame.forward))
     ship.rotateZ(roll)
+    applyShakeJitter()
 
     const camTarget = frame.position.clone()
       .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL)
@@ -241,6 +254,7 @@ export function createRailController(camera, scene) {
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
+    setShakeIntensity: (m) => { shakeMagnitude = m },
     enterArena,
     exitArena,
   }

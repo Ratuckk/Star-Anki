@@ -30,7 +30,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.15.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.16.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -618,6 +618,26 @@ export function createGameHud() {
   status.className = 'hud-status'
   root.appendChild(status)
 
+  const livesBar = document.createElement('div')
+  livesBar.className = 'hud-lives-bar'
+  root.appendChild(livesBar)
+  let livePips = []
+  let livePipsMax = null
+
+  const shieldBar = document.createElement('div')
+  shieldBar.className = 'hud-shield-bar'
+  root.appendChild(shieldBar)
+  let shieldPips = []
+  let shieldPipsMax = null
+
+  const shieldRecharge = document.createElement('div')
+  shieldRecharge.className = 'hud-shield-recharge'
+  shieldRecharge.hidden = true
+  root.appendChild(shieldRecharge)
+  const shieldRechargeFill = document.createElement('div')
+  shieldRechargeFill.className = 'hud-shield-recharge-fill'
+  shieldRecharge.appendChild(shieldRechargeFill)
+
   const healthBar = document.createElement('div')
   healthBar.className = 'hud-health-bar'
   root.appendChild(healthBar)
@@ -691,20 +711,54 @@ export function createGameHud() {
   return {
     sceneRoot,
 
-    setStatus({ shields, maxShields = shields, score, combo }) {
+    setStatus({ health, maxHealth = health, score, combo }) {
       status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
 
-      if (maxShields !== healthPipsMax) {
-        healthPipsMax = maxShields
+      if (maxHealth !== healthPipsMax) {
+        healthPipsMax = maxHealth
         healthBar.innerHTML = ''
-        healthPips = Array.from({ length: maxShields }, () => {
+        healthPips = Array.from({ length: maxHealth }, () => {
           const pip = document.createElement('div')
           pip.className = 'hud-health-pip'
           healthBar.appendChild(pip)
           return pip
         })
       }
-      healthPips.forEach((pip, i) => pip.classList.toggle('filled', i < shields))
+      healthPips.forEach((pip, i) => pip.classList.toggle('filled', i < health))
+    },
+
+    setLives(lives, maxLives = lives) {
+      if (maxLives !== livePipsMax) {
+        livePipsMax = maxLives
+        livesBar.innerHTML = ''
+        livePips = Array.from({ length: maxLives }, () => {
+          const pip = document.createElement('div')
+          pip.className = 'hud-life-pip'
+          livesBar.appendChild(pip)
+          return pip
+        })
+      }
+      livePips.forEach((pip, i) => pip.classList.toggle('filled', i < lives))
+    },
+
+    // charges: escudos disponíveis agora; maxCharges: capacidade máxima; rechargeFrac: 0 (sem
+    // recarga em andamento) a 1 (acabou de esgotar); a barra de recarga só aparece com 0 cargas
+    setShield(charges, maxCharges, rechargeFrac = 0) {
+      if (maxCharges !== shieldPipsMax) {
+        shieldPipsMax = maxCharges
+        shieldBar.innerHTML = ''
+        shieldPips = Array.from({ length: maxCharges }, () => {
+          const pip = document.createElement('div')
+          pip.className = 'hud-shield-pip'
+          shieldBar.appendChild(pip)
+          return pip
+        })
+      }
+      shieldPips.forEach((pip, i) => pip.classList.toggle('filled', i < charges))
+
+      const recharging = charges <= 0 && rechargeFrac > 0
+      shieldRecharge.hidden = !recharging
+      if (recharging) shieldRechargeFill.style.width = `${(1 - rechargeFrac) * 100}%`
     },
 
     setQuestion(text) {
@@ -749,7 +803,7 @@ export function createGameHud() {
       stats.className = 'feedback-stats'
       stats.textContent = data.bonus
         ? (data.correct ? 'Buff de arma reforçado!' : 'Sem efeito na partida.')
-        : `+${Math.round(data.points)} pontos · combo x${data.comboMultiplier.toFixed(2)} · vida ${data.shields}`
+        : `+${Math.round(data.points)} pontos · combo x${data.comboMultiplier.toFixed(2)} · vida ${data.health}`
       feedback.appendChild(stats)
     },
 

@@ -8,7 +8,8 @@ export const SLOT_STYLES = [
 ]
 
 const SECTOR_SIZE = 10
-export const STARTING_SHIELDS = 10
+export const STARTING_HEALTH = 10
+export const STARTING_LIVES = 3
 const COMBO_STEP = 0.15
 const COMBO_CAP = 2.5
 
@@ -24,7 +25,8 @@ function shuffle(array) {
 export function createSession(deck, opts = {}) {
   const { shooterCards } = deck
   const history = opts.history || {}
-  const startingShields = opts.startingShields ?? STARTING_SHIELDS
+  const startingHealth = opts.startingHealth ?? STARTING_HEALTH
+  const startingLives = opts.startingLives ?? STARTING_LIVES
   const sectorSize = Math.min(SECTOR_SIZE, shooterCards.length)
 
   const withErrors = shuffle(shooterCards.filter((c) => (history[c.guid]?.erros ?? 0) > 0))
@@ -37,7 +39,8 @@ export function createSession(deck, opts = {}) {
   return {
     queue,
     pointer: 0,
-    shields: startingShields,
+    health: startingHealth,
+    lives: startingLives,
     comboMultiplier: 1.0,
     score: 0,
     log: [],
@@ -58,7 +61,7 @@ function buildAlternatives(card, allCards) {
 }
 
 export function nextQuestion(session, allCards) {
-  if (session.pointer >= session.sectorSize || session.shields <= 0) return null
+  if (session.pointer >= session.sectorSize || session.lives <= 0) return null
   return buildAlternatives(session.queue[session.pointer], allCards)
 }
 
@@ -84,7 +87,7 @@ export function resolveAnswer(session, outcome) {
     session.comboMultiplier = Math.min(COMBO_CAP, Math.round((session.comboMultiplier + COMBO_STEP) * 100) / 100)
   } else {
     session.comboMultiplier = 1.0
-    if (type === 'wrong') session.shields -= 1
+    if (type === 'wrong') session.health = Math.max(0, session.health - 1)
   }
 
   session.score += points
@@ -97,12 +100,14 @@ export function resolveAnswer(session, outcome) {
     points,
   })
 
-  const sectorOver = session.pointer >= session.sectorSize || session.shields <= 0
+  // esgotar a saúde aqui NÃO termina o setor sozinho — main.js decide se consome uma vida
+  // (e reabastece a saúde) ou se é de fato game over, dependendo de quantas vidas restam
+  const sectorOver = session.pointer >= session.sectorSize
 
   return {
     points,
     comboMultiplier: session.comboMultiplier,
-    shieldsRemaining: session.shields,
+    healthRemaining: session.health,
     sectorOver,
     comboBroken: type !== 'correct',
   }
