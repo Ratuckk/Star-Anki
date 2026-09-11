@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 18
+// 34 → 26: nave mais calma no eixo lateral, pra dar espaço pra mira ter curso de movimento
+// próprio, sem a nave cruzar a tela num piscar
 const LATERAL_SPEED = 26
 const LATERAL_ACCEL_RATE = 35
 const BOX_X = 12
