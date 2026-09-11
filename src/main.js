@@ -3,6 +3,7 @@ import { buildDeck, exportTagsTsv } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion, STARTING_SHIELDS } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem, DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
+import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { showLoadScreen, showWarning, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
 import { loadHistory, saveHistory, recordResult, loadSavedDeck, saveDeck, clearSavedDeck } from './storage.js'
@@ -16,13 +17,9 @@ const SPEED_STEP = 0.05
 const BOOST_EVERY_CORRECT = 2
 const GROUND_Y = -10
 
-// depois de tomar um hit, o jogador fica intocável por um instante — sem isso, um único inimigo atravessando
-// a hitbox ou uma sequência de projéteis próximos derruba vários pontos de vida no mesmo momento, sem chance de reagir
 const INVINCIBILITY_MS = 1200
 const INVINCIBILITY_FLICKER_MS = 90
 
-// distância à frente do nariz da nave usada só pra projetar a mira na tela — o tiro em si continua saindo
-// na direção real da câmera (ver tryFire), isso é puramente visual pra mira acompanhar a nave suavemente
 const RETICLE_AHEAD_DISTANCE = 20
 
 const BOSS_EVERY_QUESTIONS = 5
@@ -62,7 +59,6 @@ const PROJECTILE_STEP_EVERY_CORRECT = 3
 const PROJECTILE_COUNT_CAP = 4
 const PROJECTILE_COUNT_START = 2
 
-// inimigo dourado especial: raro, força All-Range imediatamente, pausa o cycleTimer enquanto existir
 const GOLDEN_INTERVAL_MIN_MS = 45000
 const GOLDEN_INTERVAL_MAX_MS = 100000
 const GOLDEN_ARENA_MS_MIN = 25000
@@ -70,7 +66,6 @@ const GOLDEN_ARENA_MS_MAX = 30000
 const GOLDEN_SPREAD_MIN = 40
 const GOLDEN_SPREAD_MAX = 90
 
-// chance de o spawn periódico de inimigo, durante combate normal, ser o redutor de tempo em vez do vermelho comum
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
 
 let deck = null
@@ -85,8 +80,6 @@ function handleLoad(text) {
     showWarning(built.warning)
     return
   }
-  // lembra do baralho pra próxima sessão — o texto bruto é o mesmo que foi colado/carregado,
-  // então dá pra re-parsear exatamente igual quando o usuário clicar em "Usar baralho salvo"
   saveDeck(text)
   deck = built
   deckText = text
@@ -95,8 +88,6 @@ function handleLoad(text) {
   mountGame(createSession(deck, { history }))
 }
 
-// monta o objeto que showLoadScreen() usa pra desenhar a seção "Baralho salvo" — já validando
-// que o texto salvo ainda passa pelo buildDeck, pra não oferecer um botão que só daria erro
 function buildSavedDeckInfo() {
   const text = loadSavedDeck()
   if (!text) return null
@@ -228,7 +219,8 @@ function mountGame(session) {
   scene.add(grid)
 
   const rail = createRailController(camera, scene)
-  const combat = createCombatSystem(scene, rail)
+  const effects = createEffectsSystem(scene)
+  const combat = createCombatSystem(scene, rail, effects)
   const input = createInputState()
 
   let phase = null
@@ -242,11 +234,6 @@ function mountGame(session) {
   let paused = false
   let lastTime = performance.now()
   let rafId = null
-
-  // teardown() marca isso pra o tick atual poder abortar cedo depois que o HUD/renderer foram
-  // desmontados. Sem isso, um endSector() no meio do tick (via enterAlternatives/enterBossArena
-  // chamados de dentro do handler de 'recall') deixava o código continuar e chamar
-  // hud.setStatus()/renderer.render() em elementos já destruídos.
   let stopped = false
 
   let isBossCycle = false
@@ -264,7 +251,6 @@ function mountGame(session) {
 
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
   let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
-  // espelha o padrão do combat.js (canhões duplos); o buff de acerto sobe isso até PROJECTILE_COUNT_CAP
   let projectileCount = PROJECTILE_COUNT_START
   let correctBuffCount = 0
 
@@ -366,7 +352,6 @@ function mountGame(session) {
     combat.setEnemyAggressiveness(enemyAggression)
   }
 
-  // dificuldade do CHEFE sobe só quando o jogador erra/estoura o tempo NUM chefe, e nunca desce
   function applyBossDifficulty() {
     bossDifficulty = Math.min(BOSS_DIFFICULTY_CAP, bossDifficulty + 1)
   }
@@ -389,7 +374,6 @@ function mountGame(session) {
   function enterCombat() {
     phase = 'combat'
     isBossCycle = (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
-    // dificuldade por histórico é por-pergunta e coexiste com a permanente da sessão (enemyIntervalMin/Max/aggression)
     isReviewQuestion = (history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
     cycleTimer = isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
     enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
@@ -460,247 +444,10 @@ function mountGame(session) {
     hud.setGoldenActive(false)
   }
 
-  // timeout (não encontrado a tempo) ou pergunta bônus resolvida: volta ao combate de onde parou, sem
-  // passar por enterCombat() — cycleTimer/enemyTimer/bonusTimer/isBossCycle continuam intocados desde
-  // que o dourado especial apareceu, o que é exatamente o efeito de "pausa" pedido
   function resumeCombatFromGolden() {
     phase = 'combat'
     rail.setAdvancing(true)
     goldenTimer = randomGoldenInterval()
   }
 
-  function enterGoldenRecall() {
-    goldenCard = pickBonusCard(deck, session)
-    phase = 'goldenRecall'
-    phaseTimer = RECALL_MS
-    rail.setAdvancing(false)
-    hud.setQuestion(goldenCard.question)
-    hud.setAlternatives(null)
-    hud.setFeedback(null)
-  }
-
-  function enterGoldenAlternatives() {
-    const result = buildBonusQuestion(goldenCard, deck.allCards)
-    questionResult = result
-    phase = 'goldenAlternatives'
-    phaseTimer = ALT_MS
-    hud.setQuestion(result.card.question)
-    hud.setAlternatives(result.alternatives)
-    combat.spawnQuizTargets(result.alternatives)
-  }
-
-  function settleQuestion(outcome, isBoss) {
-    combat.clearQuizTargets()
-    if (isBoss) rail.exitArena()
-    const resolution = resolveAnswer(session, outcome)
-    applySpeedProgression(outcome.type)
-
-    const correct = outcome.type === 'correct'
-    if (correct) applyBuff()
-    else applyDifficulty()
-    if (isBoss && !correct) applyBossDifficulty()
-
-    history = recordResult(history, outcome.card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: outcome.card.guid, correct })
-
-    hud.setQuestion(null)
-    hud.setAlternatives(null)
-    hud.setBossActive(false)
-    hud.setFeedback({
-      correct: outcome.type === 'correct',
-      correctAnswer: outcome.card.answer,
-      points: resolution.points,
-      comboMultiplier: resolution.comboMultiplier,
-      shields: resolution.shieldsRemaining,
-    })
-
-    pendingSectorOver = resolution.sectorOver
-    phase = 'resolution'
-    phaseTimer = FEEDBACK_MS
-  }
-
-  // pergunta bônus do dourado especial: NÃO passa por resolveAnswer (não mexe em pointer/shields/combo/dificuldade),
-  // acerto dá mais um estágio do buff de arma, erro/timeout não tem penalidade nenhuma — mas ambos entram no
-  // histórico e no export de tags igual a uma pergunta normal, pra valer de verdade como estudo
-  function settleGoldenBonus(outcome) {
-    combat.clearQuizTargets()
-    const correct = outcome.type === 'correct'
-    if (correct) applyBuff()
-
-    history = recordResult(history, outcome.card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: outcome.card.guid, correct })
-
-    hud.setQuestion(null)
-    hud.setAlternatives(null)
-    hud.setFeedback({
-      correct,
-      correctAnswer: outcome.card.answer,
-      bonus: true,
-    })
-
-    phase = 'goldenResolution'
-    phaseTimer = FEEDBACK_MS
-  }
-
-  function endSector() {
-    teardown()
-    renderEndScreen(getSummary(session))
-  }
-
-  function onResize() {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-    renderer.setSize(window.innerWidth, window.innerHeight)
-  }
-  window.addEventListener('resize', onResize)
-
-  function teardown() {
-    stopped = true
-    cancelAnimationFrame(rafId)
-    window.removeEventListener('resize', onResize)
-    input.dispose()
-    combat.dispose()
-    renderer.dispose()
-    hud.unmount()
-  }
-
-  function tick(now) {
-    if (stopped) return
-    rafId = requestAnimationFrame(tick)
-    const dt = Math.min((now - lastTime) / 1000, 0.1)
-    lastTime = now
-
-    const inputState = input.update()
-
-    if (inputState.pressed.has('Escape') || inputState.pressed.has('KeyP') || inputState.pressed.has('GamepadStart')) {
-      paused = !paused
-      hud.setPaused(paused)
-    }
-    if (paused) return
-
-    rail.update(dt, inputState)
-    const playerPos = rail.getPlayerPosition()
-    const noseFrame = rail.getFrameAt(0)
-    const nosePos = rail.getShipNosePosition()
-
-    const aimDirection = camera.getWorldDirection(new THREE.Vector3())
-    if (inputState.firing) combat.tryFire(nosePos, aimDirection)
-
-    // mira puramente visual: projeta um ponto à frente do nariz na tela, então o retículo acompanha a nave
-    // suavemente (banking, deslocamento lateral) em vez de ficar travado no centro da tela
-    const aimPoint = nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
-    const ndc = aimPoint.project(camera)
-    hud.setReticlePosition(THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1), THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1))
-
-    const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
-    const events = combat.update(dt, playerPos, { enemiesActive })
-
-    if (events.enemyKillPoints) session.score += events.enemyKillPoints
-    if (events.bonusKillPoints) session.score += events.bonusKillPoints
-    // reduz o cycleTimer (pausado ou não) sempre que um inimigo redutor de tempo é abatido, mesmo durante o dourado especial
-    if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
-
-    invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
-    // um hit só conta se o jogador não estiver invencível — evita que colisões múltiplas no mesmo instante
-    // (ou uma sequência delas em menos de INVINCIBILITY_MS) derrubem vários pontos de vida de uma vez
-    if (events.enemyHits > 0 && invincibleTimer <= 0) {
-      session.shields = Math.max(0, session.shields - 1)
-      invincibleTimer = INVINCIBILITY_MS
-      if (session.shields <= 0) {
-        endSector()
-        return
-      }
-    }
-    rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
-
-    // spawn periódico de inimigo continua durante a caça ao dourado especial (não é um "tempo seguro")
-    if (phase === 'combat' || phase === 'goldenArena') {
-      enemyTimer -= dt * 1000
-      if (enemyTimer <= 0) {
-        if (phase === 'combat' && Math.random() < TIME_ENEMY_SPAWN_CHANCE) combat.spawnTimeEnemy()
-        else combat.spawnEnemy()
-        enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
-      }
-    }
-
-    if (phase === 'combat') {
-      // alvo bônus verde e o dourado especial só no ciclo de combate normal, nunca durante o build-up de um chefe
-      if (!isBossCycle) {
-        bonusTimer -= dt * 1000
-        if (bonusTimer <= 0) {
-          combat.spawnBonusTarget()
-          bonusTimer = randomBonusInterval()
-        }
-
-        goldenTimer -= dt * 1000
-        if (goldenTimer <= 0) enterGoldenArena()
-      }
-
-      // enterGoldenArena() acima pode ter trocado a fase neste mesmo tick — nesse caso o ciclo principal
-      // já está pausado (é exatamente o efeito pedido) e não deve descontar mais nada até o dourado sumir
-      if (phase === 'combat') {
-        cycleTimer -= dt * 1000
-        hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
-        if (cycleTimer <= 0) enterRecall()
-      }
-    } else if (phase === 'recall') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) {
-        if (isBossCycle) enterBossArena()
-        else enterAlternatives()
-      }
-    } else if (phase === 'alternatives') {
-      processAnswerPhase(events, inputState, dt, altTotalMs, 'normal')
-    } else if (phase === 'boss') {
-      processAnswerPhase(events, inputState, dt, arenaTotalMs, 'boss')
-    } else if (phase === 'goldenArena') {
-      if (events.goldenSpecialHit) {
-        exitGoldenArenaVisuals()
-        enterGoldenRecall()
-      } else {
-        goldenArenaTimer -= dt * 1000
-        if (goldenArenaTimer <= 0) {
-          exitGoldenArenaVisuals()
-          resumeCombatFromGolden()
-        }
-      }
-    } else if (phase === 'goldenRecall') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) enterGoldenAlternatives()
-    } else if (phase === 'goldenAlternatives') {
-      processAnswerPhase(events, inputState, dt, ALT_MS, 'golden')
-    } else if (phase === 'resolution') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) {
-        if (pendingSectorOver) {
-          endSector()
-          return
-        }
-        enterCombat()
-      }
-    } else if (phase === 'goldenResolution') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) resumeCombatFromGolden()
-    }
-
-    // o handler de 'recall' acima pode ter chamado enterAlternatives()/enterBossArena(), que por sua
-    // vez podem ter chamado endSector() → teardown() já limpou HUD/renderer. Aborta aqui pra não
-    // mexer em elementos destruídos (o RAF do próximo frame já foi cancelado por teardown()).
-    if (stopped) return
-
-    hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
-    renderer.render(scene, camera)
-  }
-
-  enterCombat()
-  hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
-  lastTime = performance.now()
-  rafId = requestAnimationFrame(tick)
-}
-
-// ponto de entrada: mostra a tela de carregamento já com a seção "Baralho salvo" (se houver
-// um salvo de sessão anterior). Antes era showLoadScreen(handleLoad) direto — agora passa por
-// restart(), que monta o savedDeckInfo e liga o botão "Esquecer".
-restart()
+  function enterGolden
