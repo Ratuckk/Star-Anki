@@ -21,19 +21,21 @@ const INVINCIBILITY_MS = 1200
 const INVINCIBILITY_FLICKER_MS = 90
 
 // ============ MIRA ============
-// A mira vive em coordenadas de TELA (NDC: -1 a 1 em cada eixo), não em coordenadas de mundo.
-// Isso é o que garante que os tiros passem exatamente por onde a mira está: o tiro é o raio
-// da câmera através do ponto NDC da mira. Sem essa mudança, qualquer cálculo de "nariz -> mira"
-// produzia ângulos minúsculos e o tiro saía praticamente reto.
+// A mira vive em espaço de MUNDO, ancorada no NARIZ da nave e deslocada por um pequeno offset
+// lateral. O tiro é disparado do nariz NA DIREÇÃO da mira — como o tiro e a mira compartilham o
+// mesmo ponto 3D, os tiros passam visualmente por onde a mira está, por construção.
 //
-// Física própria em NDC, mais rápida que a nave:
-//   - RETICLE_NDC_SPEED (3.2) > velocidade lateral da nave em unidades de tela
-//   - RETICLE_NDC_MAX_X/Y (0.85/0.65) fazem a mira chegar quase na borda antes da nave
-//   - RETICLE_NDC_ACCEL (28) dá resposta imediata, sem "escorregar"
-const RETICLE_NDC_MAX_X = 0.85
-const RETICLE_NDC_MAX_Y = 0.65
-const RETICLE_NDC_ACCEL = 28
-const RETICLE_NDC_SPEED = 3.2
+// Os valores foram calibrados pra:
+//   - Reticle ficar PRINCIPALMENTE à frente da nave (offset pequeno em relação à distância)
+//   - Ainda dar pra inclinar o tiro o suficiente pra acertar alvos que não estão retos à frente
+//   - Mira se mover um pouco mais que a nave, mas não muito
+//
+// Ângulo máximo do tiro: atan(RETICLE_MAX_X / RETICLE_AHEAD) ≈ atan(6/48) ≈ 7°
+const RETICLE_AHEAD = 48       // distância à frente do nariz onde a mira é posicionada
+const RETICLE_MAX_X = 6        // deslocamento lateral máximo da mira (unidades de mundo)
+const RETICLE_MAX_Y = 4.5      // deslocamento vertical máximo da mira
+const RETICLE_SPEED = 30       // velocidade máxima da mira (unidades/s) — um pouco acima da nave (26)
+const RETICLE_ACCEL = 32       // resposta da mira (quanto maior, mais snappy)
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
@@ -271,14 +273,11 @@ function mountGame(session) {
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
 
-  // estado da mira em NDC (Normalized Device Coordinates: -1..1 em x e y)
-  let reticleNDCX = 0
-  let reticleNDCY = 0
+  // Estado da mira: offset lateral/vertical em relação ao nariz da nave, em unidades de mundo
+  let reticleX = 0
+  let reticleY = 0
   let reticleVelX = 0
   let reticleVelY = 0
-
-  // raio reutilizado pra não alocar Vector3 por frame
-  const rayHelper = new THREE.Vector3()
 
   function randomEnemyInterval() {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
@@ -586,49 +585,58 @@ function mountGame(session) {
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
 
-    // ============ MIRA em NDC ============
-    // física própria da mira em espaço de tela. Move mais rápida que a nave e chega mais longe.
-    // Em modo arena a mira fica no centro (o voo livre já é a mira).
+    // ============ MIRA ============
+    // física própria da mira: offset em relação ao nariz, com aceleração e velocidade próprias.
+    // Em modo arena a mira fica centrada (o próprio voo da nave já é a mira).
     if (rail.isArena()) {
-      reticleNDCX = 0
-      reticleNDCY = 0
+      reticleX = 0
+      reticleY = 0
       reticleVelX = 0
       reticleVelY = 0
     } else {
-      const tvx = inputState.moveX * RETICLE_NDC_SPEED
-      const tvy = inputState.moveY * RETICLE_NDC_SPEED
-      const rblend = 1 - Math.exp(-RETICLE_NDC_ACCEL * dt)
+      const tvx = inputState.moveX * RETICLE_SPEED
+      const tvy = inputState.moveY * RETICLE_SPEED
+      const rblend = 1 - Math.exp(-RETICLE_ACCEL * dt)
       reticleVelX += (tvx - reticleVelX) * rblend
       reticleVelY += (tvy - reticleVelY) * rblend
-      reticleNDCX += reticleVelX * dt
-      reticleNDCY += reticleVelY * dt
+      reticleX += reticleVelX * dt
+      reticleY += reticleVelY * dt
 
-      if (reticleNDCX > RETICLE_NDC_MAX_X) { reticleNDCX = RETICLE_NDC_MAX_X; reticleVelX = 0 }
-      else if (reticleNDCX < -RETICLE_NDC_MAX_X) { reticleNDCX = -RETICLE_NDC_MAX_X; reticleVelX = 0 }
-      if (reticleNDCY > RETICLE_NDC_MAX_Y) { reticleNDCY = RETICLE_NDC_MAX_Y; reticleVelY = 0 }
-      else if (reticleNDCY < -RETICLE_NDC_MAX_Y) { reticleNDCY = -RETICLE_NDC_MAX_Y; reticleVelY = 0 }
+      if (reticleX > RETICLE_MAX_X) { reticleX = RETICLE_MAX_X; reticleVelX = 0 }
+      else if (reticleX < -RETICLE_MAX_X) { reticleX = -RETICLE_MAX_X; reticleVelX = 0 }
+      if (reticleY > RETICLE_MAX_Y) { reticleY = RETICLE_MAX_Y; reticleVelY = 0 }
+      else if (reticleY < -RETICLE_MAX_Y) { reticleY = -RETICLE_MAX_Y; reticleVelY = 0 }
     }
 
-    // posiciona a mira na tela (convertendo NDC para fração 0..1)
-    hud.setReticlePosition(
-      (reticleNDCX + 1) / 2,
-      (1 - reticleNDCY) / 2,
-    )
+    // posição 3D da mira: ancorada no NARIZ, deslocada lateralmente pelo offset e avançada no
+    // eixo forward. Essa é a única fonte de verdade — o tiro usa ELA como alvo.
+    const reticleWorldPos = nosePos.clone()
+      .addScaledVector(noseFrame.right, reticleX)
+      .addScaledVector(noseFrame.up, reticleY)
+      .addScaledVector(noseFrame.forward, RETICLE_AHEAD)
 
-    // direção do tiro: raio da CÂMERA através do ponto NDC da mira. Isso garante que os tiros
-    // passem exatamente por onde a mira está na tela.
-    rayHelper.set(reticleNDCX, reticleNDCY, 0.5)
-    rayHelper.unproject(camera)
-    rayHelper.sub(camera.position).normalize()
+    // direção do tiro: do nariz PARA A MIRA. Como o tiro parte do nariz e aponta para onde a
+    // mira está no espaço, ele passa visualmente pela mira por construção.
+    const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
-    if (inputState.firing) combat.tryFire(nosePos, rayHelper)
+    if (inputState.firing) combat.tryFire(nosePos, fireDirection)
 
     const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimOrigin: nosePos,
-      aimDirection: rayHelper,
+      aimDirection: fireDirection,
     })
+
+    // posição visual da mira na tela: projeção do ponto 3D
+    const lockOn = combat.getLockOnTarget()
+    const reticleScreenPos = lockOn ? lockOn.mesh.position.clone() : reticleWorldPos
+    const ndc = reticleScreenPos.project(camera)
+    hud.setReticlePosition(
+      THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
+      THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
+    )
+    hud.setReticleLocked(!!lockOn)
 
     effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
 
