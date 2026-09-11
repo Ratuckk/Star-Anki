@@ -16,11 +16,6 @@ function showScreen(name) {
   document.getElementById('painel-screen').hidden = name !== 'painel'
 }
 
-// opts.savedDeck: quando presente, mostra a seção de "baralho salvo" no topo da tela de
-// carregamento. Dois formatos aceitos:
-//   { valid: true, text, deckNames, shooterCount, painelCount }  → botão "Usar baralho salvo" ativo
-//   { valid: false, text }                                        → só aviso + botão "Esquecer"
-// opts.onForget: callback ao clicar em "Esquecer" (limpa o localStorage e re-renderiza)
 export function showLoadScreen(onLoad, opts = {}) {
   showScreen('load')
   const fileInput = document.getElementById('file-input')
@@ -94,8 +89,6 @@ export function createGameHud() {
   sceneRoot.id = 'scene-root'
   root.appendChild(sceneRoot)
 
-  // vinheta de dano: overlay fullscreen com gradiente vermelho nas bordas. Fica em opacity 0
-  // e ganha a classe .flash por 0.5s quando o jogador toma um hit (main.js chama damageFlash()).
   const damageVignette = document.createElement('div')
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
@@ -236,9 +229,6 @@ export function createGameHud() {
       goldenBanner.hidden = !active
     },
 
-    // flash vermelho nas bordas quando o jogador toma dano. Reinicia a animação CSS a cada
-    // chamada: remove a classe, força reflow, readiciona — sem isso, dois hits seguidos em
-    // menos de 0.5s não reiniciariam o pulso visual.
     damageFlash() {
       damageVignette.classList.remove('flash')
       void damageVignette.offsetWidth
@@ -248,6 +238,12 @@ export function createGameHud() {
     setReticlePosition(xFrac, yFrac) {
       reticle.style.left = `${xFrac * 100}%`
       reticle.style.top = `${yFrac * 100}%`
+    },
+
+    // feedback de lock-on: muda a cor e a animação da mira quando há alvo travado. É o que dá
+    // a sensação de "travou no alvo" do Star Fox 64.
+    setReticleLocked(locked) {
+      reticle.classList.toggle('locked', !!locked)
     },
 
     unmount() {
