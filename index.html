@@ -67,8 +67,6 @@
   .missed-list { margin-top: 1rem; padding-left: 1.2rem; color: #c7ccd4; }
   .missed-list li { margin-bottom: 0.5rem; }
 
-  /* seção do baralho salvo (localStorage). Aparece quando há um baralho lembrado de
-     uma sessão anterior, acima do formulário de arquivo/colar. */
   .saved-deck-section {
     margin-top: 1.25rem;
     padding: 1rem 1.1rem;
@@ -167,9 +165,6 @@
     text-shadow: 0 1px 3px #000;
     pointer-events: none;
   }
-  /* barra de escudos: 10 pips criados por hud.js (setStatus). Sem estas regras os divs ficavam
-     invisíveis (block-level vazios, sem tamanho/cor), então o jogador não via a vida durante o
-     combate — só no painel de feedback depois de cada pergunta. */
   .hud-health-bar {
     position: absolute;
     top: 52px;
@@ -191,6 +186,24 @@
     background: #6bffb0;
     border-color: #6bffb0;
     box-shadow: 0 0 5px rgba(107, 255, 176, 0.6);
+  }
+  /* vinheta de dano: flash vermelho nas bordas da tela. Fica em opacity 0 por padrão; o
+     método hud.damageFlash() adiciona .flash, que dispara a animação de 0.5s. O radial-gradient
+     deixa o centro limpo (não atrapalha a visão) e satura só as bordas. */
+  .hud-damage-vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(255, 40, 40, 0.7) 100%);
+    opacity: 0;
+  }
+  @keyframes damage-pulse {
+    0% { opacity: 0; }
+    12% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .hud-damage-vignette.flash {
+    animation: damage-pulse 0.5s ease-out;
   }
   .hud-question {
     position: absolute;
@@ -303,7 +316,7 @@
 <body>
 <div id="app">
   <div id="load-screen">
-    <h1>Star Anki <span class="version-tag">v0.10.0</span></h1>
+    <h1>Star Anki <span class="version-tag">v0.11.0</span></h1>
     <p>Carregue um baralho exportado do Anki (formato .txt, notas com campos separados).</p>
 
     <div id="saved-deck-section" class="saved-deck-section" hidden>
