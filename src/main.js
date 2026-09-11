@@ -20,14 +20,25 @@ const GROUND_Y = -10
 const INVINCIBILITY_MS = 1200
 const INVINCIBILITY_FLICKER_MS = 90
 
-// distância à frente do trilho (não do nariz) em que a mira é posicionada — projetar um ponto
-// distante dá movimento angular suave, em vez de a mira "pular" a cada pixel de deslocamento
-const RETICLE_AHEAD_DISTANCE = 20
-// a mira amplifica o deslocamento lateral da nave por esse fator. Com 4x, quando a nave está na
-// METADE do curso dela, a mira já está no DOBRO do centro; quando a nave chega no máximo (BOX_X
-// em rail.js = 12), a mira já passou da borda visível. Isso dá à mira um curso de movimento
-// próprio, de verdade, em vez de ela andar colada no nariz da nave.
-const RETICLE_LATERAL_MULT = 4
+// ============ MIRA ============
+// A mira tem posição PRÓPRIA, separada da nave. Isso é o que dá função a ela: o tiro sai do
+// nariz da nave mas é DIRECIONADO para a mira — se a mira está à direita, o tiro sai na
+// diagonal à direita. Sem isso, a mira seria só um enfeite visual desconectado do disparo.
+//
+// No modo trilho, a mira se move mais que a nave e chega nas extremidades antes dela:
+//   - RETICLE_SPEED (38) > LATERAL_SPEED da nave (26) → responde mais rápido
+//   - RETICLE_MAX_X (20) > BOX_X da nave (12) → chega mais longe
+//   - RETICLE_ACCEL_RATE (42) > LATERAL_ACCEL_RATE da nave (35) → acelera mais rápido
+// A mira tem física própria (não é a posição da nave multiplicada), o que evita o movimento
+// errático que aparecia quando se tentava só amplificar a posição lateral da nave.
+//
+// No modo arena (chefe/dourado), a mira fica acoplada à direção de voo da nave — não faz
+// sentido mira lateral em voo livre, onde o próprio movimento da nave já é a mira.
+const RETICLE_AHEAD_DISTANCE = 32
+const RETICLE_MAX_X = 20
+const RETICLE_MAX_Y = 12
+const RETICLE_ACCEL_RATE = 42
+const RETICLE_SPEED = 38
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
@@ -264,6 +275,12 @@ function mountGame(session) {
   let enemyIntervalMin = ENEMY_INTERVAL_MIN_BASE
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
+
+  // estado da mira no modo trilho (física própria, separada da nave)
+  let reticleX = 0
+  let reticleY = 0
+  let reticleVelX = 0
+  let reticleVelY = 0
 
   function randomEnemyInterval() {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
@@ -571,34 +588,56 @@ function mountGame(session) {
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
 
-    const aimDirection = camera.getWorldDirection(new THREE.Vector3())
-    if (inputState.firing) combat.tryFire(nosePos, aimDirection)
+    // ============ MIRA ============
+    let reticleWorldPos
+    if (rail.isArena()) {
+      // em voo livre, a mira fica na direção de voo da nave — o próprio movimento da nave já é
+      // a mira. Não faz sentido mira lateral quando o jogador está girando pra procurar alvo.
+      reticleX = 0
+      reticleY = 0
+      reticleVelX = 0
+      reticleVelY = 0
+      reticleWorldPos = nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    } else {
+      // física própria da mira: acelera mais rápido que a nave, chega a uma velocidade maior,
+      // e tem alcance lateral maior. Isso dá à mira um curso de movimento real, separado do
+      // nariz da nave, e evita o movimento errático que vinha de só multiplicar a posição da nave.
+      const targetVelRX = inputState.moveX * RETICLE_SPEED
+      const targetVelRY = inputState.moveY * RETICLE_SPEED
+      const rblend = 1 - Math.exp(-RETICLE_ACCEL_RATE * dt)
+      reticleVelX += (targetVelRX - reticleVelX) * rblend
+      reticleVelY += (targetVelRY - reticleVelY) * rblend
+      reticleX += reticleVelX * dt
+      reticleY += reticleVelY * dt
+
+      if (reticleX > RETICLE_MAX_X) { reticleX = RETICLE_MAX_X; reticleVelX = 0 }
+      else if (reticleX < -RETICLE_MAX_X) { reticleX = -RETICLE_MAX_X; reticleVelX = 0 }
+      if (reticleY > RETICLE_MAX_Y) { reticleY = RETICLE_MAX_Y; reticleVelY = 0 }
+      else if (reticleY < -RETICLE_MAX_Y) { reticleY = -RETICLE_MAX_Y; reticleVelY = 0 }
+
+      reticleWorldPos = noseFrame.position.clone()
+        .addScaledVector(noseFrame.right, reticleX)
+        .addScaledVector(noseFrame.up, reticleY)
+        .addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    }
+
+    // direção de tiro: do nariz da nave até a mira. É ISSO que dá função à mira — o tiro sai
+    // do nariz, mas apontado para onde a mira está. Se a mira está à direita, o tiro sai na
+    // diagonal à direita. Se centrada, o tiro vai reto pra frente.
+    const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
+    if (inputState.firing) combat.tryFire(nosePos, fireDirection)
 
     const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimOrigin: nosePos,
-      aimDirection,
+      aimDirection: fireDirection,
     })
 
-    // posição da mira:
-    //   - sem lock-on: usa a posição lateral CRUA do jogador (rail.getPlayerLateral) amplificada
-    //     por RETICLE_LATERAL_MULT, projetada bem à frente do trilho. Isso dá à mira um curso
-    //     de movimento próprio, independente do nariz da nave — ela cruza a tela mais rápido e
-    //     chega nas bordas antes da nave chegar no limite dela.
-    //   - com lock-on: pula pra cima do alvo travado (o sistema é mantido pro futuro tiro carregado)
+    // posição visual da mira: se há lock-on, pula pro alvo; senão, na posição calculada
     const lockOn = combat.getLockOnTarget()
-    let reticleWorldPos
-    if (lockOn) {
-      reticleWorldPos = lockOn.mesh.position.clone()
-    } else {
-      const lateral = rail.getPlayerLateral()
-      reticleWorldPos = noseFrame.position.clone()
-        .addScaledVector(noseFrame.right, lateral.x * RETICLE_LATERAL_MULT)
-        .addScaledVector(noseFrame.up, lateral.y * RETICLE_LATERAL_MULT)
-        .addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
-    }
-    const ndc = reticleWorldPos.project(camera)
+    const reticleScreenPos = lockOn ? lockOn.mesh.position.clone() : reticleWorldPos
+    const ndc = reticleScreenPos.project(camera)
     hud.setReticlePosition(
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
       THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
