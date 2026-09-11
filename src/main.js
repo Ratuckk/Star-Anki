@@ -567,15 +567,28 @@ function mountGame(session) {
     const aimDirection = camera.getWorldDirection(new THREE.Vector3())
     if (inputState.firing) combat.tryFire(nosePos, aimDirection)
 
-    const aimPoint = nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
-    const ndc = aimPoint.project(camera)
-    hud.setReticlePosition(THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1), THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1))
-
     const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
-    const events = combat.update(dt, playerPos, { enemiesActive })
+    // passa a origem e a direção da mira pro combat: é o que permite o lock-on ser recalculado
+    // a cada frame e ficar disponível tanto pro tiro quanto pra posição da mira abaixo
+    const events = combat.update(dt, playerPos, {
+      enemiesActive,
+      aimOrigin: nosePos,
+      aimDirection,
+    })
 
-    // efeitos visuais: rastro do motor sempre ativo (a nave está sempre se movendo, em trilho ou
-    // arena), com cadência proporcional ao boost atual
+    // posição da mira: se há alvo travado, pula em cima dele; senão, livre-arbítrio à frente do nariz.
+    // o clamp é redundante com o do hud mas mantém a intenção explícita (fora da tela = ignorar)
+    const lockOn = combat.getLockOnTarget()
+    const reticleWorldPos = lockOn
+      ? lockOn.mesh.position.clone()
+      : nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    const ndc = reticleWorldPos.project(camera)
+    hud.setReticlePosition(
+      THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
+      THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
+    )
+    hud.setReticleLocked(!!lockOn)
+
     effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
