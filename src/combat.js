@@ -2,11 +2,6 @@ import * as THREE from 'three'
 
 const PROJECTILE_SPEED = 60
 const PROJECTILE_MAX_RANGE = 260
-// tiros paralelos, deslocados lateralmente pelo eixo perpendicular à direção mirada — não é um
-// cone. Antes era um ângulo fixo por tiro (5°), mas a 150 unidades (distância do alvo de quiz)
-// isso virava ~6.5 unidades de desvio lateral, contra um raio de acerto de 1.3: o "projétil
-// extra" do buff na prática fazia o tiro mais externo ERRAR. Paralelos resolvem isso — todos
-// voam na direção mirada e só se deslocam de lado a partir do nariz.
 const PROJECTILE_LATERAL_SPACING = 1.6
 const PASS_BEHIND = -4
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
@@ -48,14 +43,8 @@ const ENEMY_PROJECTILE_SPEED = 26
 const ENEMY_PROJECTILE_MAX_RANGE = 100
 const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 
-// dispersão fixa aplicada UMA vez, no instante do disparo — o tiro continua em linha reta (não persegue),
-// mas erra de vez em quando, o que deixa visível que NÃO é teleguiado
 const ENEMY_AIM_ERROR_DEG = 5
 
-// alvo bônus SIMPLES (só pontos, sem pergunta) — verde esmeralda, bem distinto do dourado
-// especial abaixo (que é um TorusKnot cor de creme). Antes era dourado, o que fazia os dois
-// serem confundidos à distância; o verde não colide com nenhuma outra cor do jogo (inimigo é
-// vermelho, redutor de tempo é roxo, alvos de pergunta são azul/âmbar/magenta/ciano).
 const BONUS_COLOR = 0x2bff6b
 const BONUS_SPAWN_DISTANCE_MIN = 90
 const BONUS_SPAWN_DISTANCE_MAX = 140
@@ -65,8 +54,6 @@ const BONUS_HIT_RADIUS = 1.6
 const BONUS_DEATH_DURATION = 0.2
 const BONUS_KILL_BONUS = 50
 
-// inimigo dourado ESPECIAL (pergunta bônus + All-Range) — visual diferente do bônus simples acima:
-// geometria de nó de toro (em vez do dodecaedro), emissive mais forte e pulso de escala animado
 const GOLDEN_SPECIAL_COLOR = 0xfff2a0
 const GOLDEN_SPECIAL_EMISSIVE = 0xffb300
 const GOLDEN_SPECIAL_HIT_RADIUS = 2.2
@@ -74,7 +61,6 @@ const GOLDEN_SPECIAL_DEATH_DURATION = 0.25
 const GOLDEN_SPECIAL_PULSE_SPEED = 4
 const GOLDEN_SPECIAL_PULSE_AMOUNT = 0.18
 
-// inimigo normal redutor de tempo — roxo elétrico, silhueta de ampulheta (dois cones ponta a ponta)
 const TIME_ENEMY_COLOR = 0xb026ff
 const TIME_ENEMY_EMISSIVE = 0x4b0082
 const TIME_ENEMY_SPAWN_DISTANCE_MIN = 90
@@ -86,9 +72,6 @@ const TIME_ENEMY_DEATH_DURATION = 0.2
 export const TIME_REDUCTION_MIN_MS = 3000
 export const TIME_REDUCTION_MAX_MS = 20000
 
-// effects é opcional (compatibilidade) — se passado, é chamado pra disparar explosões no ponto
-// exato da morte de cada alvo/inimigo e muzzle flash no disparo. Se null/undefined, o jogo
-// funciona igual, só sem os efeitos visuais.
 export function createCombatSystem(scene, rail, effects = null) {
   const projectiles = []
   const quizTargets = []
@@ -141,12 +124,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     return { position, right: frame.right, up: frame.up }
   }
 
-  // segue a curva de verdade (frame no arco futuro), em vez de extrapolar em linha reta a partir da
-  // tangente atual — o trilho curva bastante (~60° a cada 70-90 unidades), então um alvo que precisa
-  // continuar alcançável por um bom tempo enquanto o trilho avança (inimigo, bônus) tem que nascer
-  // onde a nave vai de fato passar, não onde a tangente de agora aponta. Alvos de quiz não usam isso:
-  // eles nascem com o trilho pausado (distance congelada) bem na frente da câmera fixa, então a
-  // extrapolação em linha reta de projectAhead() continua certa pra eles.
   function projectAheadOnPath(distanceAhead) {
     const frame = rail.getFrameAt(distanceAhead)
     return { position: frame.position.clone(), right: frame.right, up: frame.up }
@@ -163,12 +140,16 @@ export function createCombatSystem(scene, rail, effects = null) {
   let cooldown = 0
   let fireCooldownDuration = DEFAULT_FIRE_COOLDOWN
   let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
-  // 2 por padrão (canhões duplos estilo Arwing do Star Fox 64); sobe até 4 com o buff de acerto
   let projectileCount = 2
   let enemyAggression = 1
   let quizRoomActive = false
   let quizShotsFired = 0
   let elapsed = 0
+
+  // alvo travado pela mira assistida, recalculado a cada update() (não só no disparo). main.js lê
+  // isso via getLockOnTarget() pra mover a mira em cima do alvo — é o que dá a sensação de
+  // "travou" do Star Fox 64, em vez da mira ficar parada enquanto o tiro desvia sozinho.
+  let currentLockOn = null
 
   function removeProjectile(p) {
     scene.remove(p.mesh)
@@ -207,25 +188,32 @@ export function createCombatSystem(scene, rail, effects = null) {
     return ms / enemyAggression / 1000
   }
 
-  function fire(origin, direction) {
-    let shotDirection = direction.clone()
-    let closestAngle = aimAssistAngle
-    let lockedTarget = null
-
+  // acha o alvo de quiz mais alinhado com a direção de mira dentro do cone de aim assist.
+  // usado tanto pelo fire() (pra desviar o tiro) quanto pelo update() (pra mover a mira).
+  function findLockOnTarget(origin, direction) {
+    let best = null
+    let bestAngle = aimAssistAngle
     for (const target of quizTargets) {
       if (target.dying) continue
       const toTarget = target.mesh.position.clone().sub(origin).normalize()
-      const angle = Math.acos(THREE.MathUtils.clamp(shotDirection.dot(toTarget), -1, 1))
-      if (angle < closestAngle) {
-        closestAngle = angle
-        lockedTarget = target
+      const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
+      if (angle < bestAngle) {
+        bestAngle = angle
+        best = target
       }
     }
+    return best
+  }
 
-    if (lockedTarget) shotDirection = lockedTarget.mesh.position.clone().sub(origin).normalize()
+  function fire(origin, direction) {
+    let shotDirection = direction.clone()
 
-    // eixo perpendicular à direção do tiro, no plano horizontal — é ao longo dele que os tiros
-    // paralelos são deslocados (o "eixo lateral" entre os canhões da nave)
+    // reusa o alvo travado pelo update() deste frame em vez de recalcular — assim mira e tiro
+    // saem do mesmo cálculo e nunca dessincronizam
+    if (currentLockOn && !currentLockOn.dying) {
+      shotDirection = currentLockOn.mesh.position.clone().sub(origin).normalize()
+    }
+
     const lateralAxis = new THREE.Vector3().crossVectors(shotDirection, WORLD_UP)
     if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
     lateralAxis.normalize()
@@ -239,15 +227,9 @@ export function createCombatSystem(scene, rail, effects = null) {
       projectiles.push({ mesh, velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0 })
     }
 
-    // flash no nariz, na direção do tiro (não na direção bruta da câmera, senão o flash
-    // ficaria desalinhado quando a mira assistida corrige pra um alvo)
     if (effects) effects.muzzleFlash(origin, shotDirection)
   }
 
-  // mira só no instante do disparo, não persegue depois — um tiro que se realinha a cada frame com a posição
-  // atual do jogador é impossível de desviar de verdade; disparado em linha reta, o jogador pode sair da rota.
-  // além disso, aplica um erro angular fixo no disparo (ENEMY_AIM_ERROR_DEG) pra o tiro errar de vez em
-  // quando e deixar explícito que é reto, não teleguiado
   function fireEnemyProjectile(enemy, playerPosition) {
     const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
     mesh.position.copy(enemy.mesh.position)
@@ -556,6 +538,10 @@ export function createCombatSystem(scene, rail, effects = null) {
 
     getQuizShotsFired: () => quizShotsFired,
 
+    // alvo travado pela mira assistida neste instante (ou null). main.js usa isso pra mover a
+    // mira em cima do alvo e ligar o feedback visual de "travado".
+    getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
+
     setFireCooldown(seconds) { fireCooldownDuration = seconds },
     setAimAssistAngle(radians) { aimAssistAngle = radians },
     setProjectileCount(n) { projectileCount = n },
@@ -563,8 +549,19 @@ export function createCombatSystem(scene, rail, effects = null) {
 
     update(dt, playerPosition, opts = {}) {
       const enemiesActive = opts.enemiesActive !== false
+      const aimOrigin = opts.aimOrigin
+      const aimDirection = opts.aimDirection
       elapsed += dt
       cooldown = Math.max(0, cooldown - dt)
+
+      // recalcula o alvo travado ANTES de mover projéteis: se um projétil matar o alvo travado
+      // neste frame, o update() seguinte já vai ver o alvo como dying e soltar o lock sozinho
+      if (aimOrigin && aimDirection) {
+        currentLockOn = findLockOnTarget(aimOrigin, aimDirection)
+      } else {
+        currentLockOn = null
+      }
+
       const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs } = updateProjectiles(dt)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
