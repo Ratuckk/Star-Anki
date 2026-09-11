@@ -86,7 +86,10 @@ const TIME_ENEMY_DEATH_DURATION = 0.2
 export const TIME_REDUCTION_MIN_MS = 3000
 export const TIME_REDUCTION_MAX_MS = 20000
 
-export function createCombatSystem(scene, rail) {
+// effects é opcional (compatibilidade) — se passado, é chamado pra disparar explosões no ponto
+// exato da morte de cada alvo/inimigo e muzzle flash no disparo. Se null/undefined, o jogo
+// funciona igual, só sem os efeitos visuais.
+export function createCombatSystem(scene, rail, effects = null) {
   const projectiles = []
   const quizTargets = []
   const enemies = []
@@ -235,6 +238,10 @@ export function createCombatSystem(scene, rail) {
       scene.add(mesh)
       projectiles.push({ mesh, velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0 })
     }
+
+    // flash no nariz, na direção do tiro (não na direção bruta da câmera, senão o flash
+    // ficaria desalinhado quando a mira assistida corrige pra um alvo)
+    if (effects) effects.muzzleFlash(origin, shotDirection)
   }
 
   // mira só no instante do disparo, não persegue depois — um tiro que se realinha a cada frame com a posição
@@ -247,7 +254,6 @@ export function createCombatSystem(scene, rail) {
 
     const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
 
-    // dispersão aplicada uma única vez aqui; depois a velocidade é constante e o projétil só anda em linha reta
     const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * ENEMY_AIM_ERROR_DEG)
     const errAxis = new THREE.Vector3(
       Math.random() - 0.5,
@@ -278,6 +284,7 @@ export function createCombatSystem(scene, rail) {
         targetHit.dying = true
         targetHit.deathT = 0
         if (!hitEvent) hitEvent = { slot: targetHit.slot, isCorrect: targetHit.isCorrect }
+        if (effects) effects.explosion(targetHit.mesh.position, targetHit.colorHex ?? 0xffffff, 0.9)
         removeProjectile(projectile)
         continue
       }
@@ -293,6 +300,7 @@ export function createCombatSystem(scene, rail) {
         enemyKills += 1
         enemyKillPoints += ENEMY_KILL_BONUS
         if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+        if (effects) effects.explosion(enemyHit.mesh.position, enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
         removeProjectile(projectile)
         continue
       }
@@ -302,6 +310,7 @@ export function createCombatSystem(scene, rail) {
         bonusHit.dying = true
         bonusHit.deathT = 0
         bonusKillPoints += BONUS_KILL_BONUS
+        if (effects) effects.explosion(bonusHit.mesh.position, BONUS_COLOR, 0.9)
         removeProjectile(projectile)
         continue
       }
@@ -311,6 +320,7 @@ export function createCombatSystem(scene, rail) {
         goldenHit.dying = true
         goldenHit.deathT = 0
         goldenSpecialHit = true
+        if (effects) effects.explosion(goldenHit.mesh.position, GOLDEN_SPECIAL_COLOR, 1.8)
         removeProjectile(projectile)
         continue
       }
@@ -330,7 +340,6 @@ export function createCombatSystem(scene, rail) {
         if (target.deathT >= 1) removeQuizTarget(target)
         continue
       }
-      // alvos de chefe não somem por "passar de trás" — na arena livre o jogador vira em qualquer direção pra procurar
       if (target.noCull) continue
       const relative = target.mesh.position.clone().sub(frame.position)
       if (relative.dot(frame.forward) < PASS_BEHIND) removeQuizTarget(target)
@@ -351,7 +360,6 @@ export function createCombatSystem(scene, rail) {
     }
   }
 
-  // sem culling por "passar de trás": o dourado especial só existe dentro da arena livre, onde o jogador vira em qualquer direção
   function updateGoldenTargets(dt) {
     const pulse = 1 + Math.sin(elapsed * GOLDEN_SPECIAL_PULSE_SPEED) * GOLDEN_SPECIAL_PULSE_AMOUNT
     for (const g of [...goldenTargets]) {
@@ -462,7 +470,6 @@ export function createCombatSystem(scene, rail) {
       }
     },
 
-    // reaproveita a mesma distribuição esférica de spawnBossTargets — o dourado especial força All-Range igual ao chefe
     spawnGoldenSpecial(opts = {}) {
       const { distanceMin = 40, distanceMax = 90 } = opts
       const frame = rail.getFrameAt(0)
@@ -498,7 +505,14 @@ export function createCombatSystem(scene, rail) {
         const mesh = makeQuizTargetMesh(alt)
         mesh.position.copy(position)
         scene.add(mesh)
-        quizTargets.push({ mesh, slot: alt.slot, isCorrect: alt.isCorrect, dying: false, deathT: 0 })
+        quizTargets.push({
+          mesh,
+          slot: alt.slot,
+          isCorrect: alt.isCorrect,
+          dying: false,
+          deathT: 0,
+          colorHex: SHAPE_COLOR[alt.color] ?? 0xffffff,
+        })
       }
     },
 
@@ -520,11 +534,18 @@ export function createCombatSystem(scene, rail) {
         const mesh = makeQuizTargetMesh(alt)
         mesh.position.copy(frame.position.clone().add(offset))
         scene.add(mesh)
-        quizTargets.push({ mesh, slot: alt.slot, isCorrect: alt.isCorrect, dying: false, deathT: 0, noCull: true })
+        quizTargets.push({
+          mesh,
+          slot: alt.slot,
+          isCorrect: alt.isCorrect,
+          dying: false,
+          deathT: 0,
+          noCull: true,
+          colorHex: SHAPE_COLOR[alt.color] ?? 0xffffff,
+        })
       }
     },
 
-    // deixa alvos já em animação de morte terminarem sozinhos via updateQuizTargets; só remove os que ainda não foram atingidos
     clearQuizTargets() {
       quizRoomActive = false
       for (const target of [...quizTargets]) {
