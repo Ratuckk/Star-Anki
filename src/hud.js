@@ -16,15 +16,53 @@ function showScreen(name) {
   document.getElementById('painel-screen').hidden = name !== 'painel'
 }
 
-export function showLoadScreen(onLoad) {
+// opts.savedDeck: quando presente, mostra a seção de "baralho salvo" no topo da tela de
+// carregamento. Dois formatos aceitos:
+//   { valid: true, text, deckNames, shooterCount, painelCount }  → botão "Usar baralho salvo" ativo
+//   { valid: false, text }                                        → só aviso + botão "Esquecer"
+// opts.onForget: callback ao clicar em "Esquecer" (limpa o localStorage e re-renderiza)
+export function showLoadScreen(onLoad, opts = {}) {
   showScreen('load')
   const fileInput = document.getElementById('file-input')
   const textarea = document.getElementById('paste-textarea')
   const btn = document.getElementById('load-btn')
   const message = document.getElementById('load-message')
+
+  const savedSection = document.getElementById('saved-deck-section')
+  const savedInfo = document.getElementById('saved-deck-info')
+  const savedUseBtn = document.getElementById('saved-deck-use-btn')
+  const savedForgetBtn = document.getElementById('saved-deck-forget-btn')
+  const separator = document.getElementById('load-separator')
+
   fileInput.value = ''
   textarea.value = ''
   message.textContent = ''
+
+  const saved = opts.savedDeck
+  if (saved) {
+    savedSection.hidden = false
+    separator.hidden = false
+    savedSection.classList.toggle('invalid', !saved.valid)
+
+    if (saved.valid) {
+      const shooter = saved.shooterCount
+      const painel = saved.painelCount
+      savedInfo.textContent = `${saved.deckNames} — ${shooter} pergunta${shooter === 1 ? '' : 's'} de combate · ${painel} de painel`
+      savedUseBtn.hidden = false
+      savedUseBtn.onclick = () => onLoad(saved.text)
+    } else {
+      savedInfo.textContent = 'O baralho salvo não passou na validação (talvez tenha sido corrompido ou esteja com menos de 4 cartas curtas). Recarregue um arquivo abaixo.'
+      savedUseBtn.hidden = true
+    }
+
+    savedForgetBtn.onclick = () => {
+      if (typeof opts.onForget === 'function') opts.onForget()
+    }
+  } else {
+    savedSection.hidden = true
+    separator.hidden = true
+  }
+
   btn.onclick = () => {
     message.textContent = ''
     const file = fileInput.files[0]
@@ -55,6 +93,12 @@ export function createGameHud() {
   const sceneRoot = document.createElement('div')
   sceneRoot.id = 'scene-root'
   root.appendChild(sceneRoot)
+
+  // vinheta de dano: overlay fullscreen com gradiente vermelho nas bordas. Fica em opacity 0
+  // e ganha a classe .flash por 0.5s quando o jogador toma um hit (main.js chama damageFlash()).
+  const damageVignette = document.createElement('div')
+  damageVignette.className = 'hud-damage-vignette'
+  root.appendChild(damageVignette)
 
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
@@ -190,6 +234,15 @@ export function createGameHud() {
 
     setGoldenActive(active) {
       goldenBanner.hidden = !active
+    },
+
+    // flash vermelho nas bordas quando o jogador toma dano. Reinicia a animação CSS a cada
+    // chamada: remove a classe, força reflow, readiciona — sem isso, dois hits seguidos em
+    // menos de 0.5s não reiniciariam o pulso visual.
+    damageFlash() {
+      damageVignette.classList.remove('flash')
+      void damageVignette.offsetWidth
+      damageVignette.classList.add('flash')
     },
 
     setReticlePosition(xFrac, yFrac) {
