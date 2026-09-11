@@ -21,22 +21,21 @@ const INVINCIBILITY_MS = 1200
 const INVINCIBILITY_FLICKER_MS = 90
 
 // ============ MIRA ============
-// A mira vive em espaço de MUNDO, ancorada no NARIZ da nave. A versão anterior (v0.14.0)
-// colocava a mira 48 unidades à frente — tão longe que ela ficava praticamente no centro da
-// tela, com o movimento visual esmagado pela perspectiva. Esta versão traz a mira pra 15
-// unidades à frente, que é perto o bastante pra ela SE MOVER claramente na tela, e longe o
-// bastante pra o tiro sair num ângulo decente.
+// A mira vive em espaço de MUNDO, ancorada no NARIZ da nave. Ela tem física PRÓPRIA e um
+// alcance MAIOR que o da nave — é isso que faz ela "se mover mais e chegar nas bordas antes".
 //
-// Tiro: sai do nariz, aponta para a mira. Como a mira é o ponto 3D alvo, o tiro passa por ela
-// por construção — não tem como dessincronizar.
+// Comparação direta com a nave (rail.js):
+//   - Nave:  LATERAL_SPEED=22, BOX_X=12, BOX_Y=8
+//   - Mira:  RETICLE_SPEED=35, RETICLE_MAX_X=20, RETICLE_MAX_Y=14
+// Ou seja: mira 60% mais rápida e com 66% mais curso lateral que a nave.
 //
-// Ângulo máximo do tiro: atan(RETICLE_MAX_X / RETICLE_AHEAD) = atan(3/15) ≈ 11°. Suficiente
-// pra mirar qualquer um dos 4 alvos de pergunta (que ficam dentro de ±2° da linha de frente).
-const RETICLE_AHEAD = 15       // distância à frente do nariz onde a mira é posicionada
-const RETICLE_MAX_X = 3        // deslocamento lateral máximo (unidades de mundo)
-const RETICLE_MAX_Y = 2.5      // deslocamento vertical máximo
-const RETICLE_SPEED = 22       // velocidade máxima da mira
-const RETICLE_ACCEL = 26       // resposta da mira
+// O tiro sai do NARIZ e aponta para a MIRA — como os dois são pontos 3D no mesmo espaço, o
+// projétil passa visualmente pela mira por construção.
+const RETICLE_AHEAD = 30       // distância à frente do nariz onde a mira é posicionada
+const RETICLE_MAX_X = 20       // MUITO maior que o da nave (12)
+const RETICLE_MAX_Y = 14       // MUITO maior que o da nave (8)
+const RETICLE_SPEED = 35       // 60% mais rápida que a nave (22)
+const RETICLE_ACCEL = 30       // resposta rápida
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
@@ -587,7 +586,8 @@ function mountGame(session) {
     const nosePos = rail.getShipNosePosition()
 
     // ============ MIRA ============
-    // offset em relação ao nariz, com física própria. Em modo arena, mira centrada.
+    // física própria da mira, mais rápida e com mais alcance que a nave. Em modo arena, mira
+    // centrada (o voo livre já é a mira).
     if (rail.isArena()) {
       reticleX = 0
       reticleY = 0
@@ -608,16 +608,14 @@ function mountGame(session) {
       else if (reticleY < -RETICLE_MAX_Y) { reticleY = -RETICLE_MAX_Y; reticleVelY = 0 }
     }
 
-    // posição 3D da mira: ancorada no NARIZ da nave, deslocada lateral/verticalmente, e
-    // avançada pelo RETICLE_AHEAD no eixo forward
+    // posição 3D da mira: ancorada no NARIZ, deslocada lateral/verticalmente, e avançada pelo
+    // RETICLE_AHEAD no eixo forward
     const reticleWorldPos = nosePos.clone()
       .addScaledVector(noseFrame.right, reticleX)
       .addScaledVector(noseFrame.up, reticleY)
       .addScaledVector(noseFrame.forward, RETICLE_AHEAD)
 
-    // direção do tiro: do NARIZ até a MIRA. Essa é a única fonte de verdade — o tiro parte do
-    // nariz e aponta para onde a mira está no espaço, então passa visualmente por ela por
-    // construção. Não depende do lock-on nem de nada externo.
+    // direção do tiro: do NARIZ até a MIRA — o projétil passa visualmente pela mira por construção
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
     if (inputState.firing) combat.tryFire(nosePos, fireDirection)
