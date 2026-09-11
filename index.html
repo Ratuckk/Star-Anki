@@ -58,7 +58,7 @@
     cursor: pointer;
   }
   button:hover { filter: brightness(1.1); }
-  #load-message {
+  .form-message {
     min-height: 1.4em;
     margin-top: 0.8rem;
     color: #ff8080;
@@ -67,61 +67,103 @@
   .missed-list { margin-top: 1rem; padding-left: 1.2rem; color: #c7ccd4; }
   .missed-list li { margin-bottom: 0.5rem; }
 
-  .saved-deck-section {
-    margin-top: 1.25rem;
-    padding: 1rem 1.1rem;
-    background: #16202b;
-    border: 1px solid #2c4a5c;
-    border-radius: 10px;
-  }
-  .saved-deck-section .saved-deck-title {
-    margin: 0;
-    font-weight: 700;
-    color: #7fe0ff;
-    font-size: 0.95rem;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-  }
-  .saved-deck-section .saved-deck-info {
-    margin: 0.4rem 0 0.9rem;
-    color: #c7ccd4;
-    font-size: 0.95rem;
-  }
-  .saved-deck-section.invalid .saved-deck-title { color: #ff8080; }
-  .saved-deck-section.invalid .saved-deck-info { color: #ff8080; }
-  .saved-deck-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-  .saved-deck-actions button { margin-top: 0; }
   .btn-secondary {
     background: transparent;
     color: #c7ccd4;
     border: 1px solid #333944;
   }
   .btn-secondary:hover { background: #1e242e; filter: none; }
-  .load-separator {
-    position: relative;
-    margin: 1.5rem 0 1rem;
-    color: #6a7382;
-    font-size: 0.85rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    text-align: center;
-  }
-  .load-separator::before, .load-separator::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    width: 30%;
-    height: 1px;
-    background: #2a313c;
-  }
-  .load-separator::before { left: 0; }
-  .load-separator::after { right: 0; }
+  .btn-danger { background: #3a1f1f; color: #ff8080; border: 1px solid #5c2c2c; }
+  .btn-danger:hover { background: #4a2626; filter: none; }
 
   .painel-progress { color: #9aa4b2; font-weight: 600; margin: 1.5rem 0 0.5rem; }
   .painel-question { font-size: 1.4rem; font-weight: 700; }
   .painel-answer { font-size: 1.2rem; color: #6bffb0; margin-top: 1rem; }
   .painel-actions { display: flex; gap: 1rem; }
   .painel-actions button { margin-top: 1rem; }
+
+  /* ============ PRÉ-JOGO / GERENCIADOR DE BARALHOS / EDITOR / CONFIGURAÇÕES ============ */
+  .menu-actions { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem; }
+  .menu-actions button { margin-top: 0; width: 100%; }
+  .btn-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .btn-row button { margin-top: 0; }
+  .back-link {
+    background: none; border: none; color: #7fe0ff; font-weight: 600; font-size: 0.95rem;
+    padding: 0; margin: 0 0 1rem; cursor: pointer;
+  }
+  .back-link:hover { text-decoration: underline; }
+
+  .deck-list { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 1rem; }
+  .deck-card {
+    background: #16202b; border: 1px solid #2c4a5c; border-radius: 10px; padding: 1rem 1.1rem;
+  }
+  .deck-card.invalid { border-color: #5c2c2c; }
+  .deck-card-name { margin: 0; font-weight: 700; font-size: 1.05rem; }
+  .deck-card-meta { margin: 0.3rem 0 0.8rem; color: #9aa4b2; font-size: 0.9rem; }
+  .deck-card.invalid .deck-card-meta { color: #ff8080; }
+  .deck-card button.btn-small { font-size: 0.9rem; padding: 0.45rem 0.8rem; margin-top: 0; }
+
+  .deck-preview { margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid #2a313c; }
+  .deck-preview ul { margin: 0.4rem 0 0; padding-left: 1.1rem; color: #c7ccd4; font-size: 0.9rem; }
+  .deck-preview li { margin-bottom: 0.3rem; }
+  .disclosure-toggle {
+    background: none; border: 1px dashed #333944; color: #9aa4b2; font-weight: 600; font-size: 0.85rem;
+    padding: 0.4rem 0.7rem; margin-top: 0.6rem; border-radius: 6px; cursor: pointer;
+  }
+  .disclosure-toggle:hover { color: #f5f5f7; border-color: #5a6472; }
+
+  .settings-section {
+    margin-top: 1.5rem; padding: 1rem 1.1rem; background: #16202b; border: 1px solid #2c4a5c; border-radius: 10px;
+  }
+  .settings-section h3 { margin: 0 0 0.8rem; font-size: 1rem; color: #7fe0ff; text-transform: uppercase; letter-spacing: 0.02em; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.7rem; }
+  .settings-row:last-child { margin-bottom: 0; }
+  .settings-row label { margin: 0; font-weight: 500; }
+  .settings-row input[type="number"] { width: 5rem; padding: 0.4rem; font-size: 1rem; background: #171a21; color: #f5f5f7; border: 1px solid #333944; border-radius: 6px; }
+
+  .keybind-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.4rem 0; border-bottom: 1px solid #232a33; }
+  .keybind-row:last-child { border-bottom: none; }
+  .keybind-btn {
+    background: #171a21; border: 1px solid #333944; color: #f5f5f7; font-weight: 600; font-size: 0.9rem;
+    padding: 0.4rem 0.8rem; border-radius: 6px; margin: 0; cursor: pointer; min-width: 4.5rem;
+  }
+  .keybind-btn.waiting { color: #ffd166; border-color: #ffd166; }
+
+  .gamepad-diag { margin-top: 0.6rem; font-size: 0.85rem; color: #c7ccd4; }
+  .gamepad-diag .gp-status { color: #9aa4b2; margin-bottom: 0.6rem; }
+  .gp-axis-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+  .gp-axis-label { width: 4.5rem; flex-shrink: 0; }
+  .gp-axis-bar { flex: 1; height: 8px; background: #171a21; border: 1px solid #333944; border-radius: 4px; position: relative; overflow: hidden; }
+  .gp-axis-fill { position: absolute; top: 0; bottom: 0; background: #5ce1ff; width: 50%; left: 25%; }
+  .gp-buttons { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.5rem 0; }
+  .gp-btn-chip {
+    width: 1.9rem; height: 1.9rem; border-radius: 4px; background: #171a21; border: 1px solid #333944;
+    color: #9aa4b2; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
+  }
+  .gp-btn-chip.pressed { background: #5ce1ff; color: #0b0d12; border-color: #5ce1ff; }
+  .gp-btn-chip.selected { border-color: #ffd166; color: #ffd166; }
+  .gp-btn-chip { cursor: pointer; }
+
+  /* ============ DEBUG PANEL ============ */
+  .debug-panel {
+    position: absolute; top: 12px; right: 12px; width: 260px; max-height: calc(100vh - 24px);
+    overflow-y: auto; background: rgba(11, 13, 18, 0.92); border: 1px solid #3a4a5c; border-radius: 10px;
+    padding: 0.8rem; font-size: 0.82rem; color: #f5f5f7; z-index: 20;
+  }
+  .debug-panel h4 { margin: 0 0 0.6rem; color: #ffd166; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .debug-panel button {
+    display: block; width: 100%; margin: 0 0 0.4rem; font-size: 0.82rem; font-weight: 600;
+    padding: 0.4rem 0.6rem; background: #232d38; color: #f5f5f7; border: 1px solid #3a4a5c; border-radius: 6px; cursor: pointer;
+  }
+  .debug-panel button:hover { background: #2c3a48; filter: none; }
+  .debug-panel button.active { background: #2bff6b; color: #0b0d12; border-color: #2bff6b; }
+  .debug-hint { color: #6a7382; font-size: 0.75rem; margin: 0 0 0.6rem; }
+
+  .enemy-health-bar {
+    position: absolute; width: 44px; height: 6px; transform: translate(-50%, -100%);
+    background: rgba(11, 13, 18, 0.7); border: 1px solid #333944; border-radius: 3px; overflow: hidden; pointer-events: none;
+  }
+  .enemy-health-bar-fill { height: 100%; background: #ff9d4d; }
 
   #game-screen {
     position: fixed;
@@ -334,28 +376,9 @@
 </head>
 <body>
 <div id="app">
-  <div id="load-screen">
-    <h1>Star Anki <span class="version-tag">v0.13.0</span></h1>
-    <p>Carregue um baralho exportado do Anki (formato .txt, notas com campos separados).</p>
-
-    <div id="saved-deck-section" class="saved-deck-section" hidden>
-      <p class="saved-deck-title">Baralho salvo</p>
-      <p id="saved-deck-info" class="saved-deck-info"></p>
-      <div class="saved-deck-actions">
-        <button id="saved-deck-use-btn">Usar baralho salvo</button>
-        <button id="saved-deck-forget-btn" class="btn-secondary">Esquecer</button>
-      </div>
-    </div>
-
-    <div id="load-separator" class="load-separator" hidden>ou carregar outro</div>
-
-    <label for="file-input">Arquivo .txt</label>
-    <input type="file" id="file-input" accept=".txt">
-    <label for="paste-textarea">Ou cole o texto exportado</label>
-    <textarea id="paste-textarea" rows="8" placeholder="Cole aqui o conteúdo exportado do Anki"></textarea>
-    <button id="load-btn">Carregar baralho</button>
-    <div id="load-message" role="alert"></div>
-  </div>
+  <div id="pregame-screen"></div>
+  <div id="deck-manager-screen" hidden></div>
+  <div id="settings-screen" hidden></div>
   <div id="sector-end-screen" hidden></div>
   <div id="painel-screen" hidden></div>
 </div>
@@ -366,6 +389,18 @@
     "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
   }
 }
+</script>
+<script>
+  // Ping periódico pro servidor de tools/run-game.mjs enquanto esta janela estiver aberta — ele
+  // se encerra sozinho se parar de receber ping (janela fechada). Inofensivo quando o jogo é
+  // servido de outra forma (ex: preview_start do Claude, ou "python -m http.server"): o endpoint
+  // /__ping só existe nesse launcher específico, e o parâmetro ?launcher=1 só aparece quando ele
+  // mesmo abre o navegador.
+  if (new URLSearchParams(location.search).get('launcher') === '1') {
+    const ping = () => fetch('/__ping', { keepalive: true }).catch(() => {})
+    ping()
+    setInterval(ping, 2000)
+  }
 </script>
 <script type="module" src="./src/main.js"></script>
 </body>

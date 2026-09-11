@@ -24,6 +24,7 @@ function shuffle(array) {
 export function createSession(deck, opts = {}) {
   const { shooterCards } = deck
   const history = opts.history || {}
+  const startingShields = opts.startingShields ?? STARTING_SHIELDS
   const sectorSize = Math.min(SECTOR_SIZE, shooterCards.length)
 
   const withErrors = shuffle(shooterCards.filter((c) => (history[c.guid]?.erros ?? 0) > 0))
@@ -36,7 +37,7 @@ export function createSession(deck, opts = {}) {
   return {
     queue,
     pointer: 0,
-    shields: STARTING_SHIELDS,
+    shields: startingShields,
     comboMultiplier: 1.0,
     score: 0,
     log: [],

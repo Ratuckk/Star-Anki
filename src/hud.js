@@ -1,3 +1,9 @@
+import { buildDeck } from './anki.js'
+import { listDecks, addDeck, updateDeck, removeDeck, getDeck } from './decks.js'
+import { getSettings, setSetting } from './settings.js'
+import { getBindings, setBinding, resetToDefaults, setGamepadBinding, codeToLabel, ACTIONS } from './keybindings.js'
+import { DEBUG_ACTIONS } from './debug.js'
+
 const COLOR_MAP = { azul: '#4da6ff', 'âmbar': '#ffb84d', magenta: '#ff4dd2', ciano: '#4dfff2' }
 
 function shapeMarkup(shape, hex) {
@@ -10,74 +16,584 @@ function shapeMarkup(shape, hex) {
 }
 
 function showScreen(name) {
-  document.getElementById('load-screen').hidden = name !== 'load'
+  document.getElementById('pregame-screen').hidden = name !== 'pregame'
+  document.getElementById('deck-manager-screen').hidden = name !== 'deckManager'
+  document.getElementById('settings-screen').hidden = name !== 'settings'
   document.getElementById('game-screen').hidden = name !== 'game'
   document.getElementById('sector-end-screen').hidden = name !== 'end'
   document.getElementById('painel-screen').hidden = name !== 'painel'
 }
 
-export function showLoadScreen(onLoad, opts = {}) {
-  showScreen('load')
-  const fileInput = document.getElementById('file-input')
-  const textarea = document.getElementById('paste-textarea')
-  const btn = document.getElementById('load-btn')
-  const message = document.getElementById('load-message')
+export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
+  showScreen('pregame')
+  const root = document.getElementById('pregame-screen')
+  root.innerHTML = ''
 
-  const savedSection = document.getElementById('saved-deck-section')
-  const savedInfo = document.getElementById('saved-deck-info')
-  const savedUseBtn = document.getElementById('saved-deck-use-btn')
-  const savedForgetBtn = document.getElementById('saved-deck-forget-btn')
-  const separator = document.getElementById('load-separator')
+  const title = document.createElement('h1')
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.15.0</span>'
+  root.appendChild(title)
 
-  fileInput.value = ''
-  textarea.value = ''
-  message.textContent = ''
+  const desc = document.createElement('p')
+  desc.textContent = 'Transforme um baralho exportado do Anki num rail shooter de estudo.'
+  root.appendChild(desc)
 
-  const saved = opts.savedDeck
-  if (saved) {
-    savedSection.hidden = false
-    separator.hidden = false
-    savedSection.classList.toggle('invalid', !saved.valid)
+  const actions = document.createElement('div')
+  actions.className = 'menu-actions'
 
-    if (saved.valid) {
-      const shooter = saved.shooterCount
-      const painel = saved.painelCount
-      savedInfo.textContent = `${saved.deckNames} — ${shooter} pergunta${shooter === 1 ? '' : 's'} de combate · ${painel} de painel`
-      savedUseBtn.hidden = false
-      savedUseBtn.onclick = () => onLoad(saved.text)
-    } else {
-      savedInfo.textContent = 'O baralho salvo não passou na validação (talvez tenha sido corrompido ou esteja com menos de 4 cartas curtas). Recarregue um arquivo abaixo.'
-      savedUseBtn.hidden = true
-    }
+  const playBtn = document.createElement('button')
+  playBtn.textContent = 'Jogar'
+  playBtn.addEventListener('click', onPlay)
+  actions.appendChild(playBtn)
 
-    savedForgetBtn.onclick = () => {
-      if (typeof opts.onForget === 'function') opts.onForget()
-    }
-  } else {
-    savedSection.hidden = true
-    separator.hidden = true
+  const addBtn = document.createElement('button')
+  addBtn.className = 'btn-secondary'
+  addBtn.textContent = 'Adicionar baralho'
+  addBtn.addEventListener('click', onAddDeck)
+  actions.appendChild(addBtn)
+
+  const settingsBtn = document.createElement('button')
+  settingsBtn.className = 'btn-secondary'
+  settingsBtn.textContent = 'Configurações'
+  settingsBtn.addEventListener('click', onSettings)
+  actions.appendChild(settingsBtn)
+
+  root.appendChild(actions)
+}
+
+// Gerenciador de baralhos: lista/adiciona/edita/exclui baralhos salvos e mostra preview das
+// perguntas (normais visíveis, extras ocultas atrás de um disclosure). Autocontido — lê/escreve
+// direto em decks.js, só chama pra fora nas intenções de navegação (jogar, voltar).
+export function showDeckManager({ onPlay, onBack, startInAdd = false }) {
+  showScreen('deckManager')
+  const root = document.getElementById('deck-manager-screen')
+
+  let view = startInAdd ? 'add' : 'list'
+  let editingId = null
+  const expandedPreview = new Set()
+  const expandedExtras = new Set()
+
+  render()
+
+  function render() {
+    root.innerHTML = ''
+
+    const back = document.createElement('button')
+    back.className = 'back-link'
+    back.textContent = '← Voltar'
+    back.addEventListener('click', onBack)
+    root.appendChild(back)
+
+    if (view === 'list') renderList()
+    else if (view === 'add') renderAddForm()
+    else if (view === 'edit') renderEditForm()
   }
 
-  btn.onclick = () => {
-    message.textContent = ''
-    const file = fileInput.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = () => onLoad(String(reader.result))
-      reader.readAsText(file)
-      return
+  function renderList() {
+    const title = document.createElement('h2')
+    title.textContent = 'Baralhos salvos'
+    root.appendChild(title)
+
+    const decks = listDecks()
+
+    if (decks.length === 0) {
+      const empty = document.createElement('p')
+      empty.textContent = 'Nenhum baralho salvo ainda.'
+      root.appendChild(empty)
     }
-    const pasted = textarea.value.trim()
-    if (!pasted) {
-      message.textContent = 'Selecione um arquivo .txt ou cole o texto exportado.'
-      return
+
+    const list = document.createElement('div')
+    list.className = 'deck-list'
+    for (const d of decks) list.appendChild(buildDeckCard(d))
+    root.appendChild(list)
+
+    const addBtn = document.createElement('button')
+    addBtn.textContent = 'Adicionar baralho'
+    addBtn.addEventListener('click', () => { view = 'add'; render() })
+    root.appendChild(addBtn)
+  }
+
+  function buildDeckCard(d) {
+    const card = document.createElement('div')
+    card.className = 'deck-card' + (d.valid ? '' : ' invalid')
+
+    const name = document.createElement('p')
+    name.className = 'deck-card-name'
+    name.textContent = d.name
+    card.appendChild(name)
+
+    const meta = document.createElement('p')
+    meta.className = 'deck-card-meta'
+    meta.textContent = d.valid
+      ? `${d.shooterCount} pergunta${d.shooterCount === 1 ? '' : 's'} de combate · ${d.painelCount} de painel`
+      : `Inválido: ${d.warning}`
+    card.appendChild(meta)
+
+    const btnRow = document.createElement('div')
+    btnRow.className = 'btn-row'
+
+    if (d.valid) {
+      const playBtn = document.createElement('button')
+      playBtn.className = 'btn-small'
+      playBtn.textContent = 'Jogar'
+      playBtn.addEventListener('click', () => onPlay(d.id))
+      btnRow.appendChild(playBtn)
     }
-    onLoad(pasted)
+
+    const editBtn = document.createElement('button')
+    editBtn.className = 'btn-small btn-secondary'
+    editBtn.textContent = 'Editar'
+    editBtn.addEventListener('click', () => { view = 'edit'; editingId = d.id; render() })
+    btnRow.appendChild(editBtn)
+
+    const delBtn = document.createElement('button')
+    delBtn.className = 'btn-small btn-danger'
+    delBtn.textContent = 'Excluir'
+    delBtn.addEventListener('click', () => {
+      if (!window.confirm(`Excluir o baralho "${d.name}"?`)) return
+      removeDeck(d.id)
+      render()
+    })
+    btnRow.appendChild(delBtn)
+
+    card.appendChild(btnRow)
+
+    if (d.valid) {
+      const previewToggle = document.createElement('button')
+      previewToggle.className = 'disclosure-toggle'
+      previewToggle.textContent = expandedPreview.has(d.id) ? 'Ocultar perguntas ▲' : 'Ver perguntas ▾'
+      previewToggle.addEventListener('click', () => {
+        if (expandedPreview.has(d.id)) expandedPreview.delete(d.id)
+        else expandedPreview.add(d.id)
+        render()
+      })
+      card.appendChild(previewToggle)
+
+      if (expandedPreview.has(d.id)) card.appendChild(buildPreview(d.id))
+    }
+
+    return card
+  }
+
+  function buildPreview(id) {
+    const entry = getDeck(id)
+    const built = buildDeck(entry.text)
+    const wrap = document.createElement('div')
+    wrap.className = 'deck-preview'
+
+    const shooterTitle = document.createElement('p')
+    shooterTitle.textContent = `Perguntas normais (${built.shooterCards.length})`
+    wrap.appendChild(shooterTitle)
+    const shooterList = document.createElement('ul')
+    for (const c of built.shooterCards) {
+      const li = document.createElement('li')
+      li.textContent = c.question
+      shooterList.appendChild(li)
+    }
+    wrap.appendChild(shooterList)
+
+    if (built.painelCards.length > 0) {
+      const extrasToggle = document.createElement('button')
+      extrasToggle.className = 'disclosure-toggle'
+      extrasToggle.textContent = expandedExtras.has(id)
+        ? 'Ocultar perguntas extra ▲'
+        : `Mostrar perguntas extra (${built.painelCards.length}) ▾`
+      extrasToggle.addEventListener('click', () => {
+        if (expandedExtras.has(id)) expandedExtras.delete(id)
+        else expandedExtras.add(id)
+        render()
+      })
+      wrap.appendChild(extrasToggle)
+
+      if (expandedExtras.has(id)) {
+        const extrasList = document.createElement('ul')
+        for (const c of built.painelCards) {
+          const li = document.createElement('li')
+          li.textContent = c.question
+          extrasList.appendChild(li)
+        }
+        wrap.appendChild(extrasList)
+      }
+    }
+
+    return wrap
+  }
+
+  function renderAddForm() {
+    const title = document.createElement('h2')
+    title.textContent = 'Adicionar baralho'
+    root.appendChild(title)
+
+    const p = document.createElement('p')
+    p.textContent = 'Carregue um baralho exportado do Anki (formato .txt, notas com campos separados).'
+    root.appendChild(p)
+
+    const nameLabel = document.createElement('label')
+    nameLabel.textContent = 'Nome do baralho'
+    root.appendChild(nameLabel)
+    const nameInput = document.createElement('input')
+    nameInput.type = 'text'
+    nameInput.placeholder = 'Ex: Arquitetura de computadores'
+    root.appendChild(nameInput)
+
+    const fileLabel = document.createElement('label')
+    fileLabel.textContent = 'Arquivo .txt'
+    root.appendChild(fileLabel)
+    const fileInput = document.createElement('input')
+    fileInput.type = 'file'
+    fileInput.accept = '.txt'
+    root.appendChild(fileInput)
+
+    const textLabel = document.createElement('label')
+    textLabel.textContent = 'Ou cole o texto exportado'
+    root.appendChild(textLabel)
+    const textarea = document.createElement('textarea')
+    textarea.rows = 8
+    textarea.placeholder = 'Cole aqui o conteúdo exportado do Anki'
+    root.appendChild(textarea)
+
+    const message = document.createElement('div')
+    message.className = 'form-message'
+    root.appendChild(message)
+
+    const btnRow = document.createElement('div')
+    btnRow.className = 'btn-row'
+
+    const submitBtn = document.createElement('button')
+    submitBtn.textContent = 'Salvar baralho'
+    submitBtn.addEventListener('click', () => {
+      message.textContent = ''
+      const file = fileInput.files[0]
+      if (file) {
+        const reader = new FileReader()
+        reader.onload = () => submit(String(reader.result))
+        reader.readAsText(file)
+        return
+      }
+      const pasted = textarea.value.trim()
+      if (!pasted) {
+        message.textContent = 'Selecione um arquivo .txt ou cole o texto exportado.'
+        return
+      }
+      submit(pasted)
+    })
+    btnRow.appendChild(submitBtn)
+
+    const cancelBtn = document.createElement('button')
+    cancelBtn.className = 'btn-secondary'
+    cancelBtn.textContent = 'Cancelar'
+    cancelBtn.addEventListener('click', () => { view = 'list'; render() })
+    btnRow.appendChild(cancelBtn)
+
+    root.appendChild(btnRow)
+
+    function submit(text) {
+      const name = nameInput.value.trim() || 'Baralho sem nome'
+      const result = addDeck(name, text)
+      if (result.error) { message.textContent = result.error; return }
+      view = 'list'
+      render()
+    }
+  }
+
+  function renderEditForm() {
+    const entry = getDeck(editingId)
+    if (!entry) { view = 'list'; render(); return }
+
+    const title = document.createElement('h2')
+    title.textContent = 'Editar baralho'
+    root.appendChild(title)
+
+    const nameLabel = document.createElement('label')
+    nameLabel.textContent = 'Nome do baralho'
+    root.appendChild(nameLabel)
+    const nameInput = document.createElement('input')
+    nameInput.type = 'text'
+    nameInput.value = entry.name
+    root.appendChild(nameInput)
+
+    const textLabel = document.createElement('label')
+    textLabel.textContent = 'Texto exportado'
+    root.appendChild(textLabel)
+    const textarea = document.createElement('textarea')
+    textarea.rows = 16
+    textarea.value = entry.text
+    root.appendChild(textarea)
+
+    const message = document.createElement('div')
+    message.className = 'form-message'
+    root.appendChild(message)
+
+    const btnRow = document.createElement('div')
+    btnRow.className = 'btn-row'
+
+    const saveBtn = document.createElement('button')
+    saveBtn.textContent = 'Salvar'
+    saveBtn.addEventListener('click', () => {
+      const result = updateDeck(editingId, { name: nameInput.value.trim(), text: textarea.value })
+      if (result.error) { message.textContent = result.error; return }
+      view = 'list'
+      render()
+    })
+    btnRow.appendChild(saveBtn)
+
+    const cancelBtn = document.createElement('button')
+    cancelBtn.className = 'btn-secondary'
+    cancelBtn.textContent = 'Cancelar'
+    cancelBtn.addEventListener('click', () => { view = 'list'; render() })
+    btnRow.appendChild(cancelBtn)
+
+    const delBtn = document.createElement('button')
+    delBtn.className = 'btn-danger'
+    delBtn.textContent = 'Excluir baralho'
+    delBtn.addEventListener('click', () => {
+      if (!window.confirm(`Excluir o baralho "${entry.name}"?`)) return
+      removeDeck(editingId)
+      view = 'list'
+      render()
+    })
+    btnRow.appendChild(delBtn)
+
+    root.appendChild(btnRow)
   }
 }
 
-export function showWarning(message) {
-  document.getElementById('load-message').textContent = message
+// Configurações: vida inicial, barra de vida de inimigo, editor de controles e mapeamento de
+// gamepad. Autocontido — lê/escreve direto em settings.js/keybindings.js.
+export function showSettingsScreen({ onBack }) {
+  showScreen('settings')
+  const root = document.getElementById('settings-screen')
+  root.innerHTML = ''
+
+  let gamepadRaf = null
+  let waitingRebindAction = null
+  let waitingRebindBtn = null
+
+  const back = document.createElement('button')
+  back.className = 'back-link'
+  back.textContent = '← Voltar'
+  back.addEventListener('click', () => { cleanup(); onBack() })
+  root.appendChild(back)
+
+  const title = document.createElement('h2')
+  title.textContent = 'Configurações'
+  root.appendChild(title)
+
+  // ---- vida ----
+  const lifeSection = document.createElement('div')
+  lifeSection.className = 'settings-section'
+  const lifeTitle = document.createElement('h3')
+  lifeTitle.textContent = 'Vida'
+  lifeSection.appendChild(lifeTitle)
+
+  const lifeRow = document.createElement('div')
+  lifeRow.className = 'settings-row'
+  const lifeLabel = document.createElement('label')
+  lifeLabel.textContent = 'Vida inicial'
+  lifeRow.appendChild(lifeLabel)
+  const lifeInput = document.createElement('input')
+  lifeInput.type = 'number'
+  lifeInput.min = '1'
+  lifeInput.max = '20'
+  lifeInput.value = String(getSettings().startingHealth)
+  lifeInput.addEventListener('change', () => {
+    const n = Math.max(1, Math.min(20, Math.round(Number(lifeInput.value)) || 1))
+    lifeInput.value = String(n)
+    setSetting('startingHealth', n)
+  })
+  lifeRow.appendChild(lifeInput)
+  lifeSection.appendChild(lifeRow)
+  root.appendChild(lifeSection)
+
+  // ---- visual ----
+  const visualSection = document.createElement('div')
+  visualSection.className = 'settings-section'
+  const visualTitle = document.createElement('h3')
+  visualTitle.textContent = 'Visual'
+  visualSection.appendChild(visualTitle)
+
+  const enemyBarRow = document.createElement('div')
+  enemyBarRow.className = 'settings-row'
+  const enemyBarLabel = document.createElement('label')
+  enemyBarLabel.textContent = 'Barra de vida acima dos inimigos'
+  enemyBarRow.appendChild(enemyBarLabel)
+  const enemyBarCheckbox = document.createElement('input')
+  enemyBarCheckbox.type = 'checkbox'
+  enemyBarCheckbox.checked = getSettings().showEnemyHealthBars
+  enemyBarCheckbox.addEventListener('change', () => setSetting('showEnemyHealthBars', enemyBarCheckbox.checked))
+  enemyBarRow.appendChild(enemyBarCheckbox)
+  visualSection.appendChild(enemyBarRow)
+  root.appendChild(visualSection)
+
+  // ---- controles ----
+  const controlsSection = document.createElement('div')
+  controlsSection.className = 'settings-section'
+  const controlsTitle = document.createElement('h3')
+  controlsTitle.textContent = 'Editor de controles'
+  controlsSection.appendChild(controlsTitle)
+
+  const bindRows = document.createElement('div')
+  controlsSection.appendChild(bindRows)
+  renderBindRows()
+
+  const resetBtn = document.createElement('button')
+  resetBtn.className = 'btn-secondary'
+  resetBtn.textContent = 'Restaurar padrão'
+  resetBtn.addEventListener('click', () => {
+    resetToDefaults()
+    renderBindRows()
+  })
+  controlsSection.appendChild(resetBtn)
+  root.appendChild(controlsSection)
+
+  function renderBindRows() {
+    bindRows.innerHTML = ''
+    const bindings = getBindings()
+    for (const action of ACTIONS) {
+      const row = document.createElement('div')
+      row.className = 'keybind-row'
+      const label = document.createElement('span')
+      label.textContent = action.label
+      row.appendChild(label)
+
+      const codes = bindings.actions[action.id] || []
+      const btn = document.createElement('button')
+      btn.className = 'keybind-btn'
+      btn.textContent = codes.map(codeToLabel).join(' / ') || '—'
+      btn.addEventListener('click', () => startRebind(action.id, btn))
+      row.appendChild(btn)
+
+      bindRows.appendChild(row)
+    }
+  }
+
+  function startRebind(actionId, btn) {
+    if (waitingRebindBtn) {
+      waitingRebindBtn.classList.remove('waiting')
+      waitingRebindBtn.textContent = waitingRebindBtn.dataset.prevLabel
+    }
+    waitingRebindAction = actionId
+    waitingRebindBtn = btn
+    btn.dataset.prevLabel = btn.textContent
+    btn.textContent = 'Pressione uma tecla...'
+    btn.classList.add('waiting')
+  }
+
+  function onRebindKeyDown(e) {
+    if (!waitingRebindAction) return
+    e.preventDefault()
+    setBinding(waitingRebindAction, e.code)
+    waitingRebindAction = null
+    waitingRebindBtn = null
+    renderBindRows()
+  }
+  window.addEventListener('keydown', onRebindKeyDown)
+
+  // ---- gamepad ----
+  const gpSection = document.createElement('div')
+  gpSection.className = 'settings-section'
+  const gpTitle = document.createElement('h3')
+  gpTitle.textContent = 'Mapeamento de gamepad'
+  gpSection.appendChild(gpTitle)
+
+  const gpStatus = document.createElement('p')
+  gpStatus.className = 'gp-status'
+  gpSection.appendChild(gpStatus)
+
+  const invertRow = document.createElement('div')
+  invertRow.className = 'settings-row'
+  const invertLabel = document.createElement('label')
+  invertLabel.textContent = 'Inverter eixo Y'
+  invertRow.appendChild(invertLabel)
+  const invertCheckbox = document.createElement('input')
+  invertCheckbox.type = 'checkbox'
+  invertCheckbox.checked = getBindings().gamepad.invertY
+  invertCheckbox.addEventListener('change', () => setGamepadBinding('invertY', invertCheckbox.checked))
+  invertRow.appendChild(invertCheckbox)
+  gpSection.appendChild(invertRow)
+
+  const fireLabel = document.createElement('p')
+  fireLabel.textContent = 'Eixos e botões do controle conectado (clique X/Y num eixo ou num botão pra usá-lo):'
+  gpSection.appendChild(fireLabel)
+
+  const axesBarsWrap = document.createElement('div')
+  gpSection.appendChild(axesBarsWrap)
+
+  const buttonsWrap = document.createElement('div')
+  buttonsWrap.className = 'gp-buttons'
+  gpSection.appendChild(buttonsWrap)
+
+  root.appendChild(gpSection)
+
+  function pollGamepad() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    const pad = [...pads].find(Boolean)
+    const bindings = getBindings()
+
+    gpStatus.textContent = pad ? `Conectado: ${pad.id}` : 'Nenhum controle detectado. Pressione um botão nele.'
+
+    axesBarsWrap.innerHTML = ''
+    buttonsWrap.innerHTML = ''
+
+    if (pad) {
+      pad.axes.forEach((v, i) => {
+        const barRow = document.createElement('div')
+        barRow.className = 'gp-axis-row'
+        const label = document.createElement('span')
+        label.className = 'gp-axis-label'
+        label.textContent = `Eixo ${i}${i === bindings.gamepad.axisX ? ' (X)' : ''}${i === bindings.gamepad.axisY ? ' (Y)' : ''}`
+        barRow.appendChild(label)
+
+        const bar = document.createElement('div')
+        bar.className = 'gp-axis-bar'
+        const fill = document.createElement('div')
+        fill.className = 'gp-axis-fill'
+        const pct = ((v + 1) / 2) * 100
+        fill.style.left = `${Math.min(Math.max(pct, 0), 96)}%`
+        fill.style.width = '4%'
+        bar.appendChild(fill)
+        barRow.appendChild(bar)
+
+        const setXBtn = document.createElement('button')
+        setXBtn.className = 'keybind-btn'
+        setXBtn.textContent = 'X'
+        setXBtn.title = 'Usar este eixo como X'
+        setXBtn.addEventListener('click', () => setGamepadBinding('axisX', i))
+        barRow.appendChild(setXBtn)
+
+        const setYBtn = document.createElement('button')
+        setYBtn.className = 'keybind-btn'
+        setYBtn.textContent = 'Y'
+        setYBtn.title = 'Usar este eixo como Y'
+        setYBtn.addEventListener('click', () => setGamepadBinding('axisY', i))
+        barRow.appendChild(setYBtn)
+
+        axesBarsWrap.appendChild(barRow)
+      })
+
+      pad.buttons.forEach((b, i) => {
+        const chip = document.createElement('button')
+        chip.className = 'gp-btn-chip'
+        if (b.pressed) chip.classList.add('pressed')
+        if (bindings.gamepad.fireButtons.includes(i)) chip.classList.add('selected')
+        chip.textContent = String(i)
+        chip.title = 'Clique pra ativar/desativar como botão de tiro'
+        chip.addEventListener('click', () => {
+          const current = getBindings().gamepad.fireButtons
+          const next = current.includes(i) ? current.filter((x) => x !== i) : [...current, i]
+          setGamepadBinding('fireButtons', next)
+        })
+        buttonsWrap.appendChild(chip)
+      })
+    }
+
+    gamepadRaf = requestAnimationFrame(pollGamepad)
+  }
+  pollGamepad()
+
+  function cleanup() {
+    window.removeEventListener('keydown', onRebindKeyDown)
+    if (gamepadRaf) cancelAnimationFrame(gamepadRaf)
+  }
 }
 
 export function createGameHud() {
@@ -145,6 +661,32 @@ export function createGameHud() {
   pause.textContent = 'Pausado'
   pause.hidden = true
   root.appendChild(pause)
+
+  // ============ PAINEL DE DEBUG ============
+  const debugPanel = document.createElement('div')
+  debugPanel.className = 'debug-panel'
+  debugPanel.hidden = true
+  root.appendChild(debugPanel)
+
+  const debugHeading = document.createElement('h4')
+  debugHeading.textContent = 'Debug'
+  debugPanel.appendChild(debugHeading)
+
+  const debugHint = document.createElement('p')
+  debugHint.className = 'debug-hint'
+  debugHint.textContent = 'Crase (`) para abrir/fechar'
+  debugPanel.appendChild(debugHint)
+
+  const debugButtons = {}
+  for (const action of DEBUG_ACTIONS) {
+    const btn = document.createElement('button')
+    btn.textContent = action.label
+    debugPanel.appendChild(btn)
+    debugButtons[action.id] = btn
+  }
+
+  // ============ BARRAS DE VIDA DE INIMIGO ============
+  const enemyBarPool = new Map()
 
   return {
     sceneRoot,
@@ -244,6 +786,42 @@ export function createGameHud() {
     // a sensação de "travou no alvo" do Star Fox 64.
     setReticleLocked(locked) {
       reticle.classList.toggle('locked', !!locked)
+    },
+
+    // barras de vida acima do modelo dos inimigos (fração de tela 0..1, igual à mira)
+    setEnemyHealthBars(list) {
+      const seen = new Set()
+      for (const item of list) {
+        seen.add(item.id)
+        let el = enemyBarPool.get(item.id)
+        if (!el) {
+          el = document.createElement('div')
+          el.className = 'enemy-health-bar'
+          const fill = document.createElement('div')
+          fill.className = 'enemy-health-bar-fill'
+          el.appendChild(fill)
+          root.appendChild(el)
+          enemyBarPool.set(item.id, el)
+        }
+        el.style.left = `${item.xFrac * 100}%`
+        el.style.top = `${item.yFrac * 100}%`
+        el.firstChild.style.width = `${Math.max(0, Math.min(1, item.hp / item.maxHp)) * 100}%`
+      }
+      for (const [id, el] of enemyBarPool) {
+        if (!seen.has(id)) { el.remove(); enemyBarPool.delete(id) }
+      }
+    },
+
+    debug: {
+      setVisible(v) { debugPanel.hidden = !v },
+      bind(handlers) {
+        for (const [id, fn] of Object.entries(handlers)) {
+          if (debugButtons[id]) debugButtons[id].onclick = fn
+        }
+      },
+      setToggleActive(id, active) {
+        if (debugButtons[id]) debugButtons[id].classList.toggle('active', !!active)
+      },
     },
 
     unmount() {

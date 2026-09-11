@@ -1,0 +1,24 @@
+// Metadados das ações do painel de debug. A lógica de cada ação vive em main.js (só lá tem
+// acesso a combat/rail/session/hud dentro do closure de mountGame) — este módulo só descreve
+// o que existe, pra hud.js conseguir montar o painel genericamente.
+export const DEBUG_ACTIONS = [
+  { id: 'spawnEnemy', label: 'Spawnar inimigo vermelho' },
+  { id: 'spawnTimeEnemy', label: 'Spawnar redutor de tempo' },
+  { id: 'spawnBonus', label: 'Spawnar alvo bônus' },
+  { id: 'spawnGolden', label: 'Spawnar especial dourado' },
+  { id: 'spawnTank', label: 'Spawnar inimigo tanque (5 hp)' },
+  { id: 'forceCorrect', label: 'Forçar acerto da pergunta' },
+  { id: 'forceWrong', label: 'Forçar erro da pergunta' },
+  { id: 'addScore', label: '+100 pontos' },
+  { id: 'heal', label: 'Curar 1' },
+  { id: 'damage', label: 'Causar 1 dano' },
+  { id: 'fullHeal', label: 'Recarregar vida ao máximo' },
+  { id: 'godMode', label: 'God mode', toggle: true },
+  { id: 'infiniteAmmo', label: 'Tiro infinito', toggle: true },
+  { id: 'maxBuffs', label: 'Aplicar buffs máximos' },
+  { id: 'gotoBoss', label: 'Ir para arena de chefe' },
+  { id: 'gotoGolden', label: 'Ir para arena dourada' },
+  { id: 'clearCombatants', label: 'Limpar inimigos/projéteis' },
+  { id: 'showHitboxes', label: 'Mostrar hitboxes', toggle: true },
+  { id: 'slowMo', label: 'Câmera lenta (0.25x)', toggle: true },
+]

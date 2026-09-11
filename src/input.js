@@ -1,19 +1,25 @@
+import { getBindings, edgeCodes } from './keybindings.js'
+
 const DEADZONE = 0.25
 
-const KEY_MAP = {
-  ArrowLeft: [-1, 0], KeyA: [-1, 0],
-  ArrowRight: [1, 0], KeyD: [1, 0],
-  ArrowUp: [0, 1], KeyW: [0, 1],
-  ArrowDown: [0, -1], KeyS: [0, -1],
-}
-
-const EDGE_CODES = new Set(['Escape', 'KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4'])
-const LEFT_CODES = new Set(['ArrowLeft', 'KeyA'])
-const RIGHT_CODES = new Set(['ArrowRight', 'KeyD'])
-const UP_CODES = new Set(['ArrowUp', 'KeyW'])
-const DOWN_CODES = new Set(['ArrowDown', 'KeyS'])
-
 export function createInputState() {
+  const bindings = getBindings()
+
+  const keyMap = {}
+  for (const code of bindings.actions.moveLeft) keyMap[code] = [-1, 0]
+  for (const code of bindings.actions.moveRight) keyMap[code] = [1, 0]
+  for (const code of bindings.actions.moveUp) keyMap[code] = [0, 1]
+  for (const code of bindings.actions.moveDown) keyMap[code] = [0, -1]
+
+  const leftCodes = new Set(bindings.actions.moveLeft)
+  const rightCodes = new Set(bindings.actions.moveRight)
+  const upCodes = new Set(bindings.actions.moveUp)
+  const downCodes = new Set(bindings.actions.moveDown)
+  const fireCodes = new Set(bindings.actions.fire)
+  const edgeCodeSet = edgeCodes(bindings)
+
+  const gp = bindings.gamepad
+
   const state = { moveX: 0, moveY: 0, firing: false, pressed: new Set() }
   const keys = new Set()
   const pressedThisFrame = new Set()
@@ -27,13 +33,13 @@ export function createInputState() {
   let downTime = 0
 
   function onKeyDown(e) {
-    if (EDGE_CODES.has(e.code) && !keys.has(e.code)) pressedThisFrame.add(e.code)
+    if (edgeCodeSet.has(e.code) && !keys.has(e.code)) pressedThisFrame.add(e.code)
     keys.add(e.code)
     const t = performance.now()
-    if (LEFT_CODES.has(e.code)) leftTime = t
-    else if (RIGHT_CODES.has(e.code)) rightTime = t
-    else if (UP_CODES.has(e.code)) upTime = t
-    else if (DOWN_CODES.has(e.code)) downTime = t
+    if (leftCodes.has(e.code)) leftTime = t
+    else if (rightCodes.has(e.code)) rightTime = t
+    else if (upCodes.has(e.code)) upTime = t
+    else if (downCodes.has(e.code)) downTime = t
   }
   function onKeyUp(e) {
     keys.delete(e.code)
@@ -63,14 +69,14 @@ export function createInputState() {
     let downHeld = false
 
     for (const code of keys) {
-      const mapped = KEY_MAP[code]
+      const mapped = keyMap[code]
       if (!mapped) continue
       moveX += mapped[0]
       moveY += mapped[1]
-      if (LEFT_CODES.has(code)) leftHeld = true
-      if (RIGHT_CODES.has(code)) rightHeld = true
-      if (UP_CODES.has(code)) upHeld = true
-      if (DOWN_CODES.has(code)) downHeld = true
+      if (leftCodes.has(code)) leftHeld = true
+      if (rightCodes.has(code)) rightHeld = true
+      if (upCodes.has(code)) upHeld = true
+      if (downCodes.has(code)) downHeld = true
     }
 
     // se os dois lados estão no Set simultaneamente (sintoma de tecla presa ou ghosting),
@@ -79,11 +85,14 @@ export function createInputState() {
     if (leftHeld && rightHeld) moveX = leftTime >= rightTime ? -1 : 1
     if (upHeld && downHeld) moveY = upTime >= downTime ? 1 : -1
 
+    let firing = false
+    for (const code of fireCodes) if (keys.has(code)) { firing = true; break }
+
     return {
       moveX: Math.sign(moveX),
       moveY: Math.sign(moveY),
-      firing: keys.has('Space'),
-      active: moveX !== 0 || moveY !== 0 || keys.has('Space'),
+      firing,
+      active: moveX !== 0 || moveY !== 0 || firing,
     }
   }
 
@@ -98,11 +107,11 @@ export function createInputState() {
       prevPadStart = startPressed
 
       if (result) continue
-      const rawX = pad.axes[0] ?? 0
-      const rawY = pad.axes[1] ?? 0
-      const firing = !!(pad.buttons[0]?.pressed || pad.buttons[7]?.pressed)
+      const rawX = pad.axes[gp.axisX] ?? 0
+      const rawY = pad.axes[gp.axisY] ?? 0
+      const firing = gp.fireButtons.some((i) => !!pad.buttons[i]?.pressed)
       const moveX = Math.abs(rawX) > DEADZONE ? rawX : 0
-      const moveY = Math.abs(rawY) > DEADZONE ? -rawY : 0
+      const moveY = Math.abs(rawY) > DEADZONE ? (gp.invertY ? -rawY : rawY) : 0
       if (moveX !== 0 || moveY !== 0 || firing) result = { moveX, moveY, firing }
     }
     return result

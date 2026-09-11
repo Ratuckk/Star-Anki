@@ -45,6 +45,10 @@ const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 
 const ENEMY_AIM_ERROR_DEG = 5
 
+const TANK_ENEMY_COLOR = 0xff9d4d
+const TANK_ENEMY_SCALE = 1.6
+const TANK_ENEMY_DEFAULT_HP = 5
+
 const BONUS_COLOR = 0x2bff6b
 const BONUS_SPAWN_DISTANCE_MIN = 90
 const BONUS_SPAWN_DISTANCE_MAX = 140
@@ -102,6 +106,31 @@ export function createCombatSystem(scene, rail, effects = null) {
   })
   const timeEnemyGeometry = new THREE.ConeGeometry(0.9, 1.3, 4)
   const timeEnemyMaterial = new THREE.MeshPhongMaterial({ color: TIME_ENEMY_COLOR, emissive: TIME_ENEMY_EMISSIVE, flatShading: true })
+  const tankEnemyMaterial = new THREE.MeshPhongMaterial({ color: TANK_ENEMY_COLOR, flatShading: true })
+
+  // debug: wireframes mostrando o raio de colisão real de cada alvo/inimigo/projétil em cena
+  let showHitboxes = false
+  const hitboxGeometry = new THREE.SphereGeometry(1, 8, 6)
+  const hitboxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, depthTest: false })
+  const hitboxGroup = new THREE.Group()
+  scene.add(hitboxGroup)
+
+  function markHitbox(position, radius) {
+    const mesh = new THREE.Mesh(hitboxGeometry, hitboxMaterial)
+    mesh.position.copy(position)
+    mesh.scale.setScalar(radius)
+    hitboxGroup.add(mesh)
+  }
+
+  function refreshHitboxes() {
+    while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
+    if (!showHitboxes) return
+    for (const t of quizTargets) if (!t.dying) markHitbox(t.mesh.position, QUIZ_HIT_RADIUS)
+    for (const e of enemies) if (!e.dying) markHitbox(e.mesh.position, e.kind === 'time' ? TIME_ENEMY_HIT_RADIUS : ENEMY_HIT_RADIUS)
+    for (const p of enemyProjectiles) markHitbox(p.mesh.position, ENEMY_PROJECTILE_HIT_RADIUS)
+    for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS)
+    for (const g of goldenTargets) if (!g.dying) markHitbox(g.mesh.position, GOLDEN_SPECIAL_HIT_RADIUS)
+  }
 
   function makeQuizTargetMesh(alt) {
     return new THREE.Mesh(SHAPE_GEOMETRY[alt.shape](), new THREE.MeshPhongMaterial({ color: SHAPE_COLOR[alt.color], flatShading: true }))
@@ -145,6 +174,7 @@ export function createCombatSystem(scene, rail, effects = null) {
   let quizRoomActive = false
   let quizShotsFired = 0
   let elapsed = 0
+  let nextEnemyId = 1
 
   // alvo travado (detecção apenas). NÃO redireciona mais o disparo — o tiro vai sempre na
   // direção passada pelo main.js (que é a direção da mira). Isso existe pra um futuro
@@ -271,13 +301,15 @@ export function createCombatSystem(scene, rail, effects = null) {
         return projectile.mesh.position.distanceTo(e.mesh.position) <= radius
       })
       if (enemyHit) {
+        enemyHit.hp -= 1
+        removeProjectile(projectile)
+        if (enemyHit.hp > 0) continue
         enemyHit.dying = true
         enemyHit.deathT = 0
         enemyKills += 1
         enemyKillPoints += ENEMY_KILL_BONUS
         if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
         if (effects) effects.explosion(enemyHit.mesh.position, enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
-        removeProjectile(projectile)
         continue
       }
 
@@ -416,7 +448,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       mesh.position.copy(position)
       mesh.rotation.x = Math.PI / 2
       scene.add(mesh)
-      enemies.push({ mesh, kind: 'red', dying: false, deathT: 0, fireTimer: randomEnemyFireInterval() })
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: randomEnemyFireInterval() })
     },
 
     spawnTimeEnemy() {
@@ -424,12 +456,31 @@ export function createCombatSystem(scene, rail, effects = null) {
       const mesh = buildTimeEnemyMesh()
       mesh.position.copy(position)
       scene.add(mesh)
-      enemies.push({ mesh, kind: 'time', dying: false, deathT: 0, fireTimer: randomEnemyFireInterval() })
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: randomEnemyFireInterval() })
+    },
+
+    // inimigo "tanque" de debug: mesmo comportamento do vermelho comum, mas com HP configurável —
+    // serve pra visualizar a barra de vida acima do inimigo (que não aparece com inimigos de 1 hit)
+    spawnTankEnemy(hp = TANK_ENEMY_DEFAULT_HP) {
+      const position = randomSpawnPositionOnPath(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
+      const mesh = new THREE.Mesh(enemyGeometry, tankEnemyMaterial)
+      mesh.position.copy(position)
+      mesh.rotation.x = Math.PI / 2
+      mesh.scale.setScalar(TANK_ENEMY_SCALE)
+      scene.add(mesh)
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'tank', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: randomEnemyFireInterval() })
     },
 
     clearEnemies() {
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
+    },
+
+    // debug: limpa inimigos, projéteis (dos dois lados) — não mexe em alvos de pergunta/bônus/dourado
+    clearAllCombatants() {
+      for (const enemy of [...enemies]) removeEnemy(enemy)
+      for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
+      for (const projectile of [...projectiles]) removeProjectile(projectile)
     },
 
     spawnBonusTarget() {
@@ -532,6 +583,11 @@ export function createCombatSystem(scene, rail, effects = null) {
 
     getQuizShotsFired: () => quizShotsFired,
 
+    // inimigos vivos com mais de 1 hp — usado pra desenhar a barra de vida acima do modelo deles
+    getEnemySnapshots: () => enemies
+      .filter((e) => !e.dying && e.maxHp > 1)
+      .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone(), hp: e.hp, maxHp: e.maxHp })),
+
     // lock-on de detecção (não afeta disparo). Mantido pro futuro tiro carregado.
     getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
@@ -539,6 +595,7 @@ export function createCombatSystem(scene, rail, effects = null) {
     setAimAssistAngle(radians) { aimAssistAngle = radians },
     setProjectileCount(n) { projectileCount = n },
     setEnemyAggressiveness(multiplier) { enemyAggression = multiplier },
+    setShowHitboxes(v) { showHitboxes = v; refreshHitboxes() },
 
     update(dt, playerPosition, opts = {}) {
       const enemiesActive = opts.enemiesActive !== false
@@ -564,6 +621,8 @@ export function createCombatSystem(scene, rail, effects = null) {
         enemyHits += updateEnemyProjectiles(dt, playerPosition)
       }
 
+      if (showHitboxes) refreshHitboxes()
+
       return { targetHit: hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, enemyHits, goldenSpecialHit, timeReductionMs }
     },
 
@@ -586,6 +645,11 @@ export function createCombatSystem(scene, rail, effects = null) {
       goldenMaterial.dispose()
       timeEnemyGeometry.dispose()
       timeEnemyMaterial.dispose()
+      tankEnemyMaterial.dispose()
+      while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
+      scene.remove(hitboxGroup)
+      hitboxGeometry.dispose()
+      hitboxMaterial.dispose()
     },
   }
 }

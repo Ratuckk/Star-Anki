@@ -1,12 +1,15 @@
 import * as THREE from 'three'
 import { buildDeck, exportTagsTsv } from './anki.js'
-import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion, STARTING_SHIELDS } from './quiz.js'
+import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem, DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
-import { showLoadScreen, showWarning, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
-import { loadHistory, saveHistory, recordResult, loadSavedDeck, saveDeck, clearSavedDeck } from './storage.js'
+import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
+import { loadHistory, saveHistory, recordResult } from './storage.js'
+import { getDeck } from './decks.js'
+import { getSettings } from './settings.js'
+import { getBindings, isActionPressed } from './keybindings.js'
 
 const CYCLE_MS = 90000
 const WARNING_MS = 10000
@@ -85,56 +88,46 @@ const TIME_ENEMY_SPAWN_CHANCE = 0.2
 
 let deck = null
 let deckText = null
+let currentDeckId = null
 let history = loadHistory()
 let sessionResults = []
 let painelDone = false
 
-function handleLoad(text) {
-  const built = buildDeck(text)
-  if (built.warning) {
-    showWarning(built.warning)
-    return
-  }
-  saveDeck(text)
+function handlePlayDeck(deckId) {
+  const entry = getDeck(deckId)
+  if (!entry) return
+  const built = buildDeck(entry.text)
+  if (built.warning) return
+
+  currentDeckId = deckId
   deck = built
-  deckText = text
+  deckText = entry.text
   sessionResults = []
   painelDone = false
-  mountGame(createSession(deck, { history }))
-}
-
-function buildSavedDeckInfo() {
-  const text = loadSavedDeck()
-  if (!text) return null
-  const built = buildDeck(text)
-  if (built.warning) return { valid: false, text }
-  const deckNames = [...new Set(built.allCards.map((c) => c.deck))].filter(Boolean).join(', ') || 'baralho'
-  return {
-    valid: true,
-    text,
-    deckNames,
-    shooterCount: built.shooterCards.length,
-    painelCount: built.painelCards.length,
-  }
+  mountGame(createSession(deck, { history, startingShields: getSettings().startingHealth }))
 }
 
 function restart() {
   deck = null
   deckText = null
-  showLoadScreen(handleLoad, {
-    savedDeck: buildSavedDeckInfo(),
-    onForget: () => {
-      clearSavedDeck()
-      restart()
-    },
+  showPreGameMenu({
+    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onBack: restart }),
+    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onBack: restart, startInAdd: true }),
+    onSettings: () => showSettingsScreen({ onBack: restart }),
   })
+}
+
+// "Jogar novamente" volta direto pro mesmo baralho (sem reenviar/reselecionar) quando possível
+function playAgain() {
+  if (currentDeckId) handlePlayDeck(currentDeckId)
+  else restart()
 }
 
 function renderEndScreen(summary) {
   const practiceAvailable = !painelDone && deck.painelCards.length > 0
   showSectorEnd({
     summary,
-    onPlayAgain: restart,
+    onPlayAgain: playAgain,
     practiceCount: practiceAvailable ? deck.painelCards.length : 0,
     onPractice: practiceAvailable ? () => startPainelPractice(summary) : null,
     onExportTags: downloadTagsExport,
@@ -238,6 +231,18 @@ function mountGame(session) {
   const combat = createCombatSystem(scene, rail, effects)
   const input = createInputState()
 
+  // lidas uma vez por sessão — a tela de configurações só é acessível fora do jogo, então não
+  // precisa reler a cada frame
+  const bindings = getBindings()
+  const maxShields = session.shields
+  const showEnemyHealthBars = getSettings().showEnemyHealthBars
+
+  let debugVisible = false
+  let godMode = false
+  let infiniteAmmoActive = false
+  let hitboxesActive = false
+  let slowMoActive = false
+
   let phase = null
   let phaseTimer = 0
   let cycleTimer = 0
@@ -300,6 +305,13 @@ function mountGame(session) {
     return 1.5 - (elapsed / totalMs) * 0.5
   }
 
+  function slotForPressed(pressedSet) {
+    for (let i = 0; i < 4; i += 1) {
+      if (isActionPressed(bindings, pressedSet, `quizSlot${i + 1}`)) return i
+    }
+    return undefined
+  }
+
   function processAnswerPhase(events, inputState, dt, totalMs, mode) {
     let outcome = null
 
@@ -312,9 +324,7 @@ function mountGame(session) {
         accuracyBonus: Math.max(1.0, 1.2 - 0.1 * (shotsFired - 1)),
       }
     } else {
-      const slot = [...inputState.pressed]
-        .map((code) => ({ Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[code]))
-        .find((s) => s !== undefined)
+      const slot = slotForPressed(inputState.pressed)
       if (slot !== undefined) {
         outcome = {
           type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
@@ -469,6 +479,7 @@ function mountGame(session) {
     phase = 'combat'
     rail.setAdvancing(true)
     goldenTimer = randomGoldenInterval()
+    hud.setFeedback(null)
   }
 
   function enterGoldenRecall() {
@@ -569,14 +580,19 @@ function mountGame(session) {
   function tick(now) {
     if (stopped) return
     rafId = requestAnimationFrame(tick)
-    const dt = Math.min((now - lastTime) / 1000, 0.1)
+    const rawDt = Math.min((now - lastTime) / 1000, 0.1)
+    const dt = slowMoActive ? rawDt * 0.25 : rawDt
     lastTime = now
 
     const inputState = input.update()
 
-    if (inputState.pressed.has('Escape') || inputState.pressed.has('KeyP') || inputState.pressed.has('GamepadStart')) {
+    if (isActionPressed(bindings, inputState.pressed, 'pause') || inputState.pressed.has('GamepadStart')) {
       paused = !paused
       hud.setPaused(paused)
+    }
+    if (isActionPressed(bindings, inputState.pressed, 'debugToggle')) {
+      debugVisible = !debugVisible
+      hud.debug.setVisible(debugVisible)
     }
     if (paused) return
 
@@ -637,6 +653,20 @@ function mountGame(session) {
     )
     hud.setReticleLocked(!!lockOn)
 
+    if (showEnemyHealthBars) {
+      const bars = combat.getEnemySnapshots().map((s) => {
+        const ndcE = s.worldPos.project(camera)
+        return {
+          id: s.id,
+          xFrac: THREE.MathUtils.clamp((ndcE.x + 1) / 2, 0, 1),
+          yFrac: THREE.MathUtils.clamp((1 - ndcE.y) / 2, 0, 1),
+          hp: s.hp,
+          maxHp: s.maxHp,
+        }
+      })
+      hud.setEnemyHealthBars(bars)
+    }
+
     effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
@@ -644,7 +674,7 @@ function mountGame(session) {
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
 
     invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
-    if (events.enemyHits > 0 && invincibleTimer <= 0) {
+    if (events.enemyHits > 0 && invincibleTimer <= 0 && !godMode) {
       session.shields = Math.max(0, session.shields - 1)
       invincibleTimer = INVINCIBILITY_MS
       hud.damageFlash()
@@ -723,12 +753,61 @@ function mountGame(session) {
 
     if (stopped) return
 
-    hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+    hud.setStatus({ shields: session.shields, maxShields, score: session.score, combo: session.comboMultiplier })
     renderer.render(scene, camera)
   }
 
+  function forceAnswerOutcome(correct) {
+    if (!questionResult) return
+    const outcome = { type: correct ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
+    if (phase === 'goldenAlternatives') settleGoldenBonus(outcome)
+    else if (phase === 'boss') settleQuestion(outcome, true)
+    else if (phase === 'alternatives') settleQuestion(outcome, false)
+  }
+
+  hud.debug.bind({
+    spawnEnemy: () => combat.spawnEnemy(),
+    spawnTimeEnemy: () => combat.spawnTimeEnemy(),
+    spawnBonus: () => combat.spawnBonusTarget(),
+    spawnGolden: () => combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX }),
+    spawnTank: () => combat.spawnTankEnemy(),
+    forceCorrect: () => forceAnswerOutcome(true),
+    forceWrong: () => forceAnswerOutcome(false),
+    addScore: () => { session.score += 100 },
+    heal: () => { session.shields = Math.min(maxShields, session.shields + 1) },
+    damage: () => { session.shields = Math.max(0, session.shields - 1) },
+    fullHeal: () => { session.shields = maxShields },
+    godMode: () => {
+      godMode = !godMode
+      hud.debug.setToggleActive('godMode', godMode)
+    },
+    infiniteAmmo: () => {
+      infiniteAmmoActive = !infiniteAmmoActive
+      combat.setFireCooldown(infiniteAmmoActive ? 0 : fireCooldown)
+      hud.debug.setToggleActive('infiniteAmmo', infiniteAmmoActive)
+    },
+    maxBuffs: () => {
+      aimAssistAngle = AIM_ASSIST_CAP
+      projectileCount = PROJECTILE_COUNT_CAP
+      combat.setAimAssistAngle(aimAssistAngle)
+      combat.setProjectileCount(projectileCount)
+    },
+    gotoBoss: () => { if (phase === 'combat') enterBossArena() },
+    gotoGolden: () => { if (phase === 'combat') enterGoldenArena() },
+    clearCombatants: () => combat.clearAllCombatants(),
+    showHitboxes: () => {
+      hitboxesActive = !hitboxesActive
+      combat.setShowHitboxes(hitboxesActive)
+      hud.debug.setToggleActive('showHitboxes', hitboxesActive)
+    },
+    slowMo: () => {
+      slowMoActive = !slowMoActive
+      hud.debug.setToggleActive('slowMo', slowMoActive)
+    },
+  })
+
   enterCombat()
-  hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+  hud.setStatus({ shields: session.shields, maxShields, score: session.score, combo: session.comboMultiplier })
   lastTime = performance.now()
   rafId = requestAnimationFrame(tick)
 }
