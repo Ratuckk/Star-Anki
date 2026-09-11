@@ -298,4 +298,432 @@ function mountGame(session) {
 
   function computeTimeBonus(totalMs) {
     const elapsed = Math.min(Math.max(totalMs - phaseTimer, 0), totalMs)
-    return
+    return 1.5 - (elapsed / totalMs) * 0.5
+  }
+
+  function processAnswerPhase(events, inputState, dt, totalMs, mode) {
+    let outcome = null
+
+    if (events.targetHit) {
+      const shotsFired = combat.getQuizShotsFired()
+      outcome = {
+        type: events.targetHit.isCorrect ? 'correct' : 'wrong',
+        card: questionResult.card,
+        timeBonus: computeTimeBonus(totalMs),
+        accuracyBonus: Math.max(1.0, 1.2 - 0.1 * (shotsFired - 1)),
+      }
+    } else {
+      const slot = [...inputState.pressed]
+        .map((code) => ({ Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 }[code]))
+        .find((s) => s !== undefined)
+      if (slot !== undefined) {
+        outcome = {
+          type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
+          card: questionResult.card,
+          timeBonus: computeTimeBonus(totalMs),
+          accuracyBonus: 1.2,
+        }
+      } else {
+        phaseTimer -= dt * 1000
+        if (phaseTimer <= 0) {
+          outcome = {
+            type: 'timeout',
+            card: questionResult.card,
+            timeBonus: computeTimeBonus(totalMs),
+            accuracyBonus: Math.max(1.0, 1.2 - 0.1 * combat.getQuizShotsFired()),
+          }
+        }
+      }
+    }
+
+    if (!outcome) return
+    if (mode === 'golden') settleGoldenBonus(outcome)
+    else settleQuestion(outcome, mode === 'boss')
+  }
+
+  function applySpeedProgression(type) {
+    if (type === 'correct') {
+      consecutiveCorrect += 1
+      if (consecutiveCorrect % BOOST_EVERY_CORRECT === 0) {
+        speedMultiplier *= 1 + SPEED_STEP
+        rail.setSpeedMultiplier(speedMultiplier)
+      }
+    } else {
+      consecutiveCorrect = 0
+      speedMultiplier = 1
+      rail.setSpeedMultiplier(1)
+    }
+  }
+
+  function applyBuff() {
+    correctBuffCount += 1
+    fireCooldown = Math.max(FIRE_COOLDOWN_FLOOR, fireCooldown * FIRE_COOLDOWN_MULT_PER_CORRECT)
+    combat.setFireCooldown(fireCooldown)
+    aimAssistAngle = Math.min(AIM_ASSIST_CAP, aimAssistAngle + AIM_ASSIST_STEP)
+    combat.setAimAssistAngle(aimAssistAngle)
+    if (correctBuffCount % PROJECTILE_STEP_EVERY_CORRECT === 0) {
+      projectileCount = Math.min(PROJECTILE_COUNT_CAP, projectileCount + 1)
+      combat.setProjectileCount(projectileCount)
+    }
+  }
+
+  function applyDifficulty() {
+    enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, enemyIntervalMin - ENEMY_INTERVAL_STEP)
+    enemyIntervalMax = Math.max(enemyIntervalMin + 150, enemyIntervalMax - ENEMY_INTERVAL_STEP)
+    enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, enemyAggression + ENEMY_AGGRESSION_STEP)
+    combat.setEnemyAggressiveness(enemyAggression)
+  }
+
+  function applyBossDifficulty() {
+    bossDifficulty = Math.min(BOSS_DIFFICULTY_CAP, bossDifficulty + 1)
+  }
+
+  function currentArenaMs() {
+    return Math.max(ARENA_MS_FLOOR, ARENA_MS_BASE - bossDifficulty * ARENA_MS_STEP)
+  }
+
+  function currentBossSpread() {
+    return {
+      distanceMin: Math.min(BOSS_SPREAD_MIN_CAP, BOSS_SPREAD_MIN_BASE + bossDifficulty * BOSS_SPREAD_STEP),
+      distanceMax: Math.min(BOSS_SPREAD_MAX_CAP, BOSS_SPREAD_MAX_BASE + bossDifficulty * BOSS_SPREAD_STEP),
+    }
+  }
+
+  function currentBossExtraEnemies() {
+    return Math.min(BOSS_EXTRA_ENEMIES_CAP, BOSS_EXTRA_ENEMIES_BASE + bossDifficulty * BOSS_EXTRA_ENEMIES_STEP)
+  }
+
+  function enterCombat() {
+    phase = 'combat'
+    isBossCycle = (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
+    isReviewQuestion = (history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
+    cycleTimer = isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
+    enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+    bonusTimer = randomBonusInterval()
+    rail.setAdvancing(true)
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setFeedback(null)
+    hud.setCountdown(null)
+    hud.setBossActive(false)
+  }
+
+  function enterRecall() {
+    phase = 'recall'
+    phaseTimer = RECALL_MS
+    rail.setAdvancing(false)
+    combat.clearBonusTargets()
+    hud.setCountdown(null)
+    hud.setQuestion(session.queue[session.pointer].question)
+    hud.setAlternatives(null)
+    hud.setFeedback(null)
+  }
+
+  function enterAlternatives() {
+    const result = nextQuestion(session, deck.allCards)
+    if (!result) {
+      endSector()
+      return
+    }
+    questionResult = result
+    phase = 'alternatives'
+    altTotalMs = ALT_MS * (isReviewQuestion ? REVIEW_ANSWER_MS_MULT : 1)
+    phaseTimer = altTotalMs
+    hud.setQuestion(result.card.question)
+    hud.setAlternatives(result.alternatives)
+    combat.spawnQuizTargets(result.alternatives)
+  }
+
+  function enterBossArena() {
+    const result = nextQuestion(session, deck.allCards)
+    if (!result) {
+      endSector()
+      return
+    }
+    questionResult = result
+    phase = 'boss'
+    arenaTotalMs = currentArenaMs()
+    phaseTimer = arenaTotalMs
+    rail.enterArena()
+    hud.setQuestion(result.card.question)
+    hud.setAlternatives(result.alternatives)
+    hud.setBossActive(true)
+    combat.spawnBossTargets(result.alternatives, currentBossSpread())
+    for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
+  }
+
+  function enterGoldenArena() {
+    phase = 'goldenArena'
+    goldenArenaTimer = randomGoldenArenaMs()
+    rail.enterArena()
+    combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX })
+    hud.setGoldenActive(true)
+  }
+
+  function exitGoldenArenaVisuals() {
+    rail.exitArena()
+    combat.clearGoldenTargets()
+    hud.setGoldenActive(false)
+  }
+
+  function resumeCombatFromGolden() {
+    phase = 'combat'
+    rail.setAdvancing(true)
+    goldenTimer = randomGoldenInterval()
+  }
+
+  function enterGoldenRecall() {
+    goldenCard = pickBonusCard(deck, session)
+    phase = 'goldenRecall'
+    phaseTimer = RECALL_MS
+    rail.setAdvancing(false)
+    hud.setQuestion(goldenCard.question)
+    hud.setAlternatives(null)
+    hud.setFeedback(null)
+  }
+
+  function enterGoldenAlternatives() {
+    const result = buildBonusQuestion(goldenCard, deck.allCards)
+    questionResult = result
+    phase = 'goldenAlternatives'
+    phaseTimer = ALT_MS
+    hud.setQuestion(result.card.question)
+    hud.setAlternatives(result.alternatives)
+    combat.spawnQuizTargets(result.alternatives)
+  }
+
+  function settleQuestion(outcome, isBoss) {
+    combat.clearQuizTargets()
+    if (isBoss) rail.exitArena()
+    const resolution = resolveAnswer(session, outcome)
+    applySpeedProgression(outcome.type)
+
+    const correct = outcome.type === 'correct'
+    if (correct) applyBuff()
+    else applyDifficulty()
+    if (isBoss && !correct) applyBossDifficulty()
+
+    history = recordResult(history, outcome.card.guid, correct)
+    saveHistory(history)
+    sessionResults.push({ guid: outcome.card.guid, correct })
+
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setBossActive(false)
+    hud.setFeedback({
+      correct: outcome.type === 'correct',
+      correctAnswer: outcome.card.answer,
+      points: resolution.points,
+      comboMultiplier: resolution.comboMultiplier,
+      shields: resolution.shieldsRemaining,
+    })
+
+    pendingSectorOver = resolution.sectorOver
+    phase = 'resolution'
+    phaseTimer = FEEDBACK_MS
+  }
+
+  function settleGoldenBonus(outcome) {
+    combat.clearQuizTargets()
+    const correct = outcome.type === 'correct'
+    if (correct) applyBuff()
+
+    history = recordResult(history, outcome.card.guid, correct)
+    saveHistory(history)
+    sessionResults.push({ guid: outcome.card.guid, correct })
+
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      bonus: true,
+    })
+
+    phase = 'goldenResolution'
+    phaseTimer = FEEDBACK_MS
+  }
+
+  function endSector() {
+    teardown()
+    renderEndScreen(getSummary(session))
+  }
+
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+  window.addEventListener('resize', onResize)
+
+  function teardown() {
+    stopped = true
+    cancelAnimationFrame(rafId)
+    window.removeEventListener('resize', onResize)
+    input.dispose()
+    effects.dispose()
+    combat.dispose()
+    renderer.dispose()
+    hud.unmount()
+  }
+
+  function tick(now) {
+    if (stopped) return
+    rafId = requestAnimationFrame(tick)
+    const dt = Math.min((now - lastTime) / 1000, 0.1)
+    lastTime = now
+
+    const inputState = input.update()
+
+    if (inputState.pressed.has('Escape') || inputState.pressed.has('KeyP') || inputState.pressed.has('GamepadStart')) {
+      paused = !paused
+      hud.setPaused(paused)
+    }
+    if (paused) return
+
+    rail.update(dt, inputState)
+    const playerPos = rail.getPlayerPosition()
+    const noseFrame = rail.getFrameAt(0)
+    const nosePos = rail.getShipNosePosition()
+
+    // ============ MIRA em NDC ============
+    // física própria da mira em espaço de tela. Move mais rápida que a nave e chega mais longe.
+    // Em modo arena a mira fica no centro (o voo livre já é a mira).
+    if (rail.isArena()) {
+      reticleNDCX = 0
+      reticleNDCY = 0
+      reticleVelX = 0
+      reticleVelY = 0
+    } else {
+      const tvx = inputState.moveX * RETICLE_NDC_SPEED
+      const tvy = inputState.moveY * RETICLE_NDC_SPEED
+      const rblend = 1 - Math.exp(-RETICLE_NDC_ACCEL * dt)
+      reticleVelX += (tvx - reticleVelX) * rblend
+      reticleVelY += (tvy - reticleVelY) * rblend
+      reticleNDCX += reticleVelX * dt
+      reticleNDCY += reticleVelY * dt
+
+      if (reticleNDCX > RETICLE_NDC_MAX_X) { reticleNDCX = RETICLE_NDC_MAX_X; reticleVelX = 0 }
+      else if (reticleNDCX < -RETICLE_NDC_MAX_X) { reticleNDCX = -RETICLE_NDC_MAX_X; reticleVelX = 0 }
+      if (reticleNDCY > RETICLE_NDC_MAX_Y) { reticleNDCY = RETICLE_NDC_MAX_Y; reticleVelY = 0 }
+      else if (reticleNDCY < -RETICLE_NDC_MAX_Y) { reticleNDCY = -RETICLE_NDC_MAX_Y; reticleVelY = 0 }
+    }
+
+    // posiciona a mira na tela (convertendo NDC para fração 0..1)
+    hud.setReticlePosition(
+      (reticleNDCX + 1) / 2,
+      (1 - reticleNDCY) / 2,
+    )
+
+    // direção do tiro: raio da CÂMERA através do ponto NDC da mira. Isso garante que os tiros
+    // passem exatamente por onde a mira está na tela.
+    rayHelper.set(reticleNDCX, reticleNDCY, 0.5)
+    rayHelper.unproject(camera)
+    rayHelper.sub(camera.position).normalize()
+
+    if (inputState.firing) combat.tryFire(nosePos, rayHelper)
+
+    const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
+    const events = combat.update(dt, playerPos, {
+      enemiesActive,
+      aimOrigin: nosePos,
+      aimDirection: rayHelper,
+    })
+
+    effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
+
+    if (events.enemyKillPoints) session.score += events.enemyKillPoints
+    if (events.bonusKillPoints) session.score += events.bonusKillPoints
+    if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
+
+    invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
+    if (events.enemyHits > 0 && invincibleTimer <= 0) {
+      session.shields = Math.max(0, session.shields - 1)
+      invincibleTimer = INVINCIBILITY_MS
+      hud.damageFlash()
+      if (session.shields <= 0) {
+        endSector()
+        return
+      }
+    }
+    rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
+
+    if (phase === 'combat' || phase === 'goldenArena') {
+      enemyTimer -= dt * 1000
+      if (enemyTimer <= 0) {
+        if (phase === 'combat' && Math.random() < TIME_ENEMY_SPAWN_CHANCE) combat.spawnTimeEnemy()
+        else combat.spawnEnemy()
+        enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+      }
+    }
+
+    if (phase === 'combat') {
+      if (!isBossCycle) {
+        bonusTimer -= dt * 1000
+        if (bonusTimer <= 0) {
+          combat.spawnBonusTarget()
+          bonusTimer = randomBonusInterval()
+        }
+
+        goldenTimer -= dt * 1000
+        if (goldenTimer <= 0) enterGoldenArena()
+      }
+
+      if (phase === 'combat') {
+        cycleTimer -= dt * 1000
+        hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
+        if (cycleTimer <= 0) enterRecall()
+      }
+    } else if (phase === 'recall') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        if (isBossCycle) enterBossArena()
+        else enterAlternatives()
+      }
+    } else if (phase === 'alternatives') {
+      processAnswerPhase(events, inputState, dt, altTotalMs, 'normal')
+    } else if (phase === 'boss') {
+      processAnswerPhase(events, inputState, dt, arenaTotalMs, 'boss')
+    } else if (phase === 'goldenArena') {
+      if (events.goldenSpecialHit) {
+        exitGoldenArenaVisuals()
+        enterGoldenRecall()
+      } else {
+        goldenArenaTimer -= dt * 1000
+        if (goldenArenaTimer <= 0) {
+          exitGoldenArenaVisuals()
+          resumeCombatFromGolden()
+        }
+      }
+    } else if (phase === 'goldenRecall') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) enterGoldenAlternatives()
+    } else if (phase === 'goldenAlternatives') {
+      processAnswerPhase(events, inputState, dt, ALT_MS, 'golden')
+    } else if (phase === 'resolution') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        if (pendingSectorOver) {
+          endSector()
+          return
+        }
+        enterCombat()
+      }
+    } else if (phase === 'goldenResolution') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) resumeCombatFromGolden()
+    }
+
+    if (stopped) return
+
+    hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+    renderer.render(scene, camera)
+  }
+
+  enterCombat()
+  hud.setStatus({ shields: session.shields, maxShields: STARTING_SHIELDS, score: session.score, combo: session.comboMultiplier })
+  lastTime = performance.now()
+  rafId = requestAnimationFrame(tick)
+}
+
+restart()
