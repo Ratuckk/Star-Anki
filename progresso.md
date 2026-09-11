@@ -1,11 +1,12 @@
 ## Pendências agora
 
-- [ ] Fase 4: roguelike de cartas (ofensivo/defensivo/utilitário), nave-cosmética extra, tiro carregado teleguiado, giro-desvio Z/C.
+- [ ] Nenhuma pendência das 4 fases do pedido grande — todas entregues (v0.14.0 → v0.17.0). Ver ideias de continuação na seção da v0.17.0 abaixo se quiser aprofundar algo.
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados", mas nenhum arquivo existia neste projeto antes da v0.14.0 (criei um do zero — ver seção v0.14.0). Se existir um segundo em outro lugar, perguntar ao usuário onde, pra manter sincronizado.
 - [ ] `src/selftest.mjs` linha 117 espera `session.shields === 3`, mas `STARTING_SHIELDS` é 10 — desatualizado desde antes desta sessão (não mexi, fora de escopo da v0.14.0).
 - [ ] Testar o build atual com o baralho real do usuário.
 - [ ] Usuário escolher (se quiser) qual das ideias de inimigo futuro (ver seção abaixo) implementar em seguida.
 - [ ] Reconfirmar ao vivo que tiro certeiro no dourado especial = +50 sem tocar combo/escudo.
+- [x] Roguelike, tiro teleguiado, giro-desvio, wingman — v0.17.0 (Fase 4 do pedido grande, última fase).
 - [x] Gameplay de dano/vida: vidas, escudo, invencibilidade, shake, backgrounds — v0.16.0 (Fase 3 do pedido grande).
 - [x] Repositório conectado ao GitHub (`github.com/Ratuckk/Star-Anki`), push automático a partir de agora.
 - [x] Ambiente de testes: launcher com auto-shutdown do servidor — v0.15.0 (Fase 2 do pedido grande).
@@ -19,6 +20,35 @@
 - [x] Baralho salvo no localStorage — v0.10.0.
 - [x] Efeitos visuais (starfield, explosões, rastro, muzzle flash, vinheta) — v0.11.0.
 - [x] Mira estilo Star Fox 64 (lock-on, resposta direta, reticle visual) — v0.12.0.
+## Roguelike, tiro teleguiado, giro-desvio, wingman — v0.17.0
+
+Fase 4 do pedido grande — a última. Maior mudança de arquitetura das 4 fases: introduz um sistema de progressão inteiro que não existia (roguelike de cartas) e reescreve boa parte do combate.
+
+**Módulo novo `src/roguelike.js`**: metadados puros de 12 cartas em 3 categorias (ofensivo/defensivo/utilitário) — `pickRandomCards(count, exclude)` sorteia sem repetir. O efeito de cada carta (o que ela muda de verdade no jogo) vive em `main.js`, num `applyRoguelikeCard(card)` com switch por id — mesma separação metadados/efeito já usada em `debug.js`/`main.js` desde a fase 1.
+
+**Trigger**: decisão já alinhada com o usuário — susbtitui o `applyBuff()` automático de sempre (que melhorava fireCooldown/aimAssist/projéteis a cada acerto, sem escolha) por uma tela de escolha (3 cartas) toda vez que o jogador acerta uma pergunta, seja normal, chefe ou bônus dourado. Novo `phase = 'cardChoice'` entre a fase de resolução e o retorno ao combate; `enterCardChoice(onDone)` recebe a continuação certa pra cada caso (`enterCombat` ou `resumeCombatFromGolden`). Cartas já maximizadas (ex: `wingman` no teto de 2, `deflect-on-spin` já ativa) somem da lista de sorteio — não oferece escolha inútil.
+
+**Cartas que mexem em mecânica nova** (todas com caps/pisos, pensados pra não virarem infinitos): `extra-shield-charge`/`faster-shield-recharge` (mexem no `shieldMax`/`shieldRechargeMs` da fase 3, que viraram variáveis mutáveis — antes eram constantes fixas), `longer-invincibility`, `extra-life` (cresce `session.lives` **e** o `maxLives` que dimensiona o pool de pips do HUD — sem isso a vida extra ficava invisível, pego testando ao vivo), `wingman`, `more-homing-targets`, `faster-charge`, `longer-dodge-iframe`, `deflect-on-spin`.
+
+**Nave de apoio (wingman)**: `combat.js` ganhou `setWingmanCount(n)` (até 2, `WINGMAN_OFFSETS`), mesh cosmético cônico ciano posicionado a cada frame relativo à nave do jogador (usa `rail.getPlayerPosition()`/`getFrameAt(0)` — `combat.js` já tinha acesso a `rail`). Atira junto com o jogador (`tryFire` dispara também dos wingmen, um projétil cada, sem espalhamento) mas nunca é alvo de colisão — só cosmético + dano, como pedido.
+
+**Tiro carregado teleguiado**: segurar o botão de atirar (agora **X** por padrão) continua disparando normal (auto-fire de sempre, sem suprimir); ao **soltar**, se o tempo segurado passou de `homingChargeMinMs` (2s), dispara adicionalmente um tiro teleguiado — um projétil por alvo, perseguindo os `N` inimigos vivos mais próximos, `N` escalando de 2 (no mínimo) até `homingMaxTargets` (5 base, até 8 com cartas) conforme o tempo de carga se aproxima de `homingChargeMaxMs` (4s). Steering em `combat.js`: cada projétil com `homingTarget` redireciona a velocidade pro alvo TODO frame (perseguição perfeita, sem física de mísseis) — se o alvo morre, o projétil perde a mira e segue reto. Indicador visual: barra roxa (`hud.setChargeIndicator`) embaixo da mira, só aparece depois do `homingChargeMinMs`.
+
+**Visual de tiro "de verdade"**: trocado o `SphereGeometry` genérico por um cone achatado (`rotateX` pra apontar em +Z local) azul pro jogador/wingman, roxo maior pro teleguiado — cada projétil reorienta o quaternion pra apontar na direção de voo TODO frame (`updateProjectiles`), então acompanha curvas do tiro teleguiado visualmente também.
+
+**Giro-desvio (Z/C)**: por decisão já alinhada — só i-frames + animação, **sem deslocar** a nave (mais simples que dash físico). Toque simples numa tecla = "bump" de inclinação curto + `dodgeIframeSingleMs` (400ms) de invencibilidade; **duplo toque na MESMA tecla** dentro de `DODGE_TAP_WINDOW_MS` (400ms) = giro completo de 360° + `dodgeIframeFullMs` (900ms) de invencibilidade. Animação pura em `rail.js` (`triggerDodgeRoll(direction, full)` + `currentDodgeRollAngle()`, um `rotateZ` extra por cima do roll normal — não toca `playerX`/`playerY`/`lastPlayerPos`, então colisão e mira ficam intocadas, só cosmético). `invincibleTimer` é reaproveitado do sistema de hit da fase 3 (`Math.max` com o valor atual) — dodge e hit de inimigo escrevem no mesmo timer, e o piscar da nave já existente passa a indicar "estou invencível" nos dois casos.
+
+**Carta "giro rebatedor"**: com ela ativa, um giro completo (`isFull`) chama `combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)` — projéteis inimigos dentro do raio são destruídos e viram tiros do próprio jogador mirando no inimigo vivo mais próximo. Checado uma vez no instante do giro (não durante toda a janela de invencibilidade) — mais simples, cobre o caso de "girei bem na hora que ia tomar o tiro".
+
+**Fire key mudou de Space pra X**: default em `keybindings.js`. Jogadores que já tinham usado "Restaurar padrão" antes desta versão ficam com o Space salvo no `localStorage` até clicarem em restaurar de novo (limitação conhecida do sistema de merge da fase 1, documentada lá — bati nisso testando ao vivo e tive que limpar o `localStorage` manualmente pra validar o X).
+
+**Debug**: 3 ações novas — `Escolher carta roguelike` (força a tela de escolha fora do fluxo normal, só a partir da fase `combat`), `Testar giro-desvio completo` (simula duplo toque), `Testar tiro teleguiado` (dispara direto, sem precisar segurar 2s).
+
+**Testado ao vivo**: tela de 3 cartas com cores por categoria renderiza e resolve corretamente; carta "Vida extra" cresce o pool de pips do HUD (pegando o bug do `maxLives` fixo, corrigido antes de commitar); carta "Nave de apoio" spawna e posiciona o wingman corretamente; tiro teleguiado (via debug, sem segurar) persegue e atinge inimigo, visual roxo distinto; giro completo anima a nave sem erros e aciona o rebote sem crashar com 0 inimigos; configurações mostram X/Z/C corretamente. **Limitação de teste encontrada**: não consegui validar o carregamento por segurar-2-segundos ao vivo dentro do Browser pane — o `requestAnimationFrame` do jogo fica extremamente throttled quando a aba não tem foco real do SO (mesmo "frontada" via ferramenta), fazendo o relógio interno do jogo avançar bem mais devagar que o tempo real (o countdown de 90s não andou nem 1 segundo em 13s de espera real). A lógica é o mesmo padrão de acúmulo de `dt` já validado em outros timers (invencibilidade, recarga de escudo) — só não deu pra confirmar essa ponta específica ao vivo por essa limitação do ambiente de teste, não do jogo. Vale o usuário confirmar manualmente jogando de verdade.
+- **Não mexido**: `src/anki.js`, `src/effects.js`, `src/decks.js`, `src/settings.js`, `src/storage.js`.
+
+**Versão**: v0.16.0 → v0.17.0.
+
 ## Gameplay de dano/vida: vidas, escudo, invencibilidade, shake, backgrounds — v0.16.0
 
 Fase 3 do pedido grande. Implementa a cascata de dano já alinhada com o usuário: **Escudo → Saúde → Vida**.

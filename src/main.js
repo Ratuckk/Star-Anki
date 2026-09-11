@@ -10,6 +10,7 @@ import { loadHistory, saveHistory, recordResult } from './storage.js'
 import { getDeck } from './decks.js'
 import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
+import { pickRandomCards } from './roguelike.js'
 
 const CYCLE_MS = 90000
 const WARNING_MS = 10000
@@ -99,7 +100,6 @@ const FIRE_COOLDOWN_MULT_PER_CORRECT = 0.85
 const FIRE_COOLDOWN_FLOOR = 0.06
 const AIM_ASSIST_STEP = THREE.MathUtils.degToRad(1.5)
 const AIM_ASSIST_CAP = THREE.MathUtils.degToRad(14)
-const PROJECTILE_STEP_EVERY_CORRECT = 3
 const PROJECTILE_COUNT_CAP = 4
 const PROJECTILE_COUNT_START = 2
 
@@ -111,6 +111,34 @@ const GOLDEN_SPREAD_MIN = 40
 const GOLDEN_SPREAD_MAX = 90
 
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
+
+// ============ ROGUELIKE (fase 4) ============
+// caps/pisos das cartas que ajustam mecânicas novas desta fase. As cartas de ofensivo que
+// reaproveitam fireCooldown/aimAssistAngle/projectileCount usam os mesmos FIRE_COOLDOWN_*/
+// AIM_ASSIST_*/PROJECTILE_COUNT_CAP já existentes acima (antes usados pelo applyBuff()
+// automático, que a escolha de carta substitui).
+const SHIELD_MAX_CAP = 4
+const SHIELD_RECHARGE_FLOOR_MS = 2000
+const INVINCIBILITY_CAP_MS = 3000
+const WINGMAN_CAP = 2
+const LIVES_CAP = 5
+
+// tiro teleguiado: segurar o botão de atirar carrega, de HOMING_CHARGE_MIN_MS (começa a valer)
+// até HOMING_CHARGE_MAX_MS (carga máxima); nº de alvos escala de HOMING_MIN_TARGETS até
+// homingMaxTargets (mutável, cartas aumentam) nesse intervalo
+const HOMING_CHARGE_MIN_MS = 2000
+const HOMING_CHARGE_MAX_MS = 4000
+const HOMING_CHARGE_MIN_FLOOR_MS = 1000
+const HOMING_MIN_TARGETS = 2
+const HOMING_MAX_TARGETS_BASE = 5
+const HOMING_MAX_TARGETS_CAP = 8
+
+// giro-desvio (Z/C): toque simples = i-frames curtos; duplo toque (mesma tecla, dentro da
+// janela) = giro completo, i-frames mais longos, e — com a carta certa — rebate projéteis
+const DODGE_TAP_WINDOW_MS = 400
+const DODGE_IFRAME_SINGLE_MS = 400
+const DODGE_IFRAME_FULL_MS = 900
+const DEFLECT_RADIUS = 6
 
 let deck = null
 let deckText = null
@@ -261,7 +289,7 @@ function mountGame(session) {
   // precisa reler a cada frame
   const bindings = getBindings()
   const maxHealth = session.health
-  const maxLives = session.lives
+  let maxLives = session.lives
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
   let debugVisible = false
@@ -270,9 +298,26 @@ function mountGame(session) {
   let hitboxesActive = false
   let slowMoActive = false
 
-  let shieldCharges = SHIELD_MAX
+  let shieldMax = SHIELD_MAX
+  let shieldRechargeMs = SHIELD_RECHARGE_MS
+  let shieldCharges = shieldMax
   let shieldRechargeTimer = 0
   let hitShakeTimer = 0
+  let invincibilityDurationMs = INVINCIBILITY_MS
+
+  // ---- roguelike: estado que as cartas ajustam ----
+  let pendingCardChoice = false
+  let wingmanCount = 0
+  let deflectCardActive = false
+  let homingMaxTargets = HOMING_MAX_TARGETS_BASE
+  let homingChargeMinMs = HOMING_CHARGE_MIN_MS
+  let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
+  let dodgeIframeSingleMs = DODGE_IFRAME_SINGLE_MS
+  let dodgeIframeFullMs = DODGE_IFRAME_FULL_MS
+
+  // ---- tiro carregado / giro-desvio: estado de input em tempo real ----
+  let fireHeldMs = 0
+  const lastDodgeTap = { left: -Infinity, right: -Infinity }
 
   let phase = null
   let phaseTimer = 0
@@ -303,7 +348,6 @@ function mountGame(session) {
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
   let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
   let projectileCount = PROJECTILE_COUNT_START
-  let correctBuffCount = 0
 
   let enemyIntervalMin = ENEMY_INTERVAL_MIN_BASE
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
@@ -395,16 +439,87 @@ function mountGame(session) {
     }
   }
 
-  function applyBuff() {
-    correctBuffCount += 1
-    fireCooldown = Math.max(FIRE_COOLDOWN_FLOOR, fireCooldown * FIRE_COOLDOWN_MULT_PER_CORRECT)
-    combat.setFireCooldown(fireCooldown)
-    aimAssistAngle = Math.min(AIM_ASSIST_CAP, aimAssistAngle + AIM_ASSIST_STEP)
-    combat.setAimAssistAngle(aimAssistAngle)
-    if (correctBuffCount % PROJECTILE_STEP_EVERY_CORRECT === 0) {
-      projectileCount = Math.min(PROJECTILE_COUNT_CAP, projectileCount + 1)
-      combat.setProjectileCount(projectileCount)
+  // efeito de cada carta do roguelike — chamado quando o jogador escolhe uma na tela de
+  // escolha (substitui o antigo applyBuff() automático: agora é o jogador quem decide)
+  function applyRoguelikeCard(card) {
+    switch (card.id) {
+      case 'extra-projectile':
+        projectileCount = Math.min(PROJECTILE_COUNT_CAP, projectileCount + 1)
+        combat.setProjectileCount(projectileCount)
+        break
+      case 'faster-fire':
+        fireCooldown = Math.max(FIRE_COOLDOWN_FLOOR, fireCooldown * FIRE_COOLDOWN_MULT_PER_CORRECT)
+        combat.setFireCooldown(fireCooldown)
+        break
+      case 'wingman':
+        wingmanCount = Math.min(WINGMAN_CAP, wingmanCount + 1)
+        combat.setWingmanCount(wingmanCount)
+        break
+      case 'wider-lock':
+        aimAssistAngle = Math.min(AIM_ASSIST_CAP, aimAssistAngle + AIM_ASSIST_STEP)
+        combat.setAimAssistAngle(aimAssistAngle)
+        break
+      case 'more-homing-targets':
+        homingMaxTargets = Math.min(HOMING_MAX_TARGETS_CAP, homingMaxTargets + 1)
+        break
+      case 'extra-shield-charge':
+        shieldMax = Math.min(SHIELD_MAX_CAP, shieldMax + 1)
+        break
+      case 'faster-shield-recharge':
+        shieldRechargeMs = Math.max(SHIELD_RECHARGE_FLOOR_MS, shieldRechargeMs * 0.8)
+        break
+      case 'longer-invincibility':
+        invincibilityDurationMs = Math.min(INVINCIBILITY_CAP_MS, invincibilityDurationMs + 200)
+        break
+      case 'extra-life':
+        session.lives = Math.min(LIVES_CAP, session.lives + 1)
+        maxLives = Math.max(maxLives, session.lives)
+        hud.setLives(session.lives, maxLives)
+        break
+      case 'deflect-on-spin':
+        deflectCardActive = true
+        break
+      case 'faster-charge':
+        homingChargeMinMs = Math.max(HOMING_CHARGE_MIN_FLOOR_MS, homingChargeMinMs - 300)
+        homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
+        break
+      case 'longer-dodge-iframe':
+        dodgeIframeSingleMs += 100
+        dodgeIframeFullMs += 150
+        break
+      default:
+        break
     }
+  }
+
+  // cartas que já estão no máximo (ou já foram pegas, pra "deflect-on-spin" que é liga/desliga)
+  // não aparecem de novo — evita oferecer escolhas inúteis
+  function buildCardExcludeSet() {
+    const exclude = new Set()
+    if (deflectCardActive) exclude.add('deflect-on-spin')
+    if (wingmanCount >= WINGMAN_CAP) exclude.add('wingman')
+    if (shieldMax >= SHIELD_MAX_CAP) exclude.add('extra-shield-charge')
+    if (homingMaxTargets >= HOMING_MAX_TARGETS_CAP) exclude.add('more-homing-targets')
+    if (projectileCount >= PROJECTILE_COUNT_CAP) exclude.add('extra-projectile')
+    if (aimAssistAngle >= AIM_ASSIST_CAP) exclude.add('wider-lock')
+    if (session.lives >= LIVES_CAP) exclude.add('extra-life')
+    return exclude
+  }
+
+  // tela de escolha de carta: aberta a cada resposta correta (normal, chefe ou bônus dourado).
+  // onDone é chamado depois que o jogador escolhe — cada chamador decide pra onde voltar
+  // (enterCombat ou resumeCombatFromGolden)
+  function enterCardChoice(onDone) {
+    const cards = pickRandomCards(3, buildCardExcludeSet())
+    if (cards.length === 0) { onDone(); return }
+    phase = 'cardChoice'
+    hud.showCardChoice({
+      cards,
+      onPick: (card) => {
+        applyRoguelikeCard(card)
+        onDone()
+      },
+    })
   }
 
   function applyDifficulty() {
@@ -545,9 +660,20 @@ function mountGame(session) {
     session.lives -= 1
     if (session.lives <= 0) return true
     session.health = maxHealth
-    shieldCharges = SHIELD_MAX
+    shieldCharges = shieldMax
     shieldRechargeTimer = 0
     return false
+  }
+
+  function handleDodgePress(direction, side, playerPos) {
+    const now = performance.now()
+    const isFull = now - lastDodgeTap[side] < DODGE_TAP_WINDOW_MS
+    lastDodgeTap[side] = now
+
+    rail.triggerDodgeRoll(direction, isFull)
+    invincibleTimer = Math.max(invincibleTimer, isFull ? dodgeIframeFullMs : dodgeIframeSingleMs)
+
+    if (isFull && deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
   }
 
   function settleQuestion(outcome, isBoss) {
@@ -557,8 +683,7 @@ function mountGame(session) {
     applySpeedProgression(outcome.type)
 
     const correct = outcome.type === 'correct'
-    if (correct) applyBuff()
-    else applyDifficulty()
+    if (!correct) applyDifficulty()
     if (isBoss && !correct) applyBossDifficulty()
 
     history = recordResult(history, outcome.card.guid, correct)
@@ -578,6 +703,7 @@ function mountGame(session) {
 
     const outOfLives = applyHealthLoss()
     pendingSectorOver = resolution.sectorOver || outOfLives
+    pendingCardChoice = correct
     phase = 'resolution'
     phaseTimer = FEEDBACK_MS
   }
@@ -585,7 +711,6 @@ function mountGame(session) {
   function settleGoldenBonus(outcome) {
     combat.clearQuizTargets()
     const correct = outcome.type === 'correct'
-    if (correct) applyBuff()
 
     history = recordResult(history, outcome.card.guid, correct)
     saveHistory(history)
@@ -599,6 +724,7 @@ function mountGame(session) {
       bonus: true,
     })
 
+    pendingCardChoice = correct
     phase = 'goldenResolution'
     phaseTimer = FEEDBACK_MS
   }
@@ -686,7 +812,34 @@ function mountGame(session) {
     // direção do tiro: do NARIZ até a MIRA — o projétil passa visualmente pela mira por construção
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
-    if (inputState.firing) combat.tryFire(nosePos, fireDirection)
+    // ============ TIRO / TIRO TELEGUIADO CARREGADO ============
+    // segurar o botão de atirar continua disparando normal (auto-fire de sempre). Se o
+    // segurar passar de homingChargeMinMs, ao SOLTAR o botão isso dispara, ADICIONALMENTE, um
+    // tiro teleguiado que persegue até homingMaxTargets inimigos — a carga escala de
+    // HOMING_MIN_TARGETS (no mínimo) até homingMaxTargets (no máximo, aos homingChargeMaxMs)
+    if (inputState.firing) {
+      combat.tryFire(nosePos, fireDirection)
+      fireHeldMs += dt * 1000
+      if (fireHeldMs >= homingChargeMinMs) {
+        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
+        hud.setChargeIndicator(true, chargeFrac)
+      }
+    } else {
+      if (fireHeldMs >= homingChargeMinMs) {
+        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
+        const targetCount = Math.round(HOMING_MIN_TARGETS + (homingMaxTargets - HOMING_MIN_TARGETS) * chargeFrac)
+        combat.fireHomingShot(nosePos, targetCount)
+      }
+      fireHeldMs = 0
+      hud.setChargeIndicator(false)
+    }
+
+    // ============ GIRO-DESVIO (Z/C) ============
+    // toque simples = i-frames curtos + "bump" de inclinação. Duplo toque na MESMA tecla,
+    // dentro da janela = giro completo + i-frames mais longos + (com a carta) rebate
+    // projéteis inimigos próximos
+    if (isActionPressed(bindings, inputState.pressed, 'dodgeLeft')) handleDodgePress(-1, 'left', playerPos)
+    if (isActionPressed(bindings, inputState.pressed, 'dodgeRight')) handleDodgePress(1, 'right', playerPos)
 
     const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
     const events = combat.update(dt, playerPos, {
@@ -729,19 +882,19 @@ function mountGame(session) {
     // volta pro máximo de uma vez (não regenera carga por carga)
     if (shieldCharges <= 0 && shieldRechargeTimer > 0) {
       shieldRechargeTimer = Math.max(0, shieldRechargeTimer - dt * 1000)
-      if (shieldRechargeTimer <= 0) shieldCharges = SHIELD_MAX
+      if (shieldRechargeTimer <= 0) shieldCharges = shieldMax
     }
 
     invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
     if (events.enemyHits > 0 && invincibleTimer <= 0 && !godMode) {
-      invincibleTimer = INVINCIBILITY_MS
+      invincibleTimer = invincibilityDurationMs
       hitShakeTimer = HIT_SHAKE_DURATION_MS
       hud.damageFlash()
 
       if (shieldCharges > 0) {
         // escudo absorve o hit — saúde intocada
         shieldCharges -= 1
-        if (shieldCharges <= 0) shieldRechargeTimer = SHIELD_RECHARGE_MS
+        if (shieldCharges <= 0) shieldRechargeTimer = shieldRechargeMs
       } else {
         session.health = Math.max(0, session.health - 1)
         if (applyHealthLoss()) {
@@ -811,18 +964,22 @@ function mountGame(session) {
           endSector()
           return
         }
-        enterCombat()
+        if (pendingCardChoice) enterCardChoice(enterCombat)
+        else enterCombat()
       }
     } else if (phase === 'goldenResolution') {
       phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) resumeCombatFromGolden()
+      if (phaseTimer <= 0) {
+        if (pendingCardChoice) enterCardChoice(resumeCombatFromGolden)
+        else resumeCombatFromGolden()
+      }
     }
 
     if (stopped) return
 
     hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
     hud.setLives(session.lives, maxLives)
-    hud.setShield(shieldCharges, SHIELD_MAX, shieldRechargeTimer / SHIELD_RECHARGE_MS)
+    hud.setShield(shieldCharges, shieldMax, shieldRechargeTimer / shieldRechargeMs)
 
     // shake de câmera: aplicado por último, só na posição de render — não interfere em nenhum
     // cálculo de jogo (mira, colisão) feito mais acima neste mesmo frame
@@ -864,7 +1021,7 @@ function mountGame(session) {
       if (session.lives <= 0) endSector()
     },
     rechargeShield: () => {
-      shieldCharges = SHIELD_MAX
+      shieldCharges = shieldMax
       shieldRechargeTimer = 0
     },
     godMode: () => {
@@ -894,12 +1051,19 @@ function mountGame(session) {
       slowMoActive = !slowMoActive
       hud.debug.setToggleActive('slowMo', slowMoActive)
     },
+    giveCard: () => { if (phase === 'combat') enterCardChoice(enterCombat) },
+    triggerFullDodge: () => {
+      const p = rail.getPlayerPosition()
+      handleDodgePress(1, 'right', p)
+      handleDodgePress(1, 'right', p)
+    },
+    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), homingMaxTargets),
   })
 
   enterCombat()
   hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
   hud.setLives(session.lives, maxLives)
-  hud.setShield(shieldCharges, SHIELD_MAX, 0)
+  hud.setShield(shieldCharges, shieldMax, 0)
   lastTime = performance.now()
   rafId = requestAnimationFrame(tick)
 }

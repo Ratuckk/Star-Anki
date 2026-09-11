@@ -3,6 +3,7 @@ import { listDecks, addDeck, updateDeck, removeDeck, getDeck } from './decks.js'
 import { getSettings, setSetting } from './settings.js'
 import { getBindings, setBinding, resetToDefaults, setGamepadBinding, codeToLabel, ACTIONS } from './keybindings.js'
 import { DEBUG_ACTIONS } from './debug.js'
+import { CARD_CATEGORY_LABEL } from './roguelike.js'
 
 const COLOR_MAP = { azul: '#4da6ff', 'âmbar': '#ffb84d', magenta: '#ff4dd2', ciano: '#4dfff2' }
 
@@ -30,7 +31,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.16.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.17.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -682,6 +683,29 @@ export function createGameHud() {
   pause.hidden = true
   root.appendChild(pause)
 
+  // ============ ESCOLHA DE CARTA ROGUELIKE ============
+  const cardChoiceOverlay = document.createElement('div')
+  cardChoiceOverlay.className = 'card-choice-overlay'
+  cardChoiceOverlay.hidden = true
+  root.appendChild(cardChoiceOverlay)
+
+  const cardChoiceTitle = document.createElement('h3')
+  cardChoiceTitle.textContent = 'Acertou! Escolha um upgrade'
+  cardChoiceOverlay.appendChild(cardChoiceTitle)
+
+  const cardChoiceList = document.createElement('div')
+  cardChoiceList.className = 'card-choice-list'
+  cardChoiceOverlay.appendChild(cardChoiceList)
+
+  // ============ INDICADOR DE CARGA (tiro teleguiado) ============
+  const chargeBar = document.createElement('div')
+  chargeBar.className = 'hud-charge-bar'
+  chargeBar.hidden = true
+  root.appendChild(chargeBar)
+  const chargeBarFill = document.createElement('div')
+  chargeBarFill.className = 'hud-charge-bar-fill'
+  chargeBar.appendChild(chargeBarFill)
+
   // ============ PAINEL DE DEBUG ============
   const debugPanel = document.createElement('div')
   debugPanel.className = 'debug-panel'
@@ -864,6 +888,27 @@ export function createGameHud() {
       for (const [id, el] of enemyBarPool) {
         if (!seen.has(id)) { el.remove(); enemyBarPool.delete(id) }
       }
+    },
+
+    showCardChoice({ cards, onPick }) {
+      cardChoiceList.innerHTML = ''
+      for (const card of cards) {
+        const el = document.createElement('button')
+        el.className = `roguelike-card category-${card.category}`
+        el.innerHTML = `<span class="card-category">${CARD_CATEGORY_LABEL[card.category] ?? card.category}</span><h4>${card.label}</h4><p>${card.description}</p>`
+        el.addEventListener('click', () => {
+          cardChoiceOverlay.hidden = true
+          onPick(card)
+        })
+        cardChoiceList.appendChild(el)
+      }
+      cardChoiceOverlay.hidden = false
+    },
+
+    // fração 0..1 do carregamento do tiro teleguiado (0 = ainda não começou a carregar)
+    setChargeIndicator(active, fraction = 0) {
+      chargeBar.hidden = !active
+      if (active) chargeBarFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
     },
 
     debug: {

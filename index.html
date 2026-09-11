@@ -159,6 +159,86 @@
   .debug-panel button.active { background: #2bff6b; color: #0b0d12; border-color: #2bff6b; }
   .debug-hint { color: #6a7382; font-size: 0.75rem; margin: 0 0 0.6rem; }
 
+  /* ============ ESCOLHA DE CARTA ROGUELIKE ============ */
+  .card-choice-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    background: rgba(11, 13, 18, 0.75);
+    z-index: 15;
+  }
+  .card-choice-overlay h3 {
+    margin: 0;
+    color: #f5f5f7;
+    font-size: 1.4rem;
+    text-shadow: 0 2px 8px #000;
+  }
+  .card-choice-list {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 90vw;
+  }
+  .roguelike-card {
+    width: 220px;
+    text-align: left;
+    background: #16202b;
+    border: 2px solid #333944;
+    border-radius: 12px;
+    padding: 1rem;
+    cursor: pointer;
+    color: #f5f5f7;
+    font-family: inherit;
+    transition: transform 0.12s, border-color 0.12s;
+  }
+  .roguelike-card:hover {
+    transform: translateY(-4px);
+  }
+  .roguelike-card .card-category {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    margin-bottom: 0.6rem;
+  }
+  .roguelike-card h4 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+  .roguelike-card p { margin: 0; font-size: 0.85rem; color: #c7ccd4; line-height: 1.4; }
+  .roguelike-card.category-ofensivo { border-color: #ff6b5a; }
+  .roguelike-card.category-ofensivo .card-category { background: #4a2620; color: #ff9d8a; }
+  .roguelike-card.category-defensivo { border-color: #4da6ff; }
+  .roguelike-card.category-defensivo .card-category { background: #1c2c40; color: #8fc4ff; }
+  .roguelike-card.category-utilitario { border-color: #2bff6b; }
+  .roguelike-card.category-utilitario .card-category { background: #16321f; color: #7dffa8; }
+
+  .hud-charge-bar {
+    position: absolute;
+    bottom: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 140px;
+    height: 8px;
+    background: rgba(20, 24, 32, 0.7);
+    border: 1px solid #333944;
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .hud-charge-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: #b84dff;
+    box-shadow: 0 0 8px rgba(184, 77, 255, 0.8);
+    transition: width 0.05s linear;
+  }
+
   .enemy-health-bar {
     position: absolute; width: 44px; height: 6px; transform: translate(-50%, -100%);
     background: rgba(11, 13, 18, 0.7); border: 1px solid #333944; border-radius: 3px; overflow: hidden; pointer-events: none;

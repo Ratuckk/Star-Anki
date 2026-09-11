@@ -5,6 +5,10 @@ const PROJECTILE_MAX_RANGE = 260
 const PROJECTILE_LATERAL_SPACING = 1.6
 const PASS_BEHIND = -4
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
+const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
+
+const HOMING_PROJECTILE_SPEED = 46
+const WINGMAN_OFFSETS = [3.2, -3.2]
 
 export const DEFAULT_FIRE_COOLDOWN = 0.2
 export const DEFAULT_AIM_ASSIST_ANGLE = THREE.MathUtils.degToRad(4)
@@ -84,8 +88,23 @@ export function createCombatSystem(scene, rail, effects = null) {
   const bonusTargets = []
   const goldenTargets = []
 
-  const projectileGeometry = new THREE.SphereGeometry(0.25, 8, 8)
-  const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xfff2a8 })
+  // disparo do jogador: formato angular (cone achatado apontando na direção do tiro) e azul —
+  // "disparo de verdade" em vez da esfera genérica de antes. rotateX pré-orienta a geometria
+  // pra sua ponta apontar no eixo +Z local, aí cada projétil só precisa de um quaternion
+  // alinhando +Z com a direção de voo (feito a cada frame em updateProjectiles).
+  const projectileGeometry = new THREE.ConeGeometry(0.14, 1.0, 5)
+  projectileGeometry.rotateX(Math.PI / 2)
+  const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
+
+  // tiro teleguiado: mesmo formato, maior e roxo — visualmente distinto do tiro normal
+  const homingProjectileGeometry = new THREE.ConeGeometry(0.22, 1.4, 6)
+  homingProjectileGeometry.rotateX(Math.PI / 2)
+  const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xb84dff })
+
+  // nave de apoio cosmética (carta roguelike "wingman"): não tem hitbox própria, só atira junto
+  const wingmanGeometry = new THREE.ConeGeometry(0.5, 1.6, 4)
+  const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
+
   const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
   const enemyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR, flatShading: true })
   const enemyProjectileGeometry = new THREE.SphereGeometry(0.35, 8, 8)
@@ -176,6 +195,21 @@ export function createCombatSystem(scene, rail, effects = null) {
   let elapsed = 0
   let nextEnemyId = 1
 
+  const wingmen = [] // nave(s) de apoio cosmética(s): { mesh }
+
+  function updateWingmen() {
+    if (wingmen.length === 0) return
+    const playerPos = rail.getPlayerPosition()
+    const frame = rail.getFrameAt(0)
+    wingmen.forEach((w, i) => {
+      const lateral = WINGMAN_OFFSETS[i] ?? 0
+      const pos = playerPos.clone().addScaledVector(frame.right, lateral).addScaledVector(frame.up, -0.4)
+      w.mesh.position.copy(pos)
+      w.mesh.up.copy(frame.up)
+      w.mesh.lookAt(pos.clone().add(frame.forward))
+    })
+  }
+
   // alvo travado (detecção apenas). NÃO redireciona mais o disparo — o tiro vai sempre na
   // direção passada pelo main.js (que é a direção da mira). Isso existe pra um futuro
   // disparo carregado, onde o lock-on vai ser usado pra guiar o tiro.
@@ -254,6 +288,15 @@ export function createCombatSystem(scene, rail, effects = null) {
     if (effects) effects.muzzleFlash(origin, shotDirection)
   }
 
+  // tiro único, sem espalhamento lateral — usado pelas naves de apoio (wingmen) e pelo
+  // rebate de projéteis (carta utilitária)
+  function fireSingle(origin, direction) {
+    const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
+    mesh.position.copy(origin)
+    scene.add(mesh)
+    projectiles.push({ mesh, velocity: direction.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0 })
+  }
+
   function fireEnemyProjectile(enemy, playerPosition) {
     const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
     mesh.position.copy(enemy.mesh.position)
@@ -281,9 +324,23 @@ export function createCombatSystem(scene, rail, effects = null) {
     let timeReductionMs = null
 
     for (const projectile of [...projectiles]) {
+      // tiro teleguiado: reorienta a velocidade pro alvo travado a cada frame (perseguição
+      // perfeita, sem física de mísseis) — se o alvo já morreu, o projétil só segue reto
+      if (projectile.homingTarget) {
+        if (projectile.homingTarget.dying || !enemies.includes(projectile.homingTarget)) {
+          projectile.homingTarget = null
+        } else {
+          const desired = projectile.homingTarget.mesh.position.clone().sub(projectile.mesh.position).normalize()
+          projectile.velocity.copy(desired.multiplyScalar(HOMING_PROJECTILE_SPEED))
+        }
+      }
+
       const step = projectile.velocity.clone().multiplyScalar(dt)
       projectile.mesh.position.add(step)
       projectile.traveled += step.length()
+      if (projectile.velocity.lengthSq() > 1e-6) {
+        projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, projectile.velocity.clone().normalize())
+      }
 
       const targetHit = quizTargets.find((t) => !t.dying && projectile.mesh.position.distanceTo(t.mesh.position) <= QUIZ_HIT_RADIUS)
       if (targetHit) {
@@ -440,6 +497,60 @@ export function createCombatSystem(scene, rail, effects = null) {
       cooldown = fireCooldownDuration
       if (quizRoomActive) quizShotsFired += 1
       fire(origin, direction)
+      for (const w of wingmen) fireSingle(w.mesh.position, direction)
+    },
+
+    // tiro teleguiado carregado: um projétil por alvo, perseguindo os inimigos vivos mais
+    // próximos da origem. Retorna quantos alvos realmente travou (pode ser < maxTargets se
+    // não houver inimigos suficientes em cena).
+    fireHomingShot(origin, maxTargets) {
+      const alive = [...enemies].filter((e) => !e.dying)
+      alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
+      const targets = alive.slice(0, Math.max(0, maxTargets))
+      for (const target of targets) {
+        const direction = target.mesh.position.clone().sub(origin).normalize()
+        const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
+        mesh.position.copy(origin)
+        scene.add(mesh)
+        projectiles.push({ mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0, homingTarget: target })
+      }
+      if (effects) effects.muzzleFlash(origin, targets[0] ? targets[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1))
+      return targets.length
+    },
+
+    // carta utilitária "giro rebatedor": projéteis inimigos dentro do raio, perto do jogador,
+    // são destruídos e viram tiros do próprio jogador mirando no inimigo vivo mais próximo
+    deflectNearbyProjectiles(playerPos, radius) {
+      const alive = [...enemies].filter((e) => !e.dying)
+      let deflected = 0
+      for (const p of [...enemyProjectiles]) {
+        if (playerPos.distanceTo(p.mesh.position) > radius) continue
+        removeEnemyProjectile(p)
+        deflected += 1
+        if (alive.length === 0) continue
+
+        let nearest = alive[0]
+        let nearestDist = playerPos.distanceTo(nearest.mesh.position)
+        for (const e of alive) {
+          const d = playerPos.distanceTo(e.mesh.position)
+          if (d < nearestDist) { nearest = e; nearestDist = d }
+        }
+        fireSingle(playerPos, nearest.mesh.position.clone().sub(playerPos).normalize())
+      }
+      return deflected
+    },
+
+    setWingmanCount(n) {
+      n = Math.max(0, Math.min(WINGMAN_OFFSETS.length, n))
+      while (wingmen.length < n) {
+        const mesh = new THREE.Mesh(wingmanGeometry, wingmanMaterial)
+        scene.add(mesh)
+        wingmen.push({ mesh })
+      }
+      while (wingmen.length > n) {
+        const w = wingmen.pop()
+        scene.remove(w.mesh)
+      }
     },
 
     spawnEnemy() {
@@ -621,6 +732,8 @@ export function createCombatSystem(scene, rail, effects = null) {
         enemyHits += updateEnemyProjectiles(dt, playerPosition)
       }
 
+      updateWingmen()
+
       if (showHitboxes) refreshHitboxes()
 
       return { targetHit: hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, enemyHits, goldenSpecialHit, timeReductionMs }
@@ -633,8 +746,14 @@ export function createCombatSystem(scene, rail, effects = null) {
       for (const t of [...quizTargets]) removeQuizTarget(t)
       for (const b of [...bonusTargets]) removeBonusTarget(b)
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
+      for (const w of [...wingmen]) scene.remove(w.mesh)
+      wingmen.length = 0
       projectileGeometry.dispose()
       projectileMaterial.dispose()
+      homingProjectileGeometry.dispose()
+      homingProjectileMaterial.dispose()
+      wingmanGeometry.dispose()
+      wingmanMaterial.dispose()
       enemyGeometry.dispose()
       enemyMaterial.dispose()
       enemyProjectileGeometry.dispose()

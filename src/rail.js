@@ -103,6 +103,15 @@ export function createRailController(camera, scene) {
   // nave), então não afeta playerX/playerY/lastPlayerPos usados pra colisão/mira
   let shakeMagnitude = 0
 
+  // giro-desvio (Z/C): puramente cosmético — uma rotação extra em cima da orientação normal.
+  // main.js decide QUANDO disparar (toque simples = "bump" de inclinação; duplo toque = giro
+  // completo de 360°) e concede i-frames por conta própria; aqui só animamos.
+  let dodgeActive = false
+  let dodgeElapsed = 0
+  let dodgeDuration = 0
+  let dodgeDirection = 1
+  let dodgeFull = false
+
   const ship = buildShip()
   ship.position.copy(lastFrame.position)
   scene.add(ship)
@@ -126,6 +135,15 @@ export function createRailController(camera, scene) {
     if (shakeMagnitude <= 0) return
     ship.position.x += (Math.random() * 2 - 1) * shakeMagnitude
     ship.position.y += (Math.random() * 2 - 1) * shakeMagnitude
+  }
+
+  function currentDodgeRollAngle() {
+    if (!dodgeActive) return 0
+    const t = Math.min(1, dodgeElapsed / dodgeDuration)
+    // duplo toque: giro completo de 360°. toque simples: "bump" de inclinação que vai e volta
+    return dodgeFull
+      ? dodgeDirection * t * Math.PI * 2
+      : dodgeDirection * Math.sin(t * Math.PI) * 0.9
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -170,6 +188,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(up)
     ship.lookAt(arenaPos.clone().add(forward))
     ship.rotateZ(arenaRoll)
+    ship.rotateZ(currentDodgeRollAngle())
     applyShakeJitter()
 
     const camTarget = arenaPos.clone()
@@ -185,6 +204,11 @@ export function createRailController(camera, scene) {
   }
 
   function update(dt, input) {
+    if (dodgeActive) {
+      dodgeElapsed += dt
+      if (dodgeElapsed >= dodgeDuration) dodgeActive = false
+    }
+
     if (mode === 'arena') {
       updateArena(dt, input)
       return
@@ -225,6 +249,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(frame.up)
     ship.lookAt(playerPos.clone().add(frame.forward))
     ship.rotateZ(roll)
+    ship.rotateZ(currentDodgeRollAngle())
     applyShakeJitter()
 
     const camTarget = frame.position.clone()
@@ -255,6 +280,14 @@ export function createRailController(camera, scene) {
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
     setShakeIntensity: (m) => { shakeMagnitude = m },
+    triggerDodgeRoll: (direction, full) => {
+      dodgeDirection = direction
+      dodgeFull = full
+      dodgeDuration = full ? 0.5 : 0.22
+      dodgeElapsed = 0
+      dodgeActive = true
+    },
+    isDodgeRollFullActive: () => dodgeActive && dodgeFull,
     enterArena,
     exitArena,
   }

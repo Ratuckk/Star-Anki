@@ -5,7 +5,9 @@ export const ACTIONS = [
   { id: 'moveRight', label: 'Mover direita' },
   { id: 'moveUp', label: 'Mover cima' },
   { id: 'moveDown', label: 'Mover baixo' },
-  { id: 'fire', label: 'Atirar' },
+  { id: 'fire', label: 'Atirar (segurar carrega tiro teleguiado)' },
+  { id: 'dodgeLeft', label: 'Desvio esquerda (2x = giro completo)' },
+  { id: 'dodgeRight', label: 'Desvio direita (2x = giro completo)' },
   { id: 'pause', label: 'Pausar' },
   { id: 'debugToggle', label: 'Painel de debug' },
   { id: 'quizSlot1', label: 'Resposta 1' },
@@ -19,7 +21,9 @@ const DEFAULT_ACTIONS = {
   moveRight: ['ArrowRight', 'KeyD'],
   moveUp: ['ArrowUp', 'KeyW'],
   moveDown: ['ArrowDown', 'KeyS'],
-  fire: ['Space'],
+  fire: ['KeyX'],
+  dodgeLeft: ['KeyZ'],
+  dodgeRight: ['KeyC'],
   pause: ['Escape', 'KeyP'],
   debugToggle: ['Backquote'],
   quizSlot1: ['Digit1'],
@@ -106,7 +110,7 @@ export function isActionPressed(bindings, pressedSet, action) {
 // codes que precisam de detecção de borda (evento único por toque) em vez de "segurando"
 export function edgeCodes(bindings) {
   const codes = new Set()
-  for (const action of ['pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4']) {
+  for (const action of ['pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4', 'dodgeLeft', 'dodgeRight']) {
     for (const code of getActionCodes(bindings, action)) codes.add(code)
   }
   return codes

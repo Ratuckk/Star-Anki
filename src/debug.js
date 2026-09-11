@@ -23,4 +23,7 @@ export const DEBUG_ACTIONS = [
   { id: 'clearCombatants', label: 'Limpar inimigos/projéteis' },
   { id: 'showHitboxes', label: 'Mostrar hitboxes', toggle: true },
   { id: 'slowMo', label: 'Câmera lenta (0.25x)', toggle: true },
+  { id: 'giveCard', label: 'Escolher carta roguelike' },
+  { id: 'triggerFullDodge', label: 'Testar giro-desvio completo' },
+  { id: 'fireHomingTest', label: 'Testar tiro teleguiado' },
 ]
