@@ -49,9 +49,27 @@ const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 
 const ENEMY_AIM_ERROR_DEG = 5
 
+// em modo arena (chefe/dourado/etc), inimigos perseguem o jogador ativamente em vez de ficar
+// parados esperando a nave passar por eles (que só funciona no trilho, onde a própria nave
+// avança por conta própria)
+const ENEMY_CHASE_SPEED = 12
+const ENEMY_ARENA_SPAWN_MIN = 70
+const ENEMY_ARENA_SPAWN_MAX = 160
+const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
+
 const TANK_ENEMY_COLOR = 0xff9d4d
 const TANK_ENEMY_SCALE = 1.6
 const TANK_ENEMY_DEFAULT_HP = 5
+
+const BOSS_ENEMY_COLOR = 0xff2d4d
+const BOSS_ENEMY_EMISSIVE = 0x5c0018
+const BOSS_ENEMY_SCALE = 5
+const BOSS_ENEMY_HIT_RADIUS = 7
+const BOSS_ENEMY_DEATH_DURATION = 0.6
+const BOSS_ENEMY_CHASE_SPEED = 7
+const BOSS_ENEMY_FIRE_INTERVAL_MIN = 800
+const BOSS_ENEMY_FIRE_INTERVAL_MAX = 1600
+const BOSS_ENEMY_SHOTS_PER_VOLLEY = 3
 
 const BONUS_COLOR = 0x2bff6b
 const BONUS_SPAWN_DISTANCE_MIN = 90
@@ -126,6 +144,7 @@ export function createCombatSystem(scene, rail, effects = null) {
   const timeEnemyGeometry = new THREE.ConeGeometry(0.9, 1.3, 4)
   const timeEnemyMaterial = new THREE.MeshPhongMaterial({ color: TIME_ENEMY_COLOR, emissive: TIME_ENEMY_EMISSIVE, flatShading: true })
   const tankEnemyMaterial = new THREE.MeshPhongMaterial({ color: TANK_ENEMY_COLOR, flatShading: true })
+  const bossEnemyMaterial = new THREE.MeshPhongMaterial({ color: BOSS_ENEMY_COLOR, emissive: BOSS_ENEMY_EMISSIVE, flatShading: true })
 
   // debug: wireframes mostrando o raio de colisão real de cada alvo/inimigo/projétil em cena
   let showHitboxes = false
@@ -145,7 +164,7 @@ export function createCombatSystem(scene, rail, effects = null) {
     while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
     if (!showHitboxes) return
     for (const t of quizTargets) if (!t.dying) markHitbox(t.mesh.position, QUIZ_HIT_RADIUS)
-    for (const e of enemies) if (!e.dying) markHitbox(e.mesh.position, e.kind === 'time' ? TIME_ENEMY_HIT_RADIUS : ENEMY_HIT_RADIUS)
+    for (const e of enemies) if (!e.dying) markHitbox(e.mesh.position, hitRadiusFor(e))
     for (const p of enemyProjectiles) markHitbox(p.mesh.position, ENEMY_PROJECTILE_HIT_RADIUS)
     for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS)
     for (const g of goldenTargets) if (!g.dying) markHitbox(g.mesh.position, GOLDEN_SPECIAL_HIT_RADIUS)
@@ -183,6 +202,29 @@ export function createCombatSystem(scene, rail, effects = null) {
     const lateralX = (Math.random() * 2 - 1) * boxX
     const lateralY = (Math.random() * 2 - 1) * boxY
     return base.position.clone().addScaledVector(base.right, lateralX).addScaledVector(base.up, lateralY)
+  }
+
+  // spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
+  // arena (não do jogador!) — é o que faz o inimigo aparecer espalhado pelo mapa em vez de
+  // colado do lado da nave (getFrameAt em modo arena sempre retorna a posição ATUAL do
+  // jogador, então randomSpawnPositionOnPath fica quebrado nesse modo)
+  function randomSpawnAroundArena(distanceMin, distanceMax) {
+    const center = rail.getArenaCenter()
+    const azimuth = Math.random() * Math.PI * 2
+    const elevation = (Math.random() * 2 - 1) * ARENA_SPAWN_ELEVATION_MAX
+    const distance = distanceMin + Math.random() * (distanceMax - distanceMin)
+    const offset = new THREE.Vector3(
+      Math.sin(azimuth) * Math.cos(elevation),
+      Math.sin(elevation),
+      Math.cos(azimuth) * Math.cos(elevation),
+    ).multiplyScalar(distance)
+    return center.add(offset)
+  }
+
+  function spawnPositionForEnemy(distanceMin, distanceMax, boxX, boxY) {
+    return rail.isArena()
+      ? randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MIN, ENEMY_ARENA_SPAWN_MAX)
+      : randomSpawnPositionOnPath(distanceMin, distanceMax, boxX, boxY)
   }
 
   let cooldown = 0
@@ -250,6 +292,22 @@ export function createCombatSystem(scene, rail, effects = null) {
   function randomEnemyFireInterval() {
     const ms = ENEMY_FIRE_INTERVAL_MIN + Math.random() * (ENEMY_FIRE_INTERVAL_MAX - ENEMY_FIRE_INTERVAL_MIN)
     return ms / enemyAggression / 1000
+  }
+
+  function randomBossFireInterval() {
+    return (BOSS_ENEMY_FIRE_INTERVAL_MIN + Math.random() * (BOSS_ENEMY_FIRE_INTERVAL_MAX - BOSS_ENEMY_FIRE_INTERVAL_MIN)) / 1000
+  }
+
+  function hitRadiusFor(enemy) {
+    if (enemy.kind === 'boss') return BOSS_ENEMY_HIT_RADIUS
+    if (enemy.kind === 'time') return TIME_ENEMY_HIT_RADIUS
+    return ENEMY_HIT_RADIUS
+  }
+
+  function deathDurationFor(enemy) {
+    if (enemy.kind === 'boss') return BOSS_ENEMY_DEATH_DURATION
+    if (enemy.kind === 'time') return TIME_ENEMY_DEATH_DURATION
+    return ENEMY_DEATH_DURATION
   }
 
   function findLockOnTarget(origin, direction) {
@@ -322,6 +380,7 @@ export function createCombatSystem(scene, rail, effects = null) {
     let bonusKillPoints = 0
     let goldenSpecialHit = false
     let timeReductionMs = null
+    let bossDefeated = false
 
     for (const projectile of [...projectiles]) {
       // tiro teleguiado: reorienta a velocidade pro alvo travado a cada frame (perseguição
@@ -352,21 +411,22 @@ export function createCombatSystem(scene, rail, effects = null) {
         continue
       }
 
-      const enemyHit = enemies.find((e) => {
-        if (e.dying) return false
-        const radius = e.kind === 'time' ? TIME_ENEMY_HIT_RADIUS : ENEMY_HIT_RADIUS
-        return projectile.mesh.position.distanceTo(e.mesh.position) <= radius
-      })
+      const enemyHit = enemies.find((e) => !e.dying && projectile.mesh.position.distanceTo(e.mesh.position) <= hitRadiusFor(e))
       if (enemyHit) {
         enemyHit.hp -= 1
         removeProjectile(projectile)
         if (enemyHit.hp > 0) continue
         enemyHit.dying = true
         enemyHit.deathT = 0
-        enemyKills += 1
-        enemyKillPoints += ENEMY_KILL_BONUS
-        if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
-        if (effects) effects.explosion(enemyHit.mesh.position, enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
+        if (enemyHit.kind === 'boss') {
+          bossDefeated = true
+          if (effects) effects.explosion(enemyHit.mesh.position, BOSS_ENEMY_COLOR, 3)
+        } else {
+          enemyKills += 1
+          enemyKillPoints += ENEMY_KILL_BONUS
+          if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+          if (effects) effects.explosion(enemyHit.mesh.position, enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
+        }
         continue
       }
 
@@ -393,7 +453,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (projectile.traveled > PROJECTILE_MAX_RANGE) removeProjectile(projectile)
     }
 
-    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs }
+    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated }
   }
 
   function updateQuizTargets(dt) {
@@ -440,35 +500,64 @@ export function createCombatSystem(scene, rail, effects = null) {
     }
   }
 
+  function fireBossVolley(enemy, playerPosition) {
+    for (let i = 0; i < BOSS_ENEMY_SHOTS_PER_VOLLEY; i += 1) fireEnemyProjectile(enemy, playerPosition)
+  }
+
   function updateEnemies(dt, playerPosition) {
+    const inArena = rail.isArena()
     const frame = rail.getFrameAt(0)
     let hits = 0
     for (const enemy of [...enemies]) {
-      const hitRadius = enemy.kind === 'time' ? TIME_ENEMY_HIT_RADIUS : ENEMY_HIT_RADIUS
-      const deathDuration = enemy.kind === 'time' ? TIME_ENEMY_DEATH_DURATION : ENEMY_DEATH_DURATION
+      const hitRadius = hitRadiusFor(enemy)
+      const deathDuration = deathDurationFor(enemy)
+      const baseScale = enemy.mesh.scale.x || 1
       if (enemy.dying) {
         enemy.deathT += dt / deathDuration
-        enemy.mesh.scale.setScalar(Math.max(0, 1 - enemy.deathT))
+        const t = Math.max(0, 1 - enemy.deathT)
+        enemy.mesh.scale.setScalar((enemy.deathScale ?? baseScale) * t)
         if (enemy.deathT >= 1) removeEnemy(enemy)
         continue
       }
+      enemy.deathScale = baseScale
 
+      // encostar no jogador "mata" o inimigo comum (kamikaze) — mas o CHEFE só pode ser
+      // derrotado a tiro (hp a 0), senão ele sumiria sem soltar o evento de vitória
       if (playerPosition.distanceTo(enemy.mesh.position) <= hitRadius) {
         hits += 1
-        removeEnemy(enemy)
-        continue
+        if (enemy.kind !== 'boss') {
+          removeEnemy(enemy)
+          continue
+        }
       }
 
-      const relative = enemy.mesh.position.clone().sub(frame.position)
-      if (relative.dot(frame.forward) < PASS_BEHIND) {
-        removeEnemy(enemy)
-        continue
+      // em modo arena, inimigos perseguem o jogador ativamente — não há trilho fixo pra "passar
+      // por eles" como no modo normal, então precisam se mover até a nave por conta própria.
+      // Chefe sempre persegue, mesmo fora de arena (não deveria existir fora dela, mas por
+      // segurança o comportamento fica consistente).
+      if (inArena || enemy.kind === 'boss') {
+        const chaseSpeed = enemy.kind === 'boss' ? BOSS_ENEMY_CHASE_SPEED : ENEMY_CHASE_SPEED
+        const toPlayer = playerPosition.clone().sub(enemy.mesh.position)
+        if (toPlayer.lengthSq() > 1e-4) {
+          toPlayer.normalize()
+          enemy.mesh.position.addScaledVector(toPlayer, chaseSpeed * dt)
+          enemy.mesh.lookAt(enemy.mesh.position.clone().add(toPlayer))
+        }
+      } else {
+        const relative = enemy.mesh.position.clone().sub(frame.position)
+        if (relative.dot(frame.forward) < PASS_BEHIND) {
+          removeEnemy(enemy)
+          continue
+        }
       }
 
       enemy.fireTimer -= dt
-      if (enemy.fireTimer <= 0 && relative.dot(frame.forward) < ENEMY_FIRE_RANGE) {
-        fireEnemyProjectile(enemy, playerPosition)
-        enemy.fireTimer = randomEnemyFireInterval()
+      const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+      const inFireRange = inArena || enemy.kind === 'boss' || relativeForward < ENEMY_FIRE_RANGE
+      if (enemy.fireTimer <= 0 && inFireRange) {
+        if (enemy.kind === 'boss') fireBossVolley(enemy, playerPosition)
+        else fireEnemyProjectile(enemy, playerPosition)
+        enemy.fireTimer = enemy.kind === 'boss' ? randomBossFireInterval() : randomEnemyFireInterval()
       }
     }
     return hits
@@ -554,16 +643,16 @@ export function createCombatSystem(scene, rail, effects = null) {
     },
 
     spawnEnemy() {
-      const position = randomSpawnPositionOnPath(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
+      const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
       const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial)
       mesh.position.copy(position)
       mesh.rotation.x = Math.PI / 2
       scene.add(mesh)
-      enemies.push({ id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: randomEnemyFireInterval() })
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: randomEnemyFireInterval() })
     },
 
     spawnTimeEnemy() {
-      const position = randomSpawnPositionOnPath(TIME_ENEMY_SPAWN_DISTANCE_MIN, TIME_ENEMY_SPAWN_DISTANCE_MAX, TIME_ENEMY_BOX_X, TIME_ENEMY_BOX_Y)
+      const position = spawnPositionForEnemy(TIME_ENEMY_SPAWN_DISTANCE_MIN, TIME_ENEMY_SPAWN_DISTANCE_MAX, TIME_ENEMY_BOX_X, TIME_ENEMY_BOX_Y)
       const mesh = buildTimeEnemyMesh()
       mesh.position.copy(position)
       scene.add(mesh)
@@ -573,13 +662,25 @@ export function createCombatSystem(scene, rail, effects = null) {
     // inimigo "tanque" de debug: mesmo comportamento do vermelho comum, mas com HP configurável —
     // serve pra visualizar a barra de vida acima do inimigo (que não aparece com inimigos de 1 hit)
     spawnTankEnemy(hp = TANK_ENEMY_DEFAULT_HP) {
-      const position = randomSpawnPositionOnPath(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
+      const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
       const mesh = new THREE.Mesh(enemyGeometry, tankEnemyMaterial)
       mesh.position.copy(position)
       mesh.rotation.x = Math.PI / 2
       mesh.scale.setScalar(TANK_ENEMY_SCALE)
       scene.add(mesh)
       enemies.push({ id: nextEnemyId++, mesh, kind: 'tank', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: randomEnemyFireInterval() })
+    },
+
+    // chefe: inimigo gigante que persegue o jogador e atira em rajadas de 3. hp escala com o
+    // multiplicador acumulado durante os 90s de "caça às perguntas" (ver main.js)
+    spawnBossEnemy(hp) {
+      const position = randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MAX * 0.6, ENEMY_ARENA_SPAWN_MAX)
+      const mesh = new THREE.Mesh(enemyGeometry, bossEnemyMaterial)
+      mesh.position.copy(position)
+      mesh.rotation.x = Math.PI / 2
+      mesh.scale.setScalar(BOSS_ENEMY_SCALE)
+      scene.add(mesh)
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'boss', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1 })
     },
 
     clearEnemies() {
@@ -699,6 +800,26 @@ export function createCombatSystem(scene, rail, effects = null) {
       .filter((e) => !e.dying && e.maxHp > 1)
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone(), hp: e.hp, maxHp: e.maxHp })),
 
+    // o chefe específico — pra barra de vida grande e dedicada no topo da tela
+    getBossSnapshot: () => {
+      const boss = enemies.find((e) => e.kind === 'boss' && !e.dying)
+      return boss ? { hp: boss.hp, maxHp: boss.maxHp } : null
+    },
+
+    // posições (mundo) pro minimapa: inimigos comuns em vermelho, dourado em ouro, chefe à parte
+    getMinimapBlips: () => {
+      const blips = []
+      for (const e of enemies) {
+        if (e.dying) continue
+        blips.push({ type: e.kind === 'boss' ? 'boss' : 'enemy', worldPos: e.mesh.position })
+      }
+      for (const g of goldenTargets) {
+        if (g.dying) continue
+        blips.push({ type: 'golden', worldPos: g.mesh.position })
+      }
+      return blips
+    },
+
     // lock-on de detecção (não afeta disparo). Mantido pro futuro tiro carregado.
     getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
@@ -721,7 +842,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         currentLockOn = null
       }
 
-      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs } = updateProjectiles(dt)
+      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated } = updateProjectiles(dt)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
       updateGoldenTargets(dt)
@@ -736,7 +857,7 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       if (showHitboxes) refreshHitboxes()
 
-      return { targetHit: hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, enemyHits, goldenSpecialHit, timeReductionMs }
+      return { targetHit: hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, enemyHits, goldenSpecialHit, timeReductionMs, bossDefeated }
     },
 
     dispose() {
@@ -765,6 +886,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       timeEnemyGeometry.dispose()
       timeEnemyMaterial.dispose()
       tankEnemyMaterial.dispose()
+      bossEnemyMaterial.dispose()
       while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
       scene.remove(hitboxGroup)
       hitboxGeometry.dispose()

@@ -1,11 +1,29 @@
 ## Pendências agora
 
-- [ ] Nenhuma pendência das 4 fases do pedido grande — todas entregues (v0.14.0 → v0.17.0). Ver ideias de continuação na seção da v0.17.0 abaixo se quiser aprofundar algo.
-- [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados", mas nenhum arquivo existia neste projeto antes da v0.14.0 (criei um do zero — ver seção v0.14.0). Se existir um segundo em outro lugar, perguntar ao usuário onde, pra manter sincronizado.
-- [ ] `src/selftest.mjs` linha 117 espera `session.shields === 3`, mas `STARTING_SHIELDS` é 10 — desatualizado desde antes desta sessão (não mexi, fora de escopo da v0.14.0).
-- [ ] Testar o build atual com o baralho real do usuário.
-- [ ] Usuário escolher (se quiser) qual das ideias de inimigo futuro (ver seção abaixo) implementar em seguida.
-- [ ] Reconfirmar ao vivo que tiro certeiro no dourado especial = +50 sem tocar combo/escudo.
+- [ ] Lista grande de correções/ajustes reportada pelo usuário jogando de verdade — ver seção "Roadmap — próxima leva" no fim deste arquivo pra fases planejadas (A: combate/precisão, B: ritmo/clareza, C: visual do trilho).
+- [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados". Criei um do zero na v0.15.0; não achei nem tive confirmação de onde ficaria um segundo. Perguntar ao usuário se surgir a dúvida de novo.
+
+## Roadmap — próxima leva (pós-v0.18.0)
+
+Lista de correções/pedidos do usuário jogando ao vivo, organizada em 3 fases (pedido explícito dele: "separe tudo isso em fases"). Nenhuma delas foi implementada ainda.
+
+**Fase A — Combate e precisão** (mecânicas centrais que mudam como o combate se sente):
+- Giro-desvio (Z/C) fazer uma inclinação de verdade estilo Star Fox 64, não só um tilt lateral pequeno como hoje.
+- Sistema de lock-on por varredura pro tiro carregado: enquanto carrega, passar a mira normal sobre inimigos deveria marcá-los (reaproveitar/estender `findLockOnTarget`/`currentLockOn` que já existe pra alvos de pergunta); ao soltar, dispara teleguiado só nos marcados — não nos N mais próximos como hoje (`combat.fireHomingShot`).
+- Inimigo dourado especial: hoje morre com 1 hit e fica parado. Precisa de no mínimo 10 hp e IA de ataque de verdade (hoje só o alvo de pergunta comum e o dourado especial são "parados" por design — o dourado deveria se comportar mais como um mini-chefe).
+- Dificuldade escalando com erros: sessão deveria spawnar +2 inimigos a mais conforme mais perguntas são erradas (parecido com o `applyDifficulty()` que já existe pra intervalo/agressividade — só falta a contagem de inimigos extra).
+
+**Fase B — Ritmo e clareza** (informação que falta pro jogador):
+- Timer visível pra responder a pergunta atual (fases `alternatives`/`goldenAlternatives` não mostram countdown nenhum hoje — só `combat`/`bossBuildup` mostram; teria que expor `phaseTimer`/`altTotalMs` no HUD nessas fases também).
+- Neblina e distância de spawn: inimigos não devem já surgir "atacando" — ajustar `ENEMY_SPAWN_DISTANCE_MIN/MAX` (rail) e o alcance de fog (`scene.fog`) juntos, pra dar mais aviso antes do combate começar.
+
+**Fase C — Visual e ambientação do trilho**:
+- Reduzir o efeito de rastro do motor (`effects.js`, partículas de propulsor) — hoje distrai demais; manter só o suficiente pra dar noção de "voando".
+- Inimigo ampulheta (redutor de tempo) devia girar visualmente e ter 3 hp (hoje tem 1 e fica parado).
+- Adicionar um asset/efeito que deixe a neblina visualmente reconhecível como neblina (hoje é só o `FogExp2` do Three.js, sem nenhuma pista visual direta tipo partículas ou um plano semi-transparente).
+- Nave mais próxima do chão-grid em alguns trechos do rail — hoje flutua livre sem limite inferior perceptível.
+- Alguma referência visual do trajeto que a nave está fazendo no rail (hoje o `CatmullRomCurve3` de `rail.js` é totalmente invisível — nenhuma pista/trilha/linha marcando o caminho).
+- [x] Bugs reais de jogo + redesign do chefe + HUD em barras de verdade + minimapa — v0.18.0 (jogado ao vivo pela primeira vez pelo usuário).
 - [x] Roguelike, tiro teleguiado, giro-desvio, wingman — v0.17.0 (Fase 4 do pedido grande, última fase).
 - [x] Gameplay de dano/vida: vidas, escudo, invencibilidade, shake, backgrounds — v0.16.0 (Fase 3 do pedido grande).
 - [x] Repositório conectado ao GitHub (`github.com/Ratuckk/Star-Anki`), push automático a partir de agora.
@@ -20,6 +38,38 @@
 - [x] Baralho salvo no localStorage — v0.10.0.
 - [x] Efeitos visuais (starfield, explosões, rastro, muzzle flash, vinheta) — v0.11.0.
 - [x] Mira estilo Star Fox 64 (lock-on, resposta direta, reticle visual) — v0.12.0.
+## Bugs reais de jogo + redesign do chefe + HUD em barras + minimapa — v0.18.0
+
+Primeira sessão de feedback do usuário jogando de verdade (não mais só debug/teste automatizado) — apareceram bugs reais que os testes anteriores não pegaram, mais um pedido de redesign completo do chefe. Lista longa, resolvida nesta versão:
+
+**Bugs corrigidos:**
+- **Inimigos surgindo do lado do jogador em modo arena** — `combat.js`'s `randomSpawnPositionOnPath` dependia de `rail.getFrameAt(distanceAhead)`, mas em modo arena `getFrameAt` sempre retorna a posição ATUAL (não há "caminho à frente" num voo livre) — resultado: todo spawn caía a poucas unidades da nave. Fix: `spawnPositionForEnemy` agora detecta `rail.isArena()` e usa `randomSpawnAroundArena` (esfera ao redor do CENTRO da arena — novo `rail.getArenaCenter()`), igual ao padrão que o dourado especial já usava corretamente.
+- **Inimigos parados em modo arena** — sem o trilho fixo, inimigos parados nunca "chegavam" até o jogador. Agora perseguem ativamente (`ENEMY_CHASE_SPEED`) quando `rail.isArena()`.
+- **Chefe morrendo na 1ª pergunta**: era o design antigo mesmo (1 pergunta = 1 "chefe"). Redesenhado do zero (ver abaixo).
+- **Mira mal posicionada**: tinha física própria independente (`RETICLE_SPEED`/`RETICLE_MAX_X/Y`), podia ficar longe do centro/nariz. Agora só acompanha o deslocamento lateral real da nave (`rail.getPlayerLateral()`) amplificado 1.25x — centrada quando a nave está centrada, "junto, um pouco mais rápida".
+- **Movimento Y "preso numa caixinha"**: `BOX_Y` em `rail.js` era 2 (contra `BOX_X`=10) — corrigido pra 8.
+- **Vermelhos com 1 hp**: agora 2 hp (`spawnEnemy()`).
+- **Chefe some sem disparar vitória**: bug pego testando ao vivo — o colisor "kamikaze" de `updateEnemies` matava QUALQUER inimigo que encostasse no jogador (inclusive o chefe!), sem passar pelo hp nem sinalizar `bossDefeated`. Corrigido: encostar no jogador ainda causa dano nele, mas só remove o inimigo se `kind !== 'boss'` — o chefe só morre a tiro.
+- **Debug "Causar 1 dano" não acionava a perda de vida**: corrigido na v0.16.0/17.0, mantido.
+
+**Chefe redesenhado** (a ideia antiga — 1 pergunta em voo livre — não funcionava): agora é uma fase de **90 segundos caçando perguntas** (`phase: 'bossBuildup'`) — blocos flutuantes parados com as 4 alternativas (reaproveita `spawnBossTargets`, que já espalhava certo), várias perguntas em sequência dentro da janela. Cada erro ou pergunta que fica sem resposta até o tempo acabar **dobra** a vida do chefe (`bossHealthMultiplier *= 2`). Ao fim dos 90s, o chefe gigante aparece (`combat.spawnBossEnemy`, hp = `BOSS_BASE_HP * bossHealthMultiplier`) com barra de vida grande e dedicada no topo da tela. A IA dele por enquanto é simples — persegue e atira em rajada de 3 — o usuário disse que ainda não tem uma ideia mais elaborada pra esse combate; fica como próximo passo quando ele quiser aprofundar.
+
+**HUD vida/escudo viraram barras de verdade**: pips discretos → barras contínuas (`hud-bar-fill` com `width` proporcional), maiores. **Escudo também mudou de mecânica**: antes era binário (2 cargas, só recarregava ao ZERAR de vez, com um timer fixo de 5s). Agora é uma barra contínua que regenera sozinha (`SHIELD_REGEN_RATE` por segundo) depois de um atraso curto pós-hit (`SHIELD_REGEN_DELAY_MS`) — regenera aos poucos mesmo sem ter sido esgotado por completo, como pedido.
+
+**Minimapa**: canto superior direito, pontos vermelhos = inimigos, dourado = alvo especial, vermelho maior = chefe. Só aparece em modo arena (onde é fácil se perder). `combat.getMinimapBlips()` + `rail.getArenaCenter()` pra posições relativas.
+
+**Tiro carregado**: dispara normal agora é **suprimido** assim que a carga ultrapassa o mínimo (antes continuava atirando normal e o teleguiado por cima). Glow visual (esfera azul crescendo na frente da nave, `effects.setChargeGlow`) cresce desde o **primeiro instante** que o botão é pressionado, não só depois do mínimo de carga — feedback imediato.
+
+**Conteúdo do baralho**: `decks/arquitetura-manutencao-aumentado.txt` tinha só 20 perguntas normais + 24 extras (todas classificadas como "shooter" por terem resposta curta). Adicionei mais 10 (arquitetura-021 a 030), total 30 normais + 24 extras = 54. **Não pesquisei fontes online pra essas 10** (diferente da convenção do projeto) — são fatos básicos de arquitetura/manutenção de PC que already tenho alta confiança (cache, BIOS/UEFI, chipset, USB-C, ATX, NVMe), mas vale o usuário conferir/pedir fontes se quiser.
+
+**Testado ao vivo**: spawn de inimigos espalhado pelo mapa (não mais colado na nave) confirmado visualmente; barra de chefe aparece e funciona; ciclo completo caçada→chefe→vitória→carta→volta ao combate testado de ponta a ponta (achei e corrigi o bug do "chefe sumindo" nesse processo); minimapa com pontos vermelhos confirmado; barras de vida/escudo maiores e contínuas confirmadas; reticle ficando próximo do centro confirmado.
+
+**Descoberta de ambiente de teste**: eventos de teclado disparados via `dispatchEvent()` (não confiáveis/`isTrusted:false`) não resetam o throttling de `requestAnimationFrame` do Chromium — só cliques reais via a ferramenta `computer` fazem isso. Em testes anteriores isso mascarou mecânicas baseadas em tempo (carregamento de tiro, chefe à distância) como "não funcionando" quando na real só estavam esperando o navegador destravar o loop de render. Intercalar cliques reais com as esperas resolve — vale lembrar em sessões futuras de teste.
+
+**Não mexido nesta leva**: giro-desvio ainda é um tilt lateral simples (usuário pediu inclinação de verdade estilo Star Fox — próxima fase), sistema de lock-on por varredura pro tiro teleguiado (próxima fase), inimigo dourado ainda com 1 hp e parado (próxima fase), efeito de propulsor/neblina/spawn distante/trilho visível (próxima fase).
+
+**Versão**: v0.17.0 → v0.18.0.
+
 ## Roguelike, tiro teleguiado, giro-desvio, wingman — v0.17.0
 
 Fase 4 do pedido grande — a última. Maior mudança de arquitetura das 4 fases: introduz um sistema de progressão inteiro que não existia (roguelike de cartas) e reescreve boa parte do combate.

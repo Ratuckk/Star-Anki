@@ -24,6 +24,16 @@ arquitetura-017	Basic	Arquitetura e Manutenção	Para que serve um multímetro?	
 arquitetura-018	Basic	Arquitetura e Manutenção	Cite um sinal de superaquecimento.	Travamentos ou desligamentos inesperados.	diagnostico refrigeracao
 arquitetura-019	Basic	Arquitetura e Manutenção	Por que desconectar o PC antes da manutenção interna?	Para reduzir riscos elétricos e de curto-circuito.	seguranca
 arquitetura-020	Basic	Arquitetura e Manutenção	Qual é o primeiro passo ao diagnosticar um PC que não liga?	Verificar energia e cabos.	diagnostico
+arquitetura-021	Basic	Arquitetura e Manutenção	Qual é a função de um cooler com fan sobre o dissipador?	Forçar a passagem de ar pra dissipar calor mais rápido.	refrigeracao
+arquitetura-022	Basic	Arquitetura e Manutenção	O que significa TDP de um processador?	A potência térmica máxima que ele dissipa em uso.	arquitetura refrigeracao
+arquitetura-023	Basic	Arquitetura e Manutenção	Qual a principal diferença física entre HDD e SSD?	HDD tem disco girando (partes móveis); SSD não tem.	armazenamento
+arquitetura-024	Basic	Arquitetura e Manutenção	O que significa a sigla BIOS?	Basic Input/Output System.	firmware
+arquitetura-025	Basic	Arquitetura e Manutenção	O que substituiu a BIOS tradicional na maioria dos PCs modernos?	A UEFI.	firmware
+arquitetura-026	Basic	Arquitetura e Manutenção	Qual é a função do chipset na placa-mãe?	Controlar a comunicação entre CPU e periféricos.	arquitetura
+arquitetura-027	Basic	Arquitetura e Manutenção	O que é overclock de memória RAM?	Rodar a RAM numa frequência acima do padrão de fábrica.	desempenho memoria
+arquitetura-028	Basic	Arquitetura e Manutenção	Quantos pinos tem um conector USB tipo C?	24 pinos.	conectores
+arquitetura-029	Basic	Arquitetura e Manutenção	O que define o "form factor" ATX de uma placa-mãe?	O padrão de tamanho e layout dos furos/conectores.	arquitetura
+arquitetura-030	Basic	Arquitetura e Manutenção	Por que um SSD NVMe é mais rápido que um SSD SATA?	Usa o barramento PCIe em vez do SATA, bem mais rápido.	armazenamento desempenho
 arquitetura-extra-001	Basic	Arquitetura e Manutenção	O que é a memória cache L1?	A mais rápida e pequena, junto ao núcleo.	memoria cache
 arquitetura-extra-002	Basic	Arquitetura e Manutenção	Como é a cache L2 comparada à L1?	Maior, porém mais lenta que a L1.	memoria cache
 arquitetura-extra-003	Basic	Arquitetura e Manutenção	Qual nível de cache é compartilhado entre os núcleos?	A cache L3.	memoria cache

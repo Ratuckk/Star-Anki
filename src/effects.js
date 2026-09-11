@@ -17,6 +17,11 @@ const EXPLOSION_PARTICLE_SIZE = 0.7
 // --- muzzle flash ---
 const MUZZLE_DURATION = 0.07
 
+// --- glow de carga do tiro teleguiado ---
+const CHARGE_GLOW_MIN_SCALE = 0.35
+const CHARGE_GLOW_MAX_SCALE = 1.6
+const CHARGE_GLOW_AHEAD = 2.2
+
 // --- engine trail ---
 const ENGINE_TRAIL_INTERVAL = 0.035
 const ENGINE_TRAIL_DURATION = 0.7
@@ -74,6 +79,31 @@ export function createEffectsSystem(scene) {
   const muzzleFlashes = []
   const trailParticles = []
   let trailTimer = 0
+
+  // ============ GLOW DE CARGA (tiro teleguiado) ============
+  // esfera azul translúcida na frente da nave que cresce com o progresso da carga — referência
+  // visual clara de "solte agora pra disparar". Mesh único e persistente (só mostra/esconde e
+  // escala), não recriado a cada frame.
+  const chargeGlowGeometry = new THREE.SphereGeometry(1, 16, 12)
+  const chargeGlowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x4da6ff,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
+  const chargeGlow = new THREE.Mesh(chargeGlowGeometry, chargeGlowMaterial)
+  chargeGlow.visible = false
+  scene.add(chargeGlow)
+
+  function setChargeGlow(active, fraction, position, direction) {
+    chargeGlow.visible = active
+    if (!active) return
+    const scale = CHARGE_GLOW_MIN_SCALE + (CHARGE_GLOW_MAX_SCALE - CHARGE_GLOW_MIN_SCALE) * Math.max(0, Math.min(1, fraction))
+    chargeGlow.scale.setScalar(scale)
+    chargeGlow.position.copy(position).addScaledVector(direction, CHARGE_GLOW_AHEAD)
+  }
 
   function explosion(position, colorHex, size = 1) {
     const geometry = new THREE.BufferGeometry()
@@ -230,7 +260,10 @@ export function createEffectsSystem(scene) {
     bursts.length = 0
     muzzleFlashes.length = 0
     trailParticles.length = 0
+    scene.remove(chargeGlow)
+    chargeGlowGeometry.dispose()
+    chargeGlowMaterial.dispose()
   }
 
-  return { update, explosion, muzzleFlash, dispose }
+  return { update, explosion, muzzleFlash, setChargeGlow, dispose }
 }

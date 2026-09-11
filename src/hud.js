@@ -31,7 +31,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.17.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.18.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -626,24 +626,18 @@ export function createGameHud() {
   let livePipsMax = null
 
   const shieldBar = document.createElement('div')
-  shieldBar.className = 'hud-shield-bar'
+  shieldBar.className = 'hud-bar-wrap hud-shield-wrap'
   root.appendChild(shieldBar)
-  let shieldPips = []
-  let shieldPipsMax = null
-
-  const shieldRecharge = document.createElement('div')
-  shieldRecharge.className = 'hud-shield-recharge'
-  shieldRecharge.hidden = true
-  root.appendChild(shieldRecharge)
-  const shieldRechargeFill = document.createElement('div')
-  shieldRechargeFill.className = 'hud-shield-recharge-fill'
-  shieldRecharge.appendChild(shieldRechargeFill)
+  const shieldFill = document.createElement('div')
+  shieldFill.className = 'hud-bar-fill hud-shield-fill'
+  shieldBar.appendChild(shieldFill)
 
   const healthBar = document.createElement('div')
-  healthBar.className = 'hud-health-bar'
+  healthBar.className = 'hud-bar-wrap hud-health-wrap'
   root.appendChild(healthBar)
-  let healthPips = []
-  let healthPipsMax = null
+  const healthFill = document.createElement('div')
+  healthFill.className = 'hud-bar-fill hud-health-fill'
+  healthBar.appendChild(healthFill)
 
   const question = document.createElement('p')
   question.className = 'hud-question'
@@ -667,7 +661,7 @@ export function createGameHud() {
 
   const bossBanner = document.createElement('div')
   bossBanner.className = 'hud-boss-banner'
-  bossBanner.textContent = 'MODO CHEFE — VOO LIVRE: ENCONTRE A RESPOSTA'
+  bossBanner.textContent = 'CHEFE CHEGANDO — ATIRE NOS BLOCOS DE PERGUNTA'
   bossBanner.hidden = true
   root.appendChild(bossBanner)
 
@@ -676,6 +670,32 @@ export function createGameHud() {
   goldenBanner.textContent = 'ALVO DOURADO ESPECIAL — CAÇA LIVRE'
   goldenBanner.hidden = true
   root.appendChild(goldenBanner)
+
+  // ============ CHEFE (barra de vida grande) ============
+  const bossFightBar = document.createElement('div')
+  bossFightBar.className = 'hud-boss-fight-bar'
+  bossFightBar.hidden = true
+  root.appendChild(bossFightBar)
+  const bossFightLabel = document.createElement('div')
+  bossFightLabel.className = 'hud-boss-fight-label'
+  bossFightLabel.textContent = 'CHEFE'
+  bossFightBar.appendChild(bossFightLabel)
+  const bossFightTrack = document.createElement('div')
+  bossFightTrack.className = 'hud-boss-fight-track'
+  bossFightBar.appendChild(bossFightTrack)
+  const bossFightFill = document.createElement('div')
+  bossFightFill.className = 'hud-boss-fight-fill'
+  bossFightTrack.appendChild(bossFightFill)
+
+  // ============ MINIMAPA ============
+  const minimap = document.createElement('div')
+  minimap.className = 'hud-minimap'
+  minimap.hidden = true
+  root.appendChild(minimap)
+  const minimapPlayer = document.createElement('div')
+  minimapPlayer.className = 'hud-minimap-player'
+  minimap.appendChild(minimapPlayer)
+  const minimapBlipPool = new Map()
 
   const pause = document.createElement('div')
   pause.className = 'hud-pause'
@@ -737,18 +757,7 @@ export function createGameHud() {
 
     setStatus({ health, maxHealth = health, score, combo }) {
       status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
-
-      if (maxHealth !== healthPipsMax) {
-        healthPipsMax = maxHealth
-        healthBar.innerHTML = ''
-        healthPips = Array.from({ length: maxHealth }, () => {
-          const pip = document.createElement('div')
-          pip.className = 'hud-health-pip'
-          healthBar.appendChild(pip)
-          return pip
-        })
-      }
-      healthPips.forEach((pip, i) => pip.classList.toggle('filled', i < health))
+      healthFill.style.width = `${Math.max(0, Math.min(1, health / maxHealth)) * 100}%`
     },
 
     setLives(lives, maxLives = lives) {
@@ -765,24 +774,10 @@ export function createGameHud() {
       livePips.forEach((pip, i) => pip.classList.toggle('filled', i < lives))
     },
 
-    // charges: escudos disponíveis agora; maxCharges: capacidade máxima; rechargeFrac: 0 (sem
-    // recarga em andamento) a 1 (acabou de esgotar); a barra de recarga só aparece com 0 cargas
-    setShield(charges, maxCharges, rechargeFrac = 0) {
-      if (maxCharges !== shieldPipsMax) {
-        shieldPipsMax = maxCharges
-        shieldBar.innerHTML = ''
-        shieldPips = Array.from({ length: maxCharges }, () => {
-          const pip = document.createElement('div')
-          pip.className = 'hud-shield-pip'
-          shieldBar.appendChild(pip)
-          return pip
-        })
-      }
-      shieldPips.forEach((pip, i) => pip.classList.toggle('filled', i < charges))
-
-      const recharging = charges <= 0 && rechargeFrac > 0
-      shieldRecharge.hidden = !recharging
-      if (recharging) shieldRechargeFill.style.width = `${(1 - rechargeFrac) * 100}%`
+    // value: quanto de escudo tem agora (contínuo, 0..maxValue); recarrega gradualmente sozinho
+    // depois de um hit, não só quando esgota de vez — por isso é uma barra de verdade, não pips
+    setShield(value, maxValue) {
+      shieldFill.style.width = `${Math.max(0, Math.min(1, value / maxValue)) * 100}%`
     },
 
     setQuestion(text) {
@@ -887,6 +882,39 @@ export function createGameHud() {
       }
       for (const [id, el] of enemyBarPool) {
         if (!seen.has(id)) { el.remove(); enemyBarPool.delete(id) }
+      }
+    },
+
+    setBossFight(active, hp, maxHp) {
+      bossFightBar.hidden = !active
+      if (active) bossFightFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`
+    },
+
+    // player: {xFrac, yFrac, angle} relativo ao centro da arena, já clampado em -1..1.
+    // blips: [{ type: 'enemy'|'golden'|'boss', xFrac, yFrac }]
+    setMinimap(active, data) {
+      minimap.hidden = !active
+      if (!active) return
+      const { player, blips } = data
+      minimapPlayer.style.left = `${(player.xFrac * 0.5 + 0.5) * 100}%`
+      minimapPlayer.style.top = `${(player.yFrac * 0.5 + 0.5) * 100}%`
+      minimapPlayer.style.transform = `translate(-50%, -50%) rotate(${player.angle}rad)`
+
+      const seen = new Set()
+      blips.forEach((b, i) => {
+        seen.add(i)
+        let el = minimapBlipPool.get(i)
+        if (!el) {
+          el = document.createElement('div')
+          minimap.appendChild(el)
+          minimapBlipPool.set(i, el)
+        }
+        el.className = `hud-minimap-blip hud-minimap-blip-${b.type}`
+        el.style.left = `${(b.xFrac * 0.5 + 0.5) * 100}%`
+        el.style.top = `${(b.yFrac * 0.5 + 0.5) * 100}%`
+      })
+      for (const [i, el] of minimapBlipPool) {
+        if (!seen.has(i)) { el.remove(); minimapBlipPool.delete(i) }
       }
     },
 

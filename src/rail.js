@@ -1,12 +1,12 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 22
-// velocidade lateral: 32 → 22 (nave mais lenta, mas não travada)
-// caixa de movimentação: volta pra 12/8 — MESMO espaço de sempre
 const LATERAL_SPEED = 22
 const LATERAL_ACCEL_RATE = 22
 const BOX_X = 10
-const BOX_Y = 2
+// BOX_Y era 2 — bem menor que BOX_X (10), deixava o movimento vertical numa "caixinha"
+// apertada. Corrigido pra ficar num espaço mais equilibrado com o horizontal.
+const BOX_Y = 8
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
 const CAM_LAG_RATE = 5
@@ -275,6 +275,10 @@ export function createRailController(camera, scene) {
     getPlayerPosition: () => lastPlayerPos.clone(),
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
     getFrameAt,
+    // offset lateral CRU da nave (antes de qualquer projeção em curva) — usado pela mira, que
+    // agora acompanha a nave (mesmo espaço) em vez de ter física própria independente
+    getPlayerLateral: () => ({ x: playerX, y: playerY }),
+    getArenaCenter: () => arenaCenter.clone(),
     isArena: () => mode === 'arena',
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setAdvancing: (v) => { advancing = v },

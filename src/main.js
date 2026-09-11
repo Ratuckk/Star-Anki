@@ -25,13 +25,14 @@ const INVINCIBILITY_MS = 1500
 const INVINCIBILITY_FLICKER_MS = 90
 
 // ============ ESCUDO ============
-// camada de defesa em FRENTE à barra de saúde: aguenta SHIELD_MAX hits sem tirar saúde; ao
-// esgotar, entra em recarga por SHIELD_RECHARGE_MS e só volta ao máximo de uma vez, no fim da
-// recarga (não regenera incrementalmente). Valores pensados pra serem ajustáveis por buffs do
-// roguelike no futuro (fase 4) — por isso ficam como variáveis mutáveis dentro de mountGame,
-// não como constantes de session (session é sobre pontuação/progresso do baralho).
+// camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
+// Cada hit consome 1 unidade; depois de um hit, espera SHIELD_REGEN_DELAY_MS e passa a
+// regenerar sozinho a SHIELD_REGEN_RATE por segundo — regenera aos poucos mesmo sem ter sido
+// zerado de vez, não só quando esgota totalmente. Valores mutáveis (não const) porque cartas
+// do roguelike ajustam capacidade/velocidade.
 const SHIELD_MAX = 2
-const SHIELD_RECHARGE_MS = 5000
+const SHIELD_REGEN_DELAY_MS = 1500
+const SHIELD_REGEN_RATE = 0.4
 
 // ============ SHAKE AO LEVAR HIT ============
 const HIT_SHAKE_DURATION_MS = 300
@@ -51,28 +52,21 @@ const LEVEL_BACKGROUNDS = [
 ]
 
 // ============ MIRA ============
-// A mira vive em espaço de MUNDO, ancorada no NARIZ da nave. Ela tem física PRÓPRIA e um
-// alcance MAIOR que o da nave — é isso que faz ela "se mover mais e chegar nas bordas antes".
-//
-// Comparação direta com a nave (rail.js):
-//   - Nave:  LATERAL_SPEED=22, BOX_X=12, BOX_Y=8
-//   - Mira:  RETICLE_SPEED=35, RETICLE_MAX_X=20, RETICLE_MAX_Y=14
-// Ou seja: mira 60% mais rápida e com 66% mais curso lateral que a nave.
-//
-// O tiro sai do NARIZ e aponta para a MIRA — como os dois são pontos 3D no mesmo espaço, o
-// projétil passa visualmente pela mira por construção.
-const RETICLE_AHEAD = 30       // distância à frente do nariz onde a mira é posicionada
-const RETICLE_MAX_X = 20       // MUITO maior que o da nave (12)
-const RETICLE_MAX_Y = 14       // MUITO maior que o da nave (8)
-const RETICLE_SPEED = 35       // 60% mais rápida que a nave (22)
-const RETICLE_ACCEL = 30       // resposta rápida
+// A mira fica ancorada no NARIZ da nave e acompanha o MESMO deslocamento lateral da nave
+// (rail.getPlayerLateral()), só que amplificado um pouco — "no meio da tela quando a nave
+// está centrada, se move junto com ela, um pouquinho mais rápido". Nada de física própria
+// independente (isso já foi tentado antes e ficava difícil de prever onde o tiro ia).
+const RETICLE_AHEAD = 30        // distância à frente do nariz onde a mira é posicionada
+const RETICLE_LATERAL_MULT = 1.25 // um pouco mais rápida/ampla que a nave, mas sempre junto
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
 const BOSS_ENEMY_INTERVAL_MULT = 0.7
-const ARENA_MS_BASE = 28000
-const ARENA_MS_FLOOR = 18000
-const ARENA_MS_STEP = 2000
+// caçada de perguntas antes do chefe chegar: 90s procurando blocos flutuantes; cada erro/não
+// resposta nesse período DOBRA a vida do chefe (BOSS_BASE_HP * 2^erros)
+const BOSS_BUILDUP_MS = 90000
+const BOSS_BASE_HP = 3
+const BOSS_DEFEAT_BONUS = 500
 const BOSS_SPREAD_MIN_BASE = 45
 const BOSS_SPREAD_MAX_BASE = 95
 const BOSS_SPREAD_STEP = 12
@@ -118,7 +112,7 @@ const TIME_ENEMY_SPAWN_CHANCE = 0.2
 // AIM_ASSIST_*/PROJECTILE_COUNT_CAP já existentes acima (antes usados pelo applyBuff()
 // automático, que a escolha de carta substitui).
 const SHIELD_MAX_CAP = 4
-const SHIELD_RECHARGE_FLOOR_MS = 2000
+const SHIELD_REGEN_DELAY_FLOOR_MS = 500
 const INVINCIBILITY_CAP_MS = 3000
 const WINGMAN_CAP = 2
 const LIVES_CAP = 5
@@ -299,9 +293,10 @@ function mountGame(session) {
   let slowMoActive = false
 
   let shieldMax = SHIELD_MAX
-  let shieldRechargeMs = SHIELD_RECHARGE_MS
-  let shieldCharges = shieldMax
-  let shieldRechargeTimer = 0
+  let shieldRegenDelayMs = SHIELD_REGEN_DELAY_MS
+  let shieldRegenRate = SHIELD_REGEN_RATE
+  let shieldValue = shieldMax
+  let shieldRegenDelayTimer = 0
   let hitShakeTimer = 0
   let invincibilityDurationMs = INVINCIBILITY_MS
 
@@ -314,6 +309,10 @@ function mountGame(session) {
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
   let dodgeIframeSingleMs = DODGE_IFRAME_SINGLE_MS
   let dodgeIframeFullMs = DODGE_IFRAME_FULL_MS
+
+  // ---- chefe (fase 90s de caçada + o combate em si) ----
+  let bossHealthMultiplier = 1
+  let bossBuildupTimer = 0
 
   // ---- tiro carregado / giro-desvio: estado de input em tempo real ----
   let fireHeldMs = 0
@@ -335,7 +334,6 @@ function mountGame(session) {
   let isBossCycle = false
   let isReviewQuestion = false
   let bossDifficulty = 0
-  let arenaTotalMs = ARENA_MS_BASE
   let altTotalMs = ALT_MS
   let bonusTimer = 0
 
@@ -352,12 +350,6 @@ function mountGame(session) {
   let enemyIntervalMin = ENEMY_INTERVAL_MIN_BASE
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
-
-  // Estado da mira: offset lateral/vertical em relação ao nariz, em unidades de mundo
-  let reticleX = 0
-  let reticleY = 0
-  let reticleVelX = 0
-  let reticleVelY = 0
 
   function randomEnemyInterval() {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
@@ -422,7 +414,7 @@ function mountGame(session) {
 
     if (!outcome) return
     if (mode === 'golden') settleGoldenBonus(outcome)
-    else settleQuestion(outcome, mode === 'boss')
+    else settleQuestion(outcome)
   }
 
   function applySpeedProgression(type) {
@@ -464,9 +456,11 @@ function mountGame(session) {
         break
       case 'extra-shield-charge':
         shieldMax = Math.min(SHIELD_MAX_CAP, shieldMax + 1)
+        shieldValue = Math.min(shieldMax, shieldValue + 1)
         break
       case 'faster-shield-recharge':
-        shieldRechargeMs = Math.max(SHIELD_RECHARGE_FLOOR_MS, shieldRechargeMs * 0.8)
+        shieldRegenRate *= 1.3
+        shieldRegenDelayMs = Math.max(SHIELD_REGEN_DELAY_FLOOR_MS, shieldRegenDelayMs * 0.75)
         break
       case 'longer-invincibility':
         invincibilityDurationMs = Math.min(INVINCIBILITY_CAP_MS, invincibilityDurationMs + 200)
@@ -533,10 +527,6 @@ function mountGame(session) {
     bossDifficulty = Math.min(BOSS_DIFFICULTY_CAP, bossDifficulty + 1)
   }
 
-  function currentArenaMs() {
-    return Math.max(ARENA_MS_FLOOR, ARENA_MS_BASE - bossDifficulty * ARENA_MS_STEP)
-  }
-
   function currentBossSpread() {
     return {
       distanceMin: Math.min(BOSS_SPREAD_MIN_CAP, BOSS_SPREAD_MIN_BASE + bossDifficulty * BOSS_SPREAD_STEP),
@@ -594,22 +584,96 @@ function mountGame(session) {
     combat.spawnQuizTargets(result.alternatives)
   }
 
-  function enterBossArena() {
+  // ============ CHEFE (fase 4/correção) ============
+  // Ao chegar no ciclo de chefe: 90s caçando perguntas (blocos flutuantes parados, atire neles
+  // pra abrir as 4 alternativas — igual ao "modo chefe" antigo, só que agora com VÁRIAS
+  // perguntas em sequência dentro da janela de 90s, não uma só). Cada erro ou pergunta que fica
+  // sem resposta até o tempo acabar DOBRA a vida do chefe. Quando os 90s terminam, o chefe
+  // gigante aparece com a vida acumulada — a IA dele por enquanto é simples (persegue e atira
+  // em rajada); ainda não temos um design mais elaborado pra esse combate.
+  function enterBossBuildup() {
+    phase = 'bossBuildup'
+    bossBuildupTimer = BOSS_BUILDUP_MS
+    bossHealthMultiplier = 1
+    rail.enterArena()
+    hud.setBossActive(true)
+    hud.setCountdown(null)
+    for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
+    spawnNextBossQuestion()
+  }
+
+  function spawnNextBossQuestion() {
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()
       return
     }
     questionResult = result
-    phase = 'boss'
-    arenaTotalMs = currentArenaMs()
-    phaseTimer = arenaTotalMs
-    rail.enterArena()
     hud.setQuestion(result.card.question)
     hud.setAlternatives(result.alternatives)
-    hud.setBossActive(true)
     combat.spawnBossTargets(result.alternatives, currentBossSpread())
-    for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
+  }
+
+  function processBossBuildupAnswer(events, inputState) {
+    let outcome = null
+    if (events.targetHit) {
+      outcome = { type: events.targetHit.isCorrect ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
+    } else {
+      const slot = slotForPressed(inputState.pressed)
+      if (slot !== undefined) {
+        outcome = { type: slot === questionResult.correctSlot ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
+      }
+    }
+    if (outcome) settleBossBuildupQuestion(outcome)
+  }
+
+  function settleBossBuildupQuestion(outcome) {
+    combat.clearQuizTargets()
+    const correct = outcome.type === 'correct'
+    const resolution = resolveAnswer(session, outcome)
+    applySpeedProgression(outcome.type)
+    if (!correct) {
+      applyDifficulty()
+      applyBossDifficulty()
+      bossHealthMultiplier *= 2
+    }
+
+    history = recordResult(history, outcome.card.guid, correct)
+    saveHistory(history)
+    sessionResults.push({ guid: outcome.card.guid, correct })
+
+    hud.setQuestion(null)
+    hud.setAlternatives(null)
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      points: resolution.points,
+      comboMultiplier: resolution.comboMultiplier,
+      health: resolution.healthRemaining,
+    })
+
+    const outOfLives = applyHealthLoss()
+    if (resolution.sectorOver || outOfLives) {
+      pendingSectorOver = true
+      pendingCardChoice = false
+      phase = 'resolution'
+      phaseTimer = FEEDBACK_MS
+      return
+    }
+
+    pendingCardChoice = correct
+    phase = 'bossBuildupResolution'
+    phaseTimer = FEEDBACK_MS
+  }
+
+  function enterBossFight() {
+    phase = 'bossFight'
+    hud.setBossActive(false)
+    hud.setCountdown(null)
+    combat.clearAllCombatants()
+    const bossHp = Math.round(BOSS_BASE_HP * bossHealthMultiplier)
+    combat.spawnBossEnemy(bossHp)
+    hud.setBossFight(true, bossHp, bossHp)
   }
 
   function enterGoldenArena() {
@@ -660,8 +724,8 @@ function mountGame(session) {
     session.lives -= 1
     if (session.lives <= 0) return true
     session.health = maxHealth
-    shieldCharges = shieldMax
-    shieldRechargeTimer = 0
+    shieldValue = shieldMax
+    shieldRegenDelayTimer = 0
     return false
   }
 
@@ -676,15 +740,13 @@ function mountGame(session) {
     if (isFull && deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
   }
 
-  function settleQuestion(outcome, isBoss) {
+  function settleQuestion(outcome) {
     combat.clearQuizTargets()
-    if (isBoss) rail.exitArena()
     const resolution = resolveAnswer(session, outcome)
     applySpeedProgression(outcome.type)
 
     const correct = outcome.type === 'correct'
     if (!correct) applyDifficulty()
-    if (isBoss && !correct) applyBossDifficulty()
 
     history = recordResult(history, outcome.card.guid, correct)
     saveHistory(history)
@@ -780,26 +842,15 @@ function mountGame(session) {
     const nosePos = rail.getShipNosePosition()
 
     // ============ MIRA ============
-    // física própria da mira, mais rápida e com mais alcance que a nave. Em modo arena, mira
-    // centrada (o voo livre já é a mira).
-    if (rail.isArena()) {
-      reticleX = 0
-      reticleY = 0
-      reticleVelX = 0
-      reticleVelY = 0
-    } else {
-      const tvx = inputState.moveX * RETICLE_SPEED
-      const tvy = inputState.moveY * RETICLE_SPEED
-      const rblend = 1 - Math.exp(-RETICLE_ACCEL * dt)
-      reticleVelX += (tvx - reticleVelX) * rblend
-      reticleVelY += (tvy - reticleVelY) * rblend
-      reticleX += reticleVelX * dt
-      reticleY += reticleVelY * dt
-
-      if (reticleX > RETICLE_MAX_X) { reticleX = RETICLE_MAX_X; reticleVelX = 0 }
-      else if (reticleX < -RETICLE_MAX_X) { reticleX = -RETICLE_MAX_X; reticleVelX = 0 }
-      if (reticleY > RETICLE_MAX_Y) { reticleY = RETICLE_MAX_Y; reticleVelY = 0 }
-      else if (reticleY < -RETICLE_MAX_Y) { reticleY = -RETICLE_MAX_Y; reticleVelY = 0 }
+    // acompanha o mesmo deslocamento lateral da nave (amplificado um pouco) — centrada quando
+    // a nave está centrada, "no meio da tela e junto com o jogador". Em modo arena, centrada
+    // (o voo livre já é a mira).
+    let reticleX = 0
+    let reticleY = 0
+    if (!rail.isArena()) {
+      const lateral = rail.getPlayerLateral()
+      reticleX = lateral.x * RETICLE_LATERAL_MULT
+      reticleY = lateral.y * RETICLE_LATERAL_MULT
     }
 
     // posição 3D da mira: ancorada no NARIZ, deslocada lateral/verticalmente, e avançada pelo
@@ -813,25 +864,25 @@ function mountGame(session) {
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
     // ============ TIRO / TIRO TELEGUIADO CARREGADO ============
-    // segurar o botão de atirar continua disparando normal (auto-fire de sempre). Se o
-    // segurar passar de homingChargeMinMs, ao SOLTAR o botão isso dispara, ADICIONALMENTE, um
-    // tiro teleguiado que persegue até homingMaxTargets inimigos — a carga escala de
-    // HOMING_MIN_TARGETS (no mínimo) até homingMaxTargets (no máximo, aos homingChargeMaxMs)
+    // o glow visual cresce DESDE O PRIMEIRO INSTANTE que o botão é pressionado (feedback
+    // imediato) — só o efeito de disparo automático normal é suprimido assim que a carga
+    // ultrapassa homingChargeMinMs (segurando além disso, dispara só o teleguiado ao soltar).
+    const isCharging = fireHeldMs >= homingChargeMinMs
     if (inputState.firing) {
-      combat.tryFire(nosePos, fireDirection)
+      if (!isCharging) combat.tryFire(nosePos, fireDirection)
       fireHeldMs += dt * 1000
-      if (fireHeldMs >= homingChargeMinMs) {
-        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
-        hud.setChargeIndicator(true, chargeFrac)
-      }
+      const chargeFrac = Math.min(1, fireHeldMs / homingChargeMaxMs)
+      hud.setChargeIndicator(true, chargeFrac)
+      effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
     } else {
-      if (fireHeldMs >= homingChargeMinMs) {
+      if (isCharging) {
         const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
         const targetCount = Math.round(HOMING_MIN_TARGETS + (homingMaxTargets - HOMING_MIN_TARGETS) * chargeFrac)
         combat.fireHomingShot(nosePos, targetCount)
       }
       fireHeldMs = 0
       hud.setChargeIndicator(false)
+      effects.setChargeGlow(false)
     }
 
     // ============ GIRO-DESVIO (Z/C) ============
@@ -841,7 +892,7 @@ function mountGame(session) {
     if (isActionPressed(bindings, inputState.pressed, 'dodgeLeft')) handleDodgePress(-1, 'left', playerPos)
     if (isActionPressed(bindings, inputState.pressed, 'dodgeRight')) handleDodgePress(1, 'right', playerPos)
 
-    const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
+    const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimOrigin: nosePos,
@@ -878,11 +929,28 @@ function mountGame(session) {
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
 
-    // recarga do escudo: só começa a contar quando ele esgota de vez (0 cargas), e ao terminar
-    // volta pro máximo de uma vez (não regenera carga por carga)
-    if (shieldCharges <= 0 && shieldRechargeTimer > 0) {
-      shieldRechargeTimer = Math.max(0, shieldRechargeTimer - dt * 1000)
-      if (shieldRechargeTimer <= 0) shieldCharges = shieldMax
+    // escudo: regenera sozinho (contínuo) depois de um pequeno atraso pós-hit — não só quando
+    // esgota de vez
+    if (shieldRegenDelayTimer > 0) {
+      shieldRegenDelayTimer = Math.max(0, shieldRegenDelayTimer - dt * 1000)
+    } else if (shieldValue < shieldMax) {
+      shieldValue = Math.min(shieldMax, shieldValue + shieldRegenRate * dt)
+    }
+
+    if (events.bossDefeated && phase === 'bossFight') {
+      session.score += BOSS_DEFEAT_BONUS
+      hud.setBossFight(false)
+      rail.exitArena()
+      hud.setFeedback({
+        correct: true,
+        correctAnswer: '',
+        points: BOSS_DEFEAT_BONUS,
+        comboMultiplier: session.comboMultiplier,
+        health: session.health,
+      })
+      pendingCardChoice = true
+      phase = 'bossVictory'
+      phaseTimer = FEEDBACK_MS
     }
 
     invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
@@ -890,11 +958,11 @@ function mountGame(session) {
       invincibleTimer = invincibilityDurationMs
       hitShakeTimer = HIT_SHAKE_DURATION_MS
       hud.damageFlash()
+      shieldRegenDelayTimer = shieldRegenDelayMs
 
-      if (shieldCharges > 0) {
+      if (shieldValue >= 1) {
         // escudo absorve o hit — saúde intocada
-        shieldCharges -= 1
-        if (shieldCharges <= 0) shieldRechargeTimer = shieldRechargeMs
+        shieldValue -= 1
       } else {
         session.health = Math.max(0, session.health - 1)
         if (applyHealthLoss()) {
@@ -905,7 +973,7 @@ function mountGame(session) {
     }
     rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
 
-    if (phase === 'combat' || phase === 'goldenArena') {
+    if (phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup') {
       enemyTimer -= dt * 1000
       if (enemyTimer <= 0) {
         if (phase === 'combat' && Math.random() < TIME_ENEMY_SPAWN_CHANCE) combat.spawnTimeEnemy()
@@ -934,13 +1002,43 @@ function mountGame(session) {
     } else if (phase === 'recall') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {
-        if (isBossCycle) enterBossArena()
+        if (isBossCycle) enterBossBuildup()
         else enterAlternatives()
       }
     } else if (phase === 'alternatives') {
       processAnswerPhase(events, inputState, dt, altTotalMs, 'normal')
-    } else if (phase === 'boss') {
-      processAnswerPhase(events, inputState, dt, arenaTotalMs, 'boss')
+    } else if (phase === 'bossBuildup') {
+      bossBuildupTimer -= dt * 1000
+      hud.setCountdown(Math.max(0, Math.ceil(bossBuildupTimer / 1000)), bossBuildupTimer <= WARNING_MS)
+      if (bossBuildupTimer <= 0) {
+        // pergunta que ficou sem resposta até o tempo acabar conta como "não respondida"
+        if (questionResult) {
+          bossHealthMultiplier *= 2
+          combat.clearQuizTargets()
+          questionResult = null
+          hud.setQuestion(null)
+          hud.setAlternatives(null)
+        }
+        enterBossFight()
+      } else {
+        processBossBuildupAnswer(events, inputState)
+      }
+    } else if (phase === 'bossBuildupResolution') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        const proceed = () => {
+          if (bossBuildupTimer > 0) { phase = 'bossBuildup'; spawnNextBossQuestion() }
+          else enterBossFight()
+        }
+        if (pendingCardChoice) enterCardChoice(proceed)
+        else proceed()
+      }
+    } else if (phase === 'bossVictory') {
+      phaseTimer -= dt * 1000
+      if (phaseTimer <= 0) {
+        if (pendingCardChoice) enterCardChoice(enterCombat)
+        else enterCombat()
+      }
     } else if (phase === 'goldenArena') {
       if (events.goldenSpecialHit) {
         exitGoldenArenaVisuals()
@@ -979,7 +1077,39 @@ function mountGame(session) {
 
     hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
     hud.setLives(session.lives, maxLives)
-    hud.setShield(shieldCharges, shieldMax, shieldRechargeTimer / shieldRechargeMs)
+    hud.setShield(shieldValue, shieldMax)
+
+    if (phase === 'bossFight') {
+      const bossSnap = combat.getBossSnapshot()
+      if (bossSnap) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp)
+    }
+
+    // minimapa: só em modo arena (chefe/dourado), onde é mais fácil se perder — pontos
+    // relativos ao CENTRO da arena (não à nave), mapeados numa janela quadrada -1..1
+    if (rail.isArena()) {
+      const center = rail.getArenaCenter()
+      const mapRadius = 190
+      const rel = playerPos.clone().sub(center)
+      const playerAngle = Math.atan2(noseFrame.forward.x, noseFrame.forward.z)
+      const blips = combat.getMinimapBlips().map((b) => {
+        const r = b.worldPos.clone().sub(center)
+        return {
+          type: b.type,
+          xFrac: THREE.MathUtils.clamp(r.x / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(r.z / mapRadius, -1, 1),
+        }
+      })
+      hud.setMinimap(true, {
+        player: {
+          xFrac: THREE.MathUtils.clamp(rel.x / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(rel.z / mapRadius, -1, 1),
+          angle: playerAngle,
+        },
+        blips,
+      })
+    } else {
+      hud.setMinimap(false)
+    }
 
     // shake de câmera: aplicado por último, só na posição de render — não interfere em nenhum
     // cálculo de jogo (mira, colisão) feito mais acima neste mesmo frame
@@ -996,8 +1126,8 @@ function mountGame(session) {
     if (!questionResult) return
     const outcome = { type: correct ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
     if (phase === 'goldenAlternatives') settleGoldenBonus(outcome)
-    else if (phase === 'boss') settleQuestion(outcome, true)
-    else if (phase === 'alternatives') settleQuestion(outcome, false)
+    else if (phase === 'bossBuildup') settleBossBuildupQuestion(outcome)
+    else if (phase === 'alternatives') settleQuestion(outcome)
   }
 
   hud.debug.bind({
@@ -1021,8 +1151,8 @@ function mountGame(session) {
       if (session.lives <= 0) endSector()
     },
     rechargeShield: () => {
-      shieldCharges = shieldMax
-      shieldRechargeTimer = 0
+      shieldValue = shieldMax
+      shieldRegenDelayTimer = 0
     },
     godMode: () => {
       godMode = !godMode
@@ -1039,7 +1169,11 @@ function mountGame(session) {
       combat.setAimAssistAngle(aimAssistAngle)
       combat.setProjectileCount(projectileCount)
     },
-    gotoBoss: () => { if (phase === 'combat') enterBossArena() },
+    gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
+    skipToBossFight: () => {
+      if (phase === 'bossBuildup') bossBuildupTimer = 0
+      else if (phase === 'combat') { bossHealthMultiplier = 1; rail.enterArena(); enterBossFight() }
+    },
     gotoGolden: () => { if (phase === 'combat') enterGoldenArena() },
     clearCombatants: () => combat.clearAllCombatants(),
     showHitboxes: () => {
@@ -1063,7 +1197,7 @@ function mountGame(session) {
   enterCombat()
   hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
   hud.setLives(session.lives, maxLives)
-  hud.setShield(shieldCharges, shieldMax, 0)
+  hud.setShield(shieldValue, shieldMax)
   lastTime = performance.now()
   rafId = requestAnimationFrame(tick)
 }

@@ -19,6 +19,7 @@ export const DEBUG_ACTIONS = [
   { id: 'infiniteAmmo', label: 'Tiro infinito', toggle: true },
   { id: 'maxBuffs', label: 'Aplicar buffs máximos' },
   { id: 'gotoBoss', label: 'Ir para arena de chefe' },
+  { id: 'skipToBossFight', label: 'Pular pra luta do chefe' },
   { id: 'gotoGolden', label: 'Ir para arena dourada' },
   { id: 'clearCombatants', label: 'Limpar inimigos/projéteis' },
   { id: 'showHitboxes', label: 'Mostrar hitboxes', toggle: true },

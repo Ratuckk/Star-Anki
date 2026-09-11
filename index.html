@@ -311,17 +311,17 @@
   }
   .hud-lives-bar {
     position: absolute;
-    top: 38px;
+    top: 40px;
     left: 12px;
     display: flex;
-    gap: 4px;
+    gap: 6px;
     pointer-events: none;
     filter: drop-shadow(0 1px 3px #000);
   }
   .hud-life-pip {
-    width: 14px;
-    height: 14px;
-    border: 1px solid #333944;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #333944;
     background: rgba(20, 24, 32, 0.7);
     clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
     transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -329,69 +329,39 @@
   .hud-life-pip.filled {
     background: #7fe0ff;
     border-color: #7fe0ff;
-    box-shadow: 0 0 5px rgba(127, 224, 255, 0.6);
+    box-shadow: 0 0 6px rgba(127, 224, 255, 0.7);
   }
-  .hud-shield-bar {
+  .hud-bar-wrap {
     position: absolute;
-    top: 62px;
     left: 12px;
-    display: flex;
-    gap: 4px;
-    pointer-events: none;
-    filter: drop-shadow(0 1px 3px #000);
-  }
-  .hud-shield-pip {
-    width: 14px;
-    height: 14px;
-    border: 1px solid #333944;
-    border-radius: 50%;
-    background: rgba(20, 24, 32, 0.7);
-    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-  }
-  .hud-shield-pip.filled {
-    background: #4da6ff;
-    border-color: #4da6ff;
-    box-shadow: 0 0 5px rgba(77, 166, 255, 0.6);
-  }
-  .hud-shield-recharge {
-    position: absolute;
-    top: 80px;
-    left: 12px;
-    width: 40px;
-    height: 4px;
-    background: rgba(20, 24, 32, 0.7);
-    border: 1px solid #333944;
-    border-radius: 2px;
+    width: 220px;
+    background: rgba(20, 24, 32, 0.75);
+    border: 2px solid #333944;
+    border-radius: 6px;
     overflow: hidden;
     pointer-events: none;
-  }
-  .hud-shield-recharge-fill {
-    height: 100%;
-    width: 0%;
-    background: #4da6ff;
-    transition: width 0.1s linear;
-  }
-  .hud-health-bar {
-    position: absolute;
-    top: 94px;
-    left: 12px;
-    display: flex;
-    gap: 3px;
-    pointer-events: none;
     filter: drop-shadow(0 1px 3px #000);
   }
-  .hud-health-pip {
-    width: 10px;
-    height: 16px;
-    border: 1px solid #333944;
-    border-radius: 2px;
-    background: rgba(20, 24, 32, 0.7);
-    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  .hud-bar-fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.15s ease-out;
   }
-  .hud-health-pip.filled {
+  .hud-shield-wrap {
+    top: 72px;
+    height: 14px;
+  }
+  .hud-shield-fill {
+    background: #4da6ff;
+    box-shadow: 0 0 8px rgba(77, 166, 255, 0.7) inset;
+  }
+  .hud-health-wrap {
+    top: 92px;
+    height: 22px;
+  }
+  .hud-health-fill {
     background: #6bffb0;
-    border-color: #6bffb0;
-    box-shadow: 0 0 5px rgba(107, 255, 176, 0.6);
+    box-shadow: 0 0 8px rgba(107, 255, 176, 0.7) inset;
   }
   .hud-damage-vignette {
     position: absolute;
@@ -513,6 +483,75 @@
     font-size: 2rem;
     font-weight: 700;
   }
+
+  /* ============ BARRA DE VIDA DO CHEFE ============ */
+  .hud-boss-fight-bar {
+    position: absolute;
+    top: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 46vw;
+    max-width: 480px;
+    min-width: 260px;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 4px #000);
+  }
+  .hud-boss-fight-label {
+    color: #ff6b5a;
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-align: center;
+    margin-bottom: 3px;
+  }
+  .hud-boss-fight-track {
+    height: 18px;
+    background: rgba(20, 24, 32, 0.75);
+    border: 2px solid #5c1a1a;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .hud-boss-fight-fill {
+    height: 100%;
+    width: 100%;
+    background: #ff2d4d;
+    box-shadow: 0 0 10px rgba(255, 45, 77, 0.8) inset;
+    transition: width 0.15s ease-out;
+  }
+
+  /* ============ MINIMAPA ============ */
+  .hud-minimap {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 130px;
+    height: 130px;
+    background: rgba(11, 13, 18, 0.7);
+    border: 2px solid #333944;
+    border-radius: 8px;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .hud-minimap-player {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 9px solid #f5f5f7;
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.8));
+  }
+  .hud-minimap-blip {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .hud-minimap-blip-enemy { background: #ff4d4d; box-shadow: 0 0 4px rgba(255, 77, 77, 0.9); }
+  .hud-minimap-blip-golden { background: #ffd700; width: 9px; height: 9px; box-shadow: 0 0 5px rgba(255, 215, 0, 0.9); }
+  .hud-minimap-blip-boss { background: #ff2d4d; width: 12px; height: 12px; box-shadow: 0 0 6px rgba(255, 45, 77, 1); }
+
   [hidden] { display: none !important; }
 </style>
 </head>
