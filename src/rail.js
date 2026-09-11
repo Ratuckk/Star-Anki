@@ -1,10 +1,9 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 18
-const LATERAL_SPEED = 34
-// subido de 20 → 35: a mira é derivada da posição da nave, então quanto mais rápido a nave
-// responde ao stick, mais "direta" a mira fica. Em Star Fox 64 a resposta é quase instantânea;
-// 35 dá uma sensação parecida (time constant ~0.03s) sem perder o peso do movimento.
+// 34 → 26: nave mais calma no eixo lateral, pra dar espaço pra mira (que é amplificada 4x
+// em main.js) ter um curso de movimento próprio, sem a nave cruzar a tela toda num piscar.
+const LATERAL_SPEED = 26
 const LATERAL_ACCEL_RATE = 35
 const BOX_X = 12
 const BOX_Y = 8
@@ -217,6 +216,8 @@ export function createRailController(camera, scene) {
     ship.lookAt(playerPos.clone().add(frame.forward))
     ship.rotateZ(roll)
 
+    // Câmera ancorada ao TRILHO, não à nave. Só segue CAM_FOLLOW_LATERAL do deslocamento
+    // lateral do jogador — assim a nave se move visivelmente na tela.
     const camTarget = frame.position.clone()
       .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL)
       .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL + CAM_HEIGHT)
@@ -239,6 +240,10 @@ export function createRailController(camera, scene) {
     update,
     getPlayerPosition: () => lastPlayerPos.clone(),
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
+    // posição lateral crua do jogador, ANTES de qualquer offset do trilho ou da câmera — é o
+    // que a mira usa pra ter um curso de movimento próprio (amplificado) em vez de andar colada
+    // no nariz da nave
+    getPlayerLateral: () => ({ x: playerX, y: playerY }),
     getFrameAt,
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setAdvancing: (v) => { advancing = v },
