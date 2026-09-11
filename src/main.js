@@ -20,7 +20,14 @@ const GROUND_Y = -10
 const INVINCIBILITY_MS = 1200
 const INVINCIBILITY_FLICKER_MS = 90
 
+// distância à frente do trilho (não do nariz) em que a mira é posicionada — projetar um ponto
+// distante dá movimento angular suave, em vez de a mira "pular" a cada pixel de deslocamento
 const RETICLE_AHEAD_DISTANCE = 20
+// a mira amplifica o deslocamento lateral da nave por esse fator. Com 4x, quando a nave está na
+// METADE do curso dela, a mira já está no DOBRO do centro; quando a nave chega no máximo (BOX_X
+// em rail.js = 12), a mira já passou da borda visível. Isso dá à mira um curso de movimento
+// próprio, de verdade, em vez de ela andar colada no nariz da nave.
+const RETICLE_LATERAL_MULT = 4
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
@@ -568,20 +575,29 @@ function mountGame(session) {
     if (inputState.firing) combat.tryFire(nosePos, aimDirection)
 
     const enemiesActive = phase === 'combat' || phase === 'boss' || phase === 'goldenArena'
-    // passa a origem e a direção da mira pro combat: é o que permite o lock-on ser recalculado
-    // a cada frame e ficar disponível tanto pro tiro quanto pra posição da mira abaixo
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimOrigin: nosePos,
       aimDirection,
     })
 
-    // posição da mira: se há alvo travado, pula em cima dele; senão, livre-arbítrio à frente do nariz.
-    // o clamp é redundante com o do hud mas mantém a intenção explícita (fora da tela = ignorar)
+    // posição da mira:
+    //   - sem lock-on: usa a posição lateral CRUA do jogador (rail.getPlayerLateral) amplificada
+    //     por RETICLE_LATERAL_MULT, projetada bem à frente do trilho. Isso dá à mira um curso
+    //     de movimento próprio, independente do nariz da nave — ela cruza a tela mais rápido e
+    //     chega nas bordas antes da nave chegar no limite dela.
+    //   - com lock-on: pula pra cima do alvo travado (o sistema é mantido pro futuro tiro carregado)
     const lockOn = combat.getLockOnTarget()
-    const reticleWorldPos = lockOn
-      ? lockOn.mesh.position.clone()
-      : nosePos.clone().addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    let reticleWorldPos
+    if (lockOn) {
+      reticleWorldPos = lockOn.mesh.position.clone()
+    } else {
+      const lateral = rail.getPlayerLateral()
+      reticleWorldPos = noseFrame.position.clone()
+        .addScaledVector(noseFrame.right, lateral.x * RETICLE_LATERAL_MULT)
+        .addScaledVector(noseFrame.up, lateral.y * RETICLE_LATERAL_MULT)
+        .addScaledVector(noseFrame.forward, RETICLE_AHEAD_DISTANCE)
+    }
     const ndc = reticleWorldPos.project(camera)
     hud.setReticlePosition(
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
