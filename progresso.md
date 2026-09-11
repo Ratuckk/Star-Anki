@@ -1,17 +1,28 @@
 ## Pendências agora
 
 - [ ] Testar o build atual com o baralho real do usuário.
-- [ ] Usuário escolher (se quiser) qual das ideias de inimigo futuro da tarefa `star-anki-golden-enemy` (ver seção abaixo) implementar em seguida — não implementar nenhuma sem ele escolher.
-- [ ] Reconfirmar ao vivo (numa próxima sessão com timing) que tiro certeiro no dourado especial = +50 sem tocar combo/escudo. O código não mudou desde a confirmação original, mas a última sessão de revisão não conseguiu refazer esse teste específico (projéteis de teste ainda em voo quando o orçamento de tempo acabou). Risco residual baixo.
-- [x] Workflow `star-anki-combat-rework` (núcleo de combate: inimigo vermelho que atira/é abatido, ciclo 90s+contador, roguelike de buff/dificuldade) — feito pelo agente anterior, e o chefe a cada 5ª pergunta (abaixo) foi construído em cima sem precisar tocar no que ele fez.
-- [x] Revisão/teste a fundo de todo o pacote de combate (ver seção "Revisão de combate — bug de alcance corrigido" abaixo) — achou e corrigiu um bug real de posicionamento de spawn.
-- [x] Tarefa agendada `star-anki-golden-enemy` (ver seção própria abaixo): inimigo dourado especial + pergunta bônus + All-Range, inimigo redutor de tempo, timer sempre visível, baralho de Arquitetura e Manutenção aumentado com 24 perguntas extras verificadas.
-- [x] Versão subida pra v0.8.0 nesta leva (dourado especial, redutor de tempo, timer sempre visível).
-- [x] Correções pós-v0.8.0 (ver seção "Correções — v0.8.1" abaixo): escudos invisíveis (CSS faltando), `DEBUG` do `rail.js` desligado, corrida de teardown no `main.js` blindada. Versão pra v0.8.1.
-- [x] D20 verde + canhões duplos (ver seção "D20 verde + canhões duplos — v0.9.0" abaixo). Versão pra v0.9.0.
-- [x] Baralho salvo no `localStorage` (ver seção "Baralho salvo — v0.10.0" abaixo). Versão pra v0.10.0.
-- [x] Efeitos visuais (ver seção "Efeitos visuais — v0.11.0" abaixo): starfield, explosões, rastro de motor, muzzle flash, vinheta de dano. Versão pra v0.11.0.
+- [ ] Usuário escolher (se quiser) qual das ideias de inimigo futuro (ver seção abaixo) implementar em seguida.
+- [ ] Reconfirmar ao vivo que tiro certeiro no dourado especial = +50 sem tocar combo/escudo.
+- [x] Workflow `star-anki-combat-rework` — feito.
+- [x] Revisão de combate — bug de alcance de spawn corrigido.
+- [x] Tarefa `star-anki-golden-enemy` — dourado especial, redutor de tempo, timer sempre visível, baralho aumentado.
+- [x] Correções v0.8.1 — escudos visíveis, `DEBUG` desligado, teardown blindado.
+- [x] D20 verde + canhões duplos — v0.9.0.
+- [x] Baralho salvo no localStorage — v0.10.0.
+- [x] Efeitos visuais (starfield, explosões, rastro, muzzle flash, vinheta) — v0.11.0.
+- [x] Mira estilo Star Fox 64 (lock-on, resposta direta, reticle visual) — v0.12.0.
 
+## Mira estilo Star Fox 64 — v0.12.0
+
+Pedido do usuário: "deixar o movimento da mira mais semelhante ao movimento de mira de Star Fox 64... de um jeito mais simples de controlar também, movendo a mira corretamente". Três mudanças cirúrgicas, nenhuma altera o combate:
+
+- **`rail.js`** — `LATERAL_ACCEL_RATE` de 20 → 35. Como a mira é derivada da posição do nariz, a nave (e portanto a mira) leva ~0,03s pra responder ao stick em vez de ~0,05s. Fica snappy sem perder o peso. `LATERAL_SPEED` também subiu levemente, 32 → 34.
+- **`combat.js`** — refatoração do lock-on. Antes, a mira assistida era calculada só dentro de `fire()`, no instante do disparo. Agora: função `findLockOnTarget(origin, direction)` extraída, chamada **todos os frames** dentro de `update()` (que passou a aceitar `aimOrigin`/`aimDirection` no `opts`). O resultado fica cacheado em `currentLockOn` e é exposto via `getLockOnTarget()`. `fire()` reusa o cache em vez de recalcular — mira e tiro saem do **mesmo** cálculo, então nunca dessincronizam.
+- **`main.js`** — a posição da mira agora depende do lock-on: se há alvo travado, a mira pula pra cima dele (via `lockOn.mesh.position` projetada na tela); senão, cai no livre-arbítrio antigo (`nose + RETICLE_AHEAD_DISTANCE`). Também chama `hud.setReticleLocked()` a cada frame.
+- **`hud.js`** — novo `setReticleLocked(bool)` que alterna a classe `.locked` no elemento da mira.
+- **`index.html`** — CSS de `.reticle.locked`: cor verde `#6bffb0`, anel maior (34px → 44px), brilho, e animação `reticle-lock-pulse` (0.5s, alternando entre escala 1 e 1.12). Sem a classe, a mira é branca como antes.
+- **Sensação resultante**: quando você passa o retículo perto de um alvo de pergunta, ele **trava** no alvo e fica verde pulsante, sinalizando que o tiro vai acertar. Soltando o alvo (afastando a nave), volta ao branco e ao livre-arbítrio. É o mesmo feedback visual do SF64.
+- **Versão**: v0.11.0 → v0.12.0.
 ## Efeitos visuais — v0.11.0
 
 Pedido do usuário: "queria adicionar mais efeitos visuais, está tudo muito bland". O jogo tinha luz ambiente, um sol direcional, um grid de chão e um fundo preto liso — funcional, mas sem nenhuma camada visual. Cinco efeitos adicionados, todos sem tocar em jogabilidade:
