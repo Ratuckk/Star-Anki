@@ -86,6 +86,16 @@ const GOLDEN_SPECIAL_HIT_RADIUS = 2.2
 const GOLDEN_SPECIAL_DEATH_DURATION = 0.25
 const GOLDEN_SPECIAL_PULSE_SPEED = 4
 const GOLDEN_SPECIAL_PULSE_AMOUNT = 0.18
+// dourado especial agora aguenta vários hits e age de verdade — persegue e atira, em vez de só
+// flutuar esperando um tiro certeiro
+const GOLDEN_SPECIAL_HP = 10
+const GOLDEN_CHASE_SPEED = 9
+const GOLDEN_FIRE_INTERVAL_MIN = 1200
+const GOLDEN_FIRE_INTERVAL_MAX = 2400
+
+// tiro carregado: enquanto segura o botão, varrer a mira sobre inimigos os marca (lock-on) —
+// ao soltar, o teleguiado mira exatamente nos marcados em vez dos N mais próximos
+const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
 
 const TIME_ENEMY_COLOR = 0xb026ff
 const TIME_ENEMY_EMISSIVE = 0x4b0082
@@ -257,6 +267,19 @@ export function createCombatSystem(scene, rail, effects = null) {
   // disparo carregado, onde o lock-on vai ser usado pra guiar o tiro.
   let currentLockOn = null
 
+  // lock-on por varredura: inimigos marcados enquanto o jogador segura o botão de atirar
+  // carregando o tiro teleguiado — main.js chama sweepLockOn todo frame que estiver segurando
+  const lockedEnemies = new Set()
+
+  function sweepLockOn(origin, direction) {
+    for (const e of enemies) {
+      if (e.dying || lockedEnemies.has(e)) continue
+      const toTarget = e.mesh.position.clone().sub(origin).normalize()
+      const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
+      if (angle < ENEMY_LOCK_ANGLE) lockedEnemies.add(e)
+    }
+  }
+
   function removeProjectile(p) {
     scene.remove(p.mesh)
     projectiles.splice(projectiles.indexOf(p), 1)
@@ -296,6 +319,10 @@ export function createCombatSystem(scene, rail, effects = null) {
 
   function randomBossFireInterval() {
     return (BOSS_ENEMY_FIRE_INTERVAL_MIN + Math.random() * (BOSS_ENEMY_FIRE_INTERVAL_MAX - BOSS_ENEMY_FIRE_INTERVAL_MIN)) / 1000
+  }
+
+  function randomGoldenFireInterval() {
+    return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
   }
 
   function hitRadiusFor(enemy) {
@@ -442,11 +469,13 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       const goldenHit = goldenTargets.find((g) => !g.dying && projectile.mesh.position.distanceTo(g.mesh.position) <= GOLDEN_SPECIAL_HIT_RADIUS)
       if (goldenHit) {
+        goldenHit.hp -= 1
+        removeProjectile(projectile)
+        if (goldenHit.hp > 0) continue
         goldenHit.dying = true
         goldenHit.deathT = 0
         goldenSpecialHit = true
         if (effects) effects.explosion(goldenHit.mesh.position, GOLDEN_SPECIAL_COLOR, 1.8)
-        removeProjectile(projectile)
         continue
       }
 
@@ -485,7 +514,7 @@ export function createCombatSystem(scene, rail, effects = null) {
     }
   }
 
-  function updateGoldenTargets(dt) {
+  function updateGoldenTargets(dt, playerPosition) {
     const pulse = 1 + Math.sin(elapsed * GOLDEN_SPECIAL_PULSE_SPEED) * GOLDEN_SPECIAL_PULSE_AMOUNT
     for (const g of [...goldenTargets]) {
       if (g.dying) {
@@ -497,6 +526,19 @@ export function createCombatSystem(scene, rail, effects = null) {
       g.mesh.scale.setScalar(pulse)
       g.mesh.rotation.y += dt * 0.6
       g.mesh.rotation.x += dt * 0.3
+
+      // age de verdade: persegue o jogador e atira periodicamente, em vez de só flutuar
+      if (playerPosition) {
+        const toPlayer = playerPosition.clone().sub(g.mesh.position)
+        if (toPlayer.lengthSq() > 1e-4) {
+          g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)
+        }
+        g.fireTimer -= dt
+        if (g.fireTimer <= 0) {
+          fireEnemyProjectile({ mesh: g.mesh }, playerPosition)
+          g.fireTimer = randomGoldenFireInterval()
+        }
+      }
     }
   }
 
@@ -593,9 +635,18 @@ export function createCombatSystem(scene, rail, effects = null) {
     // próximos da origem. Retorna quantos alvos realmente travou (pode ser < maxTargets se
     // não houver inimigos suficientes em cena).
     fireHomingShot(origin, maxTargets) {
-      const alive = [...enemies].filter((e) => !e.dying)
-      alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
-      const targets = alive.slice(0, Math.max(0, maxTargets))
+      // se o jogador marcou inimigos varrendo a mira durante a carga, mira EXATAMENTE neles;
+      // senão (soltou sem varrer nenhum), cai de volta pros N mais próximos
+      const locked = [...lockedEnemies].filter((e) => !e.dying)
+      let targets
+      if (locked.length > 0) {
+        targets = locked.slice(0, Math.max(0, maxTargets))
+      } else {
+        const alive = [...enemies].filter((e) => !e.dying)
+        alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
+        targets = alive.slice(0, Math.max(0, maxTargets))
+      }
+      lockedEnemies.clear()
       for (const target of targets) {
         const direction = target.mesh.position.clone().sub(origin).normalize()
         const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
@@ -724,7 +775,15 @@ export function createCombatSystem(scene, rail, effects = null) {
       const mesh = new THREE.Mesh(goldenGeometry, goldenMaterial)
       mesh.position.copy(frame.position.clone().add(offset))
       scene.add(mesh)
-      goldenTargets.push({ mesh, dying: false, deathT: 0 })
+      goldenTargets.push({
+        id: nextEnemyId++,
+        mesh,
+        dying: false,
+        deathT: 0,
+        hp: GOLDEN_SPECIAL_HP,
+        maxHp: GOLDEN_SPECIAL_HP,
+        fireTimer: randomGoldenFireInterval(),
+      })
     },
 
     clearGoldenTargets() {
@@ -796,9 +855,16 @@ export function createCombatSystem(scene, rail, effects = null) {
     getQuizShotsFired: () => quizShotsFired,
 
     // inimigos vivos com mais de 1 hp — usado pra desenhar a barra de vida acima do modelo deles
-    getEnemySnapshots: () => enemies
+    getEnemySnapshots: () => [...enemies, ...goldenTargets]
       .filter((e) => !e.dying && e.maxHp > 1)
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone(), hp: e.hp, maxHp: e.maxHp })),
+
+    // lock-on por varredura pro tiro carregado
+    sweepLockOn,
+    clearLockedEnemies() { lockedEnemies.clear() },
+    getLockedEnemySnapshots: () => [...lockedEnemies]
+      .filter((e) => !e.dying)
+      .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone() })),
 
     // o chefe específico — pra barra de vida grande e dedicada no topo da tela
     getBossSnapshot: () => {
@@ -845,7 +911,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated } = updateProjectiles(dt)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
-      updateGoldenTargets(dt)
+      updateGoldenTargets(dt, playerPosition)
 
       let enemyHits = 0
       if (enemiesActive) {

@@ -1,17 +1,25 @@
 ## Pendências agora
 
-- [ ] Lista grande de correções/ajustes reportada pelo usuário jogando de verdade — ver seção "Roadmap — próxima leva" no fim deste arquivo pra fases planejadas (A: combate/precisão, B: ritmo/clareza, C: visual do trilho).
+- [ ] Fase B (ritmo/clareza) e Fase C (visual do trilho) — ver seção "Roadmap — próxima leva" no fim deste arquivo.
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados". Criei um do zero na v0.15.0; não achei nem tive confirmação de onde ficaria um segundo. Perguntar ao usuário se surgir a dúvida de novo.
+- [x] Fase A — combate e precisão (giro-desvio, lock-on por varredura, dourado especial com hp/IA, +2 inimigos por erro) — v0.19.0.
 
-## Roadmap — próxima leva (pós-v0.18.0)
+## Fase A — Combate e precisão — v0.19.0
 
-Lista de correções/pedidos do usuário jogando ao vivo, organizada em 3 fases (pedido explícito dele: "separe tudo isso em fases"). Nenhuma delas foi implementada ainda.
+Primeira das 3 fases planejadas na v0.18.0. Todos os 4 itens implementados e testados ao vivo:
 
-**Fase A — Combate e precisão** (mecânicas centrais que mudam como o combate se sente):
-- Giro-desvio (Z/C) fazer uma inclinação de verdade estilo Star Fox 64, não só um tilt lateral pequeno como hoje.
-- Sistema de lock-on por varredura pro tiro carregado: enquanto carrega, passar a mira normal sobre inimigos deveria marcá-los (reaproveitar/estender `findLockOnTarget`/`currentLockOn` que já existe pra alvos de pergunta); ao soltar, dispara teleguiado só nos marcados — não nos N mais próximos como hoje (`combat.fireHomingShot`).
-- Inimigo dourado especial: hoje morre com 1 hit e fica parado. Precisa de no mínimo 10 hp e IA de ataque de verdade (hoje só o alvo de pergunta comum e o dourado especial são "parados" por design — o dourado deveria se comportar mais como um mini-chefe).
-- Dificuldade escalando com erros: sessão deveria spawnar +2 inimigos a mais conforme mais perguntas são erradas (parecido com o `applyDifficulty()` que já existe pra intervalo/agressividade — só falta a contagem de inimigos extra).
+- **Giro-desvio com inclinação de verdade**: toque simples em Z/C agora faz um banck forte de ~170° (era só 0.9 rad ≈ 51°) que esbarra e volta, com curva `t^0.6` pra entrar rápido na inclinação — bem mais parecido com Star Fox 64 que o tilt pequeno de antes. Duplo toque continua sendo o giro completo de 360° (já estava certo). Só mudei constantes/curva em `rail.js` (`SINGLE_DODGE_MAX_ANGLE`), zero mudança de arquitetura.
+- **Lock-on por varredura pro tiro carregado**: `combat.js` ganhou `sweepLockOn(origin, direction)` — chamado todo frame que o jogador segura o botão de atirar (não só depois do mínimo de carga, o tempo todo que está segurando), marca qualquer inimigo dentro de `ENEMY_LOCK_ANGLE` (6°) num `Set` (`lockedEnemies`). Visual: anel verde pulsante sobre cada um (`hud.setLockedEnemyMarkers`, mesmo padrão de pool por id das barras de vida). Ao soltar, `fireHomingShot` agora prioriza os marcados (`locked.slice(0, maxTargets)`) — só cai de volta pros N mais próximos se o jogador soltar sem ter marcado nada. `maxTargets` (que escala com o tempo de carga) continua funcionando como teto de quantos marcados viram tiro — mais carga = mais das suas marcações valem.
+- **Dourado especial com 10 hp e IA de ataque**: antes morria com 1 hit e ficava parado — agora `spawnGoldenSpecial` dá `hp: GOLDEN_SPECIAL_HP` (10) e `updateGoldenTargets` ganhou perseguição (`GOLDEN_CHASE_SPEED`) e disparo periódico (reaproveita `fireEnemyProjectile`, só passando `{ mesh: g.mesh }` no lugar de um inimigo de verdade — funciona porque a função só lê `.mesh.position`). O hit no `updateProjectiles` virou decremento de hp em vez de morte instantânea, igual ao padrão já usado pra inimigos/chefe. `getEnemySnapshots` (barra de vida flutuante) e `getMinimapBlips` (ponto dourado no minimapa) já cobriam isso automaticamente, sem mudança.
+- **+2 inimigos por erro/timeout**: `applyDifficulty()` (chamada em toda resposta errada, normal ou durante a caçada do chefe) agora também spawna 2 inimigos na hora (`WRONG_ANSWER_EXTRA_ENEMIES`), além de mexer no intervalo/agressividade que já existia.
+
+**Testado ao vivo**: dourado especial spawnado via debug perseguiu visivelmente a nave em modo rail (aproximou-se sozinho); segurar o tiro e varrer a mira sobre inimigos mostrou os anéis verdes de lock-on corretamente; soltar disparou teleguiados que acertaram exatamente os marcados (pontuação confirma: +60 de 2 inimigos vermelhos marcados, não os N mais próximos genéricos); nenhum erro no console em nenhum teste.
+
+**Não mexido**: Fases B (timer de resposta, neblina/spawn) e C (propulsor, ampulheta, asset de neblina, altura da nave, trilha visível) — ainda por vir.
+
+**Versão**: v0.18.0 → v0.19.0.
+
+## Roadmap — próxima leva (pós-v0.19.0)
 
 **Fase B — Ritmo e clareza** (informação que falta pro jogador):
 - Timer visível pra responder a pergunta atual (fases `alternatives`/`goldenAlternatives` não mostram countdown nenhum hoje — só `combat`/`bossBuildup` mostram; teria que expor `phaseTimer`/`altTotalMs` no HUD nessas fases também).

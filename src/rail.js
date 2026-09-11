@@ -25,6 +25,9 @@ const ARENA_RADIUS = 190
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
+// giro-desvio: toque simples inclina forte (banck real, não um tilt pequeno) e volta
+const SINGLE_DODGE_MAX_ANGLE = THREE.MathUtils.degToRad(170)
+
 function buildCurve() {
   const points = [
     new THREE.Vector3(0, 3, 0),
@@ -140,10 +143,13 @@ export function createRailController(camera, scene) {
   function currentDodgeRollAngle() {
     if (!dodgeActive) return 0
     const t = Math.min(1, dodgeElapsed / dodgeDuration)
-    // duplo toque: giro completo de 360°. toque simples: "bump" de inclinação que vai e volta
+    // duplo toque: giro completo de 360° (barrel roll clássico). toque simples: banck forte de
+    // quase meia-volta (~170°) que esbarra e volta — uma inclinação de verdade, não um tilt
+    // pequeno. Curva com pico deslocado pro início (t^0.6) pra "entrar" rápido na inclinação e
+    // "sair" mais devagar, ficando mais fácil de ler.
     return dodgeFull
       ? dodgeDirection * t * Math.PI * 2
-      : dodgeDirection * Math.sin(t * Math.PI) * 0.9
+      : dodgeDirection * Math.sin(Math.pow(t, 0.6) * Math.PI) * SINGLE_DODGE_MAX_ANGLE
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -287,7 +293,7 @@ export function createRailController(camera, scene) {
     triggerDodgeRoll: (direction, full) => {
       dodgeDirection = direction
       dodgeFull = full
-      dodgeDuration = full ? 0.5 : 0.22
+      dodgeDuration = full ? 0.5 : 0.32
       dodgeElapsed = 0
       dodgeActive = true
     },

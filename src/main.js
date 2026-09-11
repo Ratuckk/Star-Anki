@@ -83,6 +83,7 @@ const ENEMY_INTERVAL_FLOOR = 350
 const ENEMY_INTERVAL_STEP = 70
 const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
+const WRONG_ANSWER_EXTRA_ENEMIES = 2
 
 const BONUS_INTERVAL_MIN = 9000
 const BONUS_INTERVAL_MAX = 16000
@@ -521,6 +522,8 @@ function mountGame(session) {
     enemyIntervalMax = Math.max(enemyIntervalMin + 150, enemyIntervalMax - ENEMY_INTERVAL_STEP)
     enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, enemyAggression + ENEMY_AGGRESSION_STEP)
     combat.setEnemyAggressiveness(enemyAggression)
+    // cada erro/timeout escala a sessão: +2 inimigos na hora, além do intervalo/agressividade
+    for (let i = 0; i < WRONG_ANSWER_EXTRA_ENEMIES; i += 1) combat.spawnEnemy()
   }
 
   function applyBossDifficulty() {
@@ -874,6 +877,20 @@ function mountGame(session) {
       const chargeFrac = Math.min(1, fireHeldMs / homingChargeMaxMs)
       hud.setChargeIndicator(true, chargeFrac)
       effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
+
+      // varre a mira sobre inimigos o tempo todo que segura o botão (não só depois do mínimo
+      // de carga) — cada um que passa pela mira fica marcado (lock-on) pro teleguiado mirar
+      // exatamente neles ao soltar, em vez dos N mais próximos
+      combat.sweepLockOn(nosePos, fireDirection)
+      const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
+        const ndcL = s.worldPos.project(camera)
+        return {
+          id: s.id,
+          xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
+          yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
+        }
+      })
+      hud.setLockedEnemyMarkers(lockedBars)
     } else {
       if (isCharging) {
         const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
@@ -883,6 +900,8 @@ function mountGame(session) {
       fireHeldMs = 0
       hud.setChargeIndicator(false)
       effects.setChargeGlow(false)
+      combat.clearLockedEnemies()
+      hud.setLockedEnemyMarkers([])
     }
 
     // ============ GIRO-DESVIO (Z/C) ============

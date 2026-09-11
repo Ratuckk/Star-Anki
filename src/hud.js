@@ -31,7 +31,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.18.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.19.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -752,6 +752,9 @@ export function createGameHud() {
   // ============ BARRAS DE VIDA DE INIMIGO ============
   const enemyBarPool = new Map()
 
+  // ============ MARCADORES DE LOCK-ON (tiro carregado) ============
+  const lockMarkerPool = new Map()
+
   return {
     sceneRoot,
 
@@ -882,6 +885,27 @@ export function createGameHud() {
       }
       for (const [id, el] of enemyBarPool) {
         if (!seen.has(id)) { el.remove(); enemyBarPool.delete(id) }
+      }
+    },
+
+    // anel de marcação sobre cada inimigo travado ao varrer a mira durante a carga do tiro
+    // teleguiado — mesmo padrão de pool por id das barras de vida
+    setLockedEnemyMarkers(list) {
+      const seen = new Set()
+      for (const item of list) {
+        seen.add(item.id)
+        let el = lockMarkerPool.get(item.id)
+        if (!el) {
+          el = document.createElement('div')
+          el.className = 'enemy-lock-marker'
+          root.appendChild(el)
+          lockMarkerPool.set(item.id, el)
+        }
+        el.style.left = `${item.xFrac * 100}%`
+        el.style.top = `${item.yFrac * 100}%`
+      }
+      for (const [id, el] of lockMarkerPool) {
+        if (!seen.has(id)) { el.remove(); lockMarkerPool.delete(id) }
       }
     },
 
