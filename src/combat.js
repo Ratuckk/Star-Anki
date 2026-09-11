@@ -146,9 +146,9 @@ export function createCombatSystem(scene, rail, effects = null) {
   let quizShotsFired = 0
   let elapsed = 0
 
-  // alvo travado pela mira assistida, recalculado a cada update() (não só no disparo). main.js lê
-  // isso via getLockOnTarget() pra mover a mira em cima do alvo — é o que dá a sensação de
-  // "travou" do Star Fox 64, em vez da mira ficar parada enquanto o tiro desvia sozinho.
+  // alvo travado (detecção apenas). NÃO redireciona mais o disparo — o tiro vai sempre na
+  // direção passada pelo main.js (que é a direção da mira). Isso existe pra um futuro
+  // disparo carregado, onde o lock-on vai ser usado pra guiar o tiro.
   let currentLockOn = null
 
   function removeProjectile(p) {
@@ -188,8 +188,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     return ms / enemyAggression / 1000
   }
 
-  // acha o alvo de quiz mais alinhado com a direção de mira dentro do cone de aim assist.
-  // usado tanto pelo fire() (pra desviar o tiro) quanto pelo update() (pra mover a mira).
   function findLockOnTarget(origin, direction) {
     let best = null
     let bestAngle = aimAssistAngle
@@ -206,13 +204,9 @@ export function createCombatSystem(scene, rail, effects = null) {
   }
 
   function fire(origin, direction) {
-    let shotDirection = direction.clone()
-
-    // reusa o alvo travado pelo update() deste frame em vez de recalcular — assim mira e tiro
-    // saem do mesmo cálculo e nunca dessincronizam
-    if (currentLockOn && !currentLockOn.dying) {
-      shotDirection = currentLockOn.mesh.position.clone().sub(origin).normalize()
-    }
+    // tiro vai SEMPRE na direção recebida (que é a direção da mira). Sem sequestro por
+    // lock-on — se o jogador deslocou a mira, o tiro acompanha a mira, ponto.
+    const shotDirection = direction.clone()
 
     const lateralAxis = new THREE.Vector3().crossVectors(shotDirection, WORLD_UP)
     if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
@@ -538,8 +532,7 @@ export function createCombatSystem(scene, rail, effects = null) {
 
     getQuizShotsFired: () => quizShotsFired,
 
-    // alvo travado pela mira assistida neste instante (ou null). main.js usa isso pra mover a
-    // mira em cima do alvo e ligar o feedback visual de "travado".
+    // lock-on de detecção (não afeta disparo). Mantido pro futuro tiro carregado.
     getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
     setFireCooldown(seconds) { fireCooldownDuration = seconds },
@@ -554,8 +547,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       elapsed += dt
       cooldown = Math.max(0, cooldown - dt)
 
-      // recalcula o alvo travado ANTES de mover projéteis: se um projétil matar o alvo travado
-      // neste frame, o update() seguinte já vai ver o alvo como dying e soltar o lock sozinho
       if (aimOrigin && aimDirection) {
         currentLockOn = findLockOnTarget(aimOrigin, aimDirection)
       } else {
