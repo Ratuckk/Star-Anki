@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 18
-// 34 → 26: nave mais calma no eixo lateral, pra dar espaço pra mira ter curso de movimento
-// próprio, sem a nave cruzar a tela num piscar
-const LATERAL_SPEED = 26
-const LATERAL_ACCEL_RATE = 35
-const BOX_X = 12
-const BOX_Y = 8
+// 26 → 16: redução forte e visível. Antes a nave cruzava a tela inteira em menos de 1s;
+// agora tem um peso real, dá tempo de mirar. Reduzi também BOX_X/BOX_Y (a faixa de
+// deslocamento lateral) pra nave não sair pela borda da tela em velocidade baixa.
+const LATERAL_SPEED = 16
+const LATERAL_ACCEL_RATE = 28
+const BOX_X = 8
+const BOX_Y = 6
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
 const CAM_LAG_RATE = 5
