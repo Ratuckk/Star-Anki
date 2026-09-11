@@ -1,12 +1,12 @@
 import * as THREE from 'three'
 
-const RAIL_SPEED = 18
+const RAIL_SPEED = 22
 // velocidade lateral: 32 → 22 (nave mais lenta, mas não travada)
 // caixa de movimentação: volta pra 12/8 — MESMO espaço de sempre
 const LATERAL_SPEED = 22
-const LATERAL_ACCEL_RATE = 32
-const BOX_X = 18
-const BOX_Y = 8
+const LATERAL_ACCEL_RATE = 22
+const BOX_X = 10
+const BOX_Y = 2
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
 const CAM_LAG_RATE = 5
