@@ -74,16 +74,16 @@ const BLOOM_START_SCALE = 0.3
 const BLOOM_END_SCALE = 2.5
 
 // ============ AMBIENT DUST ============
-const DUST_COUNT = 220
-const DUST_RADIUS = 45
+// Poeira FIXA em espaço-mundo (não segue o jogador) — o jogador voa ATRAVÉS dela, como
+// acontece com o grid. As partículas ficam num volume grande que cobre o trilho e o
+// alcance da arena; cada uma tem drift lento e wrap-around por eixo no volume.
+const DUST_COUNT = 700
 const DUST_SIZE = 0.28
 const DUST_COLOR = 0xaaccee
-
-// ============ SHIELD BUBBLE ============
-// >> CORRIGIDO: a bolha era uma esfera SÓLIDA maior que a própria nave, cobrindo a tela — virou
-// uma grade (wireframe) justa ao casco, como um "grid de escudo" de verdade em vez de um orbe <<
-const SHIELD_BUBBLE_RADIUS = 1.8
-const SHIELD_BUBBLE_COLOR = 0x4da6ff
+const DUST_AREA_CENTER = { x: -30, y: 0, z: -80 }
+const DUST_AREA_HALF_X = 220
+const DUST_AREA_HALF_Y = 60
+const DUST_AREA_HALF_Z = 220
 
 // ============ CONTRAIL ============
 const CONTRAIL_INTERVAL = 0.06
@@ -97,26 +97,6 @@ const BOSS_IMPACT_MAX_SCALE = 5
 
 // ============ GRID PULSE ============
 const GRID_PULSE_DURATION = 0.4
-
-// >> CORRIGIDO: PointsMaterial sem `map` desenha cada partícula como um QUADRADO sólido — de
-// longe (starfield) isso não incomoda, mas perto da nave (poeira ambiente) ficava parecendo uma
-// "constelação" de quadradinhos estranha. Esse sprite circular (gerado uma vez, num canvas)
-// deixa a poeira redonda e suave, como um ponto de luz de verdade. <<
-function makeCircleSprite() {
-  const size = 64
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  gradient.addColorStop(0, 'rgba(255,255,255,1)')
-  gradient.addColorStop(0.5, 'rgba(255,255,255,0.55)')
-  gradient.addColorStop(1, 'rgba(255,255,255,0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, size, size)
-  const texture = new THREE.CanvasTexture(canvas)
-  return texture
-}
 
 // sistema de efeitos visuais: starfield + poeira ambiente + efeitos transientes.
 // Todos os transientes são criados sob demanda e descartados quando a vida útil acaba.
@@ -152,46 +132,34 @@ export function createEffectsSystem(scene, opts = {}) {
   scene.add(stars)
 
   // ============ AMBIENT DUST ============
-  // poeira espacial flutuando perto da nave — profundidade de campo sem custo alto.
-  // As posições são "locais" ao centro atual do jogador; o Points inteiro é reposicionado
-  // a cada frame pra seguir a nave, então a poeira sempre parece estar ao redor do jogador.
+  // poeira espacial fixa em espaço-mundo — o jogador voa através dela como acontece com o
+  // grid. Cada partícula fica numa caixa grande (cobrindo o trilho e a arena) e faz wrap
+  // por eixo quando sai do volume.
   const dustGeometry = new THREE.BufferGeometry()
   const dustPositions = new Float32Array(DUST_COUNT * 3)
   const dustVelocities = new Float32Array(DUST_COUNT * 3)
   for (let i = 0; i < DUST_COUNT; i++) {
-    const r = DUST_RADIUS * Math.cbrt(Math.random())
-    const theta = Math.random() * Math.PI * 2
-    const phi = Math.acos(2 * Math.random() - 1)
-    dustPositions[i*3] = r * Math.sin(phi) * Math.cos(theta)
-    dustPositions[i*3+1] = r * Math.cos(phi)
-    dustPositions[i*3+2] = r * Math.sin(phi) * Math.sin(theta)
-    dustVelocities[i*3] = (Math.random() - 0.5) * 0.6
-    dustVelocities[i*3+1] = (Math.random() - 0.5) * 0.6
-    dustVelocities[i*3+2] = (Math.random() - 0.5) * 0.6
+    // distribuição uniforme dentro de uma caixa grande em espaço-mundo
+    dustPositions[i*3]   = DUST_AREA_CENTER.x + (Math.random() * 2 - 1) * DUST_AREA_HALF_X
+    dustPositions[i*3+1] = DUST_AREA_CENTER.y + (Math.random() * 2 - 1) * DUST_AREA_HALF_Y
+    dustPositions[i*3+2] = DUST_AREA_CENTER.z + (Math.random() * 2 - 1) * DUST_AREA_HALF_Z
+    // drift lento — como o jogador voa a 22+ u/s, isso é quase imperceptível em jogo, mas
+    // dá vida ao fundo quando o jogador está quase parado
+    dustVelocities[i*3]   = (Math.random() - 0.5) * 0.4
+    dustVelocities[i*3+1] = (Math.random() - 0.5) * 0.4
+    dustVelocities[i*3+2] = (Math.random() - 0.5) * 0.4
   }
   dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
   const dustMaterial = new THREE.PointsMaterial({
     color: DUST_COLOR, size: DUST_SIZE, sizeAttenuation: true,
-    map: makeCircleSprite(), transparent: true, opacity: 0.4, depthWrite: false, fog: false,
+    transparent: true, opacity: 0.5, depthWrite: false, fog: false,
   })
   const dustPoints = new THREE.Points(dustGeometry, dustMaterial)
   dustPoints.frustumCulled = false
   scene.add(dustPoints)
 
-  // ============ SHIELD BUBBLE ============
-  // wireframe (poucos segmentos) em vez de esfera sólida — parece um grid de energia justo ao
-  // casco, não um orbe grande cobrindo a nave
-  // blending normal (não aditivo) — aditivo somava o brilho de cada linha que se cruza e
-  // deixava a grade parecendo acesa/brilhante demais mesmo com opacidade baixa
-  const shieldBubbleGeometry = new THREE.SphereGeometry(SHIELD_BUBBLE_RADIUS, 9, 6)
-  const shieldBubbleMaterial = new THREE.MeshBasicMaterial({
-    color: SHIELD_BUBBLE_COLOR, wireframe: true, transparent: true, opacity: 0.22,
-    depthWrite: false, fog: false,
-  })
-  const shieldBubble = new THREE.Mesh(shieldBubbleGeometry, shieldBubbleMaterial)
-  shieldBubble.visible = false
-  scene.add(shieldBubble)
-  let shieldPulseTimer = 0
+  // (bolha de escudo removida — o escudo continua funcionando mecanicamente, só não é mais
+  // desenhado como esfera ao redor da nave)
 
   // ============ CHARGE GLOW ============
   const chargeGlowGeometry = new THREE.SphereGeometry(1, 16, 12)
@@ -209,16 +177,16 @@ export function createEffectsSystem(scene, opts = {}) {
   const trailParticles = []
   const smokeRings = []
   const homingAfterimages = []
-  const hitSparks = []           // faíscas curtas de hit
-  const activeFlashes = []       // meshes em flash branco
-  const projectileTrails = []    // afterimage dos tiros normais
-  const shockwaves = []          // anéis expansivos
-  const telegraphs = []          // aviso de tiro inimigo
-  const cometTrails = []         // cauda quente durante boost
-  const glassShards = []         // estilhaços de escudo
-  const bloomSprites = []        // esferas translúcidas pra fake bloom
-  const contrails = []           // rastro dos wingmen
-  const bossImpactRings = []     // onda de impacto no chefe
+  const hitSparks = []
+  const activeFlashes = []
+  const projectileTrails = []
+  const shockwaves = []
+  const telegraphs = []
+  const cometTrails = []
+  const glassShards = []
+  const bloomSprites = []
+  const contrails = []
+  const bossImpactRings = []
   let trailTimer = 0
   let cometTimer = 0
   let contrailTimer = 0
@@ -328,7 +296,6 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ NOVOS EFEITOS ============
 
-  // faíscas curtas — chamado quando um tiro acerta sem necessariamente matar
   function hitSpark(position, colorHex = 0xffffff) {
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(HIT_SPARK_PARTICLES * 3)
@@ -353,8 +320,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities, life: 0 })
   }
 
-  // flash branco no mesh atingido (efeito "levou dano"). Clona o material na primeira vez
-  // que o mesh pisca, pra não afetar todos os inimigos que compartilham material.
   function flashMesh(mesh, durationSec = FLASH_DURATION) {
     if (!mesh || !mesh.material) return
     let entry = activeFlashes.find((f) => f.mesh === mesh)
@@ -372,7 +337,6 @@ export function createEffectsSystem(scene, opts = {}) {
     entry.untilMs = performance.now() + durationSec * 1000
   }
 
-  // afterimage dos tiros normais — mesmo padrão do homingAfterimage, azul e menor
   function projectileTrail(position, quaternion) {
     const geometry = new THREE.ConeGeometry(0.16, 1.0, 5)
     geometry.rotateX(Math.PI / 2)
@@ -387,7 +351,6 @@ export function createEffectsSystem(scene, opts = {}) {
     projectileTrails.push({ mesh, life: 0 })
   }
 
-  // onda de choque — anel billboard (sempre de frente pra câmera) que expande
   function shockwave(position, colorHex = 0xffaa55, scale = 1) {
     const mesh = makeRingMesh(colorHex, 0.18)
     mesh.position.copy(position)
@@ -396,7 +359,6 @@ export function createEffectsSystem(scene, opts = {}) {
     shockwaves.push({ mesh, life: 0, maxScale: SHOCKWAVE_MAX_SCALE * scale })
   }
 
-  // pequena esfera pulsante pra telegrafar que um inimigo vai atirar
   function telegraph(position, colorHex = 0xff5a3d) {
     const geometry = new THREE.SphereGeometry(1, 8, 8)
     const material = new THREE.MeshBasicMaterial({
@@ -410,7 +372,6 @@ export function createEffectsSystem(scene, opts = {}) {
     telegraphs.push({ mesh, life: 0 })
   }
 
-  // cauda "cometa" durante o boost máximo
   function cometTrailParticle(position, forward) {
     const geometry = new THREE.SphereGeometry(0.35, 6, 6)
     const material = new THREE.MeshBasicMaterial({
@@ -426,8 +387,7 @@ export function createEffectsSystem(scene, opts = {}) {
     })
   }
 
-  // estilhaços triangulares ao perder o escudo
-  function glassShatter(position, colorHex = SHIELD_BUBBLE_COLOR) {
+  function glassShatter(position, colorHex = 0x4da6ff) {
     const geometry = new THREE.TetrahedronGeometry(GLASS_SHARD_SIZE)
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.95,
@@ -451,7 +411,6 @@ export function createEffectsSystem(scene, opts = {}) {
     glassShards.push({ shards, life: 0 })
   }
 
-  // esfera translúcida "fake bloom" — só uma cor acesa atrás do objeto
   function bloomSprite(position, colorHex, size = 1) {
     const geometry = new THREE.SphereGeometry(1, 10, 8)
     const material = new THREE.MeshBasicMaterial({
@@ -465,7 +424,6 @@ export function createEffectsSystem(scene, opts = {}) {
     bloomSprites.push({ mesh, life: 0, size })
   }
 
-  // contrail dos wingmen (partículas pequenas, sem velocidade própria — só encolhem)
   function contrailParticle(position, colorHex = 0x7fe0ff) {
     const geometry = new THREE.SphereGeometry(CONTRAIL_SIZE, 5, 5)
     const material = new THREE.MeshBasicMaterial({
@@ -478,7 +436,6 @@ export function createEffectsSystem(scene, opts = {}) {
     contrails.push({ mesh, life: 0 })
   }
 
-  // anel de impacto no chefe — expansão rápida, cor quente
   function bossImpactRing(position, scale = 1) {
     const mesh = makeRingMesh(BOSS_IMPACT_COLOR, 0.12)
     mesh.position.copy(position)
@@ -522,12 +479,11 @@ export function createEffectsSystem(scene, opts = {}) {
           cometTimer = COMET_TRAIL_INTERVAL
         }
       }
-
-      // posiciona a poeira ao redor da nave
-      dustPoints.position.copy(shipPosition)
     }
 
-    // poeira ambiente — drift + wrap-around dentro da casca
+    // poeira ambiente — drift lento + wrap por eixo dentro do volume em espaço-mundo.
+    // NÃO reposiciona o Points: as partículas ficam fixas onde estão e o jogador voa através
+    // delas, igual acontece com o grid.
     {
       const attr = dustGeometry.attributes.position
       const arr = attr.array
@@ -536,29 +492,16 @@ export function createEffectsSystem(scene, opts = {}) {
         arr[i3]   += dustVelocities[i3]   * dt
         arr[i3+1] += dustVelocities[i3+1] * dt
         arr[i3+2] += dustVelocities[i3+2] * dt
-        // wrap: se saiu da casca, "teleporta" pro lado oposto (imperceptível)
-        const dx = arr[i3], dy = arr[i3+1], dz = arr[i3+2]
-        const d2 = dx*dx + dy*dy + dz*dz
-        if (d2 > DUST_RADIUS * DUST_RADIUS) {
-          arr[i3] = -dx; arr[i3+1] = -dy; arr[i3+2] = -dz
-        }
+
+        // wrap por eixo — se saiu de um lado da caixa, teleporta pro lado oposto
+        if (arr[i3] > DUST_AREA_CENTER.x + DUST_AREA_HALF_X) arr[i3] -= DUST_AREA_HALF_X * 2
+        else if (arr[i3] < DUST_AREA_CENTER.x - DUST_AREA_HALF_X) arr[i3] += DUST_AREA_HALF_X * 2
+        if (arr[i3+1] > DUST_AREA_CENTER.y + DUST_AREA_HALF_Y) arr[i3+1] -= DUST_AREA_HALF_Y * 2
+        else if (arr[i3+1] < DUST_AREA_CENTER.y - DUST_AREA_HALF_Y) arr[i3+1] += DUST_AREA_HALF_Y * 2
+        if (arr[i3+2] > DUST_AREA_CENTER.z + DUST_AREA_HALF_Z) arr[i3+2] -= DUST_AREA_HALF_Z * 2
+        else if (arr[i3+2] < DUST_AREA_CENTER.z - DUST_AREA_HALF_Z) arr[i3+2] += DUST_AREA_HALF_Z * 2
       }
       attr.needsUpdate = true
-    }
-
-    // shield bubble
-    if (opts.shieldValue != null && opts.shieldMax != null && shipPosition) {
-      const frac = Math.max(0, Math.min(1, opts.shieldValue / opts.shieldMax))
-      shieldBubble.visible = frac > 0.02
-      if (shieldBubble.visible) {
-        shieldBubble.position.copy(shipPosition)
-        shieldPulseTimer += dt
-        const pulse = 1 + Math.sin(shieldPulseTimer * 3) * 0.03
-        shieldBubble.scale.setScalar(pulse)
-        // wireframe cobre bem menos área que uma esfera sólida, por isso a opacidade base é
-        // mais alta aqui do que era antes — senão o grid quase some
-        shieldBubbleMaterial.opacity = 0.12 + frac * 0.18
-      }
     }
 
     // EXPLOSION BURSTS
@@ -821,8 +764,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   function dispose() {
     scene.remove(stars); starGeometry.dispose(); starMaterial.dispose()
-    scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.map?.dispose(); dustMaterial.dispose()
-    scene.remove(shieldBubble); shieldBubbleGeometry.dispose(); shieldBubbleMaterial.dispose()
+    scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
