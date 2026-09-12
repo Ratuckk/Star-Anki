@@ -25,11 +25,6 @@ const INVINCIBILITY_MS = 1500
 const INVINCIBILITY_FLICKER_MS = 90
 
 // ============ ESCUDO ============
-// camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
-// Cada hit consome 1 unidade; depois de um hit, espera SHIELD_REGEN_DELAY_MS e passa a
-// regenerar sozinho a SHIELD_REGEN_RATE por segundo — regenera aos poucos mesmo sem ter sido
-// zerado de vez, não só quando esgota totalmente. Valores mutáveis (não const) porque cartas
-// do roguelike ajustam capacidade/velocidade.
 const SHIELD_MAX = 2
 const SHIELD_REGEN_DELAY_MS = 1500
 const SHIELD_REGEN_RATE = 0.4
@@ -40,34 +35,23 @@ const SHIP_SHAKE_MAGNITUDE = 0.3
 const CAMERA_SHAKE_MAGNITUDE = 0.5
 
 // ============ BACKGROUND POR "NÍVEL" ============
-// cores escuras variadas, trocadas a cada pergunta (session.pointer) — só ilusão de ambientes
-// diferentes, não muda jogabilidade nenhuma
 const LEVEL_BACKGROUNDS = [
-  0x0b0d12, // padrão: cinza-azulado escuro
-  0x120b18, // roxo escuro
-  0x0b1812, // verde escuro
-  0x18110b, // marrom/laranja escuro
-  0x0b1218, // azul petróleo escuro
-  0x180b0f, // vinho escuro
+  0x0b0d12,
+  0x120b18,
+  0x0b1812,
+  0x18110b,
+  0x0b1218,
+  0x180b0f,
 ]
 
 // ============ MIRA ============
-// A mira fica ancorada no NARIZ da nave e acompanha o MESMO deslocamento lateral da nave
-// (rail.getPlayerLateral()), só que amplificado um pouco — "no meio da tela quando a nave
-// está centrada, se move junto com ela, um pouquinho mais rápido". Nada de física própria
-// independente (isso já foi tentado antes e ficava difícil de prever onde o tiro ia).
-const RETICLE_AHEAD = 30        // distância à frente do nariz onde a mira é posicionada
-// mira "vai um pouco mais longe" proporcional à velocidade lateral atual da nave (efeito de
-// overshoot enquanto ela se move) e se corrige sozinha, convergindo pra EXATAMENTE a posição
-// do bico quando a nave para (offset zero) — não é mais um multiplicador fixo de posição
+const RETICLE_AHEAD = 30
 const RETICLE_OVERSHOOT_FACTOR = 0.12
 const RETICLE_SETTLE_RATE = 6
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
 const BOSS_ENEMY_INTERVAL_MULT = 0.7
-// caçada de perguntas antes do chefe chegar: 90s procurando blocos flutuantes; cada erro/não
-// resposta nesse período DOBRA a vida do chefe (BOSS_BASE_HP * 2^erros)
 const BOSS_BUILDUP_MS = 90000
 const BOSS_BASE_HP = 3
 const BOSS_DEFEAT_BONUS = 500
@@ -81,9 +65,7 @@ const BOSS_EXTRA_ENEMIES_STEP = 1
 const BOSS_EXTRA_ENEMIES_CAP = 6
 const BOSS_DIFFICULTY_CAP = 5
 
-// intervalo de spawn do modo ARENA (goldenArena/bossBuildup/bossFight) — o modo normal (rail)
-// não usa mais isso, tem taxa fixa própria (ver NORMAL_SPAWN_* abaixo). Ainda encolhe com erro
-// via applyDifficulty(), então a arena continua ficando mais intensa conforme a sessão avança.
+// intervalo de spawn do modo ARENA
 const ENEMY_INTERVAL_MIN_BASE = 900
 const ENEMY_INTERVAL_MAX_BASE = 1500
 const ENEMY_INTERVAL_FLOOR = 350
@@ -92,26 +74,15 @@ const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
 
 // ============ FASE 4: TETO DE INIMIGOS E TAXA DE SPAWN DO MODO NORMAL ============
-// pedido literal: "não permita que passe de 10 inimigos na tela normal e 20 no all-range mode,
-// esse limite aumenta em 1 para cada pergunta errada" — substitui o "+2 inimigos na hora" antigo
-// (WRONG_ANSWER_EXTRA_ENEMIES). O teto NUNCA reseta durante a sessão, só cresce (confirmado com
-// o usuário). Conta só inimigos vermelhos comuns (kind 'red') — mini-inimigos ficam de fora.
-const ENEMY_CAP_NORMAL_BASE = 10
+// >> AJUSTADO: spawn mais rápido, lotes maiores, teto maior (era 7000/1-3/10) <<
+const ENEMY_CAP_NORMAL_BASE = 16
 const ENEMY_CAP_ARENA_BASE = 20
 const ENEMY_CAP_STEP_PER_ERROR = 1
 
-// pedido literal: "a taxa de Spawn de inimigos deve ser de spawnar aleatoriamente 1 a 3
-// inimigos a cada 7 segundos. isso é para o modo normal" — substitui totalmente o sistema de
-// intervalo variável (ENEMY_INTERVAL_*) só no modo normal (confirmado com o usuário).
-const NORMAL_SPAWN_INTERVAL_MS = 7000
-const NORMAL_SPAWN_MIN_COUNT = 1
-const NORMAL_SPAWN_MAX_COUNT = 3
-// pedido literal: "pare de gerar eles toda vez que o tempo restante para uma nova pergunta for
-// menor que 8 segundos" — confirmado que vale pra TUDO que gera coisa nova no modo normal
-// (inimigo comum, mini-fila, bônus verde, gatilho do dourado), não só o inimigo comum.
-const NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS = 8000
-// chance de, no lugar do lote normal de 1-3, vir uma fila de mini-inimigos (confirmado: gatilho
-// é "chance a cada tick do spawn normal", não um timer próprio separado)
+const NORMAL_SPAWN_INTERVAL_MS = 2500
+const NORMAL_SPAWN_MIN_COUNT = 2
+const NORMAL_SPAWN_MAX_COUNT = 4
+const NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS = 3000
 const MINI_SWARM_CHANCE = 0.22
 
 const BONUS_INTERVAL_MIN = 9000
@@ -125,7 +96,6 @@ const FIRE_COOLDOWN_FLOOR = 0.06
 const AIM_ASSIST_STEP = THREE.MathUtils.degToRad(1.5)
 const AIM_ASSIST_CAP = THREE.MathUtils.degToRad(14)
 const PROJECTILE_COUNT_CAP = 4
-// pedido: tiro padrão vira 1 disparo central (2 de dano) em vez de 2 tiros de 1 dano lado a lado
 const PROJECTILE_COUNT_START = 1
 
 const GOLDEN_INTERVAL_MIN_MS = 45000
@@ -138,19 +108,12 @@ const GOLDEN_SPREAD_MAX = 90
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
 
 // ============ ROGUELIKE (fase 4) ============
-// caps/pisos das cartas que ajustam mecânicas novas desta fase. As cartas de ofensivo que
-// reaproveitam fireCooldown/aimAssistAngle/projectileCount usam os mesmos FIRE_COOLDOWN_*/
-// AIM_ASSIST_*/PROJECTILE_COUNT_CAP já existentes acima (antes usados pelo applyBuff()
-// automático, que a escolha de carta substitui).
 const SHIELD_MAX_CAP = 4
 const SHIELD_REGEN_DELAY_FLOOR_MS = 500
 const INVINCIBILITY_CAP_MS = 3000
 const WINGMAN_CAP = 2
 const LIVES_CAP = 5
 
-// tiro teleguiado: segurar o botão de atirar carrega, de HOMING_CHARGE_MIN_MS (começa a valer)
-// até HOMING_CHARGE_MAX_MS (carga máxima); nº de alvos escala de HOMING_MIN_TARGETS até
-// homingMaxTargets (mutável, cartas aumentam) nesse intervalo
 const HOMING_CHARGE_MIN_MS = 1000
 const HOMING_CHARGE_MAX_MS = 4000
 const HOMING_CHARGE_MIN_FLOOR_MS = 1000
@@ -158,30 +121,21 @@ const HOMING_MIN_TARGETS = 2
 const HOMING_MAX_TARGETS_BASE = 5
 const HOMING_MAX_TARGETS_CAP = 8
 
-// giro-desvio (Z/C): segurar SÓ inclina a nave (cosmético, rail.js cuida do ângulo) — desde a
-// Fase 3 não concede mais i-frames de graça. A invencibilidade agora vem exclusivamente do
-// GIRO COMPLETO (2 toques rápidos na mesma tecla, dentro de DODGE_TAP_WINDOW_MS), com cooldown
-// global (não importa o lado) pra não ficar spammando invencibilidade
 const DODGE_TAP_WINDOW_MS = 350
 const FULL_SPIN_COOLDOWN_MS = 3000
 const FULL_SPIN_IFRAME_MS_BASE = 900
 const DEFLECT_RADIUS = 6
 
 // ============ PROPULSOR / REPULSOR (A/S — Fase 3) ============
-// 1 barra COMPARTILHADA entre os dois (pedido do usuário: "usa um, ou usa o outro, ambos gastam
-// toda a barra"): ao usar qualquer um dos dois, a barra zera e recarrega devagar; não dá pra
-// usar de novo (nenhum dos dois) enquanto não encher totalmente.
-const BOOST_DURATION_MS = 900         // quanto tempo dura o impulso/freio ativo
-const BOOST_RECHARGE_MS = 4500        // tempo pra barra encher de novo depois do uso
-const PROPULSION_SPEED_MULT = 1.9     // multiplicador de velocidade de avanço durante o impulso
-const REPULSION_SPEED_MULT = 0.35     // multiplicador de velocidade de avanço durante a repulsão
-const RAM_DAMAGE = 5                  // dano da carta "impulso aríete" a quem colidir durante o impulso
-// combos do all-range (Fase 3): cambalhota (Baixo+repulsor) e deslocamento lateral
-// (propulsor+Z/C) são DE GRAÇA — não gastam a barra acima, pedido explícito do usuário
+const BOOST_DURATION_MS = 900
+const BOOST_RECHARGE_MS = 4500
+const PROPULSION_SPEED_MULT = 1.9
+const REPULSION_SPEED_MULT = 0.35
+const RAM_DAMAGE = 5
 
 let deck = null
-let deckTexts = [] // textos brutos das fontes do baralho atual (1 normal, 2+ se fundido) — usados na exportação de tags, um arquivo por fonte
-let currentDeckIds = null // id único (string) ou array de ids (fusão) — usado por "jogar novamente"
+let deckTexts = []
+let currentDeckIds = null
 let history = loadHistory()
 let sessionResults = []
 let painelDone = false
@@ -200,7 +154,6 @@ function handlePlayDeck(deckId) {
   mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
 }
 
-// fusão: mesmo fluxo do handlePlayDeck, mas com 2+ baralhos concatenados numa sessão só
 function handlePlayMergedDecks(deckIds) {
   const merged = buildMergedDeck(deckIds)
   if (merged.error) return
@@ -223,7 +176,6 @@ function restart() {
   })
 }
 
-// "Jogar novamente" volta direto pro mesmo baralho (ou fusão) sem reenviar/reselecionar
 function playAgain() {
   if (Array.isArray(currentDeckIds)) handlePlayMergedDecks(currentDeckIds)
   else if (currentDeckIds) handlePlayDeck(currentDeckIds)
@@ -299,8 +251,6 @@ function startPainelPractice(summary) {
   renderCard()
 }
 
-// baralho fundido = 2+ textos de origem, possivelmente com headers/formatos diferentes — exporta
-// um arquivo de tags por fonte, cada um só com os resultados dos guids que pertencem a ela
 function downloadTagsExport() {
   deckTexts.forEach((text, i) => {
     const { notes } = parseAnkiExport(text)
@@ -347,8 +297,6 @@ function mountGame(session) {
   const combat = createCombatSystem(scene, rail, effects)
   const input = createInputState()
 
-  // lidas uma vez por sessão — a tela de configurações só é acessível fora do jogo, então não
-  // precisa reler a cada frame
   const bindings = getBindings()
   const maxHealth = session.health
   let maxLives = session.lives
@@ -368,35 +316,26 @@ function mountGame(session) {
   let hitShakeTimer = 0
   let invincibilityDurationMs = INVINCIBILITY_MS
 
-  // ---- roguelike: estado que as cartas ajustam ----
   let pendingCardChoice = false
   let wingmanCount = 0
   let deflectCardActive = false
   let homingMaxTargets = HOMING_MAX_TARGETS_BASE
   let homingChargeMinMs = HOMING_CHARGE_MIN_MS
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
-  // giro completo: quanto de invencibilidade cada giro concede (carta "desvio prolongado" soma
-  // em cima) e o cooldown corrente (compartilhado entre Z e C, decai a cada frame)
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
   let fullSpinCooldownTimer = 0
   let lastDodgeLeftTapAt = -Infinity
   let lastDodgeRightTapAt = -Infinity
 
-  // propulsor/repulsor: 1 barra compartilhada (0..1, cheia = pode usar) + timer de quanto falta
-  // do efeito ativo (>0 = impulso/freio em andamento). ramCardActive é a carta "impulso aríete".
   let boostCharge = 1
   let propulsionActiveTimer = 0
   let repulsionActiveTimer = 0
   let ramCardActive = false
 
-  // ---- chefe (fase 90s de caçada + o combate em si) ----
   let bossHealthMultiplier = 1
   let bossBuildupTimer = 0
 
-  // ---- tiro carregado / giro-desvio: estado de input em tempo real ----
   let fireHeldMs = 0
-  // offset atual da mira em relação ao bico da nave — persegue o offset-alvo (proporcional à
-  // velocidade lateral) frame a frame, então SEMPRE converge pra 0 quando a nave para de vez
   let reticleOffsetX = 0
   let reticleOffsetY = 0
 
@@ -433,10 +372,7 @@ function mountGame(session) {
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
 
-  // teto de inimigos (Fase 4): incremento acumulado por erro, somado à base de 10 (normal) ou
-  // 20 (arena) em currentEnemyCap() — nunca reseta durante a sessão, só cresce
   let enemyCap = 0
-  // contador pro lote de spawn do modo normal (1-3 inimigos a cada NORMAL_SPAWN_INTERVAL_MS)
   let normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
 
   function currentEnemyCap() {
@@ -523,8 +459,6 @@ function mountGame(session) {
     }
   }
 
-  // efeito de cada carta do roguelike — chamado quando o jogador escolhe uma na tela de
-  // escolha (substitui o antigo applyBuff() automático: agora é o jogador quem decide)
   function applyRoguelikeCard(card) {
     switch (card.id) {
       case 'extra-projectile':
@@ -580,8 +514,6 @@ function mountGame(session) {
     }
   }
 
-  // cartas que já estão no máximo (ou já foram pegas, pra "deflect-on-spin" que é liga/desliga)
-  // não aparecem de novo — evita oferecer escolhas inúteis
   function buildCardExcludeSet() {
     const exclude = new Set()
     if (deflectCardActive) exclude.add('deflect-on-spin')
@@ -596,9 +528,6 @@ function mountGame(session) {
     return exclude
   }
 
-  // tela de escolha de carta: aberta a cada resposta correta (normal, chefe ou bônus dourado).
-  // onDone é chamado depois que o jogador escolhe — cada chamador decide pra onde voltar
-  // (enterCombat ou resumeCombatFromGolden)
   function enterCardChoice(onDone) {
     const cards = pickRandomCards(3, buildCardExcludeSet())
     if (cards.length === 0) { onDone(); return }
@@ -613,13 +542,10 @@ function mountGame(session) {
   }
 
   function applyDifficulty() {
-    // intervalo de spawn da ARENA ainda encolhe com erro (modo normal não usa mais isso)
     enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, enemyIntervalMin - ENEMY_INTERVAL_STEP)
     enemyIntervalMax = Math.max(enemyIntervalMin + 150, enemyIntervalMax - ENEMY_INTERVAL_STEP)
     enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, enemyAggression + ENEMY_AGGRESSION_STEP)
     combat.setEnemyAggressiveness(enemyAggression)
-    // cada erro/timeout sobe o teto de inimigos em tela permanentemente (substitui o antigo
-    // "+2 inimigos na hora") — confirmado com o usuário, nunca reseta durante a sessão
     enemyCap += ENEMY_CAP_STEP_PER_ERROR
   }
 
@@ -653,7 +579,6 @@ function mountGame(session) {
     hud.setCountdown(null)
     hud.setBossActive(false)
 
-    // background/fog trocam de cor a cada pergunta — ilusão de "nível" diferente, cosmético
     const bg = LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length]
     scene.background.set(bg)
     scene.fog.color.set(bg)
@@ -685,13 +610,6 @@ function mountGame(session) {
     combat.spawnQuizTargets(result.alternatives)
   }
 
-  // ============ CHEFE (fase 4/correção) ============
-  // Ao chegar no ciclo de chefe: 90s caçando perguntas (blocos flutuantes parados, atire neles
-  // pra abrir as 4 alternativas — igual ao "modo chefe" antigo, só que agora com VÁRIAS
-  // perguntas em sequência dentro da janela de 90s, não uma só). Cada erro ou pergunta que fica
-  // sem resposta até o tempo acabar DOBRA a vida do chefe. Quando os 90s terminam, o chefe
-  // gigante aparece com a vida acumulada — a IA dele por enquanto é simples (persegue e atira
-  // em rajada); ainda não temos um design mais elaborado pra esse combate.
   function enterBossBuildup() {
     phase = 'bossBuildup'
     bossBuildupTimer = BOSS_BUILDUP_MS
@@ -818,8 +736,6 @@ function mountGame(session) {
     combat.spawnQuizTargets(result.alternatives)
   }
 
-  // saúde zerada consome 1 vida e reabastece a saúde (e o escudo); zerar as vidas é que
-  // realmente acaba a run. Chamar isso é seguro mesmo com saúde > 0 (vira no-op).
   function applyHealthLoss() {
     if (session.health > 0) return false
     session.lives -= 1
@@ -931,11 +847,6 @@ function mountGame(session) {
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
 
-    // ============ MIRA ============
-    // enquanto a nave se movimenta lateralmente, a mira "vai um pouco mais longe" (offset
-    // proporcional à velocidade lateral atual) e depois se corrige sozinha, convergindo pra
-    // offset ZERO — ou seja, pra EXATAMENTE a posição do bico — assim que a nave para de se
-    // mover. Em modo arena fica sempre centrada (o voo livre já é a mira).
     let reticleX = 0
     let reticleY = 0
     if (!rail.isArena()) {
@@ -952,19 +863,13 @@ function mountGame(session) {
       reticleOffsetY = 0
     }
 
-    // posição 3D da mira: ancorada no NARIZ, deslocada lateral/verticalmente, e avançada pelo
-    // RETICLE_AHEAD no eixo forward
     const reticleWorldPos = nosePos.clone()
       .addScaledVector(noseFrame.right, reticleX)
       .addScaledVector(noseFrame.up, reticleY)
       .addScaledVector(noseFrame.forward, RETICLE_AHEAD)
 
-    // direção do tiro: do NARIZ até a MIRA — o projétil passa visualmente pela mira por construção
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
-    // ============ TIRO / TIRO TELEGUIADO CARREGADO ============
-    // a barra e o glow visual só aparecem DEPOIS do wind-up (fireHeldMs >= homingChargeMinMs)
-    // — antes disso o botão segurado ainda está só disparando normal, sem feedback de carga.
     const isCharging = fireHeldMs >= homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging) combat.tryFire(nosePos, fireDirection)
@@ -974,9 +879,6 @@ function mountGame(session) {
         hud.setChargeIndicator(true, chargeFrac)
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
 
-        // varre a mira sobre inimigos só depois do wind-up (carga de verdade já começou) —
-        // cada um que passa pela mira fica marcado (lock-on) pro teleguiado mirar exatamente
-        // neles ao soltar, em vez dos N mais próximos
         combat.sweepLockOn(nosePos, fireDirection)
         const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
           const ndcL = s.worldPos.project(camera)
@@ -1004,20 +906,11 @@ function mountGame(session) {
       hud.setLockedEnemyMarkers([])
     }
 
-    // ============ GIRO/INCLINAÇÃO (Z/C) ============
-    // segurar Z ou C só inclina a nave (cosmético — rail.js já leu inputState.bank e calculou o
-    // ângulo em rail.update). Não concede mais i-frames de graça (Fase 3): a nave inclinada
-    // ainda pode ser atingida. A invencibilidade agora vem SÓ do giro completo (2 toques
-    // rápidos na MESMA tecla, dentro de DODGE_TAP_WINDOW_MS) — e é o giro completo, não mais o
-    // hold, que aciona a carta "giro rebatedor".
     const arenaNow = rail.isArena()
     const dodgeLeftTapped = isActionPressed(bindings, inputState.pressed, 'dodgeLeft')
     const dodgeRightTapped = isActionPressed(bindings, inputState.pressed, 'dodgeRight')
     const nowMs = performance.now()
 
-    // combo all-range "segurar propulsor + Z/C" = deslocamento lateral de graça, tratado aqui
-    // (na borda de Z/C) pra cobrir a ordem "segura propulsor, depois toca Z/C". A ordem inversa
-    // ("toca Z/C, depois propulsor") é tratada mais abaixo, na borda do próprio propulsor.
     if (dodgeLeftTapped) {
       if (arenaNow && inputState.propulsionHeld) {
         rail.triggerArenaLateralDash(-1)
@@ -1046,10 +939,6 @@ function mountGame(session) {
     }
     fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
 
-    // ============ PROPULSOR / REPULSOR (A/S) ============
-    // 1 barra compartilhada: só dá pra ativar propulsor OU repulsor quando ela está cheia (e
-    // nenhum dos dois já está ativo); ativar qualquer um zera a barra, que recarrega devagar.
-    // Os combos do all-range (cambalhota, deslocamento lateral) são DE GRAÇA — não mexem nela.
     if (isActionPressed(bindings, inputState.pressed, 'propulsion')) {
       if (arenaNow && inputState.bank !== 0) {
         rail.triggerArenaLateralDash(inputState.bank)
@@ -1079,8 +968,6 @@ function mountGame(session) {
     rail.setSpeedMultiplier(speedMultiplier * boostSpeedFactor)
     hud.setBoost(boostCharge, propulsionActiveTimer > 0 || repulsionActiveTimer > 0)
 
-    // carta "impulso aríete": só durante o impulso ativo, concede invencibilidade e faz a
-    // colisão com inimigos causar dano de verdade (inclusive chefe) em vez do kamikaze padrão
     const ramActive = ramCardActive && propulsionActiveTimer > 0
     if (ramActive) invincibleTimer = Math.max(invincibleTimer, propulsionActiveTimer)
 
@@ -1092,7 +979,6 @@ function mountGame(session) {
       ramDamage: ramActive ? RAM_DAMAGE : 0,
     })
 
-    // posição visual da mira na tela: projeção do ponto 3D
     const lockOn = combat.getLockOnTarget()
     const reticleScreenPos = lockOn ? lockOn.mesh.position.clone() : reticleWorldPos
     const ndc = reticleScreenPos.project(camera)
@@ -1122,8 +1008,6 @@ function mountGame(session) {
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
 
-    // escudo: regenera sozinho (contínuo) depois de um pequeno atraso pós-hit — não só quando
-    // esgota de vez
     if (shieldRegenDelayTimer > 0) {
       shieldRegenDelayTimer = Math.max(0, shieldRegenDelayTimer - dt * 1000)
     } else if (shieldValue < shieldMax) {
@@ -1154,7 +1038,6 @@ function mountGame(session) {
       shieldRegenDelayTimer = shieldRegenDelayMs
 
       if (shieldValue >= 1) {
-        // escudo absorve o hit — saúde intocada
         shieldValue -= 1
       } else {
         session.health = Math.max(0, session.health - 1)
@@ -1167,16 +1050,12 @@ function mountGame(session) {
     rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
 
     if (phase === 'goldenArena' || phase === 'bossBuildup') {
-      // all-range: mantém o sistema de intervalo antigo (encolhe com erro via applyDifficulty),
-      // só ganhou o teto de 20 — a taxa fixa de 1-3/7s abaixo é exclusiva do modo normal
       enemyTimer -= dt * 1000
       if (enemyTimer <= 0) {
         if (combat.getEnemyCount() < currentEnemyCap()) combat.spawnEnemy()
         enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (phase === 'combat') {
-      // modo normal: lote fixo de 1-3 inimigos a cada 7s, respeitando o teto de 10 (+1/erro) e
-      // pausando nos últimos 8s antes da próxima pergunta (cycleTimer <= 8000)
       if (cycleTimer > NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS) {
         normalSpawnTimer -= dt * 1000
         if (normalSpawnTimer <= 0) {
@@ -1224,7 +1103,6 @@ function mountGame(session) {
       bossBuildupTimer -= dt * 1000
       hud.setCountdown(Math.max(0, Math.ceil(bossBuildupTimer / 1000)), bossBuildupTimer <= WARNING_MS)
       if (bossBuildupTimer <= 0) {
-        // pergunta que ficou sem resposta até o tempo acabar conta como "não respondida"
         if (questionResult) {
           bossHealthMultiplier *= 2
           combat.clearQuizTargets()
@@ -1297,8 +1175,6 @@ function mountGame(session) {
       if (bossSnap) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp)
     }
 
-    // minimapa: só em modo arena (chefe/dourado), onde é mais fácil se perder — pontos
-    // relativos ao CENTRO da arena (não à nave), mapeados numa janela quadrada -1..1
     if (rail.isArena()) {
       const center = rail.getArenaCenter()
       const mapRadius = 190
@@ -1324,8 +1200,6 @@ function mountGame(session) {
       hud.setMinimap(false)
     }
 
-    // shake de câmera: aplicado por último, só na posição de render — não interfere em nenhum
-    // cálculo de jogo (mira, colisão) feito mais acima neste mesmo frame
     if (hitShakeTimer > 0) {
       const t = hitShakeTimer / HIT_SHAKE_DURATION_MS
       camera.position.x += (Math.random() * 2 - 1) * CAMERA_SHAKE_MAGNITUDE * t
