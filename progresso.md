@@ -2,6 +2,30 @@
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
 
+## Auditoria da Fase 2 a pedido do usuário — bug real encontrado (dispara 2 tiros, não 1) — v0.22.2
+
+Antes de começar a Fase 3, o usuário pediu explicitamente: *"antes de tudo eu quero que veja tudo da fase 2 e me confirme que está correto, primeiro, veja se a nave ainda dispara 2 projéteis ao invés de um só projetil da ponta dela"*.
+
+**Conferi contra o código de verdade (não assumi que o changelog da v0.22.0 estava certo) e achei exatamente esse bug**: `combat.js` tinha uma variável de estado interna `let projectileCount = 2` (linha 261) — um valor **hardcoded, dessincronizado** da constante `PROJECTILE_COUNT_START = 1` que `main.js` já tinha (desde a v0.22.0). `main.js` só chama `combat.setProjectileCount(...)` quando o jogador escolhe a carta "Tiro duplicado" ou usa o debug de "buffs máximos" — **nunca no início da partida** — então o valor de dentro de `combat.js` nunca era sincronizado com o `PROJECTILE_COUNT_START` de `main.js`. Resultado prático: toda partida nova começava disparando 2 projéteis com offset lateral de ±0.8 (fórmula `mid = (projectileCount-1)/2`, que só dá 0 quando `projectileCount=1`), não 1 projétil centrado como a Fase 2 deveria ter entregue — exatamente o que o usuário suspeitava.
+
+**Corrigido**: `combat.js` linha 261, `let projectileCount = 2` → `let projectileCount = 1`. Uma linha, mas é a causa raiz — bate com o comentário que já existia (não implementado) logo acima da constante de dano ("tiro normal do jogador: 1 disparo central com 2 de dano"). Com o default certo, a progressão de "fica maior a cada upgrade" (`visualScale`) também passa a fazer sentido de verdade — antes disso, a partida já começava "com um upgrade grátis" escondido.
+
+**Resto da Fase 2, conferido item a item contra o pedido literal do usuário (tudo bate com o código real)**:
+- Velocidade do teleguiado +50% (`HOMING_PROJECTILE_SPEED = 69`, comentado como `46 * 1.5`) ✓.
+- Teleguiado verde (`0x2bff88`) + explosão verde tanto no impacto (mata ou não) quanto na morte ✓.
+- Afterimage do teleguiado (`effects.homingAfterimage`, a cada `HOMING_AFTERIMAGE_INTERVAL`) ✓.
+- Argola de fumaça ao disparar o teleguiado (`effects.smokeRing`) ✓.
+- Tiro normal e teleguiado ambos +20% de tamanho (`ConeGeometry` com os raios/alturas certos, comentado) ✓.
+- Cone cresce com upgrade de projétil (`visualScale` em `fire()`) ✓ — e agora sim parte de 1x de verdade.
+- Tiro normal se reposiciona rumo à mira em voo (`PLAYER_PROJECTILE_STEER_RATE` em `updateProjectiles`) ✓.
+- Mira com overshoot proporcional à velocidade lateral + correção suave pro bico (`RETICLE_OVERSHOOT_FACTOR`/`RETICLE_SETTLE_RATE`, v0.22.1) ✓.
+- Hitbox por segmento percorrido no frame, não só ponto final (`distanceToSegment`, aplicado nos 4 checks de acerto do jogador) ✓.
+- Wingman triangular (cone de 3 lados deitado) ✓.
+
+**Testado**: `node --check` em todos os `src/*.js` e `node src/selftest.mjs` limpos após a correção. Ainda sem teste ao vivo em navegador nesta sessão (ambiente de nuvem sem o Browser pane usado nas sessões anteriores) — verificação por leitura manual da fórmula (`mid = (projectileCount-1)/2`, com `projectileCount=1` dá `mid=0`, offset 0, um projétil saindo do centro).
+
+**Versão**: v0.22.1 → v0.22.2.
+
 ## Bugfix crítico: servidor local sem Cache-Control deixava o navegador preso em versões antigas
 
 O usuário relatou "a v0.22 não tá" depois de eu ter comitado e feito push da Fase 2. Investigando: `tools/run-game.mjs` (o servidor real que `start-game.bat` sobe pro usuário jogar) respondia todo arquivo com `res.writeHead(200, { 'Content-Type': ... })`, **sem nenhum header de cache**. Sem `Cache-Control`/`ETag`, o navegador aplica cache heurístico por conta própria e pode continuar servindo uma cópia de dias atrás do `.js` mesmo depois do arquivo mudar no disco e o servidor reiniciar — exatamente o que aconteceu. Isso bate 100% com um problema que eu já tinha documentado no ambiente de teste automatizado (via `preview_start`) na Fase 1/2, só que lá eu suspeitava (e ainda suspeito, confirmado de novo aqui) que é um proxy de cache específico da ferramenta de teste, sem forwarding pro servidor real — só que agora ficou claro que o PRÓPRIO `run-game.mjs` também tinha esse problema, e esse sim afeta o navegador de verdade do usuário.
