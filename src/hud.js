@@ -113,7 +113,6 @@ function injectHudExtraStyles() {
   pointer-events: none;
   opacity: 0;
   z-index: 6;
-  /* Centro (30% a 70%) 100% transparente pra NÃO atrapalhar a mira */
   background: linear-gradient(
     to right,
     rgba(190, 20, 30, 0.85) 0%,
@@ -179,6 +178,82 @@ function injectHudExtraStyles() {
   100% { opacity: 0; }
 }
 
+/* ============ MIRA NORMAL — menor, mais simples, 30% menos opaca ============ */
+.reticle .reticle-ring {
+  width: 22px !important;
+  height: 22px !important;
+  border-width: 1.5px !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 0.7 !important;
+}
+
+/* ============ MIRA TRAVADA — quadrada, verde, glow ============ */
+.reticle.locked .reticle-ring {
+  opacity: 1 !important;
+  border-radius: 0 !important;
+  border-color: #2bff88 !important;
+  box-shadow:
+    0 0 10px rgba(43, 255, 136, 0.75),
+    inset 0 0 6px rgba(43, 255, 136, 0.35) !important;
+  animation: locked-ring-glow 900ms ease-in-out infinite;
+}
+@keyframes locked-ring-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 10px rgba(43, 255, 136, 0.75),
+      inset 0 0 6px rgba(43, 255, 136, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(43, 255, 136, 1),
+      inset 0 0 12px rgba(43, 255, 136, 0.55);
+  }
+}
+
+/* ============ QUADRADOS CONVERGINDO (efeito de lock) ============ */
+.lock-converge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.lock-converge > span {
+  position: absolute;
+  display: block;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #2bff88;
+  border-radius: 0;
+  box-shadow:
+    0 0 6px rgba(43, 255, 136, 0.9),
+    inset 0 0 4px rgba(43, 255, 136, 0.5);
+  opacity: 0;
+  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1));
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.reticle.locked .lock-converge > span {
+  animation: lock-square-converge 420ms cubic-bezier(0.15, 0.85, 0.4, 1) forwards;
+  animation-delay: var(--delay, 0ms);
+}
+@keyframes lock-square-converge {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1));
+  }
+  22% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.25);
+  }
+}
+
 /* ============ FEEDBACK ESCALONADO ============ */
 .feedback.perfect {
   font-size: 30px;
@@ -211,6 +286,75 @@ function injectHudExtraStyles() {
 .hud-boost-wrap.ready-flash {
   animation: boost-ready-flash 650ms ease-out;
 }
+
+/* ============ MOTION LINES (boost) ============ */
+.hud-motion-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  z-index: 3;
+  overflow: hidden;
+}
+.hud-motion-lines.active { opacity: 1; }
+.hud-motion-lines::before,
+.hud-motion-lines::after {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(180, 230, 255, 0.55) 0.4deg,
+    transparent 0.8deg,
+    transparent 45deg
+  );
+  animation: motion-line-spin 1.6s linear infinite;
+}
+.hud-motion-lines::after {
+  animation-duration: 2.2s;
+  animation-direction: reverse;
+  opacity: 0.6;
+}
+@keyframes motion-line-spin {
+  0%   { transform: rotate(0deg) scale(1.15); }
+  100% { transform: rotate(360deg) scale(1.15); }
+}
+
+/* ============ SCREEN DISTORTION (boost) ============ */
+.hud-boost-distortion {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease-out;
+  background: radial-gradient(
+    ellipse 60% 45% at center,
+    transparent 20%,
+    rgba(150, 200, 255, 0.06) 55%,
+    rgba(150, 200, 255, 0.18) 100%
+  );
+  z-index: 2;
+}
+.hud-boost-distortion.active { opacity: 1; }
+
+/* ============ COLOR GRADING NO CHEFE ============ */
+.hud-boss-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms ease-out;
+  background: radial-gradient(
+    ellipse 100% 100% at center,
+    rgba(255, 40, 60, 0.06) 0%,
+    rgba(180, 20, 40, 0.18) 100%
+  );
+  mix-blend-mode: overlay;
+  z-index: 5;
+}
+.hud-boss-tint.active { opacity: 1; }
 `
   document.head.appendChild(style)
 }
@@ -811,19 +955,45 @@ export function createGameHud() {
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
 
-  // NOVO: dano na vida — faixa vermelha nas LATERAIS (centro livre pra mira)
+  // dano na vida — faixa vermelha nas LATERAIS (centro livre pra mira)
   const damageSide = document.createElement('div')
   damageSide.className = 'hud-damage-side'
   root.appendChild(damageSide)
 
-  // NOVO: dano absorvido pelo escudo — faixa azul com grid, também lateral
+  // dano absorvido pelo escudo — faixa azul com grid, também lateral
   const shieldBlock = document.createElement('div')
   shieldBlock.className = 'hud-shield-block'
   root.appendChild(shieldBlock)
 
+  // motion lines + distorção de boost (usadas pelo main.js durante o propulsor)
+  const motionLines = document.createElement('div')
+  motionLines.className = 'hud-motion-lines'
+  root.appendChild(motionLines)
+
+  const boostDistortion = document.createElement('div')
+  boostDistortion.className = 'hud-boost-distortion'
+  root.appendChild(boostDistortion)
+
+  const bossTint = document.createElement('div')
+  bossTint.className = 'hud-boss-tint'
+  root.appendChild(bossTint)
+
+  // ============ MIRA ============
+  // normal: ring redondo pequeno e discreto. travada: ring vira QUADRADO verde e uma
+  // sequência de quadrados de tamanhos variados converge pro centro e some, deixando só o
+  // quadrado travado — feedback visual de "isso foi marcado"
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
-  reticle.innerHTML = '<div class="reticle-ring"></div>'
+  reticle.innerHTML = `
+    <div class="reticle-ring"></div>
+    <div class="lock-converge">
+      <span style="--dx: -22px; --dy: -14px; --s: 1.4; --delay:   0ms"></span>
+      <span style="--dx:  20px; --dy:  12px; --s: 0.9; --delay:  30ms"></span>
+      <span style="--dx: -16px; --dy:  22px; --s: 1.2; --delay:  60ms"></span>
+      <span style="--dx:  24px; --dy: -18px; --s: 0.8; --delay:  90ms"></span>
+      <span style="--dx:   8px; --dy: -26px; --s: 1.1; --delay: 120ms"></span>
+    </div>
+  `
   root.appendChild(reticle)
 
   const hitMarkerEl = document.createElement('div')
@@ -1095,14 +1265,12 @@ export function createGameHud() {
       damageVignette.classList.add('flash')
     },
 
-    // dano na vida — faixa vermelha nas laterais (centro livre)
     showDamageSide() {
       damageSide.classList.remove('active')
       void damageSide.offsetWidth
       damageSide.classList.add('active')
     },
 
-    // dano absorvido pelo escudo — faixa azul com grid nas laterais
     showShieldBlock() {
       shieldBlock.classList.remove('active')
       void shieldBlock.offsetWidth
@@ -1112,6 +1280,18 @@ export function createGameHud() {
     setLowHealth(intensity) {
       const v = Math.max(0, Math.min(1, intensity))
       lowHealthVignette.style.opacity = String(v)
+    },
+
+    setMotionLines(active) {
+      motionLines.classList.toggle('active', !!active)
+    },
+
+    setBoostDistortion(active) {
+      boostDistortion.classList.toggle('active', !!active)
+    },
+
+    setBossTint(active) {
+      bossTint.classList.toggle('active', !!active)
     },
 
     setReticlePosition(xFrac, yFrac) {
