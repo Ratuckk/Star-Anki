@@ -27,7 +27,7 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0)
 // pequeno) e ela FICA inclinada enquanto o botão continuar segurado, voltando ao soltar. Desde
 // a Fase 3, esse hold é SÓ cosmético (main.js não concede mais i-frames por ele) — a
 // invencibilidade agora vem exclusivamente do giro completo (abaixo).
-const DODGE_ROLL_MAX_ANGLE = THREE.MathUtils.degToRad(170)
+const DODGE_ROLL_MAX_ANGLE = THREE.MathUtils.degToRad(90)
 
 // giro completo (Fase 3, reintroduzido): 2 toques rápidos na MESMA tecla Z/C disparam uma volta
 // de 360° só cosmética por cima da inclinação normal — main.js decide o cooldown de 3s e a
