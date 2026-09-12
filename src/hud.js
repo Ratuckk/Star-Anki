@@ -25,10 +25,6 @@ function showScreen(name) {
   document.getElementById('painel-screen').hidden = name !== 'painel'
 }
 
-// ============ CSS INJETADO (uma vez por página) ============
-// Estilos dos novos elementos do HUD (números de dano, hit marker, vignette de vida baixa,
-// feedback escalonado, flash de boost pronto). Injetado em <head> com id fixo — se o elemento
-// já existe, não faz nada. Isso mantém o hud.js autocontido, sem precisar editar styles.css.
 function injectHudExtraStyles() {
   if (document.getElementById('star-anki-hud-extra-styles')) return
   const style = document.createElement('style')
@@ -64,7 +60,7 @@ function injectHudExtraStyles() {
   100% { transform: translate(-50%, -50%) translateY(-48px) scale(0.9); opacity: 0; }
 }
 
-/* ============ HIT MARKER (X na mira) ============ */
+/* ============ HIT MARKER ============ */
 .hit-marker {
   position: absolute;
   left: 50%;
@@ -97,7 +93,7 @@ function injectHudExtraStyles() {
   box-shadow: 0 0 9px rgba(255, 58, 58, 0.95), 0 0 2px rgba(0,0,0,0.9);
 }
 
-/* ============ VIGNETTE PERSISTENTE DE VIDA BAIXA ============ */
+/* ============ VIGNETTE DE VIDA BAIXA ============ */
 .hud-low-health-vignette {
   position: absolute;
   inset: 0;
@@ -110,7 +106,80 @@ function injectHudExtraStyles() {
   z-index: 4;
 }
 
-/* ============ FEEDBACK ESCALONADO (PERFEITO/BOM/ACERTOU) ============ */
+/* ============ DAMAGE SIDE (vida perdida — vermelho lateral) ============ */
+.hud-damage-side {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+  /* Centro (30% a 70%) 100% transparente pra NÃO atrapalhar a mira */
+  background: linear-gradient(
+    to right,
+    rgba(190, 20, 30, 0.85) 0%,
+    rgba(190, 20, 30, 0.40) 8%,
+    rgba(190, 20, 30, 0.12) 18%,
+    transparent 30%,
+    transparent 70%,
+    rgba(190, 20, 30, 0.12) 82%,
+    rgba(190, 20, 30, 0.40) 92%,
+    rgba(190, 20, 30, 0.85) 100%
+  );
+  transition: opacity 120ms ease-out;
+}
+.hud-damage-side.active {
+  animation: damage-side-flash 450ms ease-out;
+}
+@keyframes damage-side-flash {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ============ SHIELD BLOCK (dano absorvido — azul lateral com grid) ============ */
+.hud-shield-block {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 7;
+  background: linear-gradient(
+    to right,
+    rgba(50, 130, 255, 0.55) 0%,
+    rgba(50, 130, 255, 0.18) 20%,
+    transparent 35%,
+    transparent 65%,
+    rgba(50, 130, 255, 0.18) 80%,
+    rgba(50, 130, 255, 0.55) 100%
+  );
+  transition: opacity 180ms ease-out;
+}
+.hud-shield-block::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 22px,
+      rgba(140, 220, 255, 0.55) 22px, rgba(140, 220, 255, 0.55) 23px
+    ),
+    repeating-linear-gradient(90deg,
+      transparent 0px, transparent 22px,
+      rgba(140, 220, 255, 0.55) 22px, rgba(140, 220, 255, 0.55) 23px
+    );
+  -webkit-mask-image: radial-gradient(ellipse 62% 78% at center, transparent 30%, black 82%);
+  mask-image: radial-gradient(ellipse 62% 78% at center, transparent 30%, black 82%);
+}
+.hud-shield-block.active {
+  animation: shield-block-flash 380ms ease-out;
+}
+@keyframes shield-block-flash {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ============ FEEDBACK ESCALONADO ============ */
 .feedback.perfect {
   font-size: 30px;
   letter-spacing: 2px;
@@ -142,92 +211,6 @@ function injectHudExtraStyles() {
 .hud-boost-wrap.ready-flash {
   animation: boost-ready-flash 650ms ease-out;
 }
-
-/* ============ MOTION LINES (boost) ============ */
-.hud-motion-lines {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 200ms ease-out;
-  z-index: 3;
-  overflow: hidden;
-}
-.hud-motion-lines.active { opacity: 1; }
-.hud-motion-lines::before,
-.hud-motion-lines::after {
-  content: '';
-  position: absolute;
-  inset: -10%;
-  background: repeating-conic-gradient(
-    from 0deg at 50% 50%,
-    transparent 0deg,
-    rgba(180, 230, 255, 0.55) 0.4deg,
-    transparent 0.8deg,
-    transparent 45deg
-  );
-  animation: motion-line-spin 1.6s linear infinite;
-}
-.hud-motion-lines::after {
-  animation-duration: 2.2s;
-  animation-direction: reverse;
-  opacity: 0.6;
-}
-@keyframes motion-line-spin {
-  0%   { transform: rotate(0deg) scale(1.15); }
-  100% { transform: rotate(360deg) scale(1.15); }
-}
-
-/* ============ SCREEN DISTORTION (boost) ============ */
-.hud-boost-distortion {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 250ms ease-out;
-  background: radial-gradient(
-    ellipse 60% 45% at center,
-    transparent 20%,
-    rgba(150, 200, 255, 0.06) 55%,
-    rgba(150, 200, 255, 0.18) 100%
-  );
-  z-index: 2;
-}
-.hud-boost-distortion.active { opacity: 1; }
-
-/* ============ COLOR GRADING NO CHEFE ============ */
-.hud-boss-tint {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 400ms ease-out;
-  background: radial-gradient(
-    ellipse 100% 100% at center,
-    rgba(255, 40, 60, 0.06) 0%,
-    rgba(180, 20, 40, 0.18) 100%
-  );
-  mix-blend-mode: overlay;
-  z-index: 5;
-}
-.hud-boss-tint.active { opacity: 1; }
-
-/* ============ DIRECTIONAL DAMAGE VIGNETTE ============ */
-.hud-damage-direction {
-  position: absolute;
-  width: 55%;
-  height: 55%;
-  pointer-events: none;
-  opacity: 0;
-  z-index: 6;
-  background: radial-gradient(circle at center, rgba(255, 30, 40, 0.55) 0%, transparent 70%);
-  transform: translate(-50%, -50%) scale(0.4);
-  transition: opacity 90ms ease-out, transform 90ms ease-out;
-}
-.hud-damage-direction.active {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1.1);
-}
 `
   document.head.appendChild(style)
 }
@@ -238,7 +221,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.28.1</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.24.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -282,7 +265,6 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
 
   function render() {
     root.innerHTML = ''
-
     const back = document.createElement('button')
     back.className = 'back-link'
     back.textContent = '← Voltar'
@@ -300,7 +282,6 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
     root.appendChild(title)
 
     const decks = listDecks()
-
     if (decks.length === 0) {
       const empty = document.createElement('p')
       empty.textContent = 'Nenhum baralho salvo ainda.'
@@ -324,20 +305,17 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
   function buildMergeBar() {
     const bar = document.createElement('div')
     bar.className = 'deck-merge-bar'
-
     const label = document.createElement('span')
     label.textContent = selectedForMerge.size >= 2
       ? `${selectedForMerge.size} baralhos marcados`
       : 'Marque 2+ baralhos pra fundir numa sessão só'
     bar.appendChild(label)
-
     const mergeBtn = document.createElement('button')
     mergeBtn.className = 'btn-small'
     mergeBtn.textContent = 'Jogar fundidos'
     mergeBtn.disabled = selectedForMerge.size < 2
     mergeBtn.addEventListener('click', () => onPlayMerged([...selectedForMerge]))
     bar.appendChild(mergeBtn)
-
     return bar
   }
 
@@ -397,7 +375,6 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
       render()
     })
     btnRow.appendChild(delBtn)
-
     card.appendChild(btnRow)
 
     if (d.valid) {
@@ -410,10 +387,8 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
         render()
       })
       card.appendChild(previewToggle)
-
       if (expandedPreview.has(d.id)) card.appendChild(buildPreview(d.id))
     }
-
     return card
   }
 
@@ -446,7 +421,6 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
         render()
       })
       wrap.appendChild(extrasToggle)
-
       if (expandedExtras.has(id)) {
         const extrasList = document.createElement('ul')
         for (const c of built.painelCards) {
@@ -457,7 +431,6 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
         wrap.appendChild(extrasList)
       }
     }
-
     return wrap
   }
 
@@ -676,10 +649,7 @@ export function showSettingsScreen({ onBack }) {
   const resetBtn = document.createElement('button')
   resetBtn.className = 'btn-secondary'
   resetBtn.textContent = 'Restaurar padrão'
-  resetBtn.addEventListener('click', () => {
-    resetToDefaults()
-    renderBindRows()
-  })
+  resetBtn.addEventListener('click', () => { resetToDefaults(); renderBindRows() })
   controlsSection.appendChild(resetBtn)
   root.appendChild(controlsSection)
 
@@ -692,14 +662,12 @@ export function showSettingsScreen({ onBack }) {
       const label = document.createElement('span')
       label.textContent = action.label
       row.appendChild(label)
-
       const codes = bindings.actions[action.id] || []
       const btn = document.createElement('button')
       btn.className = 'keybind-btn'
       btn.textContent = codes.map(codeToLabel).join(' / ') || '—'
       btn.addEventListener('click', () => startRebind(action.id, btn))
       row.appendChild(btn)
-
       bindRows.appendChild(row)
     }
   }
@@ -767,7 +735,6 @@ export function showSettingsScreen({ onBack }) {
     const bindings = getBindings()
 
     gpStatus.textContent = pad ? `Conectado: ${pad.id}` : 'Nenhum controle detectado. Pressione um botão nele.'
-
     axesBarsWrap.innerHTML = ''
     buttonsWrap.innerHTML = ''
 
@@ -779,7 +746,6 @@ export function showSettingsScreen({ onBack }) {
         label.className = 'gp-axis-label'
         label.textContent = `Eixo ${i}${i === bindings.gamepad.axisX ? ' (X)' : ''}${i === bindings.gamepad.axisY ? ' (Y)' : ''}`
         barRow.appendChild(label)
-
         const bar = document.createElement('div')
         bar.className = 'gp-axis-bar'
         const fill = document.createElement('div')
@@ -789,21 +755,16 @@ export function showSettingsScreen({ onBack }) {
         fill.style.width = '4%'
         bar.appendChild(fill)
         barRow.appendChild(bar)
-
         const setXBtn = document.createElement('button')
         setXBtn.className = 'keybind-btn'
         setXBtn.textContent = 'X'
-        setXBtn.title = 'Usar este eixo como X'
         setXBtn.addEventListener('click', () => setGamepadBinding('axisX', i))
         barRow.appendChild(setXBtn)
-
         const setYBtn = document.createElement('button')
         setYBtn.className = 'keybind-btn'
         setYBtn.textContent = 'Y'
-        setYBtn.title = 'Usar este eixo como Y'
         setYBtn.addEventListener('click', () => setGamepadBinding('axisY', i))
         barRow.appendChild(setYBtn)
-
         axesBarsWrap.appendChild(barRow)
       })
 
@@ -813,7 +774,6 @@ export function showSettingsScreen({ onBack }) {
         if (b.pressed) chip.classList.add('pressed')
         if (bindings.gamepad.fireButtons.includes(i)) chip.classList.add('selected')
         chip.textContent = String(i)
-        chip.title = 'Clique pra ativar/desativar como botão de tiro'
         chip.addEventListener('click', () => {
           const current = getBindings().gamepad.fireButtons
           const next = current.includes(i) ? current.filter((x) => x !== i) : [...current, i]
@@ -822,7 +782,6 @@ export function showSettingsScreen({ onBack }) {
         buttonsWrap.appendChild(chip)
       })
     }
-
     gamepadRaf = requestAnimationFrame(pollGamepad)
   }
   pollGamepad()
@@ -844,9 +803,6 @@ export function createGameHud() {
   sceneRoot.id = 'scene-root'
   root.appendChild(sceneRoot)
 
-  // Vignette PERSISTENTE de vida baixa — fica atrás do damageFlash (que pulsa em hits),
-  // para o flash sempre aparecer por cima quando leva dano. Opacidade setada por
-  // hud.setLowHealth(intensity) a cada frame.
   const lowHealthVignette = document.createElement('div')
   lowHealthVignette.className = 'hud-low-health-vignette'
   root.appendChild(lowHealthVignette)
@@ -855,26 +811,16 @@ export function createGameHud() {
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
 
-  const motionLines = document.createElement('div')
-  motionLines.className = 'hud-motion-lines'
-  root.appendChild(motionLines)
+  // NOVO: dano na vida — faixa vermelha nas LATERAIS (centro livre pra mira)
+  const damageSide = document.createElement('div')
+  damageSide.className = 'hud-damage-side'
+  root.appendChild(damageSide)
 
-  const boostDistortion = document.createElement('div')
-  boostDistortion.className = 'hud-boost-distortion'
-  root.appendChild(boostDistortion)
+  // NOVO: dano absorvido pelo escudo — faixa azul com grid, também lateral
+  const shieldBlock = document.createElement('div')
+  shieldBlock.className = 'hud-shield-block'
+  root.appendChild(shieldBlock)
 
-  const bossTint = document.createElement('div')
-  bossTint.className = 'hud-boss-tint'
-  root.appendChild(bossTint)
-
-  const damageDirection = document.createElement('div')
-  damageDirection.className = 'hud-damage-direction'
-  root.appendChild(damageDirection)
-  let damageDirectionTimeout = null
-
-  // ============ MIRA + HIT MARKER ============
-  // O hit marker é um filho da mira: assim ele segue automaticamente quando
-  // setReticlePosition() move a mira, sem precisar de lógica extra.
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
   reticle.innerHTML = '<div class="reticle-ring"></div>'
@@ -917,7 +863,6 @@ export function createGameHud() {
   const boostFill = document.createElement('div')
   boostFill.className = 'hud-bar-fill hud-boost-fill'
   boostBar.appendChild(boostFill)
-  // rastreia a transição "acabou de encher" pra disparar o flash verde (ver setBoost)
   let prevBoostCharge = 1
 
   const question = document.createElement('p')
@@ -1057,8 +1002,6 @@ export function createGameHud() {
     setBoost(charge, active) {
       boostFill.style.width = `${Math.max(0, Math.min(1, charge)) * 100}%`
       boostBar.classList.toggle('active', !!active)
-      // flash "pronto de novo": dispara SÓ na transição (prevCharge < 1 → charge >= 1),
-      // senão ficaria reanimando toda hora com a barra cheia
       if (charge >= 1 && prevBoostCharge < 1) {
         boostBar.classList.remove('ready-flash')
         void boostBar.offsetWidth
@@ -1091,10 +1034,6 @@ export function createGameHud() {
       feedback.innerHTML = ''
       if (!data) return
 
-      // título principal com escalonamento de qualidade. Prioridade:
-      //   1) data.quality ('perfect' | 'good' | 'ok') se o chamador passar
-      //   2) data.accuracyBonus (main.js já calcula isso a partir dos tiros gastos)
-      //   3) fallback pro texto antigo ("Acertou!" / "Errou.")
       let title, titleClass
       if (data.correct) {
         let quality = data.quality
@@ -1156,8 +1095,20 @@ export function createGameHud() {
       damageVignette.classList.add('flash')
     },
 
-    // intensity 0..1 — 0 = vida ok (vignette invisível), 1 = crítico (bem vermelho).
-    // main.js chama isso a cada frame com base na vida; CSS cuida da transição suave.
+    // dano na vida — faixa vermelha nas laterais (centro livre)
+    showDamageSide() {
+      damageSide.classList.remove('active')
+      void damageSide.offsetWidth
+      damageSide.classList.add('active')
+    },
+
+    // dano absorvido pelo escudo — faixa azul com grid nas laterais
+    showShieldBlock() {
+      shieldBlock.classList.remove('active')
+      void shieldBlock.offsetWidth
+      shieldBlock.classList.add('active')
+    },
+
     setLowHealth(intensity) {
       const v = Math.max(0, Math.min(1, intensity))
       lowHealthVignette.style.opacity = String(v)
@@ -1172,11 +1123,8 @@ export function createGameHud() {
       reticle.classList.toggle('locked', !!locked)
     },
 
-    // flash rápido de "acertou" na mira. killed=true pinta o X de vermelho e mantém ele
-    // visível por um tiquinho a mais — a diferença entre "tirei hp" e "matei".
     hitMarker(killed = false) {
       hitMarkerEl.classList.remove('active', 'kill')
-      // força reflow pra permitir reiniciar a animação se já estiver ativa
       void hitMarkerEl.offsetWidth
       hitMarkerEl.classList.add('active')
       if (killed) hitMarkerEl.classList.add('kill')
@@ -1186,9 +1134,6 @@ export function createGameHud() {
       }, killed ? 240 : 170)
     },
 
-    // solta um número flutuante na fração de tela (0..1) dada.
-    //   value: número (ou string) que aparece
-    //   opts: { homing: true → verde; points: true → amarelo; big: true → maior; prefix: '+' }
     spawnDamageNumber(xFrac, yFrac, value, opts = {}) {
       const el = document.createElement('div')
       el.className = 'hud-damage-number'
@@ -1200,7 +1145,6 @@ export function createGameHud() {
       el.style.left = `${Math.max(0, Math.min(1, xFrac)) * 100}%`
       el.style.top = `${Math.max(0, Math.min(1, yFrac)) * 100}%`
       root.appendChild(el)
-      // remove depois que a animação (900ms) termina + folga pra segurança
       setTimeout(() => el.remove(), 950)
     },
 
@@ -1295,36 +1239,6 @@ export function createGameHud() {
     setChargeIndicator(active, fraction = 0) {
       chargeBar.hidden = !active
       if (active) chargeBarFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
-    },
-
-    // ============ MOTION LINES (boost) ============
-    setMotionLines(active) {
-      motionLines.classList.toggle('active', !!active)
-    },
-
-    // ============ SCREEN DISTORTION (boost) ============
-    setBoostDistortion(active) {
-      boostDistortion.classList.toggle('active', !!active)
-    },
-
-    // ============ BOSS TINT ============
-    setBossTint(active) {
-      bossTint.classList.toggle('active', !!active)
-    },
-
-    // ============ DIRECTIONAL DAMAGE VIGNETTE ============
-    // xFrac, yFrac em 0..1 do espaço de tela — o vignette aparece centrado na direção
-    // de onde o dano veio, e some sozinho depois de ~350ms
-    showDamageDirection(xFrac, yFrac) {
-      damageDirection.style.left = `${xFrac * 100}%`
-      damageDirection.style.top = `${yFrac * 100}%`
-      damageDirection.classList.remove('active')
-      void damageDirection.offsetWidth
-      damageDirection.classList.add('active')
-      if (damageDirectionTimeout) clearTimeout(damageDirectionTimeout)
-      damageDirectionTimeout = setTimeout(() => {
-        damageDirection.classList.remove('active')
-      }, 350)
     },
 
     debug: {
