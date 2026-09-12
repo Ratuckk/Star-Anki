@@ -49,6 +49,9 @@ const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
 const BOSS_ENEMY_INTERVAL_MULT = 0.7
 const BOSS_BUILDUP_MS = 90000
+// ============ FASE 5: CAÇADA DE PERGUNTAS DO CHEFE (orbes no mapa) ============
+const BOSS_QUESTION_COUNT = 6 // quantos orbes-pergunta espalhados na arena do chefe
+const BOSS_HUNT_BONUS_MS = 10000 // tempo ganho a cada pergunta acertada durante a caçada
 const BOSS_BASE_HP = 3
 const BOSS_DEFEAT_BONUS = 500
 const BOSS_SPREAD_MIN_BASE = 45
@@ -94,6 +97,17 @@ const GOLDEN_SPREAD_MIN = 40
 const GOLDEN_SPREAD_MAX = 90
 
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
+
+// ============ TRANSIÇÃO PARA ALL-RANGE MODE (dourado/chefe se aproximando) — Fase 5 ============
+// aviso visível ("surgindo em Ns") nos últimos ARENA_WARNING_COUNTDOWN_MS antes da arena
+const ARENA_WARNING_COUNTDOWN_MS = 5000
+// para de gerar inimigo/bônus/dourado novo a partir daqui (3s de silêncio antes do aviso
+// começar a contar, mais os 5s do aviso em si = 8s totais sem spawn novo)
+const ARENA_WARNING_STOP_SPAWN_MS = 8000
+// duração da cutscene (câmera se ajeitando) entre o fim do aviso e a arena de verdade começar
+const ARENA_CUTSCENE_MS = 2500
+const ARENA_CUTSCENE_PULLBACK = 14
+const ARENA_CUTSCENE_FOV_BUMP = 16
 
 // ============ ROGUELIKE (fase 4) ============
 // só o que continua sendo lido/usado direto em main.js — os stats que as cartas mutam
@@ -295,6 +309,13 @@ function mountGame(session) {
 
   let bossHealthMultiplier = 1
   let bossBuildupTimer = 0
+  let bossOrbsRemaining = 0
+
+  // ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE (Fase 5) ============
+  let arenaCutsceneTimer = 0
+  let arenaCutsceneOnDone = null // callback chamado quando a cutscene termina (enterGoldenArena/enterBossBuildup)
+  let arenaCutsceneBaseCameraPos = null // posição da câmera capturada no instante em que a cutscene começa
+  let arenaCutsceneBaseForward = null // direção "pra frente" da nave nesse mesmo instante
 
   let fireHeldMs = 0
   let reticleOffsetX = 0
@@ -516,44 +537,54 @@ function mountGame(session) {
     combat.spawnQuizTargets(result.alternatives)
   }
 
+  // Fase 5: a caçada agora é literal — 6 orbes-pergunta genéricos espalhados pela arena
+  // (combat.spawnBossOrbs), o jogador precisa achar e atirar em cada um pra revelar/responder
+  // aquela pergunta (numa pausa total, ver triggerBossQuestion). Nada de pergunta já visível
+  // na tela esperando 4 alternativas-alvo, como era antes.
   function enterBossBuildup() {
     phase = 'bossBuildup'
     bossBuildupTimer = BOSS_BUILDUP_MS
     bossHealthMultiplier = 1
+    bossOrbsRemaining = BOSS_QUESTION_COUNT
+    questionResult = null
     rail.enterArena()
-    hud.setBossActive(true)
+    hud.setBossActive(true, bossOrbsRemaining)
     hud.setCountdown(null)
     for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
-    spawnNextBossQuestion()
+    combat.spawnBossOrbs(BOSS_QUESTION_COUNT, currentBossSpread())
   }
 
-  function spawnNextBossQuestion() {
+  // chamado quando um projétil acerta QUALQUER orbe-pergunta (events.bossOrbHit) — pausa total
+  // (nave travada, ver tick()) e mostra a pergunta+alternativas centralizadas pra escolher por
+  // clique, em vez de atirar nelas
+  function triggerBossQuestion() {
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()
       return
     }
     questionResult = result
-    hud.setQuestion(result.card.question)
-    hud.setAlternatives(result.alternatives)
-    combat.spawnBossTargets(result.alternatives, currentBossSpread())
+    bossOrbsRemaining = Math.max(0, bossOrbsRemaining - 1)
+    hud.setBossActive(true, bossOrbsRemaining)
+    phase = 'bossQuestionPause'
+    hud.showQuestionModal({
+      question: result.card.question,
+      alternatives: result.alternatives,
+      onPick: (slot) => {
+        settleBossBuildupQuestion({
+          type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
+          card: questionResult.card,
+          timeBonus: 1.2,
+          accuracyBonus: 1.2,
+        })
+      },
+    })
   }
 
-  function processBossBuildupAnswer(events, inputState) {
-    let outcome = null
-    if (events.targetHit) {
-      outcome = { type: events.targetHit.isCorrect ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
-    } else {
-      const slot = slotForPressed(inputState.pressed)
-      if (slot !== undefined) {
-        outcome = { type: slot === questionResult.correctSlot ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
-      }
-    }
-    if (outcome) settleBossBuildupQuestion(outcome)
-  }
-
+  // errar mantém a punição de sempre (vida do chefe dobra); acertar soma tempo de caçada —
+  // confirmado com o usuário (ver PROGRESSO.md, Fase 5)
   function settleBossBuildupQuestion(outcome) {
-    combat.clearQuizTargets()
+    hud.hideQuestionModal()
     const correct = outcome.type === 'correct'
     const resolution = resolveAnswer(session, outcome)
     applySpeedProgression(outcome.type)
@@ -561,14 +592,14 @@ function mountGame(session) {
       applyDifficulty()
       applyBossDifficulty()
       bossHealthMultiplier *= 2
+    } else {
+      bossBuildupTimer += BOSS_HUNT_BONUS_MS
     }
 
     history = recordResult(history, outcome.card.guid, correct)
     saveHistory(history)
     sessionResults.push({ guid: outcome.card.guid, correct })
 
-    hud.setQuestion(null)
-    hud.setAlternatives(null)
     hud.setFeedback({
       correct,
       correctAnswer: outcome.card.answer,
@@ -590,6 +621,30 @@ function mountGame(session) {
     pendingCardChoice = correct
     phase = 'bossBuildupResolution'
     phaseTimer = FEEDBACK_MS
+  }
+
+  // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, vida dobrada uma vez
+  // por orbe que sobrou sem ser respondido — igual à punição de errar (confirmado com o usuário)
+  function finishBossHunt() {
+    hud.hideQuestionModal()
+    for (let i = 0; i < bossOrbsRemaining; i += 1) bossHealthMultiplier *= 2
+    bossOrbsRemaining = 0
+    combat.clearBossOrbs()
+    enterBossFight()
+  }
+
+  // usado tanto pro dourado quanto pro chefe: 5s de aviso (já em andamento antes desta chamada,
+  // via hud.setArenaWarning) + cutscene de câmera se ajeitando (nave travada, ver tick()) antes
+  // de `onDone` (enterGoldenArena/enterBossBuildup) finalmente rodar
+  function startArenaCutscene(kind, onDone) {
+    phase = 'arenaCutscene'
+    arenaCutsceneTimer = ARENA_CUTSCENE_MS
+    arenaCutsceneOnDone = onDone
+    arenaCutsceneBaseCameraPos = camera.position.clone()
+    arenaCutsceneBaseForward = rail.getFrameAt(0).forward.clone()
+    hud.setArenaWarning(null)
+    hud.setCountdown(null)
+    hud.setArenaCutscene(kind)
   }
 
   function enterBossFight() {
@@ -751,6 +806,38 @@ function mountGame(session) {
       hud.debug.setVisible(debugVisible)
     }
     if (paused) return
+
+    // ============ PAUSA TOTAL: PERGUNTA DO CHEFE (orbe atingido) ============
+    // nave travada, sem input nenhum — só espera a escolha no modal (hud.showQuestionModal),
+    // que resolve via settleBossBuildupQuestion. Continua renderizando a cena parada.
+    if (phase === 'bossQuestionPause') {
+      renderer.render(scene, camera)
+      return
+    }
+
+    // ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE (dourado/chefe) ============
+    // nave travada, só a câmera se move sozinha (puxa pra trás + abre o FOV e volta), igual
+    // confirmado com o usuário — ao terminar, chama arenaCutsceneOnDone (enterGoldenArena ou
+    // enterBossBuildup), que aí sim muda de fase e liga o modo all-range de verdade.
+    if (phase === 'arenaCutscene') {
+      arenaCutsceneTimer -= dt * 1000
+      const t = THREE.MathUtils.clamp(1 - Math.max(0, arenaCutsceneTimer) / ARENA_CUTSCENE_MS, 0, 1)
+      const pull = Math.sin(Math.min(1, t) * Math.PI)
+      camera.position.copy(arenaCutsceneBaseCameraPos).addScaledVector(arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
+      camera.fov = 70 + pull * ARENA_CUTSCENE_FOV_BUMP
+      camera.updateProjectionMatrix()
+      camera.lookAt(arenaCutsceneBaseCameraPos.clone().addScaledVector(arenaCutsceneBaseForward, 40))
+      if (arenaCutsceneTimer <= 0) {
+        camera.fov = 70
+        camera.updateProjectionMatrix()
+        hud.setArenaCutscene(null)
+        const done = arenaCutsceneOnDone
+        arenaCutsceneOnDone = null
+        done()
+      }
+      renderer.render(scene, camera)
+      return
+    }
 
     hitShakeTimer = Math.max(0, hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
@@ -1004,7 +1091,11 @@ function mountGame(session) {
         enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (phase === 'combat') {
-      if (cycleTimer > NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS) {
+      // pausa maior (8s) num ciclo de chefe, porque além do "vai vir pergunta" tem o aviso de
+      // 5s + cutscene do chefe se aproximando; também para tudo enquanto o dourado está a
+      // menos de 8s de surgir (mesma regra, "impedindo a geração de inimigos")
+      const spawnPauseThreshold = isBossCycle ? ARENA_WARNING_STOP_SPAWN_MS : NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS
+      if (cycleTimer > spawnPauseThreshold && goldenTimer > ARENA_WARNING_STOP_SPAWN_MS) {
         normalSpawnTimer -= dt * 1000
         if (normalSpawnTimer <= 0) {
           normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
@@ -1031,18 +1122,28 @@ function mountGame(session) {
         }
 
         goldenTimer -= dt * 1000
-        if (goldenTimer <= 0) enterGoldenArena()
+        if (goldenTimer <= 0) startArenaCutscene('golden', enterGoldenArena)
       }
 
       if (phase === 'combat') {
         cycleTimer -= dt * 1000
-        hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
+        // aviso de "chefe se aproximando" substitui o contador genérico do ciclo nos últimos 5s
+        // (confirmado com o usuário); o do dourado aparece por cima, sem esconder o contador
+        const bossWarnActive = isBossCycle && cycleTimer > 0 && cycleTimer <= ARENA_WARNING_COUNTDOWN_MS
+        const goldenWarnActive = !isBossCycle && goldenTimer > 0 && goldenTimer <= ARENA_WARNING_COUNTDOWN_MS
+        if (bossWarnActive) {
+          hud.setCountdown(null)
+          hud.setArenaWarning('boss', Math.max(1, Math.ceil(cycleTimer / 1000)))
+        } else {
+          hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
+          hud.setArenaWarning(goldenWarnActive ? 'golden' : null, goldenWarnActive ? Math.max(1, Math.ceil(goldenTimer / 1000)) : null)
+        }
         if (cycleTimer <= 0) enterRecall()
       }
     } else if (phase === 'recall') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {
-        if (isBossCycle) enterBossBuildup()
+        if (isBossCycle) startArenaCutscene('boss', enterBossBuildup)
         else enterAlternatives()
       }
     } else if (phase === 'alternatives') {
@@ -1051,23 +1152,16 @@ function mountGame(session) {
       bossBuildupTimer -= dt * 1000
       hud.setCountdown(Math.max(0, Math.ceil(bossBuildupTimer / 1000)), bossBuildupTimer <= WARNING_MS)
       if (bossBuildupTimer <= 0) {
-        if (questionResult) {
-          bossHealthMultiplier *= 2
-          combat.clearQuizTargets()
-          questionResult = null
-          hud.setQuestion(null)
-          hud.setAlternatives(null)
-        }
-        enterBossFight()
-      } else {
-        processBossBuildupAnswer(events, inputState)
+        finishBossHunt()
+      } else if (events.bossOrbHit) {
+        triggerBossQuestion()
       }
     } else if (phase === 'bossBuildupResolution') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {
         const proceed = () => {
-          if (bossBuildupTimer > 0) { phase = 'bossBuildup'; spawnNextBossQuestion() }
-          else enterBossFight()
+          if (bossOrbsRemaining > 0 && bossBuildupTimer > 0) phase = 'bossBuildup'
+          else finishBossHunt()
         }
         if (pendingCardChoice) enterCardChoice(proceed)
         else proceed()
@@ -1166,7 +1260,7 @@ function mountGame(session) {
     if (!questionResult) return
     const outcome = { type: correct ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
     if (phase === 'goldenAlternatives') settleGoldenBonus(outcome)
-    else if (phase === 'bossBuildup') settleBossBuildupQuestion(outcome)
+    else if (phase === 'bossQuestionPause') settleBossBuildupQuestion(outcome)
     else if (phase === 'alternatives') settleQuestion(outcome)
   }
 
@@ -1204,7 +1298,7 @@ function mountGame(session) {
     maxBuffs: () => player.debugMaxBuffs(),
     gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
     skipToBossFight: () => {
-      if (phase === 'bossBuildup') bossBuildupTimer = 0
+      if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()
       else if (phase === 'combat') { bossHealthMultiplier = 1; rail.enterArena(); enterBossFight() }
     },
     gotoGolden: () => { if (phase === 'combat') enterGoldenArena() },

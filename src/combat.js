@@ -48,6 +48,15 @@ const SHAPE_COLOR = { azul: 0x4da6ff, 'âmbar': 0xffb84d, magenta: 0xff4dd2, cia
 
 const BOSS_TARGET_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
+// ============ ORBES-PERGUNTA DO CHEFE (Fase 5) ============
+// substituem o antigo "atire na alternativa certa entre 4 formas espalhadas" — agora são
+// marcadores genéricos e idênticos: acertar QUALQUER um dispara a próxima pergunta da fila
+// (main.js decide qual, via nextQuestion), que é respondida numa pausa total (hud modal),
+// não atirando em mais nada.
+const BOSS_ORB_HIT_RADIUS = 2.2
+const BOSS_ORB_DEATH_DURATION = 0.2
+const BOSS_ORB_COLOR = 0xffd166
+
 const BONUS_COLOR = 0x2bff6b
 const BONUS_SPAWN_DISTANCE_MIN = 90
 const BONUS_SPAWN_DISTANCE_MAX = 140
@@ -77,6 +86,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   const projectiles = []
   const quizTargets = []
   const bonusTargets = []
+  const bossOrbs = []
 
   const projectileGeometry = new THREE.ConeGeometry(0.168, 1.2, 5)
   projectileGeometry.rotateX(Math.PI / 2)
@@ -98,6 +108,18 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     emissiveIntensity: 0.7,
   })
 
+  const bossOrbGeometry = new THREE.IcosahedronGeometry(1.6, 0)
+  const bossOrbMaterial = new THREE.MeshPhongMaterial({
+    color: BOSS_ORB_COLOR,
+    flatShading: true,
+    emissive: 0x664400,
+    emissiveIntensity: 0.85,
+    transparent: true,
+    opacity: 0.92,
+  })
+  const bossOrbRingGeometry = new THREE.TorusGeometry(2.3, 0.09, 8, 24)
+  const bossOrbRingMaterial = new THREE.MeshBasicMaterial({ color: BOSS_ORB_COLOR, transparent: true, opacity: 0.55 })
+
   let showHitboxes = false
   const hitboxGeometry = new THREE.SphereGeometry(1, 8, 6)
   const hitboxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, depthTest: false })
@@ -116,6 +138,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     if (!showHitboxes) return
     for (const t of quizTargets) if (!t.dying) markHitbox(t.mesh.position, QUIZ_HIT_RADIUS)
     for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS)
+    for (const o of bossOrbs) if (!o.dying) markHitbox(o.mesh.position, BOSS_ORB_HIT_RADIUS)
     for (const item of enemies.getHitboxTargets()) markHitbox(item.worldPos, item.radius)
   }
 
@@ -214,6 +237,27 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     bonusTargets.splice(bonusTargets.indexOf(b), 1)
   }
 
+  function removeBossOrb(o) {
+    scene.remove(o.mesh)
+    bossOrbs.splice(bossOrbs.indexOf(o), 1)
+  }
+
+  function updateBossOrbs(dt) {
+    for (const orb of [...bossOrbs]) {
+      if (orb.dying) {
+        orb.deathT += dt / BOSS_ORB_DEATH_DURATION
+        orb.mesh.scale.setScalar(Math.max(0, 1 - orb.deathT))
+        if (orb.deathT >= 1) removeBossOrb(orb)
+        continue
+      }
+      // giro + pulso constantes — só pra ficar claro que é um marcador "vivo" de longe, não um
+      // inimigo nem um alvo comum. Polimento visual maior fica pra Fase 7.
+      orb.mesh.rotation.y += dt * 0.8
+      orb.mesh.children[1].rotation.z += dt * 1.6
+      orb.mesh.scale.setScalar(1 + Math.sin(elapsed * 3 + orb.phase) * 0.08)
+    }
+  }
+
   function distanceToSegment(point, segStart, segEnd) {
     const seg = segEnd.clone().sub(segStart)
     const lenSq = seg.lengthSq()
@@ -282,6 +326,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     let goldenSpecialHit = false
     let timeReductionMs = null
     let bossDefeated = false
+    let bossOrbHit = false
     // log de acertos (posição, dano, se matou) — usado pelo main.js pra faíscas, flash no
     // mesh atingido e números de dano flutuantes no HUD
     const hitsLog = []
@@ -328,6 +373,16 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         continue
       }
 
+      const orbHit = bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS)
+      if (orbHit) {
+        orbHit.dying = true
+        orbHit.deathT = 0
+        bossOrbHit = true
+        if (effects) effects.explosion(orbHit.mesh.position, BOSS_ORB_COLOR, 1.1)
+        removeProjectile(projectile)
+        continue
+      }
+
       const hit = enemies.resolveProjectileHit(prevPos, projectile.mesh.position, {
         damage: projectile.damage ?? 1,
         isHoming: !!projectile.isHoming,
@@ -367,7 +422,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (projectile.traveled > PROJECTILE_MAX_RANGE) removeProjectile(projectile)
     }
 
-    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, hitsLog }
+    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog }
   }
 
   function updateQuizTargets(dt) {
@@ -538,12 +593,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
     },
 
-    spawnBossTargets(alternatives, opts = {}) {
-      quizRoomActive = true
-      quizShotsFired = 0
+    // 6 orbes genéricos espalhados pela arena do chefe (Fase 5) — nenhum "é" uma pergunta
+    // específica até ser atingido; main.js decide qual pergunta mostrar (nextQuestion) na hora
+    spawnBossOrbs(count, opts = {}) {
       const { distanceMin = 45, distanceMax = 95 } = opts
       const frame = rail.getFrameAt(0)
-      for (const alt of alternatives) {
+      for (let i = 0; i < count; i += 1) {
         const azimuth = Math.random() * Math.PI * 2
         const elevation = (Math.random() * 2 - 1) * BOSS_TARGET_ELEVATION_MAX
         const distance = distanceMin + Math.random() * (distanceMax - distanceMin)
@@ -553,19 +608,19 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
           Math.cos(azimuth) * Math.cos(elevation),
         ).multiplyScalar(distance)
 
-        const mesh = makeQuizTargetMesh(alt)
-        mesh.position.copy(frame.position.clone().add(offset))
-        scene.add(mesh)
-        quizTargets.push({
-          mesh,
-          slot: alt.slot,
-          isCorrect: alt.isCorrect,
-          dying: false,
-          deathT: 0,
-          noCull: true,
-          colorHex: SHAPE_COLOR[alt.color] ?? 0xffffff,
-        })
+        const group = new THREE.Group()
+        group.add(new THREE.Mesh(bossOrbGeometry, bossOrbMaterial))
+        const ring = new THREE.Mesh(bossOrbRingGeometry, bossOrbRingMaterial)
+        ring.rotation.x = Math.PI / 2
+        group.add(ring)
+        group.position.copy(frame.position.clone().add(offset))
+        scene.add(group)
+        bossOrbs.push({ mesh: group, dying: false, deathT: 0, phase: Math.random() * Math.PI * 2 })
       }
+    },
+
+    clearBossOrbs() {
+      for (const orb of [...bossOrbs]) if (!orb.dying) removeBossOrb(orb)
     },
 
     clearQuizTargets() {
@@ -605,9 +660,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         currentLockOn = null
       }
 
-      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, hitsLog } = updateProjectiles(dt, aimDirection)
+      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog } = updateProjectiles(dt, aimDirection)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
+      updateBossOrbs(dt)
 
       let enemyHits = 0
       let ramKills = 0
@@ -637,6 +693,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         goldenSpecialHit,
         timeReductionMs,
         bossDefeated: bossDefeated || ramBossDefeated,
+        bossOrbHit,
         hitsLog,
       }
     },
@@ -645,6 +702,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       for (const p of [...projectiles]) removeProjectile(p)
       for (const t of [...quizTargets]) removeQuizTarget(t)
       for (const b of [...bonusTargets]) removeBonusTarget(b)
+      for (const o of [...bossOrbs]) removeBossOrb(o)
       for (const w of [...wingmen]) scene.remove(w.mesh)
       wingmen.length = 0
       enemies.dispose()
@@ -656,6 +714,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       wingmanMaterial.dispose()
       bonusGeometry.dispose()
       bonusMaterial.dispose()
+      bossOrbGeometry.dispose()
+      bossOrbMaterial.dispose()
+      bossOrbRingGeometry.dispose()
+      bossOrbRingMaterial.dispose()
       while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
       scene.remove(hitboxGroup)
       hitboxGeometry.dispose()

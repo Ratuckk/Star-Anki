@@ -228,6 +228,86 @@ function injectHudExtraStyles() {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1.1);
 }
+
+/* ============ AVISO DE TRANSIÇÃO PARA ALL-RANGE (dourado/chefe se aproximando) — Fase 5 */
+.hud-arena-warning {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 10px #000;
+  pointer-events: none;
+  z-index: 12;
+}
+.hud-arena-warning.kind-golden { color: #ffd700; }
+.hud-arena-warning.kind-boss { color: #ff6b5a; }
+
+/* ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE — Fase 5 ============ */
+.hud-arena-cutscene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 13, 18, 0.55);
+  color: #f5f5f7;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 10px #000;
+  pointer-events: none;
+  z-index: 18;
+}
+
+/* ============ MODAL DE PERGUNTA COM PAUSA TOTAL (orbe do chefe) — Fase 5 ============ */
+.question-modal-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+  background: rgba(11, 13, 18, 0.85);
+  z-index: 16;
+}
+.question-modal-title {
+  margin: 0;
+  max-width: 70vw;
+  text-align: center;
+  color: #f5f5f7;
+  font-size: 1.7rem;
+  font-weight: 700;
+  text-shadow: 0 2px 8px #000;
+}
+.question-modal-list {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 90vw;
+}
+.question-modal-card {
+  width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: left;
+  background: #16202b;
+  border: 2px solid #333944;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  color: #f5f5f7;
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: transform 0.12s;
+}
+.question-modal-card:hover { transform: translateY(-4px); }
+.question-modal-card svg { flex-shrink: 0; }
 `
   document.head.appendChild(style)
 }
@@ -238,7 +318,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.28.1</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.29.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -942,7 +1022,6 @@ export function createGameHud() {
 
   const bossBanner = document.createElement('div')
   bossBanner.className = 'hud-boss-banner'
-  bossBanner.textContent = 'CHEFE CHEGANDO — ATIRE NOS BLOCOS DE PERGUNTA'
   bossBanner.hidden = true
   root.appendChild(bossBanner)
 
@@ -951,6 +1030,30 @@ export function createGameHud() {
   goldenBanner.textContent = 'ALVO DOURADO ESPECIAL — CAÇA LIVRE'
   goldenBanner.hidden = true
   root.appendChild(goldenBanner)
+
+  // ============ AVISO + CUTSCENE DE TRANSIÇÃO PRO ALL-RANGE MODE (Fase 5) ============
+  const arenaWarning = document.createElement('div')
+  arenaWarning.className = 'hud-arena-warning'
+  arenaWarning.hidden = true
+  root.appendChild(arenaWarning)
+
+  const arenaCutsceneOverlay = document.createElement('div')
+  arenaCutsceneOverlay.className = 'hud-arena-cutscene'
+  arenaCutsceneOverlay.textContent = 'Transicionando para o modo All-Range...'
+  arenaCutsceneOverlay.hidden = true
+  root.appendChild(arenaCutsceneOverlay)
+
+  // ============ MODAL DE PERGUNTA (chefe: pausa total ao acertar um orbe) ============
+  const questionModalOverlay = document.createElement('div')
+  questionModalOverlay.className = 'question-modal-overlay'
+  questionModalOverlay.hidden = true
+  root.appendChild(questionModalOverlay)
+  const questionModalTitle = document.createElement('h3')
+  questionModalTitle.className = 'question-modal-title'
+  questionModalOverlay.appendChild(questionModalTitle)
+  const questionModalList = document.createElement('div')
+  questionModalList.className = 'question-modal-list'
+  questionModalOverlay.appendChild(questionModalList)
 
   const bossFightBar = document.createElement('div')
   bossFightBar.className = 'hud-boss-fight-bar'
@@ -1142,12 +1245,59 @@ export function createGameHud() {
       countdown.classList.toggle('urgent', !!urgent)
     },
 
-    setBossActive(active) {
+    // remaining: quantos orbes-pergunta ainda faltam achar/atirar (Fase 5) — opcional, só pra
+    // texto informativo; omitir mantém o rótulo genérico
+    setBossActive(active, remaining) {
       bossBanner.hidden = !active
+      if (active) {
+        bossBanner.textContent = typeof remaining === 'number'
+          ? `CHEFE — ache e atire nos orbes de pergunta (${remaining} restante${remaining === 1 ? '' : 's'})`
+          : 'CHEFE — ache e atire nos orbes de pergunta'
+      }
     },
 
     setGoldenActive(active) {
       goldenBanner.hidden = !active
+    },
+
+    // aviso de 5s antes da cutscene de transição pro all-range (dourado surgindo / chefe se
+    // aproximando) — kind null esconde
+    setArenaWarning(kind, seconds) {
+      if (!kind) { arenaWarning.hidden = true; return }
+      arenaWarning.hidden = false
+      arenaWarning.className = `hud-arena-warning kind-${kind}`
+      arenaWarning.textContent = kind === 'golden'
+        ? `Inimigo dourado surgindo em ${seconds}s`
+        : `Chefe se aproximando em ${seconds}s`
+    },
+
+    // overlay de texto durante a cutscene de câmera/mapa se ajeitando — kind null esconde
+    setArenaCutscene(kind) {
+      arenaCutsceneOverlay.hidden = !kind
+    },
+
+    // pausa total: pergunta+alternativas centralizadas, visual de card (Fase 5/6) — usado
+    // quando o jogador atira num orbe do chefe. onPick(slot) resolve a escolha.
+    showQuestionModal({ question, alternatives, onPick }) {
+      questionModalTitle.textContent = question
+      questionModalList.innerHTML = ''
+      for (const alt of alternatives) {
+        const hex = COLOR_MAP[alt.color] ?? '#ffffff'
+        const btn = document.createElement('button')
+        btn.className = 'question-modal-card'
+        btn.style.borderColor = hex
+        btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span>`
+        btn.addEventListener('click', () => {
+          questionModalOverlay.hidden = true
+          onPick(alt.slot)
+        })
+        questionModalList.appendChild(btn)
+      }
+      questionModalOverlay.hidden = false
+    },
+
+    hideQuestionModal() {
+      questionModalOverlay.hidden = true
     },
 
     damageFlash() {
