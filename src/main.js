@@ -96,8 +96,6 @@ const GOLDEN_SPREAD_MAX = 90
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
 
 // ============ ROGUELIKE (fase 4) ============
-// só o que continua sendo lido/usado direto em main.js — os stats que as cartas mutam
-// (escudo/homing/boost/etc.) agora moram em player.js
 const HOMING_LOCK_INTERVAL_MS = 500
 
 const DODGE_TAP_WINDOW_MS = 350
@@ -107,9 +105,6 @@ const DEFLECT_RADIUS = 6
 const RAM_DAMAGE = 5
 
 // ============ VIGNETTE DE VIDA BAIXA ============
-// a partir de qual fração da vida máxima a vignette começa a aparecer, e quão vermelha ela
-// fica no pior caso (0 = invisível, 1 = vermelho bem forte). O HUD cuida de suavizar a
-// transição via CSS; aqui só decidimos a intensidade a cada frame.
 const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 
 let deck = null
@@ -419,10 +414,6 @@ function mountGame(session) {
     }
   }
 
-  // efeito de cada carta mora em player.js (é estado do jogador) — combat.js já lê
-  // projectileCount/aimAssistAngle direto de player.config (Fase 3 da refatoração), então só
-  // fireCooldown (que tem lógica própria de override pro debug "Tiro infinito") e o wingman
-  // (mesh cosmético, vive em combat.js) ainda precisam de sincronização explícita aqui
   function applyRoguelikeCard(card) {
     player.applyCard(card)
     combat.setFireCooldown(player.config.fireCooldown)
@@ -575,7 +566,7 @@ function mountGame(session) {
       points: resolution.points,
       comboMultiplier: resolution.comboMultiplier,
       health: resolution.healthRemaining,
-      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO: HUD usa pra PERFEITO/BOM/ACERTOU
+      accuracyBonus: outcome.accuracyBonus,
     })
 
     const outOfLives = applyHealthLoss()
@@ -602,7 +593,6 @@ function mountGame(session) {
     combat.spawnBossEnemy(bossHp)
     hud.setBossFight(true, bossHp, bossHp)
 
-    // flash branco + zoom out cinematográfico na entrada do chefe
     hud.damageFlash()
     camera.fov = 88
     camera.updateProjectionMatrix()
@@ -678,7 +668,7 @@ function mountGame(session) {
       points: resolution.points,
       comboMultiplier: resolution.comboMultiplier,
       health: resolution.healthRemaining,
-      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO
+      accuracyBonus: outcome.accuracyBonus,
     })
 
     const outOfLives = applyHealthLoss()
@@ -702,7 +692,7 @@ function mountGame(session) {
       correct,
       correctAnswer: outcome.card.answer,
       bonus: true,
-      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO (bônus não tem penalidade, mas a HUD usa)
+      accuracyBonus: outcome.accuracyBonus,
     })
 
     pendingCardChoice = correct
@@ -866,7 +856,6 @@ function mountGame(session) {
     rail.setSpeedMultiplier(speedMultiplier * player.getBoostSpeedFactor())
     hud.setBoost(player.getBoostCharge(), player.isPropulsionActive() || player.isRepulsionActive())
 
-    // motion lines + distorção de tela só durante o impulso de propulsão (não na repulsão)
     const boostOn = player.isPropulsionActive()
     hud.setMotionLines(boostOn)
     hud.setBoostDistortion(boostOn)
@@ -883,8 +872,6 @@ function mountGame(session) {
     })
 
     // ============ HIT MARKER ============
-    // qualquer kill/evento de acerto vira o "X" rápido na mira. Kills ficam vermelhos.
-    // (hits SEM kill só aparecem se o combat.js devolver hitsLog — ver bloco abaixo.)
     if (events.enemyKills > 0 || events.bonusKillPoints > 0 || events.goldenSpecialHit || events.bossDefeated) {
       hud.hitMarker(true)
     } else if (events.hitsLog && events.hitsLog.length > 0) {
@@ -904,9 +891,6 @@ function mountGame(session) {
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
-    // defensivo: só roda se o combat.js devolver hitsLog (com { worldPos, damage, points,
-    // killed, isHoming }). Enquanto o combat.js não tiver isso, esse bloco é ignorado e o
-    // resto do HUD funciona normalmente.
     if (events.hitsLog && events.hitsLog.length > 0) {
       for (const h of events.hitsLog) {
         const ndcH = h.worldPos.project(camera)
@@ -973,24 +957,24 @@ function mountGame(session) {
       phaseTimer = FEEDBACK_MS
     }
 
+    // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============
     if (events.enemyHits > 0 && !player.isInvincible() && !godMode) {
       hitShakeTimer = HIT_SHAKE_DURATION_MS
-      hud.damageFlash()
-
-      // direção aproximada do dano — o combat ainda não devolve a origem do projétil, então
-      // chuta pra frente da nave
-      const originApprox = playerPos.clone().addScaledVector(noseFrame.forward, 30)
-      const ndcDir = originApprox.project(camera)
-      hud.showDamageDirection(
-        THREE.MathUtils.clamp((ndcDir.x + 1) / 2, 0, 1),
-        THREE.MathUtils.clamp((1 - ndcDir.y) / 2, 0, 1),
-      )
 
       const result = player.takeDamage()
+
       if (result.absorbedByShield) {
+        // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----
+        hud.showShieldBlock()
         effects.shockwave(playerPos, 0x4da6ff, 0.6)
         if (result.shieldBroke) effects.glassShatter(playerPos, 0x4da6ff)
-      } else if (result.outOfLives) {
+      } else {
+        // ---- dano DIRETO na vida: faixa vermelha nas laterais + flash rápido ----
+        hud.showDamageSide()
+        hud.damageFlash()
+      }
+
+      if (result.outOfLives) {
         endSector()
         return
       }
@@ -1118,9 +1102,6 @@ function mountGame(session) {
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax())
 
-    // ============ VIGNETTE DE VIDA BAIXA ============
-    // 0 = vida ok (invisível), 1 = crítico. A partir de 40% da vida máxima já começa a
-    // aparecer; a 0 de vida fica totalmente vermelho. Suavização é via CSS no hud.js.
     hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 
     if (phase === 'bossFight') {
