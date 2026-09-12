@@ -7,6 +7,7 @@ export const DEBUG_ACTIONS = [
   { id: 'spawnBonus', label: 'Spawnar alvo bônus' },
   { id: 'spawnGolden', label: 'Spawnar especial dourado' },
   { id: 'spawnTank', label: 'Spawnar inimigo tanque (5 hp)' },
+  { id: 'spawnMiniSwarm', label: 'Spawnar fila de mini-inimigos' },
   { id: 'forceCorrect', label: 'Forçar acerto da pergunta' },
   { id: 'forceWrong', label: 'Forçar erro da pergunta' },
   { id: 'addScore', label: '+100 pontos' },

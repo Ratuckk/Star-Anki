@@ -81,13 +81,38 @@ const BOSS_EXTRA_ENEMIES_STEP = 1
 const BOSS_EXTRA_ENEMIES_CAP = 6
 const BOSS_DIFFICULTY_CAP = 5
 
+// intervalo de spawn do modo ARENA (goldenArena/bossBuildup/bossFight) — o modo normal (rail)
+// não usa mais isso, tem taxa fixa própria (ver NORMAL_SPAWN_* abaixo). Ainda encolhe com erro
+// via applyDifficulty(), então a arena continua ficando mais intensa conforme a sessão avança.
 const ENEMY_INTERVAL_MIN_BASE = 900
 const ENEMY_INTERVAL_MAX_BASE = 1500
 const ENEMY_INTERVAL_FLOOR = 350
 const ENEMY_INTERVAL_STEP = 70
 const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
-const WRONG_ANSWER_EXTRA_ENEMIES = 2
+
+// ============ FASE 4: TETO DE INIMIGOS E TAXA DE SPAWN DO MODO NORMAL ============
+// pedido literal: "não permita que passe de 10 inimigos na tela normal e 20 no all-range mode,
+// esse limite aumenta em 1 para cada pergunta errada" — substitui o "+2 inimigos na hora" antigo
+// (WRONG_ANSWER_EXTRA_ENEMIES). O teto NUNCA reseta durante a sessão, só cresce (confirmado com
+// o usuário). Conta só inimigos vermelhos comuns (kind 'red') — mini-inimigos ficam de fora.
+const ENEMY_CAP_NORMAL_BASE = 10
+const ENEMY_CAP_ARENA_BASE = 20
+const ENEMY_CAP_STEP_PER_ERROR = 1
+
+// pedido literal: "a taxa de Spawn de inimigos deve ser de spawnar aleatoriamente 1 a 3
+// inimigos a cada 7 segundos. isso é para o modo normal" — substitui totalmente o sistema de
+// intervalo variável (ENEMY_INTERVAL_*) só no modo normal (confirmado com o usuário).
+const NORMAL_SPAWN_INTERVAL_MS = 7000
+const NORMAL_SPAWN_MIN_COUNT = 1
+const NORMAL_SPAWN_MAX_COUNT = 3
+// pedido literal: "pare de gerar eles toda vez que o tempo restante para uma nova pergunta for
+// menor que 8 segundos" — confirmado que vale pra TUDO que gera coisa nova no modo normal
+// (inimigo comum, mini-fila, bônus verde, gatilho do dourado), não só o inimigo comum.
+const NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS = 8000
+// chance de, no lugar do lote normal de 1-3, vir uma fila de mini-inimigos (confirmado: gatilho
+// é "chance a cada tick do spawn normal", não um timer próprio separado)
+const MINI_SWARM_CHANCE = 0.22
 
 const BONUS_INTERVAL_MIN = 9000
 const BONUS_INTERVAL_MAX = 16000
@@ -408,6 +433,16 @@ function mountGame(session) {
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
 
+  // teto de inimigos (Fase 4): incremento acumulado por erro, somado à base de 10 (normal) ou
+  // 20 (arena) em currentEnemyCap() — nunca reseta durante a sessão, só cresce
+  let enemyCap = 0
+  // contador pro lote de spawn do modo normal (1-3 inimigos a cada NORMAL_SPAWN_INTERVAL_MS)
+  let normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
+
+  function currentEnemyCap() {
+    return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + enemyCap
+  }
+
   function randomEnemyInterval() {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
   }
@@ -578,12 +613,14 @@ function mountGame(session) {
   }
 
   function applyDifficulty() {
+    // intervalo de spawn da ARENA ainda encolhe com erro (modo normal não usa mais isso)
     enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, enemyIntervalMin - ENEMY_INTERVAL_STEP)
     enemyIntervalMax = Math.max(enemyIntervalMin + 150, enemyIntervalMax - ENEMY_INTERVAL_STEP)
     enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, enemyAggression + ENEMY_AGGRESSION_STEP)
     combat.setEnemyAggressiveness(enemyAggression)
-    // cada erro/timeout escala a sessão: +2 inimigos na hora, além do intervalo/agressividade
-    for (let i = 0; i < WRONG_ANSWER_EXTRA_ENEMIES; i += 1) combat.spawnEnemy()
+    // cada erro/timeout sobe o teto de inimigos em tela permanentemente (substitui o antigo
+    // "+2 inimigos na hora") — confirmado com o usuário, nunca reseta durante a sessão
+    enemyCap += ENEMY_CAP_STEP_PER_ERROR
   }
 
   function applyBossDifficulty() {
@@ -607,6 +644,7 @@ function mountGame(session) {
     isReviewQuestion = (history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
     cycleTimer = isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
     enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+    normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
     bonusTimer = randomBonusInterval()
     rail.setAdvancing(true)
     hud.setQuestion(null)
@@ -1128,17 +1166,37 @@ function mountGame(session) {
     }
     rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
 
-    if (phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup') {
+    if (phase === 'goldenArena' || phase === 'bossBuildup') {
+      // all-range: mantém o sistema de intervalo antigo (encolhe com erro via applyDifficulty),
+      // só ganhou o teto de 20 — a taxa fixa de 1-3/7s abaixo é exclusiva do modo normal
       enemyTimer -= dt * 1000
       if (enemyTimer <= 0) {
-        if (phase === 'combat' && Math.random() < TIME_ENEMY_SPAWN_CHANCE) combat.spawnTimeEnemy()
-        else combat.spawnEnemy()
+        if (combat.getEnemyCount() < currentEnemyCap()) combat.spawnEnemy()
         enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+      }
+    } else if (phase === 'combat') {
+      // modo normal: lote fixo de 1-3 inimigos a cada 7s, respeitando o teto de 10 (+1/erro) e
+      // pausando nos últimos 8s antes da próxima pergunta (cycleTimer <= 8000)
+      if (cycleTimer > NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS) {
+        normalSpawnTimer -= dt * 1000
+        if (normalSpawnTimer <= 0) {
+          normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
+          if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
+            combat.spawnTimeEnemy()
+          } else if (Math.random() < MINI_SWARM_CHANCE) {
+            combat.spawnMiniSwarm()
+          } else {
+            const room = Math.max(0, currentEnemyCap() - combat.getEnemyCount())
+            const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
+            const count = Math.min(room, roll)
+            for (let i = 0; i < count; i += 1) combat.spawnEnemy()
+          }
+        }
       }
     }
 
     if (phase === 'combat') {
-      if (!isBossCycle) {
+      if (!isBossCycle && cycleTimer > NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS) {
         bonusTimer -= dt * 1000
         if (bonusTimer <= 0) {
           combat.spawnBonusTarget()
@@ -1291,6 +1349,7 @@ function mountGame(session) {
     spawnBonus: () => combat.spawnBonusTarget(),
     spawnGolden: () => combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX }),
     spawnTank: () => combat.spawnTankEnemy(),
+    spawnMiniSwarm: () => combat.spawnMiniSwarm(),
     forceCorrect: () => forceAnswerOutcome(true),
     forceWrong: () => forceAnswerOutcome(false),
     addScore: () => { session.score += 100 },

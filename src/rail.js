@@ -338,6 +338,9 @@ export function createRailController(camera, scene) {
     getPlayerLateralVelocity: () => ({ x: velX, y: velY }),
     getArenaCenter: () => arenaCenter.clone(),
     isArena: () => mode === 'arena',
+    // velocidade real atual do jogador no all-range (já incluindo propulsor/repulsor ativos) —
+    // usada pra limitar a velocidade dos inimigos em arena a no máximo metade disso (Fase 4)
+    getArenaSpeed: () => ARENA_SPEED * speedMultiplier,
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },

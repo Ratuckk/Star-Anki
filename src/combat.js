@@ -69,6 +69,47 @@ const ENEMY_ARENA_SPAWN_MIN = 70
 const ENEMY_ARENA_SPAWN_MAX = 160
 const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
+// ============ FASE 4: velocidade aleatória + movimento mais suave/radial em arena ============
+// pedido literal: "faça ser aleatório a posição deles no mapa... eles tem que vir até o jogador
+// para o atacar, mas em velocidades aleatórias, mas não mais rápido que a metade da velocidade
+// do jogador" — posição já era aleatória (randomSpawnAroundArena, v0.18.0); o que falta é a
+// velocidade. Cada inimigo sorteia um "speedFactor" (fração do teto) uma vez, no spawn; o teto
+// em si (metade da velocidade REAL do jogador) é recalculado todo frame, então reage ao boost.
+const ENEMY_ARENA_SPEED_FACTOR_MIN = 0.35
+const ENEMY_ARENA_SPEED_FACTOR_MAX = 1.0
+// direção de movimento suavizada por interpolação (não vira instantaneamente rumo ao jogador) —
+// "movimento mais suave" pedido
+const ENEMY_TURN_RATE = 1.6
+// "um estado radial às vezes para inimigos aleatórios, no caso, nem todos fazem isso, decidido
+// aleatoriamente" (confirmado: radial = órbita ao redor do jogador antes de seguir perseguindo)
+const ENEMY_ORBIT_CHANCE = 0.3
+const ENEMY_ORBIT_DURATION_MIN = 1.5
+const ENEMY_ORBIT_DURATION_MAX = 3.5
+const ENEMY_ORBIT_RADIUS_MIN = 14
+const ENEMY_ORBIT_RADIUS_MAX = 26
+const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
+
+// pedido literal: "Nunca permita que os inimigos disparem projetos bem perto do jogador"
+const ENEMY_FIRE_MIN_DISTANCE = 14
+
+// ============ FASE 4: mini-inimigos vermelhos (fila/enxame, só modo normal) ============
+// pedido literal: "mini inimigos vermelhos (que tem 30% menos tamanho que o inimigo genérico
+// vermelho normal) que se movem rapidamente e são destruídos com 1 hit só... surgem como vários
+// em uma fila de 5 a 10 que fica se movimentando pela tela até se jogarem em direção ao jogador
+// caso ele não os destrua rapidamente, com eles se espalhando pra ser difícil de desviar"
+const MINI_ENEMY_SCALE = 0.7 // 30% menor que o ENEMY_COLOR normal
+const MINI_ENEMY_HIT_RADIUS = ENEMY_HIT_RADIUS * MINI_ENEMY_SCALE
+const MINI_SWARM_MIN_COUNT = 5
+const MINI_SWARM_MAX_COUNT = 10
+const MINI_SWARM_SPACING = 2 // espaço lateral entre cada um na formação em fila
+const MINI_SWARM_PATROL_SPEED = 10 // velocidade da fila "passeando" antes de mergulhar
+const MINI_SWARM_PATROL_AMPLITUDE = 10 // quão longe a fila anda de um lado a outro
+const MINI_SWARM_PATROL_DURATION_MIN = 1.6
+const MINI_SWARM_PATROL_DURATION_MAX = 2.8
+const MINI_SWARM_DIVE_SPEED = 22 // bem mais rápido que o inimigo comum ao se jogar no jogador
+const MINI_SWARM_DIVE_SPREAD = 7 // dispersão lateral aleatória de cada um ao mergulhar
+const MINI_SWARM_DIVE_MAX_S = 3 // tempo máximo mergulhando antes de sumir sozinho (segurança)
+
 const TANK_ENEMY_COLOR = 0xff9d4d
 const TANK_ENEMY_SCALE = 1.6
 const TANK_ENEMY_DEFAULT_HP = 5
@@ -358,6 +399,7 @@ export function createCombatSystem(scene, rail, effects = null) {
   function hitRadiusFor(enemy) {
     if (enemy.kind === 'boss') return BOSS_ENEMY_HIT_RADIUS
     if (enemy.kind === 'time') return TIME_ENEMY_HIT_RADIUS
+    if (enemy.kind === 'miniSwarm') return MINI_ENEMY_HIT_RADIUS
     return ENEMY_HIT_RADIUS
   }
 
@@ -659,16 +701,78 @@ export function createCombatSystem(scene, rail, effects = null) {
         }
       }
 
+      // fila de mini-inimigos (Fase 4): patrulha balançando de um lado a outro por um tempo,
+      // depois mergulha reto em direção a um ponto perto do jogador (com desvio pra se espalhar).
+      // Nunca atira — a "ameaça" deles é o mergulho em grupo, não projétil.
+      if (enemy.kind === 'miniSwarm') {
+        if (enemy.swarmState === 'patrol') {
+          enemy.patrolTimer -= dt
+          const wobble = Math.sin(elapsed * 2 + enemy.patrolPhase) * MINI_SWARM_PATROL_AMPLITUDE
+          const pos = enemy.patrolBase.clone()
+            .addScaledVector(frame.right, enemy.formationOffset + wobble)
+          enemy.mesh.position.lerp(pos, Math.min(1, MINI_SWARM_PATROL_SPEED * dt * 0.3))
+          if (enemy.patrolTimer <= 0) {
+            enemy.swarmState = 'dive'
+            const spread = (Math.random() * 2 - 1) * MINI_SWARM_DIVE_SPREAD
+            enemy.diveTarget = playerPosition.clone().addScaledVector(frame.right, spread)
+          }
+        } else {
+          enemy.diveElapsed += dt
+          const toTarget = enemy.diveTarget.clone().sub(enemy.mesh.position)
+          if (toTarget.lengthSq() > 1e-4) {
+            toTarget.normalize()
+            enemy.mesh.position.addScaledVector(toTarget, MINI_SWARM_DIVE_SPEED * dt)
+            enemy.mesh.lookAt(enemy.mesh.position.clone().add(toTarget))
+          }
+          // passou reto sem colidir (ou já mergulhando há tempo demais) — some, "não estamos
+          // mais vendo eles"
+          const relative = enemy.mesh.position.clone().sub(frame.position)
+          if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || relative.dot(frame.forward) < PASS_BEHIND) {
+            removeEnemy(enemy)
+            continue
+          }
+        }
+        continue
+      }
+
       // em modo arena, inimigos perseguem o jogador ativamente — não há trilho fixo pra "passar
       // por eles" como no modo normal, então precisam se mover até a nave por conta própria.
       // Chefe sempre persegue, mesmo fora de arena (não deveria existir fora dela, mas por
       // segurança o comportamento fica consistente).
-      if (inArena || enemy.kind === 'boss') {
-        const chaseSpeed = enemy.kind === 'boss' ? BOSS_ENEMY_CHASE_SPEED : ENEMY_CHASE_SPEED
+      if (inArena && enemy.kind !== 'boss') {
+        // velocidade aleatória por inimigo (sorteada uma vez no spawn), sempre recalculada como
+        // fração do teto atual (metade da velocidade REAL do jogador, reage a boost) — pedido
+        const speedCap = rail.getArenaSpeed() * 0.5
+        const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
+
+        let desiredDir
+        if (enemy.orbiting && enemy.orbitTimer > 0) {
+          // "estado radial": orbita ao redor do jogador por um tempo em vez de vir direto
+          enemy.orbitTimer -= dt
+          enemy.orbitAngle += enemy.orbitDir * ENEMY_ORBIT_ANGULAR_SPEED * dt
+          const orbitPoint = playerPosition.clone()
+            .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * enemy.orbitRadius)
+            .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * enemy.orbitRadius)
+          desiredDir = orbitPoint.sub(enemy.mesh.position)
+        } else {
+          desiredDir = playerPosition.clone().sub(enemy.mesh.position)
+        }
+
+        if (desiredDir.lengthSq() > 1e-4) {
+          desiredDir.normalize()
+          // suaviza a mudança de direção em vez de virar instantaneamente pro alvo — "movimento
+          // mais suave" pedido; sem isso todo inimigo em arena vira uma linha reta e travada
+          if (!enemy.moveDir) enemy.moveDir = desiredDir.clone()
+          enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
+          if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
+          enemy.mesh.position.addScaledVector(enemy.moveDir, chaseSpeed * dt)
+          enemy.mesh.lookAt(enemy.mesh.position.clone().add(enemy.moveDir))
+        }
+      } else if (enemy.kind === 'boss') {
         const toPlayer = playerPosition.clone().sub(enemy.mesh.position)
         if (toPlayer.lengthSq() > 1e-4) {
           toPlayer.normalize()
-          enemy.mesh.position.addScaledVector(toPlayer, chaseSpeed * dt)
+          enemy.mesh.position.addScaledVector(toPlayer, BOSS_ENEMY_CHASE_SPEED * dt)
           enemy.mesh.lookAt(enemy.mesh.position.clone().add(toPlayer))
         }
       } else {
@@ -681,7 +785,9 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       enemy.fireTimer -= dt
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
-      const inFireRange = inArena || enemy.kind === 'boss' || relativeForward < ENEMY_FIRE_RANGE
+      const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
+      // nunca dispara muito perto do jogador — pedido literal
+      const inFireRange = (inArena || enemy.kind === 'boss' || relativeForward < ENEMY_FIRE_RANGE) && distToPlayer > ENEMY_FIRE_MIN_DISTANCE
       if (enemy.fireTimer <= 0 && inFireRange) {
         if (enemy.kind === 'boss') fireBossVolley(enemy, playerPosition)
         else fireEnemyProjectile(enemy, playerPosition)
@@ -798,7 +904,56 @@ export function createCombatSystem(scene, rail, effects = null) {
       mesh.position.copy(position)
       mesh.rotation.x = Math.PI / 2
       scene.add(mesh)
-      enemies.push({ id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: randomEnemyFireInterval() })
+      // speedFactor/órbita só valem em modo arena (ver updateEnemies) — sorteados uma vez aqui
+      // pra cada inimigo se mover de um jeito um pouco diferente dos outros (Fase 4)
+      const orbiting = Math.random() < ENEMY_ORBIT_CHANCE
+      enemies.push({
+        id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: randomEnemyFireInterval(),
+        speedFactor: ENEMY_ARENA_SPEED_FACTOR_MIN + Math.random() * (ENEMY_ARENA_SPEED_FACTOR_MAX - ENEMY_ARENA_SPEED_FACTOR_MIN),
+        orbiting,
+        orbitTimer: orbiting ? ENEMY_ORBIT_DURATION_MIN + Math.random() * (ENEMY_ORBIT_DURATION_MAX - ENEMY_ORBIT_DURATION_MIN) : 0,
+        orbitRadius: ENEMY_ORBIT_RADIUS_MIN + Math.random() * (ENEMY_ORBIT_RADIUS_MAX - ENEMY_ORBIT_RADIUS_MIN),
+        orbitAngle: Math.random() * Math.PI * 2,
+        orbitDir: Math.random() < 0.5 ? 1 : -1,
+        moveDir: null,
+      })
+    },
+
+    // conta só os inimigos vermelhos comuns (kind 'red') — é o que o teto de 10/20 da Fase 4
+    // controla; mini-inimigos, ampulheta, tanque de debug e chefe ficam de fora de propósito
+    getEnemyCount() {
+      return enemies.reduce((n, e) => n + (e.kind === 'red' ? 1 : 0), 0)
+    },
+
+    // fila de mini-inimigos vermelhos (30% menores, 1 hp, rápidos) — só existe no modo normal
+    // (rail), nunca em arena. "Patrulham" balançando de um lado a outro por um tempo e depois
+    // mergulham em direção ao jogador, cada um com um desvio lateral aleatório pra se espalhar.
+    spawnMiniSwarm() {
+      if (rail.isArena()) return
+      const count = MINI_SWARM_MIN_COUNT + Math.floor(Math.random() * (MINI_SWARM_MAX_COUNT - MINI_SWARM_MIN_COUNT + 1))
+      const base = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
+      const frame = rail.getFrameAt(0)
+      const patrolDuration = MINI_SWARM_PATROL_DURATION_MIN + Math.random() * (MINI_SWARM_PATROL_DURATION_MAX - MINI_SWARM_PATROL_DURATION_MIN)
+      const patrolPhase = Math.random() * Math.PI * 2
+      for (let i = 0; i < count; i += 1) {
+        const formationOffset = (i - (count - 1) / 2) * MINI_SWARM_SPACING
+        const position = base.clone().addScaledVector(frame.right, formationOffset)
+        const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial)
+        mesh.position.copy(position)
+        mesh.rotation.x = Math.PI / 2
+        mesh.scale.setScalar(MINI_ENEMY_SCALE)
+        scene.add(mesh)
+        enemies.push({
+          id: nextEnemyId++, mesh, kind: 'miniSwarm', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: Infinity,
+          swarmState: 'patrol',
+          formationOffset,
+          patrolBase: base.clone(),
+          patrolPhase,
+          patrolTimer: patrolDuration,
+          diveTarget: null,
+          diveElapsed: 0,
+        })
+      }
     },
 
     spawnTimeEnemy() {

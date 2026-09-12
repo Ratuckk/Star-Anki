@@ -26,6 +26,41 @@ Antes de começar a Fase 3, o usuário pediu explicitamente: *"antes de tudo eu 
 
 **Versão**: v0.22.1 → v0.22.2.
 
+## Fase 4 — Motor de spawn e IA de inimigos — v0.24.0
+
+Pedido literal (bloco GAMEPLAY): *"faça uma grande mudança no motor de Spawn do jogo, não permita que passe de 10 inimigos na tela normal e 20 no all-range mode, esse limite aumenta em 1 para cada pergunta errada. Quanto a geração de inimigos, pare de gerar eles toda vez que o tempo restante para uma nova pergunta for menor que 8 segundos."* + *"Quanto o Spawn de inimigos no all-range mode, faça ser aleatório a posição deles no mapa ao invés de perto do jogador, eles tem que vir até o jogador para o atacar, mas em velocidades aleatórias, mas não mais rápido que a metade da velocidade do jogador."* + *"Adicione mini inimigos vermelhos (que tem 30% menos tamanho...) que se movem rapidamente e são destruídos com 1 hit só. Eles só devem existir no modo de voo normal... surgem como vários em uma fila de 5 a 10 que fica se movimentando pela tela até se jogarem em direção ao jogador caso ele não os destrua rapidamente, com eles se espalhando"* + *"A taxa de Spawn de inimigos deve ser de spawnar aleatoriamente 1 a 3 inimigos a cada 7 segundos. isso é para o modo normal. inclusive, caso o inimigo passar pelo jogador, sem colidir, ele deve se destruir/sumir automaticamente"* + *"Nunca permita que os inimigos disparem projetos bem perto do jogador."* + *"Deixe o movimento dos inimigos mais suave e aleatório, um estado radial as vezes para inimigos aleatórios, no caso, nem todos fazem isso, decidido aleatoriamente."*
+
+Antes de tocar em código, 2 rodadas de `AskUserQuestion` (8 perguntas) pra resolver ambiguidades reais de arquitetura (mesmo padrão da Fase 3). Respostas do usuário, citação literal das escolhas:
+
+- **Teto 10/20 substitui o "+2 inimigos na hora" da Fase A** (não convivem).
+- **Taxa "1-3 a cada 7s" substitui totalmente** o sistema de intervalo variável antigo (900-1500ms, encolhendo com erro) — mas só no modo normal.
+- **O teto nunca reseta** — "vale a run toda", cada erro soma +1 pra sempre.
+- **Mini-inimigos ficam à parte do teto** de 10 — podem surgir mesmo com a tela cheia.
+- **Gatilho da fila de mini-inimigos**: chance a cada tick do spawn normal de 7s (não um timer próprio separado).
+- **"Estado radial"**: órbita ao redor do JOGADOR (não de um ponto fixo).
+- **Pausa dos últimos 8s**: vale pra tudo que gera coisa nova no modo normal — inimigo comum, mini-fila, bônus verde E o gatilho do dourado, não só o inimigo comum.
+- **Velocidade de referência no all-range**: a velocidade REAL atual do jogador (incluindo propulsor/repulsor ativos), não uma constante fixa — os inimigos reagem ao boost do jogador também.
+
+**Implementação (`main.js`)**:
+- Teto de inimigos: `enemyCap` (incremento por erro, nunca reseta) somado à base 10 (`ENEMY_CAP_NORMAL_BASE`) ou 20 (`ENEMY_CAP_ARENA_BASE`) em `currentEnemyCap()`, conforme `rail.isArena()`. `applyDifficulty()` trocou o antigo "+2 inimigos na hora" (`WRONG_ANSWER_EXTRA_ENEMIES`, removido) por `enemyCap += 1`; o intervalo de spawn da ARENA (`enemyIntervalMin/Max`) continua encolhendo com erro como antes — só o modo normal parou de usar esse sistema.
+- **Confirmado por `rail.enterArena()`**: `bossBuildup` (a caçada de 90s do chefe) também é modo arena, não modo normal — então usa o teto de 20 e o sistema de intervalo antigo, igual `goldenArena`/`bossFight`. Só `phase === 'combat'` é "modo normal" de verdade.
+- **Modo normal**: `normalSpawnTimer` (7000ms) substitui `enemyTimer` só nessa fase — a cada tick, sorteia 1-3 inimigos (`NORMAL_SPAWN_MIN/MAX_COUNT`) respeitando o espaço livre até o teto (`Math.min(room, roll)`), com chance de vir uma fila de mini-inimigos (`MINI_SWARM_CHANCE = 22%`) ou um redutor de tempo no lugar do lote normal. Só roda enquanto `cycleTimer > 8000` (`NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS`) — pausa nos últimos 8s antes da próxima pergunta.
+- **Pausa dos últimos 8s** também aplicada ao `bonusTimer`/`goldenTimer` (alvo bônus verde e gatilho do dourado), condicionados ao mesmo `cycleTimer > 8000`, por pedido confirmado ("tudo que gera coisa nova").
+
+**Implementação (`combat.js`)**:
+- `getEnemyCount()`: conta só inimigos `kind: 'red'` (o teto de 10/20 não considera ampulheta, tanque de debug, chefe ou mini-inimigos, de propósito).
+- **Velocidade aleatória em arena**: cada inimigo sorteia um `speedFactor` (0.35-1.0) uma vez no spawn; a velocidade real usada em `updateEnemies` é `speedFactor * (rail.getArenaSpeed() * 0.5)` — recalculada todo frame, então reage ao boost do jogador (`rail.getArenaSpeed()`, novo getter em `rail.js` = `ARENA_SPEED * speedMultiplier`). A posição aleatória "longe do jogador" já existia desde a v0.18.0 (`randomSpawnAroundArena` usa o CENTRO da arena, não o jogador) — não precisou mudar.
+- **Movimento mais suave + "estado radial"**: `enemy.moveDir` interpola (lerp) rumo à direção desejada em vez de virar instantaneamente (`ENEMY_TURN_RATE`); 30% dos inimigos (`ENEMY_ORBIT_CHANCE`, sorteado no spawn) entram num estado de órbita ao redor do jogador por 1.5-3.5s antes de perseguir direto, girando num raio de 14-26 unidades.
+- **Nunca atira perto do jogador**: gate adicional `distToPlayer > ENEMY_FIRE_MIN_DISTANCE` (14 unidades) antes de qualquer `fireEnemyProjectile`/`fireBossVolley`.
+- **Mini-inimigos** (`spawnMiniSwarm()`, kind `'miniSwarm'`): 5-10 unidades (`MINI_SWARM_MIN/MAX_COUNT`), 30% menores (`MINI_ENEMY_SCALE = 0.7`, hitbox proporcional), 1 hp, nunca atiram. Nascem em formação de fila (offset lateral fixo por posição na fila) e "patrulham" balançando de um lado a outro (seno + a própria fila andando) por 1.6-2.8s (`patrolTimer`), depois mudam pra `swarmState: 'dive'` e mergulham em linha reta bem mais rápido (`MINI_SWARM_DIVE_SPEED = 22`) rumo a um ponto perto do jogador com desvio lateral aleatório por unidade (`MINI_SWARM_DIVE_SPREAD`) — cada um mira um pouco diferente, "se espalhando". Se passar reto sem colidir (ou mergulhar por mais de 3s), some sozinho.
+- **"Inimigo que passa sem colidir some"**: já existia desde antes desta fase (`PASS_BEHIND` no modo normal) — conferido, continua funcionando; estendido pro mesmo comportamento na fase de mergulho dos mini-inimigos.
+
+**Debug**: novo botão "Spawnar fila de mini-inimigos" (`spawnMiniSwarm`), mesmo padrão dos outros spawns manuais — usado pra testar a fila sem depender do sorteio de 22% a cada 7s.
+
+**Testado ao vivo**: `node --check` em todos os arquivos tocados e `node src/selftest.mjs` limpos. No Browser pane: spawnei a fila de mini-inimigos via debug — formação em linha renderizou corretamente, sem erro no console, permaneceu visível "balançando" com o passar do tempo real (confirmado com cliques reais intercalados, por causa do throttling de `requestAnimationFrame` sem foco real de SO já documentado em fases anteriores). **Não confirmado ao vivo** por causa desse mesmo throttling (exigiria minutos de tempo real por ciclo pra observar de verdade): a fase de mergulho dos mini-inimigos, o teto de 10/20 sendo respeitado ao longo de um ciclo completo, a pausa de spawn nos últimos 8s, e a velocidade/órbita aleatória em arena. Revisão manual de cada trecho alterado feita linha a linha como compensação.
+
+**Versão**: v0.23.0 → v0.24.0.
+
 ## Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° — v0.23.0
 
 Antes de implementar, o usuário exigiu explicitamente que eu fizesse **todas** as perguntas de confirmação que tivesse em mente, sem decidir nada por conta própria vindo de incerteza ("eu não quero que faça nenhuma ideia sua vinda de incerteza"). Fiz 3 rodadas de `AskUserQuestion` (12 perguntas no total) antes de tocar em código. Resumo do pedido literal: *"adicione o botão de prepulsor e de repulsor, usaremos o botão A para propulsão (dar um impulso para a direção) e S para repulsão (desacelerar por um intervalo). Ambos usam uma barra própria que se recarrega lentamente após a utilização. Inclusive, adicione esta carta no roguelike: Acionar propulsão faz com que você fique invencível durante seu intervalo e cause alto dano aos inimigos que colidir (5 de dano)."* + *"No all range mode, adicione a combinação de Baixo + S para fazer um summersalt... Ainda no all range mode, adicione a combinação A de propulsão + C ou Z para fazer a nave se impulsionar diretamente para a esquerda ou para direita"* + *"Adicione um cooldown de 3 segundos para cada vez que fizer o full swing, para que não fique spammando invincibilidade"* (giro completo, removido sem querer na v0.20.0, reintroduzido aqui).
@@ -93,8 +128,8 @@ Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 
 - [x] **Fase 2 — Disparo e mira** — v0.22.0.
 - [x] **Correção de 2 furos reais da Fase 2** (mira nunca implementada + hitbox nunca investigada) — v0.22.1.
 - [x] **Correção de bug real da Fase 2** (nave ainda disparava 2 projéteis) + tag de versão presa — v0.22.2.
-- [x] **Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° reintroduzido** — v0.23.0 (esta entrega, detalhada acima).
-- [ ] Fase 4 — Motor de spawn e IA de inimigos.
+- [x] **Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° reintroduzido** — v0.23.0.
+- [x] **Fase 4 — Motor de spawn e IA de inimigos** — v0.24.0 (esta entrega, detalhada abaixo).
 - [ ] Fase 5 — Chefe (blocos-pergunta de verdade) e transições (all-range/dourado/chefe).
 - [ ] Fase 6 — HUD, câmera e UI de pergunta/carta centralizadas com pausa total.
 - [ ] Fase 7 — Visual restante (nave, propulsão, dano, escudo) + os 2 itens antigos do Fase C.
