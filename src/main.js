@@ -3,6 +3,7 @@ import { buildDeck, exportTagsTsv, parseAnkiExport } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem, DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
+import { createEnemiesSystem } from './enemies.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
@@ -299,7 +300,8 @@ function mountGame(session) {
 
   const rail = createRailController(camera, scene)
   const effects = createEffectsSystem(scene, { grid })
-  const combat = createCombatSystem(scene, rail, effects)
+  const enemies = createEnemiesSystem(scene, rail, effects)
+  const combat = createCombatSystem(scene, rail, effects, enemies)
   const input = createInputState()
 
   const bindings = getBindings()
