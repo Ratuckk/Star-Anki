@@ -4,6 +4,18 @@
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados". Criei um do zero na v0.15.0; não achei nem tive confirmação de onde ficaria um segundo. Perguntar ao usuário se surgir a dúvida de novo.
 - [x] Fase A — combate e precisão (giro-desvio, lock-on por varredura, dourado especial com hp/IA, +2 inimigos por erro) — v0.19.0.
 - [x] Ajuste fino do tiro carregado (dano 3x, tamanho +100%, wind-up mínimo de 1s) — v0.19.1.
+- [x] Barra e glow de carga só aparecem depois do wind-up — v0.19.2.
+
+## Barra e glow de carga só depois do wind-up — v0.19.2
+
+Correção de sequência da v0.19.1: reduzir o wind-up pra 1s não bastava, o feedback visual (barra `hud-charge-bar` e o glow azul `effects.setChargeGlow`) ainda crescia desde o instante 0 do botão pressionado (decisão antiga da v0.18.0, documentada como "feedback imediato" — o usuário decidiu que agora é melhor esconder até passar o wind-up, senão o jogador vê a barra crescer sem saber que aquele início nem conta como carga de verdade).
+
+- `main.js`: `hud.setChargeIndicator`/`effects.setChargeGlow` só são chamados com `active=true` quando `isCharging` (== `fireHeldMs >= homingChargeMinMs`) já é verdade; antes disso ficam explicitamente desligados a cada frame. `chargeFrac` passou a ser calculado relativo ao pós-wind-up (`(fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs)`) em vez de `fireHeldMs / homingChargeMaxMs` — a barra agora sempre começa em 0% no instante em que aparece, em vez de já nascer com uns 25% (proporção do wind-up já decorrido sobre a carga máxima).
+- Lock-on por varredura (`combat.sweepLockOn`) continua ativo o tempo todo que o botão está segurado, sem esperar o wind-up — não foi pedido pra mudar, e faz sentido deixar o jogador começar a "mirar" cedo mesmo antes da barra aparecer.
+
+**Testado**: disparei um `keydown` sintético sustentado e amostrei o estado do `.hud-charge-bar` a cada ~200ms — ficou `hidden` até ~820ms e apareceu já enchendo a partir de ~1020ms (bate com o wind-up de 1000ms), confirmando visualmente que a barra não nasce mais no instante 0. `node --check` e `selftest.mjs` limpos.
+
+**Versão**: v0.19.1 → v0.19.2.
 
 ## Ajuste fino do tiro carregado — v0.19.1
 

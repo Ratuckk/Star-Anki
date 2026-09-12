@@ -868,16 +868,20 @@ function mountGame(session) {
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
     // ============ TIRO / TIRO TELEGUIADO CARREGADO ============
-    // o glow visual cresce DESDE O PRIMEIRO INSTANTE que o botão é pressionado (feedback
-    // imediato) — só o efeito de disparo automático normal é suprimido assim que a carga
-    // ultrapassa homingChargeMinMs (segurando além disso, dispara só o teleguiado ao soltar).
+    // a barra e o glow visual só aparecem DEPOIS do wind-up (fireHeldMs >= homingChargeMinMs)
+    // — antes disso o botão segurado ainda está só disparando normal, sem feedback de carga.
     const isCharging = fireHeldMs >= homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging) combat.tryFire(nosePos, fireDirection)
       fireHeldMs += dt * 1000
-      const chargeFrac = Math.min(1, fireHeldMs / homingChargeMaxMs)
-      hud.setChargeIndicator(true, chargeFrac)
-      effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
+      if (isCharging) {
+        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
+        hud.setChargeIndicator(true, chargeFrac)
+        effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
+      } else {
+        hud.setChargeIndicator(false)
+        effects.setChargeGlow(false)
+      }
 
       // varre a mira sobre inimigos o tempo todo que segura o botão (não só depois do mínimo
       // de carga) — cada um que passa pela mira fica marcado (lock-on) pro teleguiado mirar
