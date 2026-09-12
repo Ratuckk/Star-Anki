@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { buildDeck, exportTagsTsv } from './anki.js'
+import { buildDeck, exportTagsTsv, parseAnkiExport } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem, DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
@@ -7,7 +7,7 @@ import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
 import { loadHistory, saveHistory, recordResult } from './storage.js'
-import { getDeck } from './decks.js'
+import { getDeck, buildMergedDeck } from './decks.js'
 import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
@@ -135,8 +135,8 @@ const DODGE_IFRAME_GRACE_MS = 400
 const DEFLECT_RADIUS = 6
 
 let deck = null
-let deckText = null
-let currentDeckId = null
+let deckTexts = [] // textos brutos das fontes do baralho atual (1 normal, 2+ se fundido) — usados na exportação de tags, um arquivo por fonte
+let currentDeckIds = null // id único (string) ou array de ids (fusão) — usado por "jogar novamente"
 let history = loadHistory()
 let sessionResults = []
 let painelDone = false
@@ -147,9 +147,22 @@ function handlePlayDeck(deckId) {
   const built = buildDeck(entry.text)
   if (built.warning) return
 
-  currentDeckId = deckId
+  currentDeckIds = deckId
   deck = built
-  deckText = entry.text
+  deckTexts = [entry.text]
+  sessionResults = []
+  painelDone = false
+  mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
+}
+
+// fusão: mesmo fluxo do handlePlayDeck, mas com 2+ baralhos concatenados numa sessão só
+function handlePlayMergedDecks(deckIds) {
+  const merged = buildMergedDeck(deckIds)
+  if (merged.error) return
+
+  currentDeckIds = deckIds
+  deck = merged.built
+  deckTexts = merged.texts
   sessionResults = []
   painelDone = false
   mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
@@ -157,17 +170,18 @@ function handlePlayDeck(deckId) {
 
 function restart() {
   deck = null
-  deckText = null
+  deckTexts = []
   showPreGameMenu({
-    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onBack: restart }),
-    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onBack: restart, startInAdd: true }),
+    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart }),
+    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, startInAdd: true }),
     onSettings: () => showSettingsScreen({ onBack: restart }),
   })
 }
 
-// "Jogar novamente" volta direto pro mesmo baralho (sem reenviar/reselecionar) quando possível
+// "Jogar novamente" volta direto pro mesmo baralho (ou fusão) sem reenviar/reselecionar
 function playAgain() {
-  if (currentDeckId) handlePlayDeck(currentDeckId)
+  if (Array.isArray(currentDeckIds)) handlePlayMergedDecks(currentDeckIds)
+  else if (currentDeckIds) handlePlayDeck(currentDeckIds)
   else restart()
 }
 
@@ -240,15 +254,24 @@ function startPainelPractice(summary) {
   renderCard()
 }
 
+// baralho fundido = 2+ textos de origem, possivelmente com headers/formatos diferentes — exporta
+// um arquivo de tags por fonte, cada um só com os resultados dos guids que pertencem a ela
 function downloadTagsExport() {
-  const tsv = exportTagsTsv(deckText, sessionResults)
-  const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'star-anki-tags.txt'
-  link.click()
-  URL.revokeObjectURL(url)
+  deckTexts.forEach((text, i) => {
+    const { notes } = parseAnkiExport(text)
+    const guidsHere = new Set(notes.map((n) => n.guid))
+    const resultsHere = sessionResults.filter((r) => guidsHere.has(r.guid))
+    if (resultsHere.length === 0) return
+
+    const tsv = exportTagsTsv(text, resultsHere)
+    const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = deckTexts.length > 1 ? `star-anki-tags-${i + 1}.txt` : 'star-anki-tags.txt'
+    link.click()
+    URL.revokeObjectURL(url)
+  })
 }
 
 function mountGame(session) {

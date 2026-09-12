@@ -68,6 +68,29 @@ export function getDeck(id) {
   return readAll().find((d) => d.id === id) || null
 }
 
+// funde 2+ baralhos salvos numa única sessão: cada baralho é parseado com seu próprio texto
+// (podem ter headers/formatos diferentes) e as listas de cartas são concatenadas. `texts` fica
+// disponível separado pra exportação de tags depois (cada fonte exporta seu próprio arquivo).
+export function buildMergedDeck(ids) {
+  const entries = ids.map(getDeck).filter(Boolean)
+  if (entries.length < 2) return { error: 'Selecione pelo menos 2 baralhos pra fundir.' }
+
+  const builds = entries.map((entry) => ({ entry, built: buildDeck(entry.text) }))
+  const invalid = builds.find((b) => b.built.warning)
+  if (invalid) return { error: `"${invalid.entry.name}": ${invalid.built.warning}` }
+
+  return {
+    built: {
+      shooterCards: builds.flatMap((b) => b.built.shooterCards),
+      painelCards: builds.flatMap((b) => b.built.painelCards),
+      allCards: builds.flatMap((b) => b.built.allCards),
+      warning: null,
+    },
+    texts: entries.map((e) => e.text),
+    name: entries.map((e) => e.name).join(' + '),
+  }
+}
+
 export function addDeck(name, text) {
   const built = buildDeck(text)
   if (built.warning) return { error: built.warning }

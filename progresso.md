@@ -1,12 +1,44 @@
+## Processo (a partir de agora)
+
+Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
+
 ## Pendências agora
 
-- [ ] Fase B (ritmo/clareza) e Fase C (visual do trilho) — ver seção "Roadmap — próxima leva" no fim deste arquivo.
+- [ ] **Mega-pedido do usuário (VISUAL/GAMEPLAY/BARALHO/GERAL) dividido em 9 fases** — ver seção "Fases do mega-pedido" logo abaixo. Fase 1 feita nesta entrega; Fases 2-8 pendentes; Fase 9 (as "me dê ideias") só depois de tudo, por pedido explícito do usuário.
+- [ ] Itens antigos do Fase C (roadmap anterior) que o mega-pedido novo **não cobre** e continuam pendentes: (1) asset/efeito visual que deixe a neblina reconhecível como neblina; (2) inimigo ampulheta (redutor de tempo) girar visualmente e ter 3 hp (hoje tem 1 hp e fica parado). Vou encaixar isso na Fase 7 (visual) quando chegar lá.
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados". Criei um do zero na v0.15.0; não achei nem tive confirmação de onde ficaria um segundo. Perguntar ao usuário se surgir a dúvida de novo.
 - [x] Fase A — combate e precisão (giro-desvio, lock-on por varredura, dourado especial com hp/IA, +2 inimigos por erro) — v0.19.0.
 - [x] Ajuste fino do tiro carregado (dano 3x, tamanho +100%, wind-up mínimo de 1s) — v0.19.1.
 - [x] Barra e glow de carga só aparecem depois do wind-up — v0.19.2.
 - [x] Marcador de lock-on no inimigo também só depois do wind-up — v0.19.3 (não testado ao vivo, pedido explícito do usuário pra commitar direto).
 - [x] Giro-desvio (Z/C) redesenhado do zero: agora é segurar pra inclinar, não toque/duplo-toque — v0.20.0.
+
+## Fases do mega-pedido (VISUAL/GAMEPLAY/BARALHO/GERAL)
+
+Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 blocos: VISUAL, GAMEPLAY, BARALHO, GERAL) terminando com: *"quero separe por fases cada coisa. quanto as perguntas que lhe fiz neste prompt, só as faça depois que terminar todas fases. quero também que caso INCERTO, realize uma pergunta para confirmar."* Antes de dividir em fases, fiz 2 rodadas de perguntas de confirmação (`AskUserQuestion`) sobre os pontos mais arriscados de interpretar errado: mecânica de blocos-pergunta do chefe, pausa total durante perguntas, disparo padrão 1x2dano vs 2x1dano, giro completo por toque duplo (reintroduzido — eu tinha removido errado na v0.20.0), propulsor/repulsor, disparo normal seguindo a retícula, e escopo de "comentar todas variáveis". Respostas do usuário incorporadas nas fases abaixo.
+
+- [x] **Fase 1 — Baralho** — v0.21.0 (esta entrega, detalhada abaixo).
+- [ ] Fase 2 — Disparo e mira.
+- [ ] Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° reintroduzido.
+- [ ] Fase 4 — Motor de spawn e IA de inimigos.
+- [ ] Fase 5 — Chefe (blocos-pergunta de verdade) e transições (all-range/dourado/chefe).
+- [ ] Fase 6 — HUD, câmera e UI de pergunta/carta centralizadas com pausa total.
+- [ ] Fase 7 — Visual restante (nave, propulsão, dano, escudo) + os 2 itens antigos do Fase C.
+- [ ] Fase 8 — Geral (comentários de variáveis de estado/constantes; fusão de baralhos já foi feita na Fase 1).
+- [ ] Fase 9 — só depois de 1-8: responder as 4 rodadas de "me dê ideias" (efeitos visuais, variedade de inimigos, controle do all-range, composição de baralhos).
+
+## Fase 1 — Baralho — v0.21.0
+
+Pedido literal: *"Você NÃO FEZ o que eu pedi de aumentar o número de perguntas no baralho atual, o mínimo de perguntas deve ser 30. e as extras 20."* + *"No pré-jogo, permita que há uma opção de fusão de baralhos, onde junta dois baralhos junto e os utiliza na mesma sessão do jogo."*
+
+**Checagem real (não assumi nada)**: rodei `buildDeck()` direto no arquivo `decks/arquitetura-manutencao-aumentado.txt` atual (não o que estava salvo no navegador de testes antigos) e descobri que as 54 perguntas do arquivo **todas** tinham resposta curta (≤60 caracteres) — 54 classificadas como "combate" (shooter) e **0** como "painel" (extra). A regra de triagem (`triageCard` em `anki.js`, por tamanho de resposta) está correta; o problema real era falta de conteúdo com resposta mais longa/discursiva pro pool de "painel".
+
+- **20 perguntas novas de painel**: adicionei `arquitetura-painel-001` a `020` ao arquivo, com respostas mais longas e explicativas (2-3 frases, sempre >60 caracteres) sobre tópicos ainda não cobertos ou aprofundados (hierarquia de memória, RAID explicado, POST, dual-channel, pasta térmica, water cooler, 80 Plus, overclock, manutenção preventiva x corretiva, ESD, form factors, diagnóstico de PC sem imagem, beep codes, RAID x backup, DDR5, chipset, write amplification, sleep x hibernação). Confirmado via `buildDeck()`: agora são **54 combate + 20 painel = 74 total**, sem guids duplicados.
+- **Fusão de baralhos**: `decks.js` ganhou `buildMergedDeck(ids)` — pega 2+ baralhos salvos, roda `buildDeck` em cada um (podem ter headers/formatos diferentes, cada um é parseado com seu próprio texto) e concatena `shooterCards`/`painelCards`/`allCards`. `hud.js` (`showDeckManager`) ganhou um checkbox "fundir" em cada baralho válido e uma barra que aparece com 2+ baralhos salvos, habilitando "Jogar fundidos" só com 2+ marcados. `main.js` trocou a variável única `deckText`/`currentDeckId` por `deckTexts`/`currentDeckIds` (agora arrays), com `handlePlayMergedDecks` e exportação de tags (`downloadTagsExport`) rodando **uma vez por baralho de origem** (cada fonte só recebe de volta os resultados dos guids que são dela).
+
+**Descoberta importante do ambiente de teste (nova, adicione ao lado da já documentada sobre rAF throttling)**: o proxy que serve o preview (`localhost:8420` via `preview_start`) está cacheando respostas por bem mais tempo que o esperado — comparei um `fetch()` normal (retornou `Last-Modified` de ONTEM, sem o código novo) com `fetch(url, {cache: 'no-store'})` (retornou o conteúdo certo, de hoje) na mesma aba, mesmo servidor reiniciado do zero e aba nova criada. Reiniciar o servidor, dar reload forçado (Ctrl+Shift+R) e abrir aba nova **não resolveu**. Verifiquei a correção do código de outra forma: `node --check` em todos os arquivos tocados, `node src/selftest.mjs`, um `import()` nativo do Node confirmando os exports de `decks.js`, e uma simulação completa do fluxo de fusão em Node puro (com um shim de `localStorage`) confirmando 108 combate + 40 painel ao fundir 2 cópias do baralho de 54+20. Não consegui testar a UI (clique nos checkboxes, barra de fusão) num navegador de verdade nesta sessão por causa desse cache — fica registrado pro usuário testar e pra próximas sessões saberem que isso pode acontecer.
+
+**Versão**: v0.20.0 → v0.21.0.
 
 ## Giro-desvio (Z/C) redesenhado: segurar inclina, não é mais toque — v0.20.0
 

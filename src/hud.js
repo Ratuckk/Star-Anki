@@ -31,7 +31,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.20.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.21.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -64,7 +64,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
 // Gerenciador de baralhos: lista/adiciona/edita/exclui baralhos salvos e mostra preview das
 // perguntas (normais visíveis, extras ocultas atrás de um disclosure). Autocontido — lê/escreve
 // direto em decks.js, só chama pra fora nas intenções de navegação (jogar, voltar).
-export function showDeckManager({ onPlay, onBack, startInAdd = false }) {
+export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = false }) {
   showScreen('deckManager')
   const root = document.getElementById('deck-manager-screen')
 
@@ -72,6 +72,8 @@ export function showDeckManager({ onPlay, onBack, startInAdd = false }) {
   let editingId = null
   const expandedPreview = new Set()
   const expandedExtras = new Set()
+  // ids marcados pra fundir numa sessão só (checkbox por baralho na lista) — precisa de 2+
+  const selectedForMerge = new Set()
 
   render()
 
@@ -107,10 +109,35 @@ export function showDeckManager({ onPlay, onBack, startInAdd = false }) {
     for (const d of decks) list.appendChild(buildDeckCard(d))
     root.appendChild(list)
 
+    const validCount = decks.filter((d) => d.valid).length
+    if (validCount >= 2) root.appendChild(buildMergeBar())
+
     const addBtn = document.createElement('button')
     addBtn.textContent = 'Adicionar baralho'
     addBtn.addEventListener('click', () => { view = 'add'; render() })
     root.appendChild(addBtn)
+  }
+
+  // barra de fusão: some sozinha se sobrar menos de 2 baralhos válidos marcados (deck excluído
+  // enquanto marcado, por exemplo). Botão só habilita com 2+ marcados.
+  function buildMergeBar() {
+    const bar = document.createElement('div')
+    bar.className = 'deck-merge-bar'
+
+    const label = document.createElement('span')
+    label.textContent = selectedForMerge.size >= 2
+      ? `${selectedForMerge.size} baralhos marcados`
+      : 'Marque 2+ baralhos pra fundir numa sessão só'
+    bar.appendChild(label)
+
+    const mergeBtn = document.createElement('button')
+    mergeBtn.className = 'btn-small'
+    mergeBtn.textContent = 'Jogar fundidos'
+    mergeBtn.disabled = selectedForMerge.size < 2
+    mergeBtn.addEventListener('click', () => onPlayMerged([...selectedForMerge]))
+    bar.appendChild(mergeBtn)
+
+    return bar
   }
 
   function buildDeckCard(d) {
@@ -138,6 +165,20 @@ export function showDeckManager({ onPlay, onBack, startInAdd = false }) {
       playBtn.textContent = 'Jogar'
       playBtn.addEventListener('click', () => onPlay(d.id))
       btnRow.appendChild(playBtn)
+
+      const mergeLabel = document.createElement('label')
+      mergeLabel.className = 'deck-merge-checkbox'
+      const mergeCheckbox = document.createElement('input')
+      mergeCheckbox.type = 'checkbox'
+      mergeCheckbox.checked = selectedForMerge.has(d.id)
+      mergeCheckbox.addEventListener('change', () => {
+        if (mergeCheckbox.checked) selectedForMerge.add(d.id)
+        else selectedForMerge.delete(d.id)
+        render()
+      })
+      mergeLabel.appendChild(mergeCheckbox)
+      mergeLabel.appendChild(document.createTextNode(' fundir'))
+      btnRow.appendChild(mergeLabel)
     }
 
     const editBtn = document.createElement('button')
