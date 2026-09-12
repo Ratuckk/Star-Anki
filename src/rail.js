@@ -3,8 +3,8 @@ import * as THREE from 'three'
 const RAIL_SPEED = 22
 const LATERAL_SPEED = 22
 const LATERAL_ACCEL_RATE = 22
-const BOX_X = 4
-const BOX_Y = 4
+const BOX_X = 44
+const BOX_Y = 44
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
 const CAM_LAG_RATE = 5
