@@ -84,16 +84,18 @@ const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
 const ENEMY_FIRE_MIN_DISTANCE = 14
 
 // ============ FASE 4: mini-inimigos vermelhos (fila/enxame, só modo normal) ============
+// >> AJUSTADO (usuário): cor mais clara (distinta do vermelho comum) e bem mais rápidos <<
+const MINI_ENEMY_COLOR = 0xff8080 // vermelho claro (o comum é 0xff4d4d)
 const MINI_ENEMY_SCALE = 0.7 // 30% menor que o ENEMY_COLOR normal
 const MINI_ENEMY_HIT_RADIUS = ENEMY_HIT_RADIUS * MINI_ENEMY_SCALE
 const MINI_SWARM_MIN_COUNT = 5
 const MINI_SWARM_MAX_COUNT = 10
 const MINI_SWARM_SPACING = 2 // espaço lateral entre cada um na formação em fila
-const MINI_SWARM_PATROL_SPEED = 10 // velocidade da fila "passeando" antes de mergulhar
+const MINI_SWARM_PATROL_SPEED = 28 // era 10 — patrulha bem mais rápida (usuário)
 const MINI_SWARM_PATROL_AMPLITUDE = 10 // quão longe a fila anda de um lado a outro
 const MINI_SWARM_PATROL_DURATION_MIN = 1.6
 const MINI_SWARM_PATROL_DURATION_MAX = 2.8
-const MINI_SWARM_DIVE_SPEED = 22 // bem mais rápido que o inimigo comum ao se jogar no jogador
+const MINI_SWARM_DIVE_SPEED = 55 // era 22 — mergulho bem mais rápido (usuário)
 const MINI_SWARM_DIVE_SPREAD = 7 // dispersão lateral aleatória de cada um ao mergulhar
 const MINI_SWARM_DIVE_MAX_S = 3 // tempo máximo mergulhando antes de sumir sozinho (segurança)
 
@@ -178,8 +180,13 @@ export function createCombatSystem(scene, rail, effects = null) {
   wingmanGeometry.rotateX(-Math.PI / 2)
   const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
 
+  // geometria do inimigo comum: a ponta do cone aponta pro +Z local (eixo do lookAt) — o giro
+  // é "assado" aqui pra que chamar lookAt(playerPosition) faça a ponta apontar pro jogador
   const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
+  enemyGeometry.rotateX(Math.PI / 2)
   const enemyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR, flatShading: true })
+  // material próprio dos mini-inimigos, vermelho mais CLARO — distingue do inimigo comum
+  const miniEnemyMaterial = new THREE.MeshPhongMaterial({ color: MINI_ENEMY_COLOR, flatShading: true })
   const enemyProjectileGeometry = new THREE.SphereGeometry(0.35, 8, 8)
   const enemyProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a3d })
   const bonusGeometry = new THREE.DodecahedronGeometry(1.1)
@@ -679,6 +686,8 @@ export function createCombatSystem(scene, rail, effects = null) {
           const pos = enemy.patrolBase.clone()
             .addScaledVector(frame.right, enemy.formationOffset + wobble)
           enemy.mesh.position.lerp(pos, Math.min(1, MINI_SWARM_PATROL_SPEED * dt * 0.3))
+          // mini-inimigos sempre encaram o jogador, mesmo patrulhando
+          enemy.mesh.lookAt(playerPosition)
           if (enemy.patrolTimer <= 0) {
             enemy.swarmState = 'dive'
             const spread = (Math.random() * 2 - 1) * MINI_SWARM_DIVE_SPREAD
@@ -723,16 +732,21 @@ export function createCombatSystem(scene, rail, effects = null) {
           enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
           if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
           enemy.mesh.position.addScaledVector(enemy.moveDir, chaseSpeed * dt)
-          enemy.mesh.lookAt(enemy.mesh.position.clone().add(enemy.moveDir))
         }
+        // encara o jogador de verdade, não a direção de deslocamento (que diverge durante a
+        // órbita) — pedido do usuário
+        enemy.mesh.lookAt(playerPosition)
       } else if (enemy.kind === 'boss') {
         const toPlayer = playerPosition.clone().sub(enemy.mesh.position)
         if (toPlayer.lengthSq() > 1e-4) {
           toPlayer.normalize()
           enemy.mesh.position.addScaledVector(toPlayer, BOSS_ENEMY_CHASE_SPEED * dt)
-          enemy.mesh.lookAt(enemy.mesh.position.clone().add(toPlayer))
+          enemy.mesh.lookAt(playerPosition)
         }
       } else {
+        // modo trilho: inimigo comum/time/tanque sempre com a ponta virada pro jogador
+        enemy.mesh.lookAt(playerPosition)
+
         const relative = enemy.mesh.position.clone().sub(frame.position)
         if (relative.dot(frame.forward) < PASS_BEHIND) {
           removeEnemy(enemy)
@@ -853,7 +867,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
       const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial)
       mesh.position.copy(position)
-      mesh.rotation.x = Math.PI / 2
       scene.add(mesh)
       const orbiting = Math.random() < ENEMY_ORBIT_CHANCE
       enemies.push({
@@ -882,9 +895,9 @@ export function createCombatSystem(scene, rail, effects = null) {
       for (let i = 0; i < count; i += 1) {
         const formationOffset = (i - (count - 1) / 2) * MINI_SWARM_SPACING
         const position = base.clone().addScaledVector(frame.right, formationOffset)
-        const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial)
+        // material próprio (miniEnemyMaterial): vermelho mais CLARO que o inimigo comum
+        const mesh = new THREE.Mesh(enemyGeometry, miniEnemyMaterial)
         mesh.position.copy(position)
-        mesh.rotation.x = Math.PI / 2
         mesh.scale.setScalar(MINI_ENEMY_SCALE)
         scene.add(mesh)
         enemies.push({
@@ -912,7 +925,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
       const mesh = new THREE.Mesh(enemyGeometry, tankEnemyMaterial)
       mesh.position.copy(position)
-      mesh.rotation.x = Math.PI / 2
       mesh.scale.setScalar(TANK_ENEMY_SCALE)
       scene.add(mesh)
       enemies.push({ id: nextEnemyId++, mesh, kind: 'tank', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: randomEnemyFireInterval() })
@@ -922,7 +934,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       const position = randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MAX * 0.6, ENEMY_ARENA_SPAWN_MAX)
       const mesh = new THREE.Mesh(enemyGeometry, bossEnemyMaterial)
       mesh.position.copy(position)
-      mesh.rotation.x = Math.PI / 2
       mesh.scale.setScalar(BOSS_ENEMY_SCALE)
       scene.add(mesh)
       enemies.push({ id: nextEnemyId++, mesh, kind: 'boss', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1 })
@@ -1147,6 +1158,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       wingmanMaterial.dispose()
       enemyGeometry.dispose()
       enemyMaterial.dispose()
+      miniEnemyMaterial.dispose()
       enemyProjectileGeometry.dispose()
       enemyProjectileMaterial.dispose()
       bonusGeometry.dispose()

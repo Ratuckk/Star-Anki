@@ -2,6 +2,20 @@
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
 
+## Mescla de mais edições diretas do usuário em `combat.js` — v0.24.2
+
+O usuário colou o `combat.js` inteiro dele (editado em algum lugar fora desta sessão) pedindo: *"adicione estas mudanças novas e as funda com as suas novas mudanças"*. Comparei linha a linha contra o arquivo real antes de aplicar, pra não perder nem o que ele mudou nem o lock-on em etapas que eu tinha acabado de fazer:
+
+- **Mini-inimigos**: cor própria mais clara (`0xff8080`, distinta do vermelho comum `0xff4d4d`) em vez de reaproveitar o material do inimigo normal; `MINI_SWARM_PATROL_SPEED` 10→28 e `MINI_SWARM_DIVE_SPEED` 22→55 (bem mais rápidos, tanto na patrulha quanto no mergulho).
+- **Inimigos sempre encarando o jogador**: `enemyGeometry` agora nasce pré-rotacionada (`rotateX` uma vez, na criação — mesma técnica já usada no wingman) em vez de cada spawn setar `mesh.rotation.x` uma vez só e nunca mais tocar nisso. Com a geometria pré-orientada, `lookAt(playerPosition)` passou a ser chamado todo frame em TODOS os casos — modo arena (antes olhava pra direção de deslocamento, que diverge da posição real do jogador durante a órbita), chefe, mini-inimigos patrulhando, e um caso que não existia antes: inimigo comum no MODO TRILHO agora também vira pra encarar o jogador (antes ficava com orientação fixa do spawn, nunca girava).
+- **Mantido** (não estava na versão que ele colou, mas é trabalho desta sessão): `MIN_LOCK_RANGE`/`sweepLockOn(origin, direction, maxAllowed)` do lock-on em etapas — o `combat.js` dele parece ser de antes dessa mudança. Conferido que os dois convivem sem conflito.
+
+Enquanto isso, mais 2 commits diretos chegaram no `main` (`Enhance HUD with injected styles`, `Implement low health vignette and accuracy bonus in HUD`) — puxei antes de fechar. Novidades: vinheta vermelha de vida baixa (abaixo de 40% da vida máxima, `LOW_HEALTH_THRESHOLD_FRAC`), marcador de acerto na mira (hit marker), números de dano flutuantes (preparado mas defensivo — só ativa quando `combat.js` devolver um `hitsLog`, que ainda não devolve). Conferido que não conflita com nada meu. **Achado**: essas edições também regrediram a tag de versão pra v0.24.0 (provavelmente partiram de uma cópia antiga do `hud.js`) — corrigido pra v0.24.2.
+
+**Testado**: `node --check` em `combat.js`/`main.js`/`hud.js` e `node src/selftest.mjs` limpos.
+
+**Versão**: v0.24.1 → v0.24.2.
+
 ## Lock-on em etapas + edições diretas do usuário no GitHub — v0.24.1
 
 Pedido literal: *"O tiro teleguiado mira vários alvos ao invés de só 4, que é o máximo dele após carregar, e é pra começar a mirar cada alvo novo a cada 1 segundo de carga ao invés de todos de uma só vez, inclusive, deveria parar de mirar em inimigos que estão extremamente próximos ou passaram pelo jogador"*. Antes de mexer, 3 perguntas de confirmação — respostas literais do usuário: **"4 é a nova base"** (cartas "Enxame teleguiado" ainda somam +1 acima disso); **"sim, mas mude pra meio segundo, e o limite de 3 segundos no total"** (cronograma: 1º alvo trava no fim do wind-up, +1 a cada 0.5s); **"perde a marcação e libera a vaga"** (alvo que fica perto/passa pra trás solta a marcação, abrindo espaço pra outro).
