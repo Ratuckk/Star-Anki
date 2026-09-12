@@ -343,6 +343,18 @@ export function createCombatSystem(scene, rail, effects = null) {
     return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
   }
 
+  // distância de um ponto até o SEGMENTO percorrido pelo projétil no frame (não só até a
+  // posição final) — sem isso, com dt alto (lag/fps baixo) um projétil rápido anda mais que o
+  // raio de acerto num frame só e pode atravessar um inimigo sem nunca cair dentro do raio.
+  function distanceToSegment(point, segStart, segEnd) {
+    const seg = segEnd.clone().sub(segStart)
+    const lenSq = seg.lengthSq()
+    if (lenSq < 1e-8) return point.distanceTo(segStart)
+    const t = THREE.MathUtils.clamp(point.clone().sub(segStart).dot(seg) / lenSq, 0, 1)
+    const closest = segStart.clone().addScaledVector(seg, t)
+    return point.distanceTo(closest)
+  }
+
   function hitRadiusFor(enemy) {
     if (enemy.kind === 'boss') return BOSS_ENEMY_HIT_RADIUS
     if (enemy.kind === 'time') return TIME_ENEMY_HIT_RADIUS
@@ -457,6 +469,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         if (steeredDir.lengthSq() > 1e-6) projectile.velocity.copy(steeredDir.normalize().multiplyScalar(speed))
       }
 
+      const prevPos = projectile.mesh.position.clone()
       const step = projectile.velocity.clone().multiplyScalar(dt)
       projectile.mesh.position.add(step)
       projectile.traveled += step.length()
@@ -474,7 +487,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         }
       }
 
-      const targetHit = quizTargets.find((t) => !t.dying && projectile.mesh.position.distanceTo(t.mesh.position) <= QUIZ_HIT_RADIUS)
+      const targetHit = quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS)
       if (targetHit) {
         targetHit.dying = true
         targetHit.deathT = 0
@@ -484,7 +497,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         continue
       }
 
-      const enemyHit = enemies.find((e) => !e.dying && projectile.mesh.position.distanceTo(e.mesh.position) <= hitRadiusFor(e))
+      const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, projectile.mesh.position) <= hitRadiusFor(e))
       if (enemyHit) {
         enemyHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
@@ -507,7 +520,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         continue
       }
 
-      const bonusHit = bonusTargets.find((b) => !b.dying && projectile.mesh.position.distanceTo(b.mesh.position) <= BONUS_HIT_RADIUS)
+      const bonusHit = bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS)
       if (bonusHit) {
         bonusHit.dying = true
         bonusHit.deathT = 0
@@ -517,7 +530,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         continue
       }
 
-      const goldenHit = goldenTargets.find((g) => !g.dying && projectile.mesh.position.distanceTo(g.mesh.position) <= GOLDEN_SPECIAL_HIT_RADIUS)
+      const goldenHit = goldenTargets.find((g) => !g.dying && distanceToSegment(g.mesh.position, prevPos, projectile.mesh.position) <= GOLDEN_SPECIAL_HIT_RADIUS)
       if (goldenHit) {
         goldenHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)

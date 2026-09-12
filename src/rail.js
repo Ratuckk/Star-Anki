@@ -278,6 +278,9 @@ export function createRailController(camera, scene) {
     // offset lateral CRU da nave (antes de qualquer projeção em curva) — usado pela mira, que
     // agora acompanha a nave (mesmo espaço) em vez de ter física própria independente
     getPlayerLateral: () => ({ x: playerX, y: playerY }),
+    // velocidade lateral crua — usada pela mira pra saber o quanto "ir mais longe" durante o
+    // movimento (proporcional à velocidade) antes de se corrigir e voltar pro bico da nave
+    getPlayerLateralVelocity: () => ({ x: velX, y: velY }),
     getArenaCenter: () => arenaCenter.clone(),
     isArena: () => mode === 'arena',
     setSpeedMultiplier: (m) => { speedMultiplier = m },

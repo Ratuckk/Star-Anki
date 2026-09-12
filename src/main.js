@@ -57,7 +57,11 @@ const LEVEL_BACKGROUNDS = [
 // está centrada, se move junto com ela, um pouquinho mais rápido". Nada de física própria
 // independente (isso já foi tentado antes e ficava difícil de prever onde o tiro ia).
 const RETICLE_AHEAD = 30        // distância à frente do nariz onde a mira é posicionada
-const RETICLE_LATERAL_MULT = 1.25 // um pouco mais rápida/ampla que a nave, mas sempre junto
+// mira "vai um pouco mais longe" proporcional à velocidade lateral atual da nave (efeito de
+// overshoot enquanto ela se move) e se corrige sozinha, convergindo pra EXATAMENTE a posição
+// do bico quando a nave para (offset zero) — não é mais um multiplicador fixo de posição
+const RETICLE_OVERSHOOT_FACTOR = 0.12
+const RETICLE_SETTLE_RATE = 6
 
 const BOSS_EVERY_QUESTIONS = 5
 const BOSS_CYCLE_MS = 120000
@@ -339,6 +343,10 @@ function mountGame(session) {
 
   // ---- tiro carregado / giro-desvio: estado de input em tempo real ----
   let fireHeldMs = 0
+  // offset atual da mira em relação ao bico da nave — persegue o offset-alvo (proporcional à
+  // velocidade lateral) frame a frame, então SEMPRE converge pra 0 quando a nave para de vez
+  let reticleOffsetX = 0
+  let reticleOffsetY = 0
 
   let phase = null
   let phaseTimer = 0
@@ -855,15 +863,24 @@ function mountGame(session) {
     const nosePos = rail.getShipNosePosition()
 
     // ============ MIRA ============
-    // acompanha o mesmo deslocamento lateral da nave (amplificado um pouco) — centrada quando
-    // a nave está centrada, "no meio da tela e junto com o jogador". Em modo arena, centrada
-    // (o voo livre já é a mira).
+    // enquanto a nave se movimenta lateralmente, a mira "vai um pouco mais longe" (offset
+    // proporcional à velocidade lateral atual) e depois se corrige sozinha, convergindo pra
+    // offset ZERO — ou seja, pra EXATAMENTE a posição do bico — assim que a nave para de se
+    // mover. Em modo arena fica sempre centrada (o voo livre já é a mira).
     let reticleX = 0
     let reticleY = 0
     if (!rail.isArena()) {
-      const lateral = rail.getPlayerLateral()
-      reticleX = lateral.x * RETICLE_LATERAL_MULT
-      reticleY = lateral.y * RETICLE_LATERAL_MULT
+      const lateralVel = rail.getPlayerLateralVelocity()
+      const targetOffsetX = lateralVel.x * RETICLE_OVERSHOOT_FACTOR
+      const targetOffsetY = lateralVel.y * RETICLE_OVERSHOOT_FACTOR
+      const settleT = 1 - Math.exp(-RETICLE_SETTLE_RATE * dt)
+      reticleOffsetX += (targetOffsetX - reticleOffsetX) * settleT
+      reticleOffsetY += (targetOffsetY - reticleOffsetY) * settleT
+      reticleX = reticleOffsetX
+      reticleY = reticleOffsetY
+    } else {
+      reticleOffsetX = 0
+      reticleOffsetY = 0
     }
 
     // posição 3D da mira: ancorada no NARIZ, deslocada lateral/verticalmente, e avançada pelo

@@ -30,7 +30,8 @@ O usuário relatou "a v0.22 não tá" depois de eu ter comitado e feito push da 
 Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 blocos: VISUAL, GAMEPLAY, BARALHO, GERAL) terminando com: *"quero separe por fases cada coisa. quanto as perguntas que lhe fiz neste prompt, só as faça depois que terminar todas fases. quero também que caso INCERTO, realize uma pergunta para confirmar."* Antes de dividir em fases, fiz 2 rodadas de perguntas de confirmação (`AskUserQuestion`) sobre os pontos mais arriscados de interpretar errado: mecânica de blocos-pergunta do chefe, pausa total durante perguntas, disparo padrão 1x2dano vs 2x1dano, giro completo por toque duplo (reintroduzido — eu tinha removido errado na v0.20.0), propulsor/repulsor, disparo normal seguindo a retícula, e escopo de "comentar todas variáveis". Respostas do usuário incorporadas nas fases abaixo.
 
 - [x] **Fase 1 — Baralho** — v0.21.0.
-- [x] **Fase 2 — Disparo e mira** — v0.22.0 (esta entrega, detalhada abaixo).
+- [x] **Fase 2 — Disparo e mira** — v0.22.0.
+- [x] **Correção de 2 furos reais da Fase 2** (mira nunca implementada + hitbox nunca investigada) — v0.22.1 (esta entrega, detalhada abaixo).
 - [ ] Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° reintroduzido.
 - [ ] Fase 4 — Motor de spawn e IA de inimigos.
 - [ ] Fase 5 — Chefe (blocos-pergunta de verdade) e transições (all-range/dourado/chefe).
@@ -38,6 +39,17 @@ Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 
 - [ ] Fase 7 — Visual restante (nave, propulsão, dano, escudo) + os 2 itens antigos do Fase C.
 - [ ] Fase 8 — Geral (comentários de variáveis de estado/constantes; fusão de baralhos já foi feita na Fase 1).
 - [ ] Fase 9 — só depois de 1-8: responder as 4 rodadas de "me dê ideias" (efeitos visuais, variedade de inimigos, controle do all-range, composição de baralhos).
+
+## Correção de 2 furos reais da Fase 2 — v0.22.1
+
+O usuário pediu uma auditoria da Fase 2 ("revê toda fase 2, eu quero que note o que não fez e o que devia ter feito") e, conferindo o pedido literal contra o código de verdade, achei 2 itens que eu tinha marcado como feitos (ou ignorado silenciosamente) sem ter implementado:
+
+- **Mira nunca corrigida** — pedido literal: *"a mira deve se movimentar minimamente mais longe e depois corrigir a própria posição naturalmente, retornando na exata mesma posição que está a ponta da nave."* Eu não toquei nisso na Fase 2 apesar do título ser "Disparo e mira". Corrigido agora: `RETICLE_LATERAL_MULT` (multiplicador fixo de posição, sempre deslocava a mira) foi substituído por `RETICLE_OVERSHOOT_FACTOR`/`RETICLE_SETTLE_RATE` — a mira agora persegue um offset PROPORCIONAL À VELOCIDADE LATERAL atual da nave (`rail.getPlayerLateralVelocity()`, novo getter em `rail.js`) e converge suavemente pra offset zero assim que a nave para — offset zero = mira alinhada exatamente com o bico, sem desvio lateral nenhum.
+- **"Corrija a hitbox dos tiros" nunca investigado de verdade** — eu assumi que centralizar o tiro (Fase 2) resolvia isso sozinho, sem checar se havia um bug real. Tinha: a colisão de projéteis do jogador (`updateProjectiles` em `combat.js`) checava só a distância até a posição FINAL do projétil no frame, um ponto só — com `dt` podendo chegar a 0.1s (clamp existente) e `PROJECTILE_SPEED=60`, um projétil pode andar até 6 unidades num frame, mais que o raio de acerto de um inimigo comum (1.8) — em lag ou fps baixo, o tiro podia atravessar um alvo sem nunca cair dentro do raio de colisão. Corrigido com `distanceToSegment(ponto, início, fim)`: agora a colisão é contra o SEGMENTO percorrido no frame, não só o ponto final — aplicado nos 4 checks de acerto do jogador (inimigo, alvo de pergunta, bônus, dourado).
+
+**Não testado ao vivo** (mesmo bloqueio de cache do ambiente das fases anteriores): `node --check` e `selftest.mjs` limpos, revisão manual do rastreamento da lógica (com a nave parada, `lateralVel=(0,0)` → offset converge exponencialmente pra 0 → mira cai exatamente no bico).
+
+**Versão**: v0.22.0 → v0.22.1.
 
 ## Fase 2 — Disparo e mira — v0.22.0
 
