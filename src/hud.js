@@ -331,7 +331,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.29.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.29.1</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -1409,6 +1409,9 @@ export function createGameHud() {
         if (!el) {
           el = document.createElement('div')
           el.className = 'enemy-lock-marker'
+          // 3 quadrados que convergem (grande→pequeno) até sobrar só o que gira — a
+          // animação de "lock-in" só roda uma vez, no instante em que o alvo é travado
+          el.innerHTML = '<div class="lock-sq lock-sq-a"></div><div class="lock-sq lock-sq-b"></div><div class="lock-sq lock-sq-c"></div>'
           root.appendChild(el)
           lockMarkerPool.set(item.id, el)
         }
