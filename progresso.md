@@ -18,6 +18,22 @@ Pedido: o usuário mandou um documento de refatoração pedindo pra separar `pla
 
 **Versão**: v0.25.0 → v0.26.0.
 
+## Refatoração — Fase 2: extrai `player.js` de `main.js` — v0.27.0
+
+Segunda fase do documento de refatoração do usuário — a mais invasiva (mexe direto no `tick()` de `main.js`). Mesmas regras da Fase 1: zero mudança de comportamento, commit separado, API pública preservada.
+
+**`player.js` (novo)**: `createPlayerSystem(session)` — todo o estado "de personagem": vida máxima, vidas máximas, escudo (valor/teto/regen), invencibilidade, boost (propulsor/repulsor), cooldown do giro completo, e os stats que as cartas roguelike mutam (projectileCount, fireCooldown, aimAssistAngle, homingMaxTargets, homingChargeMin/MaxMs, wingmanCount, deflectCardActive, ramCardActive). `applyRoguelikeCard`/`buildCardExcludeSet`/`applyHealthLoss` migraram inteiros pra cá.
+
+**2 desvios do esqueleto do documento, documentando o porquê**:
+- **`lastDodgeLeftTapAt`/`lastDodgeRightTapAt` e `DODGE_TAP_WINDOW_MS` ficaram em `main.js`**, apesar da lista de variáveis do documento (seção 2.1) incluir os dois timestamps. O esqueleto de código do próprio documento (seção 2.4) **não** os inclui nem inclui `DODGE_TAP_WINDOW_MS` — e migrar exigiria expor getters/setters de timestamp sem ganho nenhum de encapsulamento (a detecção de toque duplo continua em `main.js`, que é quem lê `inputState`). Tratado como inconsistência do documento; segui o esqueleto (mais detalhado) em vez da lista solta.
+- **`combat.setProjectileCount/setFireCooldown/setAimAssistAngle/setWingmanCount` continuam sendo chamados por `main.js`** depois de `player.applyCard()`, em vez de sumirem como a tabela da seção 2.5 sugere ("combat lê de player.config direto") — isso só é possível depois que `combat.js` também recebe `player` como dependência, que é literalmente a **Fase 3** (opcional) do próprio documento. Fazer isso na Fase 2 quebraria a separação por fases pedida explicitamente. Vou fazer a Fase 3 na sequência, num commit à parte, pra fechar isso.
+
+**`main.js`**: perdeu ~24 variáveis de estado (viram estado interno de `player`), `applyRoguelikeCard`/`buildCardExcludeSet`/`applyHealthLoss` viraram wrappers finos, e o `tick()` ganhou `player.update(dt)` logo no início (consolida os 5 decaimentos de timer que antes estavam espalhados em pontos diferentes do frame — sem diferença observável: nenhum deles é *lido* para decisão entre a posição antiga e a nova, só *setado* via `Math.max`, que é comutativo o suficiente aqui). `takeDamage()` centraliza a cascata de dano (escudo → saúde → vida), devolvendo `{ absorbedByShield, shieldBroke, outOfLives }` pra `main.js` decidir os efeitos visuais (shockwave/glass shatter) sem `player.js` precisar conhecer `effects.js`.
+
+**Testado ao vivo**: dano direto via debug (barra de vida caiu corretamente, sem tocar o escudo — bypass preservado), recarregar vida/escudo, escolha de carta roguelike (as 3 opções renderizaram, escolhi "Escudo reforçado" sem erro), God mode/Tiro infinito/Buffs máximos (toggles corretos), Perder 1 vida (pips de vida atualizaram 3→2) — zero erro no console em qualquer teste. **Não confirmado ao vivo**: propulsor/repulsor drenando a barra de boost em tempo real — o Browser pane ficou oculto durante esta sessão de teste (`requestAnimationFrame` não disparou nem 10 frames em 3s reais, confirmado via `Promise.race` com timeout), um bloqueio de ambiente já documentado em fases anteriores, não um problema de código. Revisão manual de `activatePropulsion`/`canUseBoost`/`update(dt)` linha a linha como compensação.
+
+**Versão**: v0.26.0 → v0.27.0.
+
 ## Processo (a partir de agora)
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.

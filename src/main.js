@@ -2,8 +2,9 @@ import * as THREE from 'three'
 import { buildDeck, exportTagsTsv, parseAnkiExport } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { createRailController } from './rail.js'
-import { createCombatSystem, DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
+import { createCombatSystem } from './combat.js'
 import { createEnemiesSystem } from './enemies.js'
+import { createPlayerSystem } from './player.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
@@ -22,13 +23,7 @@ const SPEED_STEP = 0.05
 const BOOST_EVERY_CORRECT = 2
 const GROUND_Y = -10
 
-const INVINCIBILITY_MS = 1500
 const INVINCIBILITY_FLICKER_MS = 90
-
-// ============ ESCUDO ============
-const SHIELD_MAX = 2
-const SHIELD_REGEN_DELAY_MS = 1500
-const SHIELD_REGEN_RATE = 0.4
 
 // ============ SHAKE AO LEVAR HIT ============
 const HIT_SHAKE_DURATION_MS = 300
@@ -91,13 +86,6 @@ const BONUS_INTERVAL_MAX = 16000
 const REVIEW_ENEMY_INTERVAL_MULT = 0.6
 const REVIEW_ANSWER_MS_MULT = 0.75
 
-const FIRE_COOLDOWN_MULT_PER_CORRECT = 0.85
-const FIRE_COOLDOWN_FLOOR = 0.06
-const AIM_ASSIST_STEP = THREE.MathUtils.degToRad(1.5)
-const AIM_ASSIST_CAP = THREE.MathUtils.degToRad(14)
-const PROJECTILE_COUNT_CAP = 4
-const PROJECTILE_COUNT_START = 1
-
 const GOLDEN_INTERVAL_MIN_MS = 45000
 const GOLDEN_INTERVAL_MAX_MS = 100000
 const GOLDEN_ARENA_MS_MIN = 25000
@@ -108,29 +96,14 @@ const GOLDEN_SPREAD_MAX = 90
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
 
 // ============ ROGUELIKE (fase 4) ============
-const SHIELD_MAX_CAP = 4
-const SHIELD_REGEN_DELAY_FLOOR_MS = 500
-const INVINCIBILITY_CAP_MS = 3000
-const WINGMAN_CAP = 2
-const LIVES_CAP = 5
-
-const HOMING_CHARGE_MIN_MS = 1000
-const HOMING_CHARGE_MAX_MS = 4000
-const HOMING_CHARGE_MIN_FLOOR_MS = 1000
+// só o que continua sendo lido/usado direto em main.js — os stats que as cartas mutam
+// (escudo/homing/boost/etc.) agora moram em player.js
 const HOMING_LOCK_INTERVAL_MS = 500
-const HOMING_MAX_TARGETS_BASE = 4
-const HOMING_MAX_TARGETS_CAP = 8
 
 const DODGE_TAP_WINDOW_MS = 350
-const FULL_SPIN_COOLDOWN_MS = 3000
-const FULL_SPIN_IFRAME_MS_BASE = 900
 const DEFLECT_RADIUS = 6
 
 // ============ PROPULSOR / REPULSOR (A/S — Fase 3) ============
-const BOOST_DURATION_MS = 900
-const BOOST_RECHARGE_MS = 4500
-const PROPULSION_SPEED_MULT = 1.9
-const REPULSION_SPEED_MULT = 0.35
 const RAM_DAMAGE = 5
 
 // ============ VIGNETTE DE VIDA BAIXA ============
@@ -305,8 +278,7 @@ function mountGame(session) {
   const input = createInputState()
 
   const bindings = getBindings()
-  const maxHealth = session.health
-  let maxLives = session.lives
+  const player = createPlayerSystem(session)
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
   let debugVisible = false
@@ -315,29 +287,11 @@ function mountGame(session) {
   let hitboxesActive = false
   let slowMoActive = false
 
-  let shieldMax = SHIELD_MAX
-  let shieldRegenDelayMs = SHIELD_REGEN_DELAY_MS
-  let shieldRegenRate = SHIELD_REGEN_RATE
-  let shieldValue = shieldMax
-  let shieldRegenDelayTimer = 0
   let hitShakeTimer = 0
-  let invincibilityDurationMs = INVINCIBILITY_MS
 
   let pendingCardChoice = false
-  let wingmanCount = 0
-  let deflectCardActive = false
-  let homingMaxTargets = HOMING_MAX_TARGETS_BASE
-  let homingChargeMinMs = HOMING_CHARGE_MIN_MS
-  let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
-  let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
-  let fullSpinCooldownTimer = 0
   let lastDodgeLeftTapAt = -Infinity
   let lastDodgeRightTapAt = -Infinity
-
-  let boostCharge = 1
-  let propulsionActiveTimer = 0
-  let repulsionActiveTimer = 0
-  let ramCardActive = false
 
   let bossHealthMultiplier = 1
   let bossBuildupTimer = 0
@@ -369,12 +323,6 @@ function mountGame(session) {
   let goldenArenaTimer = 0
   let goldenCard = null
 
-  let invincibleTimer = 0
-
-  let fireCooldown = DEFAULT_FIRE_COOLDOWN
-  let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
-  let projectileCount = PROJECTILE_COUNT_START
-
   let enemyIntervalMin = ENEMY_INTERVAL_MIN_BASE
   let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
   let enemyAggression = 1
@@ -391,8 +339,8 @@ function mountGame(session) {
   }
 
   function currentHomingAllowedTargets(heldMs) {
-    const chargeMs = Math.max(0, heldMs - homingChargeMinMs)
-    return Math.max(1, Math.min(homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
+    const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
+    return Math.max(1, Math.min(player.config.homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
   }
 
   function randomBonusInterval() {
@@ -471,73 +419,20 @@ function mountGame(session) {
     }
   }
 
+  // efeito de cada carta agora mora em player.js (é estado do jogador) — aqui só sincroniza
+  // combat.js com os stats atualizados e trata os efeitos colaterais que player.js não pode
+  // ter (hud/combat como dependência)
   function applyRoguelikeCard(card) {
-    switch (card.id) {
-      case 'extra-projectile':
-        projectileCount = Math.min(PROJECTILE_COUNT_CAP, projectileCount + 1)
-        combat.setProjectileCount(projectileCount)
-        break
-      case 'faster-fire':
-        fireCooldown = Math.max(FIRE_COOLDOWN_FLOOR, fireCooldown * FIRE_COOLDOWN_MULT_PER_CORRECT)
-        combat.setFireCooldown(fireCooldown)
-        break
-      case 'wingman':
-        wingmanCount = Math.min(WINGMAN_CAP, wingmanCount + 1)
-        combat.setWingmanCount(wingmanCount)
-        break
-      case 'wider-lock':
-        aimAssistAngle = Math.min(AIM_ASSIST_CAP, aimAssistAngle + AIM_ASSIST_STEP)
-        combat.setAimAssistAngle(aimAssistAngle)
-        break
-      case 'more-homing-targets':
-        homingMaxTargets = Math.min(HOMING_MAX_TARGETS_CAP, homingMaxTargets + 1)
-        break
-      case 'extra-shield-charge':
-        shieldMax = Math.min(SHIELD_MAX_CAP, shieldMax + 1)
-        shieldValue = Math.min(shieldMax, shieldValue + 1)
-        break
-      case 'faster-shield-recharge':
-        shieldRegenRate *= 1.3
-        shieldRegenDelayMs = Math.max(SHIELD_REGEN_DELAY_FLOOR_MS, shieldRegenDelayMs * 0.75)
-        break
-      case 'longer-invincibility':
-        invincibilityDurationMs = Math.min(INVINCIBILITY_CAP_MS, invincibilityDurationMs + 200)
-        break
-      case 'extra-life':
-        session.lives = Math.min(LIVES_CAP, session.lives + 1)
-        maxLives = Math.max(maxLives, session.lives)
-        hud.setLives(session.lives, maxLives)
-        break
-      case 'deflect-on-spin':
-        deflectCardActive = true
-        break
-      case 'faster-charge':
-        homingChargeMinMs = Math.max(HOMING_CHARGE_MIN_FLOOR_MS, homingChargeMinMs - 300)
-        homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
-        break
-      case 'longer-dodge-iframe':
-        fullSpinIframeMs += 150
-        break
-      case 'propulsion-ram':
-        ramCardActive = true
-        break
-      default:
-        break
-    }
+    player.applyCard(card)
+    combat.setProjectileCount(player.config.projectileCount)
+    combat.setFireCooldown(player.config.fireCooldown)
+    combat.setAimAssistAngle(player.config.aimAssistAngle)
+    combat.setWingmanCount(player.getWingmanCount())
+    hud.setLives(session.lives, player.getMaxLives())
   }
 
   function buildCardExcludeSet() {
-    const exclude = new Set()
-    if (deflectCardActive) exclude.add('deflect-on-spin')
-    if (wingmanCount >= WINGMAN_CAP) exclude.add('wingman')
-    if (shieldMax >= SHIELD_MAX_CAP) exclude.add('extra-shield-charge')
-    if (homingMaxTargets >= HOMING_MAX_TARGETS_CAP) exclude.add('more-homing-targets')
-    if (projectileCount >= PROJECTILE_COUNT_CAP) exclude.add('extra-projectile')
-    if (aimAssistAngle >= AIM_ASSIST_CAP) exclude.add('wider-lock')
-    if (session.lives >= LIVES_CAP) exclude.add('extra-life')
-    if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
-    if (ramCardActive) exclude.add('propulsion-ram')
-    return exclude
+    return player.buildCardExcludeSet()
   }
 
   function enterCardChoice(onDone) {
@@ -760,13 +655,7 @@ function mountGame(session) {
   }
 
   function applyHealthLoss() {
-    if (session.health > 0) return false
-    session.lives -= 1
-    if (session.lives <= 0) return true
-    session.health = maxHealth
-    shieldValue = shieldMax
-    shieldRegenDelayTimer = 0
-    return false
+    return player.applyHealthLoss()
   }
 
   function settleQuestion(outcome) {
@@ -867,6 +756,7 @@ function mountGame(session) {
     hitShakeTimer = Math.max(0, hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
+    player.update(dt)
     rail.update(dt, inputState)
     const playerPos = rail.getPlayerPosition()
     const noseFrame = rail.getFrameAt(0)
@@ -895,12 +785,12 @@ function mountGame(session) {
 
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
-    const isCharging = fireHeldMs >= homingChargeMinMs
+    const isCharging = fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging) combat.tryFire(nosePos, fireDirection)
       fireHeldMs += dt * 1000
       if (isCharging) {
-        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
+        const chargeFrac = Math.min(1, (fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
         hud.setChargeIndicator(true, chargeFrac)
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
 
@@ -938,11 +828,10 @@ function mountGame(session) {
       if (arenaNow && inputState.propulsionHeld) {
         rail.triggerArenaLateralDash(-1)
       } else {
-        if (nowMs - lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && fullSpinCooldownTimer <= 0) {
+        if (nowMs - lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(-1)
-          fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
-          invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
-          if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+          player.triggerFullSpinIframes()
+          if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
         }
         lastDodgeLeftTapAt = nowMs
       }
@@ -951,53 +840,40 @@ function mountGame(session) {
       if (arenaNow && inputState.propulsionHeld) {
         rail.triggerArenaLateralDash(1)
       } else {
-        if (nowMs - lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && fullSpinCooldownTimer <= 0) {
+        if (nowMs - lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(1)
-          fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
-          invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
-          if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+          player.triggerFullSpinIframes()
+          if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
         }
         lastDodgeRightTapAt = nowMs
       }
     }
-    fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
 
     if (isActionPressed(bindings, inputState.pressed, 'propulsion')) {
       if (arenaNow && inputState.bank !== 0) {
         rail.triggerArenaLateralDash(inputState.bank)
-      } else if (boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0) {
-        propulsionActiveTimer = BOOST_DURATION_MS
-        boostCharge = 0
+      } else {
+        player.activatePropulsion()
       }
     }
     if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
       if (arenaNow && inputState.moveY === -1) {
         rail.triggerArenaSummersault()
-      } else if (boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0) {
-        repulsionActiveTimer = BOOST_DURATION_MS
-        boostCharge = 0
+      } else {
+        player.activateRepulsion()
       }
     }
 
-    if (propulsionActiveTimer > 0) propulsionActiveTimer = Math.max(0, propulsionActiveTimer - dt * 1000)
-    if (repulsionActiveTimer > 0) repulsionActiveTimer = Math.max(0, repulsionActiveTimer - dt * 1000)
-    if (propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0 && boostCharge < 1) {
-      boostCharge = Math.min(1, boostCharge + (dt * 1000) / BOOST_RECHARGE_MS)
-    }
-
-    let boostSpeedFactor = 1
-    if (propulsionActiveTimer > 0) boostSpeedFactor *= PROPULSION_SPEED_MULT
-    if (repulsionActiveTimer > 0) boostSpeedFactor *= REPULSION_SPEED_MULT
-    rail.setSpeedMultiplier(speedMultiplier * boostSpeedFactor)
-    hud.setBoost(boostCharge, propulsionActiveTimer > 0 || repulsionActiveTimer > 0)
+    rail.setSpeedMultiplier(speedMultiplier * player.getBoostSpeedFactor())
+    hud.setBoost(player.getBoostCharge(), player.isPropulsionActive() || player.isRepulsionActive())
 
     // motion lines + distorção de tela só durante o impulso de propulsão (não na repulsão)
-    const boostOn = propulsionActiveTimer > 0
+    const boostOn = player.isPropulsionActive()
     hud.setMotionLines(boostOn)
     hud.setBoostDistortion(boostOn)
 
-    const ramActive = ramCardActive && propulsionActiveTimer > 0
-    if (ramActive) invincibleTimer = Math.max(invincibleTimer, propulsionActiveTimer)
+    const ramActive = player.isRamCardActive() && player.isPropulsionActive()
+    if (ramActive) player.grantInvincibility(player.getPropulsionActiveTimer())
 
     const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
     const events = combat.update(dt, playerPos, {
@@ -1071,21 +947,15 @@ function mountGame(session) {
     effects.update(dt, playerPos, noseFrame.forward, {
       boosting: speedMultiplier,
       camera,
-      shieldValue,
-      shieldMax,
-      boostActive: propulsionActiveTimer > 0,
+      shieldValue: player.getShieldValue(),
+      shieldMax: player.getShieldMax(),
+      boostActive: player.isPropulsionActive(),
     })
     effects.spawnContrailTick(combat.getWingmanPositions())
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
-
-    if (shieldRegenDelayTimer > 0) {
-      shieldRegenDelayTimer = Math.max(0, shieldRegenDelayTimer - dt * 1000)
-    } else if (shieldValue < shieldMax) {
-      shieldValue = Math.min(shieldMax, shieldValue + shieldRegenRate * dt)
-    }
 
     if (events.bossDefeated && phase === 'bossFight') {
       session.score += BOSS_DEFEAT_BONUS
@@ -1104,12 +974,9 @@ function mountGame(session) {
       phaseTimer = FEEDBACK_MS
     }
 
-    invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
-    if (events.enemyHits > 0 && invincibleTimer <= 0 && !godMode) {
-      invincibleTimer = invincibilityDurationMs
+    if (events.enemyHits > 0 && !player.isInvincible() && !godMode) {
       hitShakeTimer = HIT_SHAKE_DURATION_MS
       hud.damageFlash()
-      shieldRegenDelayTimer = shieldRegenDelayMs
 
       // direção aproximada do dano — o combat ainda não devolve a origem do projétil, então
       // chuta pra frente da nave
@@ -1120,19 +987,16 @@ function mountGame(session) {
         THREE.MathUtils.clamp((1 - ndcDir.y) / 2, 0, 1),
       )
 
-      if (shieldValue >= 1) {
-        shieldValue -= 1
+      const result = player.takeDamage()
+      if (result.absorbedByShield) {
         effects.shockwave(playerPos, 0x4da6ff, 0.6)
-        if (shieldValue < 1) effects.glassShatter(playerPos, 0x4da6ff)
-      } else {
-        session.health = Math.max(0, session.health - 1)
-        if (applyHealthLoss()) {
-          endSector()
-          return
-        }
+        if (result.shieldBroke) effects.glassShatter(playerPos, 0x4da6ff)
+      } else if (result.outOfLives) {
+        endSector()
+        return
       }
     }
-    rail.setShipVisible(invincibleTimer <= 0 || Math.floor(invincibleTimer / INVINCIBILITY_FLICKER_MS) % 2 === 0)
+    rail.setShipVisible(!player.isInvincible() || Math.floor(player.getInvincibleRemainingMs() / INVINCIBILITY_FLICKER_MS) % 2 === 0)
 
     if (phase === 'goldenArena' || phase === 'bossBuildup') {
       enemyTimer -= dt * 1000
@@ -1251,18 +1115,14 @@ function mountGame(session) {
 
     if (stopped) return
 
-    hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
-    hud.setLives(session.lives, maxLives)
-    hud.setShield(shieldValue, shieldMax)
+    hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
+    hud.setLives(session.lives, player.getMaxLives())
+    hud.setShield(player.getShieldValue(), player.getShieldMax())
 
     // ============ VIGNETTE DE VIDA BAIXA ============
     // 0 = vida ok (invisível), 1 = crítico. A partir de 40% da vida máxima já começa a
     // aparecer; a 0 de vida fica totalmente vermelho. Suavização é via CSS no hud.js.
-    const lowHealthThreshold = maxHealth * LOW_HEALTH_THRESHOLD_FRAC
-    const lowHealthIntensity = session.health < lowHealthThreshold
-      ? Math.max(0, Math.min(1, 1 - session.health / lowHealthThreshold))
-      : 0
-    hud.setLowHealth(lowHealthIntensity)
+    hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 
     if (phase === 'bossFight') {
       const bossSnap = combat.getBossSnapshot()
@@ -1321,35 +1181,31 @@ function mountGame(session) {
     forceCorrect: () => forceAnswerOutcome(true),
     forceWrong: () => forceAnswerOutcome(false),
     addScore: () => { session.score += 100 },
-    heal: () => { session.health = Math.min(maxHealth, session.health + 1) },
+    heal: () => player.heal(1),
     damage: () => {
       session.health = Math.max(0, session.health - 1)
       if (applyHealthLoss()) endSector()
     },
-    fullHeal: () => { session.health = maxHealth },
+    fullHeal: () => { session.health = player.getMaxHealth() },
     loseLife: () => {
       session.lives = Math.max(0, session.lives - 1)
-      hud.setLives(session.lives, maxLives)
+      hud.setLives(session.lives, player.getMaxLives())
       if (session.lives <= 0) endSector()
     },
-    rechargeShield: () => {
-      shieldValue = shieldMax
-      shieldRegenDelayTimer = 0
-    },
+    rechargeShield: () => player.rechargeShield(),
     godMode: () => {
       godMode = !godMode
       hud.debug.setToggleActive('godMode', godMode)
     },
     infiniteAmmo: () => {
       infiniteAmmoActive = !infiniteAmmoActive
-      combat.setFireCooldown(infiniteAmmoActive ? 0 : fireCooldown)
+      combat.setFireCooldown(infiniteAmmoActive ? 0 : player.config.fireCooldown)
       hud.debug.setToggleActive('infiniteAmmo', infiniteAmmoActive)
     },
     maxBuffs: () => {
-      aimAssistAngle = AIM_ASSIST_CAP
-      projectileCount = PROJECTILE_COUNT_CAP
-      combat.setAimAssistAngle(aimAssistAngle)
-      combat.setProjectileCount(projectileCount)
+      player.debugMaxBuffs()
+      combat.setAimAssistAngle(player.config.aimAssistAngle)
+      combat.setProjectileCount(player.config.projectileCount)
     },
     gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
     skipToBossFight: () => {
@@ -1369,17 +1225,17 @@ function mountGame(session) {
     },
     giveCard: () => { if (phase === 'combat') enterCardChoice(enterCombat) },
     triggerFullDodge: () => {
-      invincibleTimer = Math.max(invincibleTimer, 1000)
-      if (deflectCardActive) combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
+      player.grantInvincibility(1000)
+      if (player.isDeflectActive()) combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
       rail.debugForceBank(1, 1000)
     },
-    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), homingMaxTargets),
+    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),
   })
 
   enterCombat()
-  hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
-  hud.setLives(session.lives, maxLives)
-  hud.setShield(shieldValue, shieldMax)
+  hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
+  hud.setLives(session.lives, player.getMaxLives())
+  hud.setShield(player.getShieldValue(), player.getShieldMax())
   lastTime = performance.now()
   rafId = requestAnimationFrame(tick)
 }
