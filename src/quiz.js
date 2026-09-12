@@ -86,8 +86,9 @@ export function resolveAnswer(session, outcome) {
     // arredonda para 2 casas para evitar deriva de ponto flutuante nas somas sucessivas de 0.15
     session.comboMultiplier = Math.min(COMBO_CAP, Math.round((session.comboMultiplier + COMBO_STEP) * 100) / 100)
   } else {
+    // >> AJUSTADO: erro/timeout não tira mais saúde do jogador — só quebra o combo e conta pra
+    // estatística / sobe a dificuldade (main.js). A vida só é perdida por DANO DE INIMIGO. <<
     session.comboMultiplier = 1.0
-    if (type === 'wrong') session.health = Math.max(0, session.health - 1)
   }
 
   session.score += points
