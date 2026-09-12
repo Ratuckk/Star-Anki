@@ -25,6 +25,6 @@ export const DEBUG_ACTIONS = [
   { id: 'showHitboxes', label: 'Mostrar hitboxes', toggle: true },
   { id: 'slowMo', label: 'Câmera lenta (0.25x)', toggle: true },
   { id: 'giveCard', label: 'Escolher carta roguelike' },
-  { id: 'triggerFullDodge', label: 'Testar giro-desvio completo' },
+  { id: 'triggerFullDodge', label: 'Testar giro/inclinação (1s)' },
   { id: 'fireHomingTest', label: 'Testar tiro teleguiado' },
 ]

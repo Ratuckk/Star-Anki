@@ -6,6 +6,24 @@
 - [x] Ajuste fino do tiro carregado (dano 3x, tamanho +100%, wind-up mínimo de 1s) — v0.19.1.
 - [x] Barra e glow de carga só aparecem depois do wind-up — v0.19.2.
 - [x] Marcador de lock-on no inimigo também só depois do wind-up — v0.19.3 (não testado ao vivo, pedido explícito do usuário pra commitar direto).
+- [x] Giro-desvio (Z/C) redesenhado do zero: agora é segurar pra inclinar, não toque/duplo-toque — v0.20.0.
+
+## Giro-desvio (Z/C) redesenhado: segurar inclina, não é mais toque — v0.20.0
+
+O usuário deixou claro que eu tinha entendido tudo errado nas versões anteriores (v0.19.0 em diante): a mecânica de Z/C **nunca foi sobre toque simples vs. duplo toque**. É sobre **segurar o botão**: enquanto Z ou C estiver pressionado, a nave deve ficar inclinada de verdade pra aquele lado (bank forte, "não um tiltzinho"), e voltar ao normal só quando soltar. A implementação de toque/animação por tempo fixo (v0.19.0) media completamente esse ponto — o ângulo nunca respondia a quanto tempo o jogador segurava.
+
+Reescrita completa da mecânica:
+
+- **`input.js`**: `dodgeLeft`/`dodgeRight` deixaram de ser ações de borda (evento único por toque) e viraram estado **contínuo**, do mesmo jeito que `moveX`/`moveY`/`firing` já funcionavam — enquanto a tecla está no `keys` Set, o input conta como segurado. Novo campo `state.bank` (-1/0/1), com o mesmo padrão de "último apertado vence" que já existia pra resolver esquerda+direita simultâneos no movimento.
+- **`keybindings.js`**: removi `dodgeLeft`/`dodgeRight` de `edgeCodes()` (não fazem mais sentido como evento de borda) e atualizei os labels de "Desvio esquerda/direita (2x = giro completo)" pra "Inclinar/girar esquerda/direita (segurar)".
+- **`rail.js`**: todo o sistema antigo (`dodgeActive/dodgeElapsed/dodgeDuration/dodgeDirection/dodgeFull`, curva de animação de tempo fixo, `triggerDodgeRoll`, `isDodgeRollFullActive`) foi substituído por um único ângulo (`dodgeRoll`) que persegue continuamente `input.bank * DODGE_ROLL_MAX_ANGLE` (170°, mesma amplitude forte de antes) com suavização exponencial (`ROLL_SMOOTH_RATE`, a mesma taxa já usada pelo bank normal de curva `roll`) — exatamente o mesmo padrão que já existia pro leve bank automático nas curvas, só que dirigido por Z/C em vez de pelo movimento lateral. Isso faz a nave entrar rápido na inclinação, ficar lá enquanto segurado, e sair suave ao soltar.
+- **`main.js`**: removida toda a lógica de toque duplo (`handleDodgePress`, `lastDodgeTap`, `DODGE_TAP_WINDOW_MS`, `dodgeIframeSingleMs`/`dodgeIframeFullMs`). Agora, a cada frame que `inputState.bank !== 0`, a nave ganha i-frames contínuos (`invincibleTimer` realimentado every frame, então dura o tempo todo que segurar + uma folga curta de `dodgeIframeGraceMs` — 400ms — depois de soltar) e, com a carta "giro rebatedor", rebate projéteis próximos continuamente enquanto girando (não precisa mais de um "giro completo" separado pra isso).
+- **`roguelike.js`**: descrições de "Giro rebatedor" e "Desvio prolongado" atualizadas pra não mencionar mais toque duplo.
+- **Debug**: botão "Testar giro-desvio completo" virou "Testar giro/inclinação (1s)" — como não dá pra simular "segurar" com um clique de botão, `rail.debugForceBank(direction, durationMs)` força o bank por um tempo fixo só pra esse teste.
+
+**Testado ao vivo**: segurei Z via evento sintético sustentado por 400ms e tirei screenshot no meio do hold — nave visivelmente inclinada (asas na diagonal, bem mais que um "tiltzinho"). Soltei e a inclinação voltou ao normal. Botão de debug "Testar giro/inclinação (1s)" não quebra nada. Zero erros no console em todos os testes. `node --check` em todos os arquivos tocados (`rail.js`, `input.js`, `keybindings.js`, `main.js`, `debug.js`, `roguelike.js`) e `selftest.mjs` passaram.
+
+**Versão**: v0.19.3 → v0.20.0.
 
 ## Lock-on no inimigo só depois do wind-up — v0.19.3
 

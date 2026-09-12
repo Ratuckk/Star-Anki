@@ -128,11 +128,10 @@ const HOMING_MIN_TARGETS = 2
 const HOMING_MAX_TARGETS_BASE = 5
 const HOMING_MAX_TARGETS_CAP = 8
 
-// giro-desvio (Z/C): toque simples = i-frames curtos; duplo toque (mesma tecla, dentro da
-// janela) = giro completo, i-frames mais longos, e — com a carta certa — rebate projéteis
-const DODGE_TAP_WINDOW_MS = 400
-const DODGE_IFRAME_SINGLE_MS = 400
-const DODGE_IFRAME_FULL_MS = 900
+// giro-desvio (Z/C): segurar inclina a nave de verdade (rail.js cuida do ângulo) e concede
+// i-frames enquanto durar, mais uma folga curta depois de soltar; com a carta certa, também
+// rebate projéteis inimigos próximos continuamente enquanto girando
+const DODGE_IFRAME_GRACE_MS = 400
 const DEFLECT_RADIUS = 6
 
 let deck = null
@@ -308,8 +307,7 @@ function mountGame(session) {
   let homingMaxTargets = HOMING_MAX_TARGETS_BASE
   let homingChargeMinMs = HOMING_CHARGE_MIN_MS
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
-  let dodgeIframeSingleMs = DODGE_IFRAME_SINGLE_MS
-  let dodgeIframeFullMs = DODGE_IFRAME_FULL_MS
+  let dodgeIframeGraceMs = DODGE_IFRAME_GRACE_MS
 
   // ---- chefe (fase 90s de caçada + o combate em si) ----
   let bossHealthMultiplier = 1
@@ -317,7 +315,6 @@ function mountGame(session) {
 
   // ---- tiro carregado / giro-desvio: estado de input em tempo real ----
   let fireHeldMs = 0
-  const lastDodgeTap = { left: -Infinity, right: -Infinity }
 
   let phase = null
   let phaseTimer = 0
@@ -479,8 +476,7 @@ function mountGame(session) {
         homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
         break
       case 'longer-dodge-iframe':
-        dodgeIframeSingleMs += 100
-        dodgeIframeFullMs += 150
+        dodgeIframeGraceMs += 150
         break
       default:
         break
@@ -733,17 +729,6 @@ function mountGame(session) {
     return false
   }
 
-  function handleDodgePress(direction, side, playerPos) {
-    const now = performance.now()
-    const isFull = now - lastDodgeTap[side] < DODGE_TAP_WINDOW_MS
-    lastDodgeTap[side] = now
-
-    rail.triggerDodgeRoll(direction, isFull)
-    invincibleTimer = Math.max(invincibleTimer, isFull ? dodgeIframeFullMs : dodgeIframeSingleMs)
-
-    if (isFull && deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
-  }
-
   function settleQuestion(outcome) {
     combat.clearQuizTargets()
     const resolution = resolveAnswer(session, outcome)
@@ -909,12 +894,14 @@ function mountGame(session) {
       hud.setLockedEnemyMarkers([])
     }
 
-    // ============ GIRO-DESVIO (Z/C) ============
-    // toque simples = i-frames curtos + "bump" de inclinação. Duplo toque na MESMA tecla,
-    // dentro da janela = giro completo + i-frames mais longos + (com a carta) rebate
-    // projéteis inimigos próximos
-    if (isActionPressed(bindings, inputState.pressed, 'dodgeLeft')) handleDodgePress(-1, 'left', playerPos)
-    if (isActionPressed(bindings, inputState.pressed, 'dodgeRight')) handleDodgePress(1, 'right', playerPos)
+    // ============ GIRO/INCLINAÇÃO (Z/C) ============
+    // segurar Z ou C inclina a nave de verdade e ela FICA inclinada enquanto durar (rail.js já
+    // leu inputState.bank e calculou o ângulo em rail.update, chamado antes disto). Aqui só
+    // cuida do que não é visual: i-frames enquanto girando + rebate de projéteis com a carta
+    if (inputState.bank !== 0) {
+      invincibleTimer = Math.max(invincibleTimer, dodgeIframeGraceMs)
+      if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+    }
 
     const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
     const events = combat.update(dt, playerPos, {
@@ -1211,9 +1198,9 @@ function mountGame(session) {
     },
     giveCard: () => { if (phase === 'combat') enterCardChoice(enterCombat) },
     triggerFullDodge: () => {
-      const p = rail.getPlayerPosition()
-      handleDodgePress(1, 'right', p)
-      handleDodgePress(1, 'right', p)
+      invincibleTimer = Math.max(invincibleTimer, 1000)
+      if (deflectCardActive) combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
+      rail.debugForceBank(1, 1000)
     },
     fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), homingMaxTargets),
   })

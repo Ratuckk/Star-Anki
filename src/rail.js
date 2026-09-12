@@ -25,8 +25,9 @@ const ARENA_RADIUS = 190
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
-// giro-desvio: toque simples inclina forte (banck real, não um tilt pequeno) e volta
-const SINGLE_DODGE_MAX_ANGLE = THREE.MathUtils.degToRad(170)
+// giro-desvio: segurar Z/C inclina a nave de verdade pro lado (bank forte, não um tilt
+// pequeno) e ela FICA inclinada enquanto o botão continuar segurado, voltando ao soltar
+const DODGE_ROLL_MAX_ANGLE = THREE.MathUtils.degToRad(170)
 
 function buildCurve() {
   const points = [
@@ -106,14 +107,12 @@ export function createRailController(camera, scene) {
   // nave), então não afeta playerX/playerY/lastPlayerPos usados pra colisão/mira
   let shakeMagnitude = 0
 
-  // giro-desvio (Z/C): puramente cosmético — uma rotação extra em cima da orientação normal.
-  // main.js decide QUANDO disparar (toque simples = "bump" de inclinação; duplo toque = giro
-  // completo de 360°) e concede i-frames por conta própria; aqui só animamos.
-  let dodgeActive = false
-  let dodgeElapsed = 0
-  let dodgeDuration = 0
-  let dodgeDirection = 1
-  let dodgeFull = false
+  // giro-desvio (Z/C): puramente cosmético — uma rotação extra em cima da orientação normal,
+  // seguindo continuamente o quanto o botão está segurado (input.bank, de -1 a 1). main.js só
+  // concede i-frames e lê o estado; aqui é onde o ângulo de verdade é calculado e suavizado.
+  let dodgeRoll = 0
+  let dodgeDebugOverrideDir = 0
+  let dodgeDebugOverrideUntil = 0
 
   const ship = buildShip()
   ship.position.copy(lastFrame.position)
@@ -140,16 +139,14 @@ export function createRailController(camera, scene) {
     ship.position.y += (Math.random() * 2 - 1) * shakeMagnitude
   }
 
-  function currentDodgeRollAngle() {
-    if (!dodgeActive) return 0
-    const t = Math.min(1, dodgeElapsed / dodgeDuration)
-    // duplo toque: giro completo de 360° (barrel roll clássico). toque simples: banck forte de
-    // quase meia-volta (~170°) que esbarra e volta — uma inclinação de verdade, não um tilt
-    // pequeno. Curva com pico deslocado pro início (t^0.6) pra "entrar" rápido na inclinação e
-    // "sair" mais devagar, ficando mais fácil de ler.
-    return dodgeFull
-      ? dodgeDirection * t * Math.PI * 2
-      : dodgeDirection * Math.sin(Math.pow(t, 0.6) * Math.PI) * SINGLE_DODGE_MAX_ANGLE
+  function dodgeInputDirection(input) {
+    if (performance.now() < dodgeDebugOverrideUntil) return dodgeDebugOverrideDir
+    return input.bank || 0
+  }
+
+  function updateDodgeRoll(dt, input) {
+    const target = dodgeInputDirection(input) * DODGE_ROLL_MAX_ANGLE
+    dodgeRoll += (target - dodgeRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -194,7 +191,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(up)
     ship.lookAt(arenaPos.clone().add(forward))
     ship.rotateZ(arenaRoll)
-    ship.rotateZ(currentDodgeRollAngle())
+    ship.rotateZ(dodgeRoll)
     applyShakeJitter()
 
     const camTarget = arenaPos.clone()
@@ -210,10 +207,7 @@ export function createRailController(camera, scene) {
   }
 
   function update(dt, input) {
-    if (dodgeActive) {
-      dodgeElapsed += dt
-      if (dodgeElapsed >= dodgeDuration) dodgeActive = false
-    }
+    updateDodgeRoll(dt, input)
 
     if (mode === 'arena') {
       updateArena(dt, input)
@@ -255,7 +249,7 @@ export function createRailController(camera, scene) {
     ship.up.copy(frame.up)
     ship.lookAt(playerPos.clone().add(frame.forward))
     ship.rotateZ(roll)
-    ship.rotateZ(currentDodgeRollAngle())
+    ship.rotateZ(dodgeRoll)
     applyShakeJitter()
 
     const camTarget = frame.position.clone()
@@ -290,14 +284,12 @@ export function createRailController(camera, scene) {
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
     setShakeIntensity: (m) => { shakeMagnitude = m },
-    triggerDodgeRoll: (direction, full) => {
-      dodgeDirection = direction
-      dodgeFull = full
-      dodgeDuration = full ? 0.5 : 0.32
-      dodgeElapsed = 0
-      dodgeActive = true
+    // só pra debug: força o bank pra um lado por um tempo fixo, simulando o botão segurado
+    // (não dá pra "segurar" de verdade num clique de botão de debug)
+    debugForceBank: (direction, durationMs) => {
+      dodgeDebugOverrideDir = direction
+      dodgeDebugOverrideUntil = performance.now() + durationMs
     },
-    isDodgeRollFullActive: () => dodgeActive && dodgeFull,
     enterArena,
     exitArena,
   }

@@ -19,9 +19,9 @@ export const ROGUELIKE_CARDS = [
   { id: 'longer-invincibility', category: 'defensivo', label: 'Reflexos', description: 'Mais tempo de invencibilidade após levar um hit.' },
   { id: 'extra-life', category: 'defensivo', label: 'Vida extra', description: '+1 vida, aplicada imediatamente.' },
 
-  { id: 'deflect-on-spin', category: 'utilitario', label: 'Giro rebatedor', description: 'Um giro-desvio completo (duplo toque) rebate projéteis inimigos próximos de volta contra eles.' },
+  { id: 'deflect-on-spin', category: 'utilitario', label: 'Giro rebatedor', description: 'Enquanto girar segurando Z ou C, rebate projéteis inimigos próximos de volta contra eles.' },
   { id: 'faster-charge', category: 'utilitario', label: 'Carga acelerada', description: 'O tiro teleguiado carrega mais rápido.' },
-  { id: 'longer-dodge-iframe', category: 'utilitario', label: 'Desvio prolongado', description: 'O giro-desvio concede mais tempo de invencibilidade.' },
+  { id: 'longer-dodge-iframe', category: 'utilitario', label: 'Desvio prolongado', description: 'O giro-desvio concede mais tempo de invencibilidade após soltar o botão.' },
 ]
 
 export function pickRandomCards(count, exclude = new Set()) {

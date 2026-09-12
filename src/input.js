@@ -16,11 +16,13 @@ export function createInputState() {
   const upCodes = new Set(bindings.actions.moveUp)
   const downCodes = new Set(bindings.actions.moveDown)
   const fireCodes = new Set(bindings.actions.fire)
+  const dodgeLeftCodes = new Set(bindings.actions.dodgeLeft)
+  const dodgeRightCodes = new Set(bindings.actions.dodgeRight)
   const edgeCodeSet = edgeCodes(bindings)
 
   const gp = bindings.gamepad
 
-  const state = { moveX: 0, moveY: 0, firing: false, pressed: new Set() }
+  const state = { moveX: 0, moveY: 0, firing: false, bank: 0, pressed: new Set() }
   const keys = new Set()
   const pressedThisFrame = new Set()
   let prevPadStart = false
@@ -31,6 +33,8 @@ export function createInputState() {
   let rightTime = 0
   let upTime = 0
   let downTime = 0
+  let dodgeLeftTime = 0
+  let dodgeRightTime = 0
 
   function onKeyDown(e) {
     if (edgeCodeSet.has(e.code) && !keys.has(e.code)) pressedThisFrame.add(e.code)
@@ -40,6 +44,8 @@ export function createInputState() {
     else if (rightCodes.has(e.code)) rightTime = t
     else if (upCodes.has(e.code)) upTime = t
     else if (downCodes.has(e.code)) downTime = t
+    if (dodgeLeftCodes.has(e.code)) dodgeLeftTime = t
+    else if (dodgeRightCodes.has(e.code)) dodgeRightTime = t
   }
   function onKeyUp(e) {
     keys.delete(e.code)
@@ -88,10 +94,22 @@ export function createInputState() {
     let firing = false
     for (const code of fireCodes) if (keys.has(code)) { firing = true; break }
 
+    // giro-desvio (Z/C): -1/0/1 CONTÍNUO enquanto a tecla está segurada (não é um "toque"),
+    // pra rail.js inclinar a nave e mantê-la assim enquanto durar o input
+    let dodgeLeftHeld = false
+    let dodgeRightHeld = false
+    for (const code of dodgeLeftCodes) if (keys.has(code)) { dodgeLeftHeld = true; break }
+    for (const code of dodgeRightCodes) if (keys.has(code)) { dodgeRightHeld = true; break }
+    let bank = 0
+    if (dodgeLeftHeld) bank -= 1
+    if (dodgeRightHeld) bank += 1
+    if (dodgeLeftHeld && dodgeRightHeld) bank = dodgeLeftTime >= dodgeRightTime ? -1 : 1
+
     return {
       moveX: Math.sign(moveX),
       moveY: Math.sign(moveY),
       firing,
+      bank,
       active: moveX !== 0 || moveY !== 0 || firing,
     }
   }
@@ -138,6 +156,7 @@ export function createInputState() {
       state.moveX = moveX
       state.moveY = moveY
       state.firing = firing
+      state.bank = kb.bank
       state.pressed = new Set(pressedThisFrame)
       pressedThisFrame.clear()
       return state
