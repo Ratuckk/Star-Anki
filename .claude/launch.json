@@ -4,7 +4,7 @@
     {
       "name": "static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8420"],
+      "runtimeArgs": ["tools/no-cache-server.py", "8420"],
       "port": 8420
     }
   ]

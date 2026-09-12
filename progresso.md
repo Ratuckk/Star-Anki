@@ -2,6 +2,16 @@
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
 
+## Bugfix crítico: servidor local sem Cache-Control deixava o navegador preso em versões antigas
+
+O usuário relatou "a v0.22 não tá" depois de eu ter comitado e feito push da Fase 2. Investigando: `tools/run-game.mjs` (o servidor real que `start-game.bat` sobe pro usuário jogar) respondia todo arquivo com `res.writeHead(200, { 'Content-Type': ... })`, **sem nenhum header de cache**. Sem `Cache-Control`/`ETag`, o navegador aplica cache heurístico por conta própria e pode continuar servindo uma cópia de dias atrás do `.js` mesmo depois do arquivo mudar no disco e o servidor reiniciar — exatamente o que aconteceu. Isso bate 100% com um problema que eu já tinha documentado no ambiente de teste automatizado (via `preview_start`) na Fase 1/2, só que lá eu suspeitava (e ainda suspeito, confirmado de novo aqui) que é um proxy de cache específico da ferramenta de teste, sem forwarding pro servidor real — só que agora ficou claro que o PRÓPRIO `run-game.mjs` também tinha esse problema, e esse sim afeta o navegador de verdade do usuário.
+
+**Corrigido**: `tools/run-game.mjs` agora manda `Cache-Control: no-store` em toda resposta. Criei também `tools/no-cache-server.py` (mesma ideia, pro servidor Python do `.claude/launch.json` que eu uso pra testar) e atualizei `.claude/launch.json` pra usá-lo em vez do `python -m http.server` puro.
+
+**Ação única necessária do usuário**: como o navegador dele já pode ter uma cópia antiga guardada de antes dessa correção existir, um `Ctrl+Shift+R` (hard refresh) ou limpar dados do site pra `localhost:8420` uma vez resolve. Depois disso, o `Cache-Control: no-store` garante que isso não acontece de novo em sessões futuras.
+
+**Ainda não resolvido**: minha própria ferramenta de teste automatizado (`preview_start`/Browser pane) continua servindo conteúdo de outro dia mesmo com esse header novo — confirmei que a requisição nem chega no meu servidor (log mostra só a requisição inicial da página, nunca os `.js`), ou seja, tem uma camada de cache/proxy fora do meu alcance específica dessa ferramenta. Isso não afeta o jogo real do usuário, só a minha capacidade de testar visualmente nesta sessão.
+
 ## Pendências agora
 
 - [ ] **Mega-pedido do usuário (VISUAL/GAMEPLAY/BARALHO/GERAL) dividido em 9 fases** — ver seção "Fases do mega-pedido" logo abaixo. Fase 1 feita nesta entrega; Fases 2-8 pendentes; Fase 9 (as "me dê ideias") só depois de tudo, por pedido explícito do usuário.

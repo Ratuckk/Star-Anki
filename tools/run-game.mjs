@@ -52,7 +52,13 @@ const server = createServer(async (req, res) => {
     const info = await stat(filePath)
     if (info.isDirectory()) throw new Error('is a directory')
     const data = await readFile(filePath)
-    res.writeHead(200, { 'Content-Type': MIME[extname(filePath)] || 'application/octet-stream' })
+    // sem isso o navegador guarda os .js em cache heurístico (sem Cache-Control nem ETag, só
+    // por Last-Modified) e pode continuar servindo uma versão de dias atrás mesmo depois de
+    // editar o arquivo e reiniciar o servidor — foi exatamente o que causou "a v0.22 não tá"
+    res.writeHead(200, {
+      'Content-Type': MIME[extname(filePath)] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    })
     res.end(data)
   } catch {
     res.writeHead(404)
