@@ -27,6 +27,12 @@ const ENGINE_TRAIL_INTERVAL = 0.035
 const ENGINE_TRAIL_DURATION = 0.7
 const ENGINE_TRAIL_SPEED = 8
 
+// --- tiro teleguiado: argola de fumaça ao disparar + afterimage em voo (ambos verdes, cor
+// combinando com o projétil de combat.js) ---
+const HOMING_EFFECT_COLOR = 0x2bff88
+const SMOKE_RING_DURATION = 0.5
+const HOMING_AFTERIMAGE_DURATION = 0.25
+
 // sistema de efeitos visuais: starfield permanente + efeitos transientes (explosão, muzzle flash,
 // rastro de motor). Tudo fica aqui pra main.js/combat.js não incharem — eles só chamam os métodos.
 // Os transientes são criados sob demanda e descartados quando a vida útil acaba; o starfield é
@@ -78,6 +84,8 @@ export function createEffectsSystem(scene) {
   const bursts = []
   const muzzleFlashes = []
   const trailParticles = []
+  const smokeRings = []
+  const homingAfterimages = []
   let trailTimer = 0
 
   // ============ GLOW DE CARGA (tiro teleguiado) ============
@@ -176,6 +184,47 @@ export function createEffectsSystem(scene) {
     })
   }
 
+  // argola de fumaça grande ao disparar o tiro carregado: um torus que nasce pequeno na frente
+  // da nave, expande bastante e desvanece — feedback de "isso foi um disparo forte"
+  function smokeRing(position, direction) {
+    const geometry = new THREE.TorusGeometry(1, 0.22, 8, 20)
+    const material = new THREE.MeshBasicMaterial({
+      color: HOMING_EFFECT_COLOR,
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().normalize())
+    mesh.scale.setScalar(0.4)
+    scene.add(mesh)
+    smokeRings.push({ mesh, life: 0 })
+  }
+
+  // cópia fantasma do projétil do tiro carregado, largada periodicamente em voo — cria um rastro
+  // (afterimage) que encolhe e desvanece rápido. Usa o mesmo quaternion do projétil real, então
+  // já nasce alinhado com a direção de voo sem precisar recalcular nada aqui.
+  function homingAfterimage(position, quaternion) {
+    const geometry = new THREE.ConeGeometry(0.5, 3, 6)
+    geometry.rotateX(Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({
+      color: HOMING_EFFECT_COLOR,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.copy(quaternion)
+    scene.add(mesh)
+    homingAfterimages.push({ mesh, life: 0 })
+  }
+
   function update(dt, shipPosition, shipForward, opts = {}) {
     const { boosting = 1, skipTrail = false } = opts
 
@@ -248,6 +297,39 @@ export function createEffectsSystem(scene) {
       p.mesh.material.opacity = 0.9 * (1 - t)
       p.mesh.scale.setScalar(1 - t * 0.6)
     }
+
+    // argola de fumaça: expande bastante e desvanece
+    for (let i = smokeRings.length - 1; i >= 0; i--) {
+      const s = smokeRings[i]
+      s.life += dt
+      const t = s.life / SMOKE_RING_DURATION
+      if (t >= 1) {
+        scene.remove(s.mesh)
+        s.mesh.geometry.dispose()
+        s.mesh.material.dispose()
+        smokeRings.splice(i, 1)
+        continue
+      }
+      s.mesh.scale.setScalar(0.4 + t * 4.5)
+      s.mesh.material.opacity = 0.6 * (1 - t)
+    }
+
+    // afterimage do tiro carregado: encolhe e desvanece rápido, sem se mover (fica "parado" no
+    // rastro enquanto o projétil real segue em frente)
+    for (let i = homingAfterimages.length - 1; i >= 0; i--) {
+      const a = homingAfterimages[i]
+      a.life += dt
+      const t = a.life / HOMING_AFTERIMAGE_DURATION
+      if (t >= 1) {
+        scene.remove(a.mesh)
+        a.mesh.geometry.dispose()
+        a.mesh.material.dispose()
+        homingAfterimages.splice(i, 1)
+        continue
+      }
+      a.mesh.material.opacity = 0.45 * (1 - t)
+      a.mesh.scale.setScalar(1 - t * 0.4)
+    }
   }
 
   function dispose() {
@@ -257,13 +339,17 @@ export function createEffectsSystem(scene) {
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
     for (const p of trailParticles) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
+    for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
+    for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     bursts.length = 0
     muzzleFlashes.length = 0
     trailParticles.length = 0
+    smokeRings.length = 0
+    homingAfterimages.length = 0
     scene.remove(chargeGlow)
     chargeGlowGeometry.dispose()
     chargeGlowMaterial.dispose()
   }
 
-  return { update, explosion, muzzleFlash, setChargeGlow, dispose }
+  return { update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage, dispose }
 }

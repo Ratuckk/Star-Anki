@@ -7,9 +7,20 @@ const PASS_BEHIND = -4
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 
-const HOMING_PROJECTILE_SPEED = 46
+const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
 const HOMING_PROJECTILE_DAMAGE = 3
+const HOMING_EXPLOSION_COLOR = 0x2bff88 // explosão/impacto verde exclusivo do tiro carregado
+const HOMING_AFTERIMAGE_INTERVAL = 0.035 // segundos entre cada cópia fantasma do rastro
 const WINGMAN_OFFSETS = [3.2, -3.2]
+
+// tiro normal do jogador: 1 disparo central com 2 de dano (era 2 tiros de 1 dano lado a lado)
+const PLAYER_PROJECTILE_DAMAGE = 2
+// quão rápido (por segundo) o tiro normal em voo se realinha rumo à direção atual da mira —
+// não é homing de verdade (sem alvo travado), só um leve "puxão" pra facilitar acertar
+const PLAYER_PROJECTILE_STEER_RATE = 2.2
+// cresce visualmente a cada projétil extra ganho por upgrade (relativo ao projectileCount base
+// de 1) — combinado com projectileCount vindo das cartas "extra-projectile"
+const PLAYER_PROJECTILE_GROWTH_PER_EXTRA = 0.15
 
 export const DEFAULT_FIRE_COOLDOWN = 0.2
 export const DEFAULT_AIM_ASSIST_ANGLE = THREE.MathUtils.degToRad(4)
@@ -121,17 +132,23 @@ export function createCombatSystem(scene, rail, effects = null) {
   // "disparo de verdade" em vez da esfera genérica de antes. rotateX pré-orienta a geometria
   // pra sua ponta apontar no eixo +Z local, aí cada projétil só precisa de um quaternion
   // alinhando +Z com a direção de voo (feito a cada frame em updateProjectiles).
-  const projectileGeometry = new THREE.ConeGeometry(0.14, 1.0, 5)
+  const projectileGeometry = new THREE.ConeGeometry(0.168, 1.2, 5) // 0.14/1.0 * 1.2 (pedido: +20% de tamanho)
   projectileGeometry.rotateX(Math.PI / 2)
   const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
 
-  // tiro teleguiado: mesmo formato, maior e roxo — visualmente distinto do tiro normal
-  const homingProjectileGeometry = new THREE.ConeGeometry(0.44, 2.8, 6)
+  // tiro teleguiado: mesmo formato, maior e verde — visualmente distinto do tiro normal (era
+  // roxo; pedido: verde, +20% de tamanho em cima do que já tinha dobrado antes)
+  const homingProjectileGeometry = new THREE.ConeGeometry(0.528, 3.36, 6)
   homingProjectileGeometry.rotateX(Math.PI / 2)
-  const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xb84dff })
+  const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0x2bff88 })
 
-  // nave de apoio cosmética (carta roguelike "wingman"): não tem hitbox própria, só atira junto
-  const wingmanGeometry = new THREE.ConeGeometry(0.5, 1.6, 4)
+  // nave de apoio cosmética (carta roguelike "wingman"): não tem hitbox própria, só atira junto.
+  // Triângulo achatado (cone de 3 lados) apontando na direção do voo via lookAt, pequeno —
+  // pedido: parecido com o novo design mais triangular da própria nave, em vez do cone de 4
+  // lados "em pé" de antes. rotateX(-90°) pré-orienta o ápice pro -Z local, porque lookAt (ao
+  // contrário do quaternion usado nos projéteis, que alinha +Z) aponta o -Z local pro alvo.
+  const wingmanGeometry = new THREE.ConeGeometry(0.32, 1.1, 3)
+  wingmanGeometry.rotateX(-Math.PI / 2)
   const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
 
   const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
@@ -362,13 +379,23 @@ export function createCombatSystem(scene, rail, effects = null) {
     if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
     lateralAxis.normalize()
 
+    // com projectileCount=1 (padrão), lateralOffset dá exatamente 0 — sai do centro da ponta da
+    // nave, sem espalhamento. Upgrades que aumentam projectileCount também deixam o projétil
+    // visualmente maior (mesh.scale), pra "sentir" a evolução do tiro além de só mais unidades.
     const mid = (projectileCount - 1) / 2
+    const visualScale = 1 + (projectileCount - 1) * PLAYER_PROJECTILE_GROWTH_PER_EXTRA
     for (let i = 0; i < projectileCount; i += 1) {
       const lateralOffset = (i - mid) * PROJECTILE_LATERAL_SPACING
       const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
       mesh.position.copy(origin).addScaledVector(lateralAxis, lateralOffset)
+      mesh.scale.setScalar(visualScale)
       scene.add(mesh)
-      projectiles.push({ mesh, velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0 })
+      projectiles.push({
+        mesh,
+        velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED),
+        traveled: 0,
+        damage: PLAYER_PROJECTILE_DAMAGE,
+      })
     }
 
     if (effects) effects.muzzleFlash(origin, shotDirection)
@@ -401,7 +428,7 @@ export function createCombatSystem(scene, rail, effects = null) {
     enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED), traveled: 0 })
   }
 
-  function updateProjectiles(dt) {
+  function updateProjectiles(dt, aimDirection) {
     let hitEvent = null
     let enemyKills = 0
     let enemyKillPoints = 0
@@ -420,6 +447,14 @@ export function createCombatSystem(scene, rail, effects = null) {
           const desired = projectile.homingTarget.mesh.position.clone().sub(projectile.mesh.position).normalize()
           projectile.velocity.copy(desired.multiplyScalar(HOMING_PROJECTILE_SPEED))
         }
+      } else if (aimDirection && !projectile.isHoming) {
+        // tiro normal (sem alvo travado): puxa a direção suavemente rumo à mira atual, em vez
+        // de manter a direção fixa do instante do disparo — "vai se reposicionando até chegar"
+        const speed = projectile.velocity.length()
+        const currentDir = projectile.velocity.clone().normalize()
+        const steerT = Math.min(1, PLAYER_PROJECTILE_STEER_RATE * dt)
+        const steeredDir = currentDir.lerp(aimDirection, steerT)
+        if (steeredDir.lengthSq() > 1e-6) projectile.velocity.copy(steeredDir.normalize().multiplyScalar(speed))
       }
 
       const step = projectile.velocity.clone().multiplyScalar(dt)
@@ -427,6 +462,16 @@ export function createCombatSystem(scene, rail, effects = null) {
       projectile.traveled += step.length()
       if (projectile.velocity.lengthSq() > 1e-6) {
         projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, projectile.velocity.clone().normalize())
+      }
+
+      // afterimage do tiro carregado: larga uma cópia fantasma verde se desvanecendo a cada
+      // poucos frames, criando um rastro (não é a cada frame pra não pesar demais)
+      if (projectile.isHoming && effects) {
+        projectile.afterimageTimer -= dt
+        if (projectile.afterimageTimer <= 0) {
+          projectile.afterimageTimer = HOMING_AFTERIMAGE_INTERVAL
+          effects.homingAfterimage(projectile.mesh.position, projectile.mesh.quaternion)
+        }
       }
 
       const targetHit = quizTargets.find((t) => !t.dying && projectile.mesh.position.distanceTo(t.mesh.position) <= QUIZ_HIT_RADIUS)
@@ -443,17 +488,21 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (enemyHit) {
         enemyHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
+        // tiro carregado: todo contato causa uma explosão verde pequena, mesmo sem matar —
+        // feedback de impacto distinto do tiro normal, que não tem nada quando só tira hp
+        if (projectile.isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         if (enemyHit.hp > 0) continue
         enemyHit.dying = true
         enemyHit.deathT = 0
         if (enemyHit.kind === 'boss') {
           bossDefeated = true
-          if (effects) effects.explosion(enemyHit.mesh.position, BOSS_ENEMY_COLOR, 3)
+          if (effects) effects.explosion(enemyHit.mesh.position, projectile.isHoming ? HOMING_EXPLOSION_COLOR : BOSS_ENEMY_COLOR, 3)
         } else {
           enemyKills += 1
           enemyKillPoints += ENEMY_KILL_BONUS
           if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
-          if (effects) effects.explosion(enemyHit.mesh.position, enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
+          const killColor = projectile.isHoming ? HOMING_EXPLOSION_COLOR : (enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR)
+          if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.1)
         }
         continue
       }
@@ -472,11 +521,12 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (goldenHit) {
         goldenHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
+        if (projectile.isHoming && effects) effects.explosion(goldenHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         if (goldenHit.hp > 0) continue
         goldenHit.dying = true
         goldenHit.deathT = 0
         goldenSpecialHit = true
-        if (effects) effects.explosion(goldenHit.mesh.position, GOLDEN_SPECIAL_COLOR, 1.8)
+        if (effects) effects.explosion(goldenHit.mesh.position, projectile.isHoming ? HOMING_EXPLOSION_COLOR : GOLDEN_SPECIAL_COLOR, 1.8)
         continue
       }
 
@@ -653,9 +703,22 @@ export function createCombatSystem(scene, rail, effects = null) {
         const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
         mesh.position.copy(origin)
         scene.add(mesh)
-        projectiles.push({ mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0, homingTarget: target, damage: HOMING_PROJECTILE_DAMAGE })
+        projectiles.push({
+          mesh,
+          velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED),
+          traveled: 0,
+          homingTarget: target,
+          damage: HOMING_PROJECTILE_DAMAGE,
+          isHoming: true,
+          afterimageTimer: 0,
+        })
       }
-      if (effects) effects.muzzleFlash(origin, targets[0] ? targets[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1))
+      const firstDir = targets[0] ? targets[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)
+      if (effects) {
+        effects.muzzleFlash(origin, firstDir)
+        // argola de fumaça grande ao disparar o tiro carregado — feedback de "isso foi um tiro forte"
+        effects.smokeRing(origin, firstDir)
+      }
       return targets.length
     },
 
@@ -909,7 +972,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         currentLockOn = null
       }
 
-      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated } = updateProjectiles(dt)
+      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated } = updateProjectiles(dt, aimDirection)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
       updateGoldenTargets(dt, playerPosition)

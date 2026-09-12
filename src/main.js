@@ -96,7 +96,8 @@ const FIRE_COOLDOWN_FLOOR = 0.06
 const AIM_ASSIST_STEP = THREE.MathUtils.degToRad(1.5)
 const AIM_ASSIST_CAP = THREE.MathUtils.degToRad(14)
 const PROJECTILE_COUNT_CAP = 4
-const PROJECTILE_COUNT_START = 2
+// pedido: tiro padrão vira 1 disparo central (2 de dano) em vez de 2 tiros de 1 dano lado a lado
+const PROJECTILE_COUNT_START = 1
 
 const GOLDEN_INTERVAL_MIN_MS = 45000
 const GOLDEN_INTERVAL_MAX_MS = 100000

@@ -17,8 +17,8 @@ Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempr
 
 Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 blocos: VISUAL, GAMEPLAY, BARALHO, GERAL) terminando com: *"quero separe por fases cada coisa. quanto as perguntas que lhe fiz neste prompt, só as faça depois que terminar todas fases. quero também que caso INCERTO, realize uma pergunta para confirmar."* Antes de dividir em fases, fiz 2 rodadas de perguntas de confirmação (`AskUserQuestion`) sobre os pontos mais arriscados de interpretar errado: mecânica de blocos-pergunta do chefe, pausa total durante perguntas, disparo padrão 1x2dano vs 2x1dano, giro completo por toque duplo (reintroduzido — eu tinha removido errado na v0.20.0), propulsor/repulsor, disparo normal seguindo a retícula, e escopo de "comentar todas variáveis". Respostas do usuário incorporadas nas fases abaixo.
 
-- [x] **Fase 1 — Baralho** — v0.21.0 (esta entrega, detalhada abaixo).
-- [ ] Fase 2 — Disparo e mira.
+- [x] **Fase 1 — Baralho** — v0.21.0.
+- [x] **Fase 2 — Disparo e mira** — v0.22.0 (esta entrega, detalhada abaixo).
 - [ ] Fase 3 — Propulsor/Repulsor (A/S) + giro completo de 360° reintroduzido.
 - [ ] Fase 4 — Motor de spawn e IA de inimigos.
 - [ ] Fase 5 — Chefe (blocos-pergunta de verdade) e transições (all-range/dourado/chefe).
@@ -26,6 +26,21 @@ Pedido literal do usuário (resumo — a mensagem completa tinha ~50 itens em 4 
 - [ ] Fase 7 — Visual restante (nave, propulsão, dano, escudo) + os 2 itens antigos do Fase C.
 - [ ] Fase 8 — Geral (comentários de variáveis de estado/constantes; fusão de baralhos já foi feita na Fase 1).
 - [ ] Fase 9 — só depois de 1-8: responder as 4 rodadas de "me dê ideias" (efeitos visuais, variedade de inimigos, controle do all-range, composição de baralhos).
+
+## Fase 2 — Disparo e mira — v0.22.0
+
+Pedido literal (respostas às perguntas de confirmação entre parênteses): *"Aumente a velocidade do disparo carregado em direção inimigos em 50%"*; *"melhore o efeito de disparo dos tiros da nave, adicione a feature dele melhorar junto com as melhorias de tiros também, ficando maior. inclusive faça ser um cone"* (o cone já existia desde uma fase anterior — só faltava crescer com upgrade); *"Aumente o tamanho do disparo carregado em 20% e adicione um afterimage nele... deixe o disparo na cor verde e faça com que a explosão ao contato dele com o inimigo causar também uma explosão verde"*; *"Adicione um efeito de argola grande de fumaça ao disparar o tiro carregado"*; *"Corrija a hitbox dos tiros do jogador, inclusive aumente o tamanho dos tiros em 20% e faça ser apenas 1 tiro que causa 2 de dano ao invés de 2, que sai perfeitamente do ponto central da ponta da nave"* (confirmado: só o padrão muda, upgrades continuam empilhando tiros); *"Faça os disparos irem em direção de onde está a retícula, lentamente se reposicionando até chegar"* (confirmado: todo tiro normal, sem lock-on); e o pedido extra que veio junto na resposta sobre o disparo padrão: *"quando adiciona o companion que voa junto com você atirando, mude o visual dele para um triângulo deitado virado pra direção de onde o jogador está voando, assim como a nave, pequeno"*.
+
+- **Tiro padrão 1x2dano**: `PROJECTILE_COUNT_START` (main.js) de 2 para 1 — com `projectileCount=1`, o cálculo de espalhamento lateral em `fire()` já dá offset 0 sozinho (sai do centro, sem precisar de caso especial). Todo projétil do `fire()` ganhou `damage: PLAYER_PROJECTILE_DAMAGE` (2, era implícito 1). Upgrades de "mais projétil" continuam empilhando tiros extra normalmente, cada um também com 2 de dano.
+- **Cone cresce com upgrade**: `fire()` agora escala cada mesh (`mesh.scale.setScalar(...)`) proporcional a `projectileCount` acima do base — no cap de 4 tiros, ~45% maior que o tiro base.
+- **+20% de tamanho no tiro normal E no carregado**: `projectileGeometry` (0.14/1.0 → 0.168/1.2) e `homingProjectileGeometry` (0.44/2.8 → 0.528/3.36, em cima do que já tinha dobrado numa fase anterior).
+- **Tiro normal segue a retícula em voo**: `updateProjectiles(dt, aimDirection)` agora recebe a direção atual da mira e, pra projéteis sem alvo travado (não-homing), gira a velocidade suavemente rumo a ela a cada frame (`PLAYER_PROJECTILE_STEER_RATE`) — sem lock-on de verdade, só um auto-mira leve e contínuo.
+- **Tiro carregado**: velocidade `HOMING_PROJECTILE_SPEED` 46→69 (+50%); cor trocada de roxo pra verde (`0x2bff88`); toda vez que acerta um inimigo (mate ou não) causa uma explosão verde pequena de impacto além da explosão de abate (que também vira verde quando é o carregado que mata); ganhou afterimage (`effects.homingAfterimage`, larga uma cópia fantasma a cada 35ms que encolhe/desvanece em 0.25s) e uma argola de fumaça verde ao disparar (`effects.smokeRing`, torus que expande e desvanece em 0.5s).
+- **Wingman (companion) redesenhado**: geometria trocada de cone de 4 lados "em pé" pra um cone de 3 lados (triângulo) pré-rotacionado deitado, menor (0.32/1.1 em vez de 0.5/1.6) — igual ao truque já usado nos projéteis, mas com o sinal de rotação invertido porque o wingman usa `lookAt` (convenção -Z) e os projéteis usam quaternion manual (convenção +Z).
+
+**Não testado ao vivo**: mesmo bloqueio de cache do ambiente documentado na Fase 1 (confirmei que persiste ao tentar de novo). Verificação nesta fase: `node --check` em todos os arquivos tocados (`combat.js`, `effects.js`, `main.js`) e `node src/selftest.mjs`, mais revisão manual linha a linha de cada trecho alterado (não consegui rodar um teste de integração do `combat.js` com THREE.js real em Node porque o projeto não tem `node_modules` — usa import map de CDN direto no navegador, sem bundler).
+
+**Versão**: v0.21.0 → v0.22.0.
 
 ## Fase 1 — Baralho — v0.21.0
 
