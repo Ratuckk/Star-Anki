@@ -70,18 +70,9 @@ const ENEMY_ARENA_SPAWN_MAX = 160
 const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
 // ============ FASE 4: velocidade aleatória + movimento mais suave/radial em arena ============
-// pedido literal: "faça ser aleatório a posição deles no mapa... eles tem que vir até o jogador
-// para o atacar, mas em velocidades aleatórias, mas não mais rápido que a metade da velocidade
-// do jogador" — posição já era aleatória (randomSpawnAroundArena, v0.18.0); o que falta é a
-// velocidade. Cada inimigo sorteia um "speedFactor" (fração do teto) uma vez, no spawn; o teto
-// em si (metade da velocidade REAL do jogador) é recalculado todo frame, então reage ao boost.
 const ENEMY_ARENA_SPEED_FACTOR_MIN = 0.35
 const ENEMY_ARENA_SPEED_FACTOR_MAX = 1.0
-// direção de movimento suavizada por interpolação (não vira instantaneamente rumo ao jogador) —
-// "movimento mais suave" pedido
 const ENEMY_TURN_RATE = 1.6
-// "um estado radial às vezes para inimigos aleatórios, no caso, nem todos fazem isso, decidido
-// aleatoriamente" (confirmado: radial = órbita ao redor do jogador antes de seguir perseguindo)
 const ENEMY_ORBIT_CHANCE = 0.3
 const ENEMY_ORBIT_DURATION_MIN = 1.5
 const ENEMY_ORBIT_DURATION_MAX = 3.5
@@ -93,10 +84,6 @@ const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
 const ENEMY_FIRE_MIN_DISTANCE = 14
 
 // ============ FASE 4: mini-inimigos vermelhos (fila/enxame, só modo normal) ============
-// pedido literal: "mini inimigos vermelhos (que tem 30% menos tamanho que o inimigo genérico
-// vermelho normal) que se movem rapidamente e são destruídos com 1 hit só... surgem como vários
-// em uma fila de 5 a 10 que fica se movimentando pela tela até se jogarem em direção ao jogador
-// caso ele não os destrua rapidamente, com eles se espalhando pra ser difícil de desviar"
 const MINI_ENEMY_SCALE = 0.7 // 30% menor que o ENEMY_COLOR normal
 const MINI_ENEMY_HIT_RADIUS = ENEMY_HIT_RADIUS * MINI_ENEMY_SCALE
 const MINI_SWARM_MIN_COUNT = 5
@@ -139,8 +126,6 @@ const GOLDEN_SPECIAL_HIT_RADIUS = 2.2
 const GOLDEN_SPECIAL_DEATH_DURATION = 0.25
 const GOLDEN_SPECIAL_PULSE_SPEED = 4
 const GOLDEN_SPECIAL_PULSE_AMOUNT = 0.18
-// dourado especial agora aguenta vários hits e age de verdade — persegue e atira, em vez de só
-// flutuar esperando um tiro certeiro
 const GOLDEN_SPECIAL_HP = 10
 const GOLDEN_CHASE_SPEED = 9
 const GOLDEN_FIRE_INTERVAL_MIN = 1200
@@ -149,6 +134,13 @@ const GOLDEN_FIRE_INTERVAL_MAX = 2400
 // tiro carregado: enquanto segura o botão, varrer a mira sobre inimigos os marca (lock-on) —
 // ao soltar, o teleguiado mira exatamente nos marcados em vez dos N mais próximos
 const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
+
+// >> NOVO: distância máxima (unidades de mundo) para um alvo poder ser travado/auto-mirável.
+// Vale tanto pra detecção da mira (findLockOnTarget) quanto pro teleguiado (sweepLockOn e a
+// seleção de alvos em fireHomingShot). Sem isso, dá pra "magnetizar" tiro em inimigo a
+// centenas de unidades de distância. Ajuste pra cima (150+) se quiser voltar ao comportamento
+// antigo, ou pra baixo (60) pra exigir aproximação. <<
+const MAX_LOCK_RANGE = 90
 
 const TIME_ENEMY_COLOR = 0xb026ff
 const TIME_ENEMY_EMISSIVE = 0x4b0082
@@ -169,25 +161,14 @@ export function createCombatSystem(scene, rail, effects = null) {
   const bonusTargets = []
   const goldenTargets = []
 
-  // disparo do jogador: formato angular (cone achatado apontando na direção do tiro) e azul —
-  // "disparo de verdade" em vez da esfera genérica de antes. rotateX pré-orienta a geometria
-  // pra sua ponta apontar no eixo +Z local, aí cada projétil só precisa de um quaternion
-  // alinhando +Z com a direção de voo (feito a cada frame em updateProjectiles).
-  const projectileGeometry = new THREE.ConeGeometry(0.168, 1.2, 5) // 0.14/1.0 * 1.2 (pedido: +20% de tamanho)
+  const projectileGeometry = new THREE.ConeGeometry(0.168, 1.2, 5)
   projectileGeometry.rotateX(Math.PI / 2)
   const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
 
-  // tiro teleguiado: mesmo formato, maior e verde — visualmente distinto do tiro normal (era
-  // roxo; pedido: verde, +20% de tamanho em cima do que já tinha dobrado antes)
   const homingProjectileGeometry = new THREE.ConeGeometry(0.528, 3.36, 6)
   homingProjectileGeometry.rotateX(Math.PI / 2)
   const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0x2bff88 })
 
-  // nave de apoio cosmética (carta roguelike "wingman"): não tem hitbox própria, só atira junto.
-  // Triângulo achatado (cone de 3 lados) apontando na direção do voo via lookAt, pequeno —
-  // pedido: parecido com o novo design mais triangular da própria nave, em vez do cone de 4
-  // lados "em pé" de antes. rotateX(-90°) pré-orienta o ápice pro -Z local, porque lookAt (ao
-  // contrário do quaternion usado nos projéteis, que alinha +Z) aponta o -Z local pro alvo.
   const wingmanGeometry = new THREE.ConeGeometry(0.32, 1.1, 3)
   wingmanGeometry.rotateX(-Math.PI / 2)
   const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
@@ -215,7 +196,6 @@ export function createCombatSystem(scene, rail, effects = null) {
   const tankEnemyMaterial = new THREE.MeshPhongMaterial({ color: TANK_ENEMY_COLOR, flatShading: true })
   const bossEnemyMaterial = new THREE.MeshPhongMaterial({ color: BOSS_ENEMY_COLOR, emissive: BOSS_ENEMY_EMISSIVE, flatShading: true })
 
-  // debug: wireframes mostrando o raio de colisão real de cada alvo/inimigo/projétil em cena
   let showHitboxes = false
   const hitboxGeometry = new THREE.SphereGeometry(1, 8, 6)
   const hitboxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, depthTest: false })
@@ -273,10 +253,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     return base.position.clone().addScaledVector(base.right, lateralX).addScaledVector(base.up, lateralY)
   }
 
-  // spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
-  // arena (não do jogador!) — é o que faz o inimigo aparecer espalhado pelo mapa em vez de
-  // colado do lado da nave (getFrameAt em modo arena sempre retorna a posição ATUAL do
-  // jogador, então randomSpawnPositionOnPath fica quebrado nesse modo)
   function randomSpawnAroundArena(distanceMin, distanceMax) {
     const center = rail.getArenaCenter()
     const azimuth = Math.random() * Math.PI * 2
@@ -306,7 +282,7 @@ export function createCombatSystem(scene, rail, effects = null) {
   let elapsed = 0
   let nextEnemyId = 1
 
-  const wingmen = [] // nave(s) de apoio cosmética(s): { mesh }
+  const wingmen = []
 
   function updateWingmen() {
     if (wingmen.length === 0) return
@@ -321,18 +297,15 @@ export function createCombatSystem(scene, rail, effects = null) {
     })
   }
 
-  // alvo travado (detecção apenas). NÃO redireciona mais o disparo — o tiro vai sempre na
-  // direção passada pelo main.js (que é a direção da mira). Isso existe pra um futuro
-  // disparo carregado, onde o lock-on vai ser usado pra guiar o tiro.
   let currentLockOn = null
 
-  // lock-on por varredura: inimigos marcados enquanto o jogador segura o botão de atirar
-  // carregando o tiro teleguiado — main.js chama sweepLockOn todo frame que estiver segurando
   const lockedEnemies = new Set()
 
+  // >> AJUSTADO: filtro de distância — só trava/marca inimigo dentro de MAX_LOCK_RANGE <<
   function sweepLockOn(origin, direction) {
     for (const e of enemies) {
       if (e.dying || lockedEnemies.has(e)) continue
+      if (origin.distanceTo(e.mesh.position) > MAX_LOCK_RANGE) continue
       const toTarget = e.mesh.position.clone().sub(origin).normalize()
       const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
       if (angle < ENEMY_LOCK_ANGLE) lockedEnemies.add(e)
@@ -384,9 +357,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
   }
 
-  // distância de um ponto até o SEGMENTO percorrido pelo projétil no frame (não só até a
-  // posição final) — sem isso, com dt alto (lag/fps baixo) um projétil rápido anda mais que o
-  // raio de acerto num frame só e pode atravessar um inimigo sem nunca cair dentro do raio.
   function distanceToSegment(point, segStart, segEnd) {
     const seg = segEnd.clone().sub(segStart)
     const lenSq = seg.lengthSq()
@@ -409,11 +379,13 @@ export function createCombatSystem(scene, rail, effects = null) {
     return ENEMY_DEATH_DURATION
   }
 
+  // >> AJUSTADO: filtro de distância — só trava alvo de pergunta dentro de MAX_LOCK_RANGE <<
   function findLockOnTarget(origin, direction) {
     let best = null
     let bestAngle = aimAssistAngle
     for (const target of quizTargets) {
       if (target.dying) continue
+      if (origin.distanceTo(target.mesh.position) > MAX_LOCK_RANGE) continue
       const toTarget = target.mesh.position.clone().sub(origin).normalize()
       const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
       if (angle < bestAngle) {
@@ -425,17 +397,12 @@ export function createCombatSystem(scene, rail, effects = null) {
   }
 
   function fire(origin, direction) {
-    // tiro vai SEMPRE na direção recebida (que é a direção da mira). Sem sequestro por
-    // lock-on — se o jogador deslocou a mira, o tiro acompanha a mira, ponto.
     const shotDirection = direction.clone()
 
     const lateralAxis = new THREE.Vector3().crossVectors(shotDirection, WORLD_UP)
     if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
     lateralAxis.normalize()
 
-    // com projectileCount=1 (padrão), lateralOffset dá exatamente 0 — sai do centro da ponta da
-    // nave, sem espalhamento. Upgrades que aumentam projectileCount também deixam o projétil
-    // visualmente maior (mesh.scale), pra "sentir" a evolução do tiro além de só mais unidades.
     const mid = (projectileCount - 1) / 2
     const visualScale = 1 + (projectileCount - 1) * PLAYER_PROJECTILE_GROWTH_PER_EXTRA
     for (let i = 0; i < projectileCount; i += 1) {
@@ -455,8 +422,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     if (effects) effects.muzzleFlash(origin, shotDirection)
   }
 
-  // tiro único, sem espalhamento lateral — usado pelas naves de apoio (wingmen) e pelo
-  // rebate de projéteis (carta utilitária)
   function fireSingle(origin, direction) {
     const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
     mesh.position.copy(origin)
@@ -492,8 +457,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     let bossDefeated = false
 
     for (const projectile of [...projectiles]) {
-      // tiro teleguiado: reorienta a velocidade pro alvo travado a cada frame (perseguição
-      // perfeita, sem física de mísseis) — se o alvo já morreu, o projétil só segue reto
       if (projectile.homingTarget) {
         if (projectile.homingTarget.dying || !enemies.includes(projectile.homingTarget)) {
           projectile.homingTarget = null
@@ -502,8 +465,6 @@ export function createCombatSystem(scene, rail, effects = null) {
           projectile.velocity.copy(desired.multiplyScalar(HOMING_PROJECTILE_SPEED))
         }
       } else if (aimDirection && !projectile.isHoming) {
-        // tiro normal (sem alvo travado): puxa a direção suavemente rumo à mira atual, em vez
-        // de manter a direção fixa do instante do disparo — "vai se reposicionando até chegar"
         const speed = projectile.velocity.length()
         const currentDir = projectile.velocity.clone().normalize()
         const steerT = Math.min(1, PLAYER_PROJECTILE_STEER_RATE * dt)
@@ -519,8 +480,6 @@ export function createCombatSystem(scene, rail, effects = null) {
         projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, projectile.velocity.clone().normalize())
       }
 
-      // afterimage do tiro carregado: larga uma cópia fantasma verde se desvanecendo a cada
-      // poucos frames, criando um rastro (não é a cada frame pra não pesar demais)
       if (projectile.isHoming && effects) {
         projectile.afterimageTimer -= dt
         if (projectile.afterimageTimer <= 0) {
@@ -543,8 +502,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (enemyHit) {
         enemyHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
-        // tiro carregado: todo contato causa uma explosão verde pequena, mesmo sem matar —
-        // feedback de impacto distinto do tiro normal, que não tem nada quando só tira hp
         if (projectile.isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         if (enemyHit.hp > 0) continue
         enemyHit.dying = true
@@ -633,7 +590,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       g.mesh.rotation.y += dt * 0.6
       g.mesh.rotation.x += dt * 0.3
 
-      // age de verdade: persegue o jogador e atira periodicamente, em vez de só flutuar
       if (playerPosition) {
         const toPlayer = playerPosition.clone().sub(g.mesh.position)
         if (toPlayer.lengthSq() > 1e-4) {
@@ -652,9 +608,6 @@ export function createCombatSystem(scene, rail, effects = null) {
     for (let i = 0; i < BOSS_ENEMY_SHOTS_PER_VOLLEY; i += 1) fireEnemyProjectile(enemy, playerPosition)
   }
 
-  // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
-  // colisão vira dano de verdade (inclusive no CHEFE, que normalmente só morre a tiro) em vez
-  // do "kamikaze" padrão (encostar mata o inimigo comum na hora, sem dano nem pontuação)
   function updateEnemies(dt, playerPosition, ramDamage = 0) {
     const inArena = rail.isArena()
     const frame = rail.getFrameAt(0)
@@ -693,17 +646,12 @@ export function createCombatSystem(scene, rail, effects = null) {
           }
           continue
         }
-        // sem a carta: encostar "mata" o inimigo comum (kamikaze) na hora, sem dano/pontuação —
-        // mas o CHEFE só pode ser derrotado a tiro, senão sumiria sem soltar o evento de vitória
         if (enemy.kind !== 'boss') {
           removeEnemy(enemy)
           continue
         }
       }
 
-      // fila de mini-inimigos (Fase 4): patrulha balançando de um lado a outro por um tempo,
-      // depois mergulha reto em direção a um ponto perto do jogador (com desvio pra se espalhar).
-      // Nunca atira — a "ameaça" deles é o mergulho em grupo, não projétil.
       if (enemy.kind === 'miniSwarm') {
         if (enemy.swarmState === 'patrol') {
           enemy.patrolTimer -= dt
@@ -724,8 +672,6 @@ export function createCombatSystem(scene, rail, effects = null) {
             enemy.mesh.position.addScaledVector(toTarget, MINI_SWARM_DIVE_SPEED * dt)
             enemy.mesh.lookAt(enemy.mesh.position.clone().add(toTarget))
           }
-          // passou reto sem colidir (ou já mergulhando há tempo demais) — some, "não estamos
-          // mais vendo eles"
           const relative = enemy.mesh.position.clone().sub(frame.position)
           if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || relative.dot(frame.forward) < PASS_BEHIND) {
             removeEnemy(enemy)
@@ -735,19 +681,12 @@ export function createCombatSystem(scene, rail, effects = null) {
         continue
       }
 
-      // em modo arena, inimigos perseguem o jogador ativamente — não há trilho fixo pra "passar
-      // por eles" como no modo normal, então precisam se mover até a nave por conta própria.
-      // Chefe sempre persegue, mesmo fora de arena (não deveria existir fora dela, mas por
-      // segurança o comportamento fica consistente).
       if (inArena && enemy.kind !== 'boss') {
-        // velocidade aleatória por inimigo (sorteada uma vez no spawn), sempre recalculada como
-        // fração do teto atual (metade da velocidade REAL do jogador, reage a boost) — pedido
         const speedCap = rail.getArenaSpeed() * 0.5
         const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
 
         let desiredDir
         if (enemy.orbiting && enemy.orbitTimer > 0) {
-          // "estado radial": orbita ao redor do jogador por um tempo em vez de vir direto
           enemy.orbitTimer -= dt
           enemy.orbitAngle += enemy.orbitDir * ENEMY_ORBIT_ANGULAR_SPEED * dt
           const orbitPoint = playerPosition.clone()
@@ -760,8 +699,6 @@ export function createCombatSystem(scene, rail, effects = null) {
 
         if (desiredDir.lengthSq() > 1e-4) {
           desiredDir.normalize()
-          // suaviza a mudança de direção em vez de virar instantaneamente pro alvo — "movimento
-          // mais suave" pedido; sem isso todo inimigo em arena vira uma linha reta e travada
           if (!enemy.moveDir) enemy.moveDir = desiredDir.clone()
           enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
           if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
@@ -786,7 +723,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       enemy.fireTimer -= dt
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
       const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
-      // nunca dispara muito perto do jogador — pedido literal
       const inFireRange = (inArena || enemy.kind === 'boss' || relativeForward < ENEMY_FIRE_RANGE) && distToPlayer > ENEMY_FIRE_MIN_DISTANCE
       if (enemy.fireTimer <= 0 && inFireRange) {
         if (enemy.kind === 'boss') fireBossVolley(enemy, playerPosition)
@@ -823,18 +759,16 @@ export function createCombatSystem(scene, rail, effects = null) {
       for (const w of wingmen) fireSingle(w.mesh.position, direction)
     },
 
-    // tiro teleguiado carregado: um projétil por alvo, perseguindo os inimigos vivos mais
-    // próximos da origem. Retorna quantos alvos realmente travou (pode ser < maxTargets se
-    // não houver inimigos suficientes em cena).
+    // >> AJUSTADO: filtro de distância nos dois caminhos (locked e "N mais próximos") <<
     fireHomingShot(origin, maxTargets) {
-      // se o jogador marcou inimigos varrendo a mira durante a carga, mira EXATAMENTE neles;
-      // senão (soltou sem varrer nenhum), cai de volta pros N mais próximos
-      const locked = [...lockedEnemies].filter((e) => !e.dying)
+      const inRange = (e) => origin.distanceTo(e.mesh.position) <= MAX_LOCK_RANGE
+
+      const locked = [...lockedEnemies].filter((e) => !e.dying && inRange(e))
       let targets
       if (locked.length > 0) {
         targets = locked.slice(0, Math.max(0, maxTargets))
       } else {
-        const alive = [...enemies].filter((e) => !e.dying)
+        const alive = [...enemies].filter((e) => !e.dying && inRange(e))
         alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
         targets = alive.slice(0, Math.max(0, maxTargets))
       }
@@ -857,14 +791,11 @@ export function createCombatSystem(scene, rail, effects = null) {
       const firstDir = targets[0] ? targets[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)
       if (effects) {
         effects.muzzleFlash(origin, firstDir)
-        // argola de fumaça grande ao disparar o tiro carregado — feedback de "isso foi um tiro forte"
         effects.smokeRing(origin, firstDir)
       }
       return targets.length
     },
 
-    // carta utilitária "giro rebatedor": projéteis inimigos dentro do raio, perto do jogador,
-    // são destruídos e viram tiros do próprio jogador mirando no inimigo vivo mais próximo
     deflectNearbyProjectiles(playerPos, radius) {
       const alive = [...enemies].filter((e) => !e.dying)
       let deflected = 0
@@ -904,8 +835,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       mesh.position.copy(position)
       mesh.rotation.x = Math.PI / 2
       scene.add(mesh)
-      // speedFactor/órbita só valem em modo arena (ver updateEnemies) — sorteados uma vez aqui
-      // pra cada inimigo se mover de um jeito um pouco diferente dos outros (Fase 4)
       const orbiting = Math.random() < ENEMY_ORBIT_CHANCE
       enemies.push({
         id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: randomEnemyFireInterval(),
@@ -919,15 +848,10 @@ export function createCombatSystem(scene, rail, effects = null) {
       })
     },
 
-    // conta só os inimigos vermelhos comuns (kind 'red') — é o que o teto de 10/20 da Fase 4
-    // controla; mini-inimigos, ampulheta, tanque de debug e chefe ficam de fora de propósito
     getEnemyCount() {
       return enemies.reduce((n, e) => n + (e.kind === 'red' ? 1 : 0), 0)
     },
 
-    // fila de mini-inimigos vermelhos (30% menores, 1 hp, rápidos) — só existe no modo normal
-    // (rail), nunca em arena. "Patrulham" balançando de um lado a outro por um tempo e depois
-    // mergulham em direção ao jogador, cada um com um desvio lateral aleatório pra se espalhar.
     spawnMiniSwarm() {
       if (rail.isArena()) return
       const count = MINI_SWARM_MIN_COUNT + Math.floor(Math.random() * (MINI_SWARM_MAX_COUNT - MINI_SWARM_MIN_COUNT + 1))
@@ -964,8 +888,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       enemies.push({ id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: randomEnemyFireInterval() })
     },
 
-    // inimigo "tanque" de debug: mesmo comportamento do vermelho comum, mas com HP configurável —
-    // serve pra visualizar a barra de vida acima do inimigo (que não aparece com inimigos de 1 hit)
     spawnTankEnemy(hp = TANK_ENEMY_DEFAULT_HP) {
       const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
       const mesh = new THREE.Mesh(enemyGeometry, tankEnemyMaterial)
@@ -976,8 +898,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       enemies.push({ id: nextEnemyId++, mesh, kind: 'tank', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: randomEnemyFireInterval() })
     },
 
-    // chefe: inimigo gigante que persegue o jogador e atira em rajadas de 3. hp escala com o
-    // multiplicador acumulado durante os 90s de "caça às perguntas" (ver main.js)
     spawnBossEnemy(hp) {
       const position = randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MAX * 0.6, ENEMY_ARENA_SPAWN_MAX)
       const mesh = new THREE.Mesh(enemyGeometry, bossEnemyMaterial)
@@ -993,7 +913,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
     },
 
-    // debug: limpa inimigos, projéteis (dos dois lados) — não mexe em alvos de pergunta/bônus/dourado
     clearAllCombatants() {
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
@@ -1108,25 +1027,21 @@ export function createCombatSystem(scene, rail, effects = null) {
 
     getQuizShotsFired: () => quizShotsFired,
 
-    // inimigos vivos com mais de 1 hp — usado pra desenhar a barra de vida acima do modelo deles
     getEnemySnapshots: () => [...enemies, ...goldenTargets]
       .filter((e) => !e.dying && e.maxHp > 1)
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone(), hp: e.hp, maxHp: e.maxHp })),
 
-    // lock-on por varredura pro tiro carregado
     sweepLockOn,
     clearLockedEnemies() { lockedEnemies.clear() },
     getLockedEnemySnapshots: () => [...lockedEnemies]
       .filter((e) => !e.dying)
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone() })),
 
-    // o chefe específico — pra barra de vida grande e dedicada no topo da tela
     getBossSnapshot: () => {
       const boss = enemies.find((e) => e.kind === 'boss' && !e.dying)
       return boss ? { hp: boss.hp, maxHp: boss.maxHp } : null
     },
 
-    // posições (mundo) pro minimapa: inimigos comuns em vermelho, dourado em ouro, chefe à parte
     getMinimapBlips: () => {
       const blips = []
       for (const e of enemies) {
@@ -1140,7 +1055,6 @@ export function createCombatSystem(scene, rail, effects = null) {
       return blips
     },
 
-    // lock-on de detecção (não afeta disparo). Mantido pro futuro tiro carregado.
     getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
     setFireCooldown(seconds) { fireCooldownDuration = seconds },
