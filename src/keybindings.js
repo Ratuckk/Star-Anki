@@ -6,8 +6,10 @@ export const ACTIONS = [
   { id: 'moveUp', label: 'Mover cima' },
   { id: 'moveDown', label: 'Mover baixo' },
   { id: 'fire', label: 'Atirar (segurar carrega tiro teleguiado)' },
-  { id: 'dodgeLeft', label: 'Inclinar/girar esquerda (segurar)' },
-  { id: 'dodgeRight', label: 'Inclinar/girar direita (segurar)' },
+  { id: 'dodgeLeft', label: 'Inclinar esquerda (segurar); 2 toques rápidos = giro completo' },
+  { id: 'dodgeRight', label: 'Inclinar direita (segurar); 2 toques rápidos = giro completo' },
+  { id: 'propulsion', label: 'Propulsor (impulso; segurar com Z/C no all-range = deslocar lateral)' },
+  { id: 'repulsion', label: 'Repulsor (desacelerar; Baixo+isto no all-range = cambalhota)' },
   { id: 'pause', label: 'Pausar' },
   { id: 'debugToggle', label: 'Painel de debug' },
   { id: 'quizSlot1', label: 'Resposta 1' },
@@ -16,14 +18,19 @@ export const ACTIONS = [
   { id: 'quizSlot4', label: 'Resposta 4' },
 ]
 
+// A e S deixaram de ser alternativas de movimento (eram WASD ao lado das setas) — o pedido de
+// propulsor(A)/repulsor(S) usa essas mesmas teclas físicas, então movimento ficou só nas setas
+// (W/D continuam livres pra cima/direita) pra não ativar propulsão/repulsão sem querer ao mover
 const DEFAULT_ACTIONS = {
-  moveLeft: ['ArrowLeft', 'KeyA'],
+  moveLeft: ['ArrowLeft'],
   moveRight: ['ArrowRight', 'KeyD'],
   moveUp: ['ArrowUp', 'KeyW'],
-  moveDown: ['ArrowDown', 'KeyS'],
+  moveDown: ['ArrowDown'],
   fire: ['KeyX'],
   dodgeLeft: ['KeyZ'],
   dodgeRight: ['KeyC'],
+  propulsion: ['KeyA'],
+  repulsion: ['KeyS'],
   pause: ['Escape', 'KeyP'],
   debugToggle: ['Backquote'],
   quizSlot1: ['Digit1'],
@@ -107,10 +114,17 @@ export function isActionPressed(bindings, pressedSet, action) {
   return getActionCodes(bindings, action).some((code) => pressedSet.has(code))
 }
 
-// codes que precisam de detecção de borda (evento único por toque) em vez de "segurando"
+// codes que precisam de detecção de borda (evento único por toque) em vez de "segurando".
+// dodgeLeft/dodgeRight e propulsion/repulsion TAMBÉM são lidos como hold contínuo em paralelo
+// (input.js expõe os dois: bank/propulsionHeld/repulsionHeld E o Set de borda) — um mecanismo
+// não atrapalha o outro: a borda serve pra detectar o toque duplo do giro completo e a ativação
+// pontual de propulsor/repulsor; o hold serve pra inclinação cosmética e pro combo A+Z/C
 export function edgeCodes(bindings) {
   const codes = new Set()
-  for (const action of ['pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4']) {
+  for (const action of [
+    'pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4',
+    'dodgeLeft', 'dodgeRight', 'propulsion', 'repulsion',
+  ]) {
     for (const code of getActionCodes(bindings, action)) codes.add(code)
   }
   return codes

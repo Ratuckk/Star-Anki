@@ -31,7 +31,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.22.2</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.23.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -680,6 +680,15 @@ export function createGameHud() {
   healthFill.className = 'hud-bar-fill hud-health-fill'
   healthBar.appendChild(healthFill)
 
+  // ============ BARRA DE PROPULSOR/REPULSOR (Fase 3) ============
+  // compartilhada entre os dois — cheia = pode acionar; usar qualquer um zera e recarrega devagar
+  const boostBar = document.createElement('div')
+  boostBar.className = 'hud-bar-wrap hud-boost-wrap'
+  root.appendChild(boostBar)
+  const boostFill = document.createElement('div')
+  boostFill.className = 'hud-bar-fill hud-boost-fill'
+  boostBar.appendChild(boostFill)
+
   const question = document.createElement('p')
   question.className = 'hud-question'
   question.hidden = true
@@ -822,6 +831,13 @@ export function createGameHud() {
     // depois de um hit, não só quando esgota de vez — por isso é uma barra de verdade, não pips
     setShield(value, maxValue) {
       shieldFill.style.width = `${Math.max(0, Math.min(1, value / maxValue)) * 100}%`
+    },
+
+    // charge: 0..1 da barra compartilhada de propulsor/repulsor; active: true enquanto um dos
+    // dois estiver em uso (fica com um tom mais claro/aceso pra indicar "ativo agora")
+    setBoost(charge, active) {
+      boostFill.style.width = `${Math.max(0, Math.min(1, charge)) * 100}%`
+      boostBar.classList.toggle('active', !!active)
     },
 
     setQuestion(text) {

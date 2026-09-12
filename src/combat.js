@@ -610,10 +610,16 @@ export function createCombatSystem(scene, rail, effects = null) {
     for (let i = 0; i < BOSS_ENEMY_SHOTS_PER_VOLLEY; i += 1) fireEnemyProjectile(enemy, playerPosition)
   }
 
-  function updateEnemies(dt, playerPosition) {
+  // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
+  // colisão vira dano de verdade (inclusive no CHEFE, que normalmente só morre a tiro) em vez
+  // do "kamikaze" padrão (encostar mata o inimigo comum na hora, sem dano nem pontuação)
+  function updateEnemies(dt, playerPosition, ramDamage = 0) {
     const inArena = rail.isArena()
     const frame = rail.getFrameAt(0)
     let hits = 0
+    let ramKills = 0
+    let ramKillPoints = 0
+    let ramBossDefeated = false
     for (const enemy of [...enemies]) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
@@ -627,10 +633,26 @@ export function createCombatSystem(scene, rail, effects = null) {
       }
       enemy.deathScale = baseScale
 
-      // encostar no jogador "mata" o inimigo comum (kamikaze) — mas o CHEFE só pode ser
-      // derrotado a tiro (hp a 0), senão ele sumiria sem soltar o evento de vitória
       if (playerPosition.distanceTo(enemy.mesh.position) <= hitRadius) {
         hits += 1
+        if (ramDamage > 0) {
+          enemy.hp -= ramDamage
+          if (enemy.hp <= 0) {
+            enemy.dying = true
+            enemy.deathT = 0
+            if (enemy.kind === 'boss') {
+              ramBossDefeated = true
+              if (effects) effects.explosion(enemy.mesh.position, BOSS_ENEMY_COLOR, 3)
+            } else {
+              ramKills += 1
+              ramKillPoints += ENEMY_KILL_BONUS
+              if (effects) effects.explosion(enemy.mesh.position, enemy.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
+            }
+          }
+          continue
+        }
+        // sem a carta: encostar "mata" o inimigo comum (kamikaze) na hora, sem dano/pontuação —
+        // mas o CHEFE só pode ser derrotado a tiro, senão sumiria sem soltar o evento de vitória
         if (enemy.kind !== 'boss') {
           removeEnemy(enemy)
           continue
@@ -666,7 +688,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         enemy.fireTimer = enemy.kind === 'boss' ? randomBossFireInterval() : randomEnemyFireInterval()
       }
     }
-    return hits
+    return { hits, ramKills, ramKillPoints, ramBossDefeated }
   }
 
   function updateEnemyProjectiles(dt, playerPosition) {
@@ -991,8 +1013,15 @@ export function createCombatSystem(scene, rail, effects = null) {
       updateGoldenTargets(dt, playerPosition)
 
       let enemyHits = 0
+      let ramKills = 0
+      let ramKillPoints = 0
+      let ramBossDefeated = false
       if (enemiesActive) {
-        enemyHits += updateEnemies(dt, playerPosition)
+        const enemyResult = updateEnemies(dt, playerPosition, opts.ramDamage || 0)
+        enemyHits += enemyResult.hits
+        ramKills = enemyResult.ramKills
+        ramKillPoints = enemyResult.ramKillPoints
+        ramBossDefeated = enemyResult.ramBossDefeated
         enemyHits += updateEnemyProjectiles(dt, playerPosition)
       }
 
@@ -1000,7 +1029,16 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       if (showHitboxes) refreshHitboxes()
 
-      return { targetHit: hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, enemyHits, goldenSpecialHit, timeReductionMs, bossDefeated }
+      return {
+        targetHit: hitEvent,
+        enemyKills: enemyKills + ramKills,
+        enemyKillPoints: enemyKillPoints + ramKillPoints,
+        bonusKillPoints,
+        enemyHits,
+        goldenSpecialHit,
+        timeReductionMs,
+        bossDefeated: bossDefeated || ramBossDefeated,
+      }
     },
 
     dispose() {

@@ -133,11 +133,26 @@ const HOMING_MIN_TARGETS = 2
 const HOMING_MAX_TARGETS_BASE = 5
 const HOMING_MAX_TARGETS_CAP = 8
 
-// giro-desvio (Z/C): segurar inclina a nave de verdade (rail.js cuida do ângulo) e concede
-// i-frames enquanto durar, mais uma folga curta depois de soltar; com a carta certa, também
-// rebate projéteis inimigos próximos continuamente enquanto girando
-const DODGE_IFRAME_GRACE_MS = 400
+// giro-desvio (Z/C): segurar SÓ inclina a nave (cosmético, rail.js cuida do ângulo) — desde a
+// Fase 3 não concede mais i-frames de graça. A invencibilidade agora vem exclusivamente do
+// GIRO COMPLETO (2 toques rápidos na mesma tecla, dentro de DODGE_TAP_WINDOW_MS), com cooldown
+// global (não importa o lado) pra não ficar spammando invencibilidade
+const DODGE_TAP_WINDOW_MS = 350
+const FULL_SPIN_COOLDOWN_MS = 3000
+const FULL_SPIN_IFRAME_MS_BASE = 900
 const DEFLECT_RADIUS = 6
+
+// ============ PROPULSOR / REPULSOR (A/S — Fase 3) ============
+// 1 barra COMPARTILHADA entre os dois (pedido do usuário: "usa um, ou usa o outro, ambos gastam
+// toda a barra"): ao usar qualquer um dos dois, a barra zera e recarrega devagar; não dá pra
+// usar de novo (nenhum dos dois) enquanto não encher totalmente.
+const BOOST_DURATION_MS = 900         // quanto tempo dura o impulso/freio ativo
+const BOOST_RECHARGE_MS = 4500        // tempo pra barra encher de novo depois do uso
+const PROPULSION_SPEED_MULT = 1.9     // multiplicador de velocidade de avanço durante o impulso
+const REPULSION_SPEED_MULT = 0.35     // multiplicador de velocidade de avanço durante a repulsão
+const RAM_DAMAGE = 5                  // dano da carta "impulso aríete" a quem colidir durante o impulso
+// combos do all-range (Fase 3): cambalhota (Baixo+repulsor) e deslocamento lateral
+// (propulsor+Z/C) são DE GRAÇA — não gastam a barra acima, pedido explícito do usuário
 
 let deck = null
 let deckTexts = [] // textos brutos das fontes do baralho atual (1 normal, 2+ se fundido) — usados na exportação de tags, um arquivo por fonte
@@ -335,7 +350,19 @@ function mountGame(session) {
   let homingMaxTargets = HOMING_MAX_TARGETS_BASE
   let homingChargeMinMs = HOMING_CHARGE_MIN_MS
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
-  let dodgeIframeGraceMs = DODGE_IFRAME_GRACE_MS
+  // giro completo: quanto de invencibilidade cada giro concede (carta "desvio prolongado" soma
+  // em cima) e o cooldown corrente (compartilhado entre Z e C, decai a cada frame)
+  let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
+  let fullSpinCooldownTimer = 0
+  let lastDodgeLeftTapAt = -Infinity
+  let lastDodgeRightTapAt = -Infinity
+
+  // propulsor/repulsor: 1 barra compartilhada (0..1, cheia = pode usar) + timer de quanto falta
+  // do efeito ativo (>0 = impulso/freio em andamento). ramCardActive é a carta "impulso aríete".
+  let boostCharge = 1
+  let propulsionActiveTimer = 0
+  let repulsionActiveTimer = 0
+  let ramCardActive = false
 
   // ---- chefe (fase 90s de caçada + o combate em si) ----
   let bossHealthMultiplier = 1
@@ -508,7 +535,10 @@ function mountGame(session) {
         homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
         break
       case 'longer-dodge-iframe':
-        dodgeIframeGraceMs += 150
+        fullSpinIframeMs += 150
+        break
+      case 'propulsion-ram':
+        ramCardActive = true
         break
       default:
         break
@@ -527,6 +557,7 @@ function mountGame(session) {
     if (aimAssistAngle >= AIM_ASSIST_CAP) exclude.add('wider-lock')
     if (session.lives >= LIVES_CAP) exclude.add('extra-life')
     if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
+    if (ramCardActive) exclude.add('propulsion-ram')
     return exclude
   }
 
@@ -936,19 +967,91 @@ function mountGame(session) {
     }
 
     // ============ GIRO/INCLINAÇÃO (Z/C) ============
-    // segurar Z ou C inclina a nave de verdade e ela FICA inclinada enquanto durar (rail.js já
-    // leu inputState.bank e calculou o ângulo em rail.update, chamado antes disto). Aqui só
-    // cuida do que não é visual: i-frames enquanto girando + rebate de projéteis com a carta
-    if (inputState.bank !== 0) {
-      invincibleTimer = Math.max(invincibleTimer, dodgeIframeGraceMs)
-      if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+    // segurar Z ou C só inclina a nave (cosmético — rail.js já leu inputState.bank e calculou o
+    // ângulo em rail.update). Não concede mais i-frames de graça (Fase 3): a nave inclinada
+    // ainda pode ser atingida. A invencibilidade agora vem SÓ do giro completo (2 toques
+    // rápidos na MESMA tecla, dentro de DODGE_TAP_WINDOW_MS) — e é o giro completo, não mais o
+    // hold, que aciona a carta "giro rebatedor".
+    const arenaNow = rail.isArena()
+    const dodgeLeftTapped = isActionPressed(bindings, inputState.pressed, 'dodgeLeft')
+    const dodgeRightTapped = isActionPressed(bindings, inputState.pressed, 'dodgeRight')
+    const nowMs = performance.now()
+
+    // combo all-range "segurar propulsor + Z/C" = deslocamento lateral de graça, tratado aqui
+    // (na borda de Z/C) pra cobrir a ordem "segura propulsor, depois toca Z/C". A ordem inversa
+    // ("toca Z/C, depois propulsor") é tratada mais abaixo, na borda do próprio propulsor.
+    if (dodgeLeftTapped) {
+      if (arenaNow && inputState.propulsionHeld) {
+        rail.triggerArenaLateralDash(-1)
+      } else {
+        if (nowMs - lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && fullSpinCooldownTimer <= 0) {
+          rail.triggerFullSpin(-1)
+          fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
+          invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
+          if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+        }
+        lastDodgeLeftTapAt = nowMs
+      }
     }
+    if (dodgeRightTapped) {
+      if (arenaNow && inputState.propulsionHeld) {
+        rail.triggerArenaLateralDash(1)
+      } else {
+        if (nowMs - lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && fullSpinCooldownTimer <= 0) {
+          rail.triggerFullSpin(1)
+          fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
+          invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
+          if (deflectCardActive) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+        }
+        lastDodgeRightTapAt = nowMs
+      }
+    }
+    fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
+
+    // ============ PROPULSOR / REPULSOR (A/S) ============
+    // 1 barra compartilhada: só dá pra ativar propulsor OU repulsor quando ela está cheia (e
+    // nenhum dos dois já está ativo); ativar qualquer um zera a barra, que recarrega devagar.
+    // Os combos do all-range (cambalhota, deslocamento lateral) são DE GRAÇA — não mexem nela.
+    if (isActionPressed(bindings, inputState.pressed, 'propulsion')) {
+      if (arenaNow && inputState.bank !== 0) {
+        rail.triggerArenaLateralDash(inputState.bank)
+      } else if (boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0) {
+        propulsionActiveTimer = BOOST_DURATION_MS
+        boostCharge = 0
+      }
+    }
+    if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
+      if (arenaNow && inputState.moveY === -1) {
+        rail.triggerArenaSummersault()
+      } else if (boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0) {
+        repulsionActiveTimer = BOOST_DURATION_MS
+        boostCharge = 0
+      }
+    }
+
+    if (propulsionActiveTimer > 0) propulsionActiveTimer = Math.max(0, propulsionActiveTimer - dt * 1000)
+    if (repulsionActiveTimer > 0) repulsionActiveTimer = Math.max(0, repulsionActiveTimer - dt * 1000)
+    if (propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0 && boostCharge < 1) {
+      boostCharge = Math.min(1, boostCharge + (dt * 1000) / BOOST_RECHARGE_MS)
+    }
+
+    let boostSpeedFactor = 1
+    if (propulsionActiveTimer > 0) boostSpeedFactor *= PROPULSION_SPEED_MULT
+    if (repulsionActiveTimer > 0) boostSpeedFactor *= REPULSION_SPEED_MULT
+    rail.setSpeedMultiplier(speedMultiplier * boostSpeedFactor)
+    hud.setBoost(boostCharge, propulsionActiveTimer > 0 || repulsionActiveTimer > 0)
+
+    // carta "impulso aríete": só durante o impulso ativo, concede invencibilidade e faz a
+    // colisão com inimigos causar dano de verdade (inclusive chefe) em vez do kamikaze padrão
+    const ramActive = ramCardActive && propulsionActiveTimer > 0
+    if (ramActive) invincibleTimer = Math.max(invincibleTimer, propulsionActiveTimer)
 
     const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimOrigin: nosePos,
       aimDirection: fireDirection,
+      ramDamage: ramActive ? RAM_DAMAGE : 0,
     })
 
     // posição visual da mira na tela: projeção do ponto 3D

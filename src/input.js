@@ -18,11 +18,15 @@ export function createInputState() {
   const fireCodes = new Set(bindings.actions.fire)
   const dodgeLeftCodes = new Set(bindings.actions.dodgeLeft)
   const dodgeRightCodes = new Set(bindings.actions.dodgeRight)
+  // propulsor/repulsor: lidos como HOLD contínuo (igual bank) além da borda (via pressed/
+  // edgeCodes) — o hold é o que permite o combo "segurar propulsor + Z/C" no all-range
+  const propulsionCodes = new Set(bindings.actions.propulsion)
+  const repulsionCodes = new Set(bindings.actions.repulsion)
   const edgeCodeSet = edgeCodes(bindings)
 
   const gp = bindings.gamepad
 
-  const state = { moveX: 0, moveY: 0, firing: false, bank: 0, pressed: new Set() }
+  const state = { moveX: 0, moveY: 0, firing: false, bank: 0, propulsionHeld: false, repulsionHeld: false, pressed: new Set() }
   const keys = new Set()
   const pressedThisFrame = new Set()
   let prevPadStart = false
@@ -105,11 +109,18 @@ export function createInputState() {
     if (dodgeRightHeld) bank += 1
     if (dodgeLeftHeld && dodgeRightHeld) bank = dodgeLeftTime >= dodgeRightTime ? -1 : 1
 
+    let propulsionHeld = false
+    let repulsionHeld = false
+    for (const code of propulsionCodes) if (keys.has(code)) { propulsionHeld = true; break }
+    for (const code of repulsionCodes) if (keys.has(code)) { repulsionHeld = true; break }
+
     return {
       moveX: Math.sign(moveX),
       moveY: Math.sign(moveY),
       firing,
       bank,
+      propulsionHeld,
+      repulsionHeld,
       active: moveX !== 0 || moveY !== 0 || firing,
     }
   }
@@ -157,6 +168,8 @@ export function createInputState() {
       state.moveY = moveY
       state.firing = firing
       state.bank = kb.bank
+      state.propulsionHeld = kb.propulsionHeld
+      state.repulsionHeld = kb.repulsionHeld
       state.pressed = new Set(pressedThisFrame)
       pressedThisFrame.clear()
       return state
