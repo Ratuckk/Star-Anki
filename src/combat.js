@@ -482,6 +482,9 @@ export function createCombatSystem(scene, rail, effects = null) {
     let goldenSpecialHit = false
     let timeReductionMs = null
     let bossDefeated = false
+    // log de acertos (posição, dano, se matou) — usado pelo main.js pra faíscas, flash no
+    // mesh atingido e números de dano flutuantes no HUD
+    const hitsLog = []
 
     for (const projectile of [...projectiles]) {
       if (projectile.homingTarget) {
@@ -529,7 +532,20 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (enemyHit) {
         enemyHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
+        hitsLog.push({
+          worldPos: enemyHit.mesh.position.clone(),
+          damage: projectile.damage ?? 1,
+          killed: enemyHit.hp <= 0,
+          isHoming: !!projectile.isHoming,
+          meshRef: enemyHit.mesh,
+        })
         if (projectile.isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
+        // todo hit no chefe (não só o que mata) ganha anel de impacto + bloom — feedback
+        // contínuo de "isso pesou", separado da explosão de derrota
+        if (enemyHit.kind === 'boss' && effects) {
+          effects.bossImpactRing(enemyHit.mesh.position, 1)
+          effects.bloomSprite(enemyHit.mesh.position, 0xff7d3a, 1.5)
+        }
         if (enemyHit.hp > 0) continue
         enemyHit.dying = true
         enemyHit.deathT = 0
@@ -572,7 +588,7 @@ export function createCombatSystem(scene, rail, effects = null) {
       if (projectile.traveled > PROJECTILE_MAX_RANGE) removeProjectile(projectile)
     }
 
-    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated }
+    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, hitsLog }
   }
 
   function updateQuizTargets(dt) {
@@ -754,6 +770,10 @@ export function createCombatSystem(scene, rail, effects = null) {
         }
       }
 
+      // telegrafa o tiro ~0.3s antes de sair — avisa o jogador sem mudar a cadência real
+      if (enemy.fireTimer > 0.3 && enemy.fireTimer - dt <= 0.3 && effects) {
+        effects.telegraph(enemy.mesh.position, 0xff5a3d)
+      }
       enemy.fireTimer -= dt
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
       const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
@@ -862,6 +882,8 @@ export function createCombatSystem(scene, rail, effects = null) {
         scene.remove(w.mesh)
       }
     },
+
+    getWingmanPositions: () => wingmen.map((w) => w.mesh.position.clone()),
 
     spawnEnemy() {
       const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
@@ -1107,7 +1129,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         currentLockOn = null
       }
 
-      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated } = updateProjectiles(dt, aimDirection)
+      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, hitsLog } = updateProjectiles(dt, aimDirection)
       updateQuizTargets(dt)
       updateBonusTargets(dt)
       updateGoldenTargets(dt, playerPosition)
@@ -1138,6 +1160,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         goldenSpecialHit,
         timeReductionMs,
         bossDefeated: bossDefeated || ramBossDefeated,
+        hitsLog,
       }
     },
 

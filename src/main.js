@@ -298,7 +298,7 @@ function mountGame(session) {
   scene.add(grid)
 
   const rail = createRailController(camera, scene)
-  const effects = createEffectsSystem(scene)
+  const effects = createEffectsSystem(scene, { grid })
   const combat = createCombatSystem(scene, rail, effects)
   const input = createInputState()
 
@@ -700,10 +700,20 @@ function mountGame(session) {
     phase = 'bossFight'
     hud.setBossActive(false)
     hud.setCountdown(null)
+    hud.setBossTint(true)
     combat.clearAllCombatants()
     const bossHp = Math.round(BOSS_BASE_HP * bossHealthMultiplier)
     combat.spawnBossEnemy(bossHp)
     hud.setBossFight(true, bossHp, bossHp)
+
+    // flash branco + zoom out cinematográfico na entrada do chefe
+    hud.damageFlash()
+    camera.fov = 88
+    camera.updateProjectionMatrix()
+    setTimeout(() => {
+      camera.fov = 70
+      camera.updateProjectionMatrix()
+    }, 500)
   }
 
   function enterGoldenArena() {
@@ -979,6 +989,11 @@ function mountGame(session) {
     rail.setSpeedMultiplier(speedMultiplier * boostSpeedFactor)
     hud.setBoost(boostCharge, propulsionActiveTimer > 0 || repulsionActiveTimer > 0)
 
+    // motion lines + distorção de tela só durante o impulso de propulsão (não na repulsão)
+    const boostOn = propulsionActiveTimer > 0
+    hud.setMotionLines(boostOn)
+    hud.setBoostDistortion(boostOn)
+
     const ramActive = ramCardActive && propulsionActiveTimer > 0
     if (ramActive) invincibleTimer = Math.max(invincibleTimer, propulsionActiveTimer)
 
@@ -997,6 +1012,18 @@ function mountGame(session) {
       hud.hitMarker(true)
     } else if (events.hitsLog && events.hitsLog.length > 0) {
       hud.hitMarker(false)
+    }
+
+    // ============ FAÍSCAS + FLASH NO MESH + SHAKE DE KILL ============
+    if (events.hitsLog && events.hitsLog.length > 0) {
+      for (const h of events.hitsLog) {
+        effects.hitSpark(h.worldPos, h.isHoming ? 0x2bff88 : 0xffb066)
+        if (h.meshRef) effects.flashMesh(h.meshRef, 0.06)
+      }
+    }
+    if (events.enemyKills > 0) {
+      hitShakeTimer = Math.max(hitShakeTimer, 120)
+      effects.gridPulse()
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
@@ -1039,7 +1066,14 @@ function mountGame(session) {
       hud.setEnemyHealthBars(bars)
     }
 
-    effects.update(dt, playerPos, noseFrame.forward, { boosting: speedMultiplier })
+    effects.update(dt, playerPos, noseFrame.forward, {
+      boosting: speedMultiplier,
+      camera,
+      shieldValue,
+      shieldMax,
+      boostActive: propulsionActiveTimer > 0,
+    })
+    effects.spawnContrailTick(combat.getWingmanPositions())
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
@@ -1054,6 +1088,7 @@ function mountGame(session) {
     if (events.bossDefeated && phase === 'bossFight') {
       session.score += BOSS_DEFEAT_BONUS
       hud.setBossFight(false)
+      hud.setBossTint(false)
       rail.exitArena()
       hud.setFeedback({
         correct: true,
@@ -1074,8 +1109,19 @@ function mountGame(session) {
       hud.damageFlash()
       shieldRegenDelayTimer = shieldRegenDelayMs
 
+      // direção aproximada do dano — o combat ainda não devolve a origem do projétil, então
+      // chuta pra frente da nave
+      const originApprox = playerPos.clone().addScaledVector(noseFrame.forward, 30)
+      const ndcDir = originApprox.project(camera)
+      hud.showDamageDirection(
+        THREE.MathUtils.clamp((ndcDir.x + 1) / 2, 0, 1),
+        THREE.MathUtils.clamp((1 - ndcDir.y) / 2, 0, 1),
+      )
+
       if (shieldValue >= 1) {
         shieldValue -= 1
+        effects.shockwave(playerPos, 0x4da6ff, 0.6)
+        if (shieldValue < 1) effects.glassShatter(playerPos, 0x4da6ff)
       } else {
         session.health = Math.max(0, session.health - 1)
         if (applyHealthLoss()) {

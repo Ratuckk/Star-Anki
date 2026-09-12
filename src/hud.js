@@ -142,6 +142,92 @@ function injectHudExtraStyles() {
 .hud-boost-wrap.ready-flash {
   animation: boost-ready-flash 650ms ease-out;
 }
+
+/* ============ MOTION LINES (boost) ============ */
+.hud-motion-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+  z-index: 3;
+  overflow: hidden;
+}
+.hud-motion-lines.active { opacity: 1; }
+.hud-motion-lines::before,
+.hud-motion-lines::after {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(180, 230, 255, 0.55) 0.4deg,
+    transparent 0.8deg,
+    transparent 45deg
+  );
+  animation: motion-line-spin 1.6s linear infinite;
+}
+.hud-motion-lines::after {
+  animation-duration: 2.2s;
+  animation-direction: reverse;
+  opacity: 0.6;
+}
+@keyframes motion-line-spin {
+  0%   { transform: rotate(0deg) scale(1.15); }
+  100% { transform: rotate(360deg) scale(1.15); }
+}
+
+/* ============ SCREEN DISTORTION (boost) ============ */
+.hud-boost-distortion {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease-out;
+  background: radial-gradient(
+    ellipse 60% 45% at center,
+    transparent 20%,
+    rgba(150, 200, 255, 0.06) 55%,
+    rgba(150, 200, 255, 0.18) 100%
+  );
+  z-index: 2;
+}
+.hud-boost-distortion.active { opacity: 1; }
+
+/* ============ COLOR GRADING NO CHEFE ============ */
+.hud-boss-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms ease-out;
+  background: radial-gradient(
+    ellipse 100% 100% at center,
+    rgba(255, 40, 60, 0.06) 0%,
+    rgba(180, 20, 40, 0.18) 100%
+  );
+  mix-blend-mode: overlay;
+  z-index: 5;
+}
+.hud-boss-tint.active { opacity: 1; }
+
+/* ============ DIRECTIONAL DAMAGE VIGNETTE ============ */
+.hud-damage-direction {
+  position: absolute;
+  width: 55%;
+  height: 55%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+  background: radial-gradient(circle at center, rgba(255, 30, 40, 0.55) 0%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0.4);
+  transition: opacity 90ms ease-out, transform 90ms ease-out;
+}
+.hud-damage-direction.active {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.1);
+}
 `
   document.head.appendChild(style)
 }
@@ -152,7 +238,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.24.2</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.25.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -769,6 +855,23 @@ export function createGameHud() {
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
 
+  const motionLines = document.createElement('div')
+  motionLines.className = 'hud-motion-lines'
+  root.appendChild(motionLines)
+
+  const boostDistortion = document.createElement('div')
+  boostDistortion.className = 'hud-boost-distortion'
+  root.appendChild(boostDistortion)
+
+  const bossTint = document.createElement('div')
+  bossTint.className = 'hud-boss-tint'
+  root.appendChild(bossTint)
+
+  const damageDirection = document.createElement('div')
+  damageDirection.className = 'hud-damage-direction'
+  root.appendChild(damageDirection)
+  let damageDirectionTimeout = null
+
   // ============ MIRA + HIT MARKER ============
   // O hit marker é um filho da mira: assim ele segue automaticamente quando
   // setReticlePosition() move a mira, sem precisar de lógica extra.
@@ -1192,6 +1295,36 @@ export function createGameHud() {
     setChargeIndicator(active, fraction = 0) {
       chargeBar.hidden = !active
       if (active) chargeBarFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
+    },
+
+    // ============ MOTION LINES (boost) ============
+    setMotionLines(active) {
+      motionLines.classList.toggle('active', !!active)
+    },
+
+    // ============ SCREEN DISTORTION (boost) ============
+    setBoostDistortion(active) {
+      boostDistortion.classList.toggle('active', !!active)
+    },
+
+    // ============ BOSS TINT ============
+    setBossTint(active) {
+      bossTint.classList.toggle('active', !!active)
+    },
+
+    // ============ DIRECTIONAL DAMAGE VIGNETTE ============
+    // xFrac, yFrac em 0..1 do espaço de tela — o vignette aparece centrado na direção
+    // de onde o dano veio, e some sozinho depois de ~350ms
+    showDamageDirection(xFrac, yFrac) {
+      damageDirection.style.left = `${xFrac * 100}%`
+      damageDirection.style.top = `${yFrac * 100}%`
+      damageDirection.classList.remove('active')
+      void damageDirection.offsetWidth
+      damageDirection.classList.add('active')
+      if (damageDirectionTimeout) clearTimeout(damageDirectionTimeout)
+      damageDirectionTimeout = setTimeout(() => {
+        damageDirection.classList.remove('active')
+      }, 350)
     },
 
     debug: {

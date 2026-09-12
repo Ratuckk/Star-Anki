@@ -2,6 +2,20 @@
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
 
+## Pacote de 22 efeitos visuais (entregue em 4 blocos pelo usuário) — v0.25.0
+
+O usuário entregou o pacote pronto em 4 blocos: (1) `effects.js` completo com 22 efeitos novos — o usuário **já tinha commitado isso direto** (`Enhance effects system with new visual effects`, autor Rafael/Tuck), então só conferi que batia com o que ele descreveu, sem precisar tocar; (2) bloco de CSS + 4 métodos novos pro `hud.js`; (3) 8 hooks pro `main.js`; (4) 7 adições pro `combat.js` ("pedido pro Claude"). Implementei os blocos 2, 3 e 4.
+
+**`hud.js`**: CSS de motion lines (giro cônico durante o boost), distorção de tela, tint vermelho no chefe, e vignette direcional de dano — todos os 4 como `<div>`s novos dentro de `createGameHud()`, com os métodos `setMotionLines`, `setBoostDistortion`, `setBossTint`, `showDamageDirection`.
+
+**`combat.js`**: `updateProjectiles` agora monta um `hitsLog` (posição, dano, se matou, se foi o teleguiado, referência do mesh) devolvido também pelo `update()` — o `main.js` já tinha o consumo disso pronto (de uma entrega anterior do usuário) esperando só isso existir. Todo hit no chefe (não só o que mata) ganha `bossImpactRing` + `bloomSprite`. Inimigos telegrafam o tiro ~0.3s antes de disparar (`effects.telegraph`). Novo `getWingmanPositions()` pro contrail dos wingmen.
+
+**`main.js`**: `createEffectsSystem` passou a receber `{ grid }` (pro pulso do grid); `effects.update()` ganhou `camera`/`shieldValue`/`shieldMax`/`boostActive`; faíscas + flash branco no mesh atingido + shake extra em kill; motion lines/distorção ligados só durante a propulsão (não a repulsão); `enterBossFight()` ganhou tint vermelho + flash + zoom cinematográfico (FOV 70→88→70 em 500ms); escudo absorvendo hit ganhou shockwave, e escudo chegando a 0 ganhou glass shatter; vignette direcional de dano (aproximada — mira pra frente da nave, já que `combat.js` ainda não devolve a origem real do projétil inimigo).
+
+**Testado ao vivo**: spawnei um inimigo tanque, atirei nele (hitsLog/faísca/flash), causei dano via debug 3x seguidas (escudo absorvendo → shockwave/glass shatter → vignette direcional), e disparei o propulsor — motion lines apareceram claramente na tela (linhas radiais girando), bolha de escudo visível ao redor da nave, sem nenhum erro no console em nenhum dos três testes.
+
+**Versão**: v0.24.2 → v0.25.0.
+
 ## Mescla de mais edições diretas do usuário em `combat.js` — v0.24.2
 
 O usuário colou o `combat.js` inteiro dele (editado em algum lugar fora desta sessão) pedindo: *"adicione estas mudanças novas e as funda com as suas novas mudanças"*. Comparei linha a linha contra o arquivo real antes de aplicar, pra não perder nem o que ele mudou nem o lock-on em etapas que eu tinha acabado de fazer:
