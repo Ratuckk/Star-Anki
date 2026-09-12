@@ -26,9 +26,6 @@ function showScreen(name) {
 }
 
 // ============ CSS INJETADO (uma vez por página) ============
-// Estilos dos novos elementos do HUD (números de dano, hit marker, vignette de vida baixa,
-// feedback escalonado, flash de boost pronto). Injetado em <head> com id fixo — se o elemento
-// já existe, não faz nada. Isso mantém o hud.js autocontido, sem precisar editar styles.css.
 function injectHudExtraStyles() {
   if (document.getElementById('star-anki-hud-extra-styles')) return
   const style = document.createElement('style')
@@ -212,22 +209,38 @@ function injectHudExtraStyles() {
 }
 .hud-boss-tint.active { opacity: 1; }
 
-/* ============ DIRECTIONAL DAMAGE VIGNETTE ============ */
-.hud-damage-direction {
+/* ============ FAIXAS LATERAIS DE DANO: escudo (azul + grid) vs vida (vermelho) ============ */
+.hud-side-flash {
   position: absolute;
-  width: 55%;
-  height: 55%;
+  inset: 0;
   pointer-events: none;
   opacity: 0;
   z-index: 6;
-  background: radial-gradient(circle at center, rgba(255, 30, 40, 0.55) 0%, transparent 70%);
-  transform: translate(-50%, -50%) scale(0.4);
-  transition: opacity 90ms ease-out, transform 90ms ease-out;
 }
-.hud-damage-direction.active {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1.1);
+.hud-side-flash::before, .hud-side-flash::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 16%;
 }
+.hud-side-flash::before { left: 0; }
+.hud-side-flash::after { right: 0; transform: scaleX(-1); }
+.hud-side-flash.shield::before, .hud-side-flash.shield::after {
+  background:
+    repeating-linear-gradient(0deg, rgba(150, 210, 255, 0.4) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(90deg, rgba(150, 210, 255, 0.4) 0 1px, transparent 1px 22px),
+    linear-gradient(to right, rgba(77, 166, 255, 0.5), transparent);
+}
+.hud-side-flash.damage::before, .hud-side-flash.damage::after {
+  background: linear-gradient(to right, rgba(255, 50, 50, 0.55), transparent);
+}
+@keyframes hud-side-flash-anim {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.hud-side-flash.flash { animation: hud-side-flash-anim 450ms ease-out; }
 
 /* ============ AVISO DE TRANSIÇÃO PARA ALL-RANGE (dourado/chefe se aproximando) — Fase 5 */
 .hud-arena-warning {
@@ -924,9 +937,15 @@ export function createGameHud() {
   sceneRoot.id = 'scene-root'
   root.appendChild(sceneRoot)
 
-  // Vignette PERSISTENTE de vida baixa — fica atrás do damageFlash (que pulsa em hits),
-  // para o flash sempre aparecer por cima quando leva dano. Opacidade setada por
-  // hud.setLowHealth(intensity) a cada frame.
+  // ============ CAMADAS VISUAIS (ordem importa) ============
+  const boostDistortion = document.createElement('div')
+  boostDistortion.className = 'hud-boost-distortion'
+  root.appendChild(boostDistortion)
+
+  const motionLines = document.createElement('div')
+  motionLines.className = 'hud-motion-lines'
+  root.appendChild(motionLines)
+
   const lowHealthVignette = document.createElement('div')
   lowHealthVignette.className = 'hud-low-health-vignette'
   root.appendChild(lowHealthVignette)
@@ -935,26 +954,15 @@ export function createGameHud() {
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
 
-  const motionLines = document.createElement('div')
-  motionLines.className = 'hud-motion-lines'
-  root.appendChild(motionLines)
-
-  const boostDistortion = document.createElement('div')
-  boostDistortion.className = 'hud-boost-distortion'
-  root.appendChild(boostDistortion)
-
   const bossTint = document.createElement('div')
   bossTint.className = 'hud-boss-tint'
   root.appendChild(bossTint)
 
-  const damageDirection = document.createElement('div')
-  damageDirection.className = 'hud-damage-direction'
-  root.appendChild(damageDirection)
-  let damageDirectionTimeout = null
+  const sideFlash = document.createElement('div')
+  sideFlash.className = 'hud-side-flash'
+  root.appendChild(sideFlash)
 
   // ============ MIRA + HIT MARKER ============
-  // O hit marker é um filho da mira: assim ele segue automaticamente quando
-  // setReticlePosition() move a mira, sem precisar de lógica extra.
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
   reticle.innerHTML = '<div class="reticle-ring"></div>'
@@ -997,7 +1005,6 @@ export function createGameHud() {
   const boostFill = document.createElement('div')
   boostFill.className = 'hud-bar-fill hud-boost-fill'
   boostBar.appendChild(boostFill)
-  // rastreia a transição "acabou de encher" pra disparar o flash verde (ver setBoost)
   let prevBoostCharge = 1
 
   const question = document.createElement('p')
@@ -1160,8 +1167,6 @@ export function createGameHud() {
     setBoost(charge, active) {
       boostFill.style.width = `${Math.max(0, Math.min(1, charge)) * 100}%`
       boostBar.classList.toggle('active', !!active)
-      // flash "pronto de novo": dispara SÓ na transição (prevCharge < 1 → charge >= 1),
-      // senão ficaria reanimando toda hora com a barra cheia
       if (charge >= 1 && prevBoostCharge < 1) {
         boostBar.classList.remove('ready-flash')
         void boostBar.offsetWidth
@@ -1194,10 +1199,6 @@ export function createGameHud() {
       feedback.innerHTML = ''
       if (!data) return
 
-      // título principal com escalonamento de qualidade. Prioridade:
-      //   1) data.quality ('perfect' | 'good' | 'ok') se o chamador passar
-      //   2) data.accuracyBonus (main.js já calcula isso a partir dos tiros gastos)
-      //   3) fallback pro texto antigo ("Acertou!" / "Errou.")
       let title, titleClass
       if (data.correct) {
         let quality = data.quality
@@ -1306,11 +1307,41 @@ export function createGameHud() {
       damageVignette.classList.add('flash')
     },
 
-    // intensity 0..1 — 0 = vida ok (vignette invisível), 1 = crítico (bem vermelho).
-    // main.js chama isso a cada frame com base na vida; CSS cuida da transição suave.
     setLowHealth(intensity) {
       const v = Math.max(0, Math.min(1, intensity))
       lowHealthVignette.style.opacity = String(v)
+    },
+
+    // ============ MOTION LINES (boost) ============
+    setMotionLines(active) {
+      motionLines.classList.toggle('active', !!active)
+    },
+
+    // ============ SCREEN DISTORTION (boost) ============
+    setBoostDistortion(active) {
+      boostDistortion.classList.toggle('active', !!active)
+    },
+
+    // ============ BOSS TINT ============
+    setBossTint(active) {
+      bossTint.classList.toggle('active', !!active)
+    },
+
+    // ============ FAIXAS LATERAIS DE DANO (escudo vs vida) ============
+    // escudo absorveu o hit: efeito azul com grid de escudo nas laterais
+    showShieldBlock() {
+      sideFlash.classList.remove('flash', 'damage')
+      sideFlash.classList.add('shield')
+      void sideFlash.offsetWidth
+      sideFlash.classList.add('flash')
+    },
+
+    // dano foi direto na vida (sem escudo pra absorver): faixas vermelhas nas laterais
+    showDamageSide() {
+      sideFlash.classList.remove('flash', 'shield')
+      sideFlash.classList.add('damage')
+      void sideFlash.offsetWidth
+      sideFlash.classList.add('flash')
     },
 
     setReticlePosition(xFrac, yFrac) {
@@ -1322,11 +1353,8 @@ export function createGameHud() {
       reticle.classList.toggle('locked', !!locked)
     },
 
-    // flash rápido de "acertou" na mira. killed=true pinta o X de vermelho e mantém ele
-    // visível por um tiquinho a mais — a diferença entre "tirei hp" e "matei".
     hitMarker(killed = false) {
       hitMarkerEl.classList.remove('active', 'kill')
-      // força reflow pra permitir reiniciar a animação se já estiver ativa
       void hitMarkerEl.offsetWidth
       hitMarkerEl.classList.add('active')
       if (killed) hitMarkerEl.classList.add('kill')
@@ -1336,9 +1364,6 @@ export function createGameHud() {
       }, killed ? 240 : 170)
     },
 
-    // solta um número flutuante na fração de tela (0..1) dada.
-    //   value: número (ou string) que aparece
-    //   opts: { homing: true → verde; points: true → amarelo; big: true → maior; prefix: '+' }
     spawnDamageNumber(xFrac, yFrac, value, opts = {}) {
       const el = document.createElement('div')
       el.className = 'hud-damage-number'
@@ -1350,7 +1375,6 @@ export function createGameHud() {
       el.style.left = `${Math.max(0, Math.min(1, xFrac)) * 100}%`
       el.style.top = `${Math.max(0, Math.min(1, yFrac)) * 100}%`
       root.appendChild(el)
-      // remove depois que a animação (900ms) termina + folga pra segurança
       setTimeout(() => el.remove(), 950)
     },
 
@@ -1445,36 +1469,6 @@ export function createGameHud() {
     setChargeIndicator(active, fraction = 0) {
       chargeBar.hidden = !active
       if (active) chargeBarFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
-    },
-
-    // ============ MOTION LINES (boost) ============
-    setMotionLines(active) {
-      motionLines.classList.toggle('active', !!active)
-    },
-
-    // ============ SCREEN DISTORTION (boost) ============
-    setBoostDistortion(active) {
-      boostDistortion.classList.toggle('active', !!active)
-    },
-
-    // ============ BOSS TINT ============
-    setBossTint(active) {
-      bossTint.classList.toggle('active', !!active)
-    },
-
-    // ============ DIRECTIONAL DAMAGE VIGNETTE ============
-    // xFrac, yFrac em 0..1 do espaço de tela — o vignette aparece centrado na direção
-    // de onde o dano veio, e some sozinho depois de ~350ms
-    showDamageDirection(xFrac, yFrac) {
-      damageDirection.style.left = `${xFrac * 100}%`
-      damageDirection.style.top = `${yFrac * 100}%`
-      damageDirection.classList.remove('active')
-      void damageDirection.offsetWidth
-      damageDirection.classList.add('active')
-      if (damageDirectionTimeout) clearTimeout(damageDirectionTimeout)
-      damageDirectionTimeout = setTimeout(() => {
-        damageDirection.classList.remove('active')
-      }, 350)
     },
 
     debug: {

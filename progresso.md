@@ -23,6 +23,14 @@ Antes de mexer, conferi o código real (`bossBuildup` já mostrava a pergunta no
 
 **Versão**: v0.28.1 → v0.29.0.
 
+## Merge com edições diretas do usuário no GitHub + bug crítico corrigido (`hud.showShieldBlock`/`showDamageSide` inexistentes)
+
+Ao dar `git push` desta Fase 5, o remote tinha 5 commits novos que não passaram por aqui (mesmo padrão já documentado antes — edição direta pelo editor web do GitHub ou de outra sessão): `effects.js` (poeira ambiente ajustada, bolha de escudo removida — não mexi, não é meu escopo), e em `hud.js`/`main.js` um trabalho iniciado na mesma ideia do pedido *"Levar dano com o escudo presente, faz um efeito azul com um grid de escudo na tela ao invés de um vermelho, o vermelho é para quando o escudo estiver desligado"*: `main.js` já chamava `hud.showShieldBlock()` (escudo absorveu) e `hud.showDamageSide()` (dano direto), substituindo o antigo `hud.showDamageDirection()`.
+
+**Bug real encontrado antes de fechar o merge**: esses dois métodos nunca foram implementados em `hud.js` no remote — toda vez que o jogador tomasse qualquer dano (escudo ou vida), o jogo quebrava com `TypeError` (`hud.showShieldBlock is not a function`). Não reverti nem ignorei — implementei os dois de verdade em `hud.js`, já que é exatamente um item do pedido VISUAL: `.hud-side-flash` (faixas nas bordas laterais, `.shield` = azul com grid repetido, `.damage` = vermelho sólido), removendo o `showDamageDirection`/`.hud-damage-direction` (vinheta direcional antiga) que ficou órfão. Testado ao vivo: spawnei inimigos, deixei bater na nave várias vezes (escudo absorvendo e depois vida caindo) — zero erro no console em nenhum hit, confirma o fix.
+
+`git merge origin/main` teve 1 conflito de verdade (a tag de versão em `hud.js`, o mesmo bug de "regressão de versão" já documentado desde a v0.22.2 — o remote tinha `v0.24.0` hardcoded de uma cópia velha), resolvido mantendo `v0.29.0`. O resto (reordenação de alguns elementos/métodos do HUD, mais comentários explicativos removidos pelas edições diretas — mesmo padrão da v0.24.1, ainda pendente de restaurar na Fase 8) mesclou sem conflito.
+
 ## Refatoração — Fase 1: extrai `enemies.js` de `combat.js` — v0.26.0
 
 Pedido: o usuário mandou um documento de refatoração pedindo pra separar `player.js` (estado do jogador) e `enemies.js` (5 tipos de inimigo + IA + spawn) de `main.js`/`combat.js`, com regras invioláveis — zero mudança de comportamento, API pública preservada, `main.js` não chama `enemies.js` diretamente (só `combat.js` recebe como dependência e delega), commit atômico por fase, "se achar ambiguidade, pergunte antes de fazer qualquer coisa". Esta entrega é só a **Fase 1** (a mais mecânica); `player.js` fica pra próxima.
