@@ -74,7 +74,6 @@ const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
 
 // ============ FASE 4: TETO DE INIMIGOS E TAXA DE SPAWN DO MODO NORMAL ============
-// >> AJUSTADO: spawn mais rápido, lotes maiores, teto maior (era 7000/1-3/10) <<
 const ENEMY_CAP_NORMAL_BASE = 16
 const ENEMY_CAP_ARENA_BASE = 20
 const ENEMY_CAP_STEP_PER_ERROR = 1
@@ -117,9 +116,6 @@ const LIVES_CAP = 5
 const HOMING_CHARGE_MIN_MS = 1000
 const HOMING_CHARGE_MAX_MS = 4000
 const HOMING_CHARGE_MIN_FLOOR_MS = 1000
-// pedido: o teleguiado trava 1 alvo assim que a carga de verdade começa (fim do wind-up) e
-// mais 1 a cada HOMING_LOCK_INTERVAL_MS de carga — com o base de 4 alvos, chega no teto aos
-// 1.5s de carga (4000-1000=3000ms de janela total, sobra folga pra cartas que aumentam o teto)
 const HOMING_LOCK_INTERVAL_MS = 500
 const HOMING_MAX_TARGETS_BASE = 4
 const HOMING_MAX_TARGETS_CAP = 8
@@ -135,6 +131,12 @@ const BOOST_RECHARGE_MS = 4500
 const PROPULSION_SPEED_MULT = 1.9
 const REPULSION_SPEED_MULT = 0.35
 const RAM_DAMAGE = 5
+
+// ============ VIGNETTE DE VIDA BAIXA ============
+// a partir de qual fração da vida máxima a vignette começa a aparecer, e quão vermelha ela
+// fica no pior caso (0 = invisível, 1 = vermelho bem forte). O HUD cuida de suavizar a
+// transição via CSS; aqui só decidimos a intensidade a cada frame.
+const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 
 let deck = null
 let deckTexts = []
@@ -386,10 +388,6 @@ function mountGame(session) {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
   }
 
-  // quantos alvos o teleguiado pode ter travado NESTE instante do carregamento: 1 assim que a
-  // carga de verdade começa (heldMs === homingChargeMinMs) e +1 a cada HOMING_LOCK_INTERVAL_MS
-  // depois disso, até o teto atual (homingMaxTargets, que cartas aumentam). Usado tanto pra
-  // limitar sweepLockOn em tempo real quanto pro número de alvos no disparo final.
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - homingChargeMinMs)
     return Math.max(1, Math.min(homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
@@ -681,6 +679,7 @@ function mountGame(session) {
       points: resolution.points,
       comboMultiplier: resolution.comboMultiplier,
       health: resolution.healthRemaining,
+      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO: HUD usa pra PERFEITO/BOM/ACERTOU
     })
 
     const outOfLives = applyHealthLoss()
@@ -779,6 +778,7 @@ function mountGame(session) {
       points: resolution.points,
       comboMultiplier: resolution.comboMultiplier,
       health: resolution.healthRemaining,
+      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO
     })
 
     const outOfLives = applyHealthLoss()
@@ -802,6 +802,7 @@ function mountGame(session) {
       correct,
       correctAnswer: outcome.card.answer,
       bonus: true,
+      accuracyBonus: outcome.accuracyBonus,   // <-- NOVO (bônus não tem penalidade, mas a HUD usa)
     })
 
     pendingCardChoice = correct
@@ -988,6 +989,32 @@ function mountGame(session) {
       aimDirection: fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
     })
+
+    // ============ HIT MARKER ============
+    // qualquer kill/evento de acerto vira o "X" rápido na mira. Kills ficam vermelhos.
+    // (hits SEM kill só aparecem se o combat.js devolver hitsLog — ver bloco abaixo.)
+    if (events.enemyKills > 0 || events.bonusKillPoints > 0 || events.goldenSpecialHit || events.bossDefeated) {
+      hud.hitMarker(true)
+    } else if (events.hitsLog && events.hitsLog.length > 0) {
+      hud.hitMarker(false)
+    }
+
+    // ============ NÚMEROS DE DANO FLUTUANTES ============
+    // defensivo: só roda se o combat.js devolver hitsLog (com { worldPos, damage, points,
+    // killed, isHoming }). Enquanto o combat.js não tiver isso, esse bloco é ignorado e o
+    // resto do HUD funciona normalmente.
+    if (events.hitsLog && events.hitsLog.length > 0) {
+      for (const h of events.hitsLog) {
+        const ndcH = h.worldPos.project(camera)
+        const xFrac = THREE.MathUtils.clamp((ndcH.x + 1) / 2, 0, 1)
+        const yFrac = THREE.MathUtils.clamp((1 - ndcH.y) / 2, 0, 1)
+        if (h.points) {
+          hud.spawnDamageNumber(xFrac, yFrac, h.points, { points: true, prefix: '+', big: true })
+        } else {
+          hud.spawnDamageNumber(xFrac, yFrac, h.damage, { homing: !!h.isHoming })
+        }
+      }
+    }
 
     const lockOn = combat.getLockOnTarget()
     const reticleScreenPos = lockOn ? lockOn.mesh.position.clone() : reticleWorldPos
@@ -1179,6 +1206,15 @@ function mountGame(session) {
     hud.setStatus({ health: session.health, maxHealth, score: session.score, combo: session.comboMultiplier })
     hud.setLives(session.lives, maxLives)
     hud.setShield(shieldValue, shieldMax)
+
+    // ============ VIGNETTE DE VIDA BAIXA ============
+    // 0 = vida ok (invisível), 1 = crítico. A partir de 40% da vida máxima já começa a
+    // aparecer; a 0 de vida fica totalmente vermelho. Suavização é via CSS no hud.js.
+    const lowHealthThreshold = maxHealth * LOW_HEALTH_THRESHOLD_FRAC
+    const lowHealthIntensity = session.health < lowHealthThreshold
+      ? Math.max(0, Math.min(1, 1 - session.health / lowHealthThreshold))
+      : 0
+    hud.setLowHealth(lowHealthIntensity)
 
     if (phase === 'bossFight') {
       const bossSnap = combat.getBossSnapshot()
