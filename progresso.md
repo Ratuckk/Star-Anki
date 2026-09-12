@@ -20,6 +20,8 @@ Pedido literal: *"O tiro teleguiado mira vários alvos ao invés de só 4, que �
 
 **Testado**: `node --check` em `main.js`/`combat.js` e `node src/selftest.mjs` limpos. No Browser pane: spawnei inimigos via debug e segurei o botão de tiro (evento sintético + loop de `requestAnimationFrame` real) — sem erro no console durante nem depois de soltar. **Não confirmado ao vivo** o cronograma exato de 0.5s/alvo nem o "solta ao ficar perto/passar pra trás": o throttling de `requestAnimationFrame` sem foco real de SO (já documentado em fases anteriores) ficou tão severo nesta sessão que **200 frames não completaram nem em 45s reais** — inviabiliza qualquer teste que dependa de tempo real de carregamento. Revisão manual linha a linha como compensação.
 
+**Mais uma edição direta do usuário, chegou depois (`quiz.js`, commit 587dcd5)**: errar ou dar timeout numa pergunta **não tira mais saúde** — só quebra o combo/conta pra dificuldade; a saúde agora só cai por dano de inimigo em combate. Ao dar `git pull` antes de reenviar meu commit, achei que isso quebrou uma asserção antiga do `selftest.mjs` (esperava saúde-1 após erro) — corrigido pra refletir o novo comportamento confirmado pelo usuário (2 asserções, erro e timeout).
+
 **Versão**: v0.24.0 → v0.24.1.
 
 ## Auditoria da Fase 2 a pedido do usuário — bug real encontrado (dispara 2 tiros, não 1) — v0.22.2

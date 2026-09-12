@@ -138,18 +138,18 @@ assert.strictEqual(r2.comboMultiplier, 1.3, `combo após 2º acerto deveria ser 
 assert.strictEqual(session.health, STARTING_HEALTH, 'acerto não deveria tirar saúde')
 assert.ok(r2.points > r1.points, 'pontos do 2º acerto deveriam ser maiores devido ao combo mais alto')
 
-// 1 erro -> zera combo e tira 1 de saúde
+// 1 erro -> zera combo; NÃO tira saúde (ajuste do usuário: só dano de inimigo tira saúde agora)
 const r3 = resolveAt('wrong')
 assert.strictEqual(r3.comboMultiplier, 1, `combo deveria zerar para 1.0 após erro, obteve ${r3.comboMultiplier}`)
-assert.strictEqual(session.health, STARTING_HEALTH - 1, `esperava ${STARTING_HEALTH - 1} de saúde após 1 erro, obteve ${session.health}`)
-assert.strictEqual(r3.healthRemaining, STARTING_HEALTH - 1)
+assert.strictEqual(session.health, STARTING_HEALTH, `erro não deveria mais tirar saúde, esperava ${STARTING_HEALTH}, obteve ${session.health}`)
+assert.strictEqual(r3.healthRemaining, STARTING_HEALTH)
 assert.strictEqual(r3.comboBroken, true, 'erro deveria quebrar o combo (comboBroken=true)')
 
-// 1 timeout -> conta como erro (zera combo) mas NÃO tira saúde
+// 1 timeout -> conta como erro (zera combo) e também não tira saúde
 const r4 = resolveAt('timeout')
 assert.strictEqual(r4.comboMultiplier, 1, 'combo deveria continuar em 1.0 após timeout')
-assert.strictEqual(session.health, STARTING_HEALTH - 1, `timeout não deveria tirar saúde, esperava continuar em ${STARTING_HEALTH - 1}, obteve ${session.health}`)
-assert.strictEqual(r4.healthRemaining, STARTING_HEALTH - 1)
+assert.strictEqual(session.health, STARTING_HEALTH, `timeout não deveria tirar saúde, esperava continuar em ${STARTING_HEALTH}, obteve ${session.health}`)
+assert.strictEqual(r4.healthRemaining, STARTING_HEALTH)
 assert.strictEqual(r4.comboBroken, true, 'timeout também deveria contar como quebra de combo')
 
 // ---------------------------------------------------------------------------
