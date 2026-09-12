@@ -26,8 +26,22 @@ const ARENA_RADIUS = 190
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 // giro-desvio: segurar Z/C inclina a nave de verdade pro lado (bank forte, não um tilt
-// pequeno) e ela FICA inclinada enquanto o botão continuar segurado, voltando ao soltar
+// pequeno) e ela FICA inclinada enquanto o botão continuar segurado, voltando ao soltar. Desde
+// a Fase 3, esse hold é SÓ cosmético (main.js não concede mais i-frames por ele) — a
+// invencibilidade agora vem exclusivamente do giro completo (abaixo).
 const DODGE_ROLL_MAX_ANGLE = THREE.MathUtils.degToRad(170)
+
+// giro completo (Fase 3, reintroduzido): 2 toques rápidos na MESMA tecla Z/C disparam uma volta
+// de 360° só cosmética por cima da inclinação normal — main.js decide o cooldown de 3s e a
+// invencibilidade, aqui só a animação em si (ângulo evoluindo de 0 a 360° em FULL_SPIN_DURATION)
+const FULL_SPIN_DURATION = 0.45
+
+// all-range: distância do deslocamento instantâneo do combo "segurar propulsor + Z/C" e taxa
+// de guinada extra que segurar Z/C sozinho (sem o combo) já dá de graça, "facilitando o
+// movimento pro lado" enquanto inclina — pedido explícito do usuário, mais fraca que o giro
+// normal (ARENA_TURN_RATE) pra não duplicar o controle de vôo já existente, só complementar
+const ARENA_DASH_DISTANCE = 16
+const ARENA_BANK_ASSIST_RATE = 1.1
 
 function buildCurve() {
   const points = [
@@ -114,6 +128,11 @@ export function createRailController(camera, scene) {
   let dodgeDebugOverrideDir = 0
   let dodgeDebugOverrideUntil = 0
 
+  // giro completo: fullSpinT vai de 0 a 1 durante a animação (>=1 = inativo/concluído);
+  // fullSpinDir é o sentido (-1/1) travado no instante do disparo
+  let fullSpinT = 1
+  let fullSpinDir = 0
+
   const ship = buildShip()
   ship.position.copy(lastFrame.position)
   scene.add(ship)
@@ -149,6 +168,35 @@ export function createRailController(camera, scene) {
     dodgeRoll += (target - dodgeRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
   }
 
+  // giro completo: avança fullSpinT até 1 (fim da animação) e devolve o ângulo extra (0 a 360°,
+  // no sentido travado em fullSpinDir) pra somar em cima do dodgeRoll — puramente cosmético
+  function updateFullSpin(dt) {
+    if (fullSpinT >= 1) return 0
+    fullSpinT = Math.min(1, fullSpinT + dt / FULL_SPIN_DURATION)
+    return fullSpinT * Math.PI * 2 * fullSpinDir
+  }
+
+  function triggerFullSpin(direction) {
+    fullSpinDir = direction
+    fullSpinT = 0
+  }
+
+  // all-range: desloca a posição da nave instantaneamente pro lado (combo "segurar propulsor +
+  // Z/C") — reaproveita o clamp de raio da arena que já existe pro movimento normal
+  function triggerArenaLateralDash(direction) {
+    if (mode !== 'arena' || direction === 0) return
+    arenaPos.addScaledVector(lastFrame.right, Math.sign(direction) * ARENA_DASH_DISTANCE)
+    const offset = arenaPos.clone().sub(arenaCenter)
+    if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+  }
+
+  // all-range: cambalhota (combo "Baixo + repulsor") — meia-volta rápida de reposicionamento,
+  // igual ao U-turn do Star Fox 64. Só gira o rumo (yaw); pitch/roll não mudam.
+  function triggerArenaSummersault() {
+    if (mode !== 'arena') return
+    arenaYaw += Math.PI
+  }
+
   function forwardFromYawPitch(yaw, pitch) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'))
     return new THREE.Vector3(0, 0, -1).applyQuaternion(q)
@@ -172,14 +220,18 @@ export function createRailController(camera, scene) {
     mode = 'rail'
   }
 
-  function updateArena(dt, input) {
-    arenaYaw -= input.moveX * ARENA_TURN_RATE * dt
+  function updateArena(dt, input, fullSpinAngle = 0) {
+    // segurar Z/C sozinho (sem o combo de propulsor) já ajuda a guinar pro lado, "facilitando o
+    // movimento" além da inclinação cosmética — mais fraco que o giro normal (input.moveX) pra
+    // só complementar, não substituir o controle de vôo
+    arenaYaw -= (input.moveX * ARENA_TURN_RATE + (input.bank || 0) * ARENA_BANK_ASSIST_RATE) * dt
     arenaPitch = THREE.MathUtils.clamp(arenaPitch + input.moveY * ARENA_TURN_RATE * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
     const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
     arenaRoll += (targetRoll - arenaRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
 
     const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
-    arenaPos.addScaledVector(forward, ARENA_SPEED * dt)
+    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho
+    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * dt)
 
     const offset = arenaPos.clone().sub(arenaCenter)
     if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
@@ -192,6 +244,7 @@ export function createRailController(camera, scene) {
     ship.lookAt(arenaPos.clone().add(forward))
     ship.rotateZ(arenaRoll)
     ship.rotateZ(dodgeRoll)
+    ship.rotateZ(fullSpinAngle)
     applyShakeJitter()
 
     const camTarget = arenaPos.clone()
@@ -208,9 +261,10 @@ export function createRailController(camera, scene) {
 
   function update(dt, input) {
     updateDodgeRoll(dt, input)
+    const fullSpinAngle = updateFullSpin(dt)
 
     if (mode === 'arena') {
-      updateArena(dt, input)
+      updateArena(dt, input, fullSpinAngle)
       return
     }
 
@@ -250,6 +304,7 @@ export function createRailController(camera, scene) {
     ship.lookAt(playerPos.clone().add(frame.forward))
     ship.rotateZ(roll)
     ship.rotateZ(dodgeRoll)
+    ship.rotateZ(fullSpinAngle)
     applyShakeJitter()
 
     const camTarget = frame.position.clone()
@@ -293,6 +348,9 @@ export function createRailController(camera, scene) {
       dodgeDebugOverrideDir = direction
       dodgeDebugOverrideUntil = performance.now() + durationMs
     },
+    triggerFullSpin,
+    triggerArenaLateralDash,
+    triggerArenaSummersault,
     enterArena,
     exitArena,
   }
