@@ -3,10 +3,8 @@ import * as THREE from 'three'
 const RAIL_SPEED = 22
 const LATERAL_SPEED = 22
 const LATERAL_ACCEL_RATE = 22
-const BOX_X = 10
-// BOX_Y era 2 — bem menor que BOX_X (10), deixava o movimento vertical numa "caixinha"
-// apertada. Corrigido pra ficar num espaço mais equilibrado com o horizontal.
-const BOX_Y = 8
+const BOX_X = 4
+const BOX_Y = 4
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
 const CAM_LAG_RATE = 5
