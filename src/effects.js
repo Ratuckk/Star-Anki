@@ -80,7 +80,9 @@ const DUST_SIZE = 0.28
 const DUST_COLOR = 0xaaccee
 
 // ============ SHIELD BUBBLE ============
-const SHIELD_BUBBLE_RADIUS = 3.4
+// >> CORRIGIDO: a bolha era uma esfera SÓLIDA maior que a própria nave, cobrindo a tela — virou
+// uma grade (wireframe) justa ao casco, como um "grid de escudo" de verdade em vez de um orbe <<
+const SHIELD_BUBBLE_RADIUS = 1.8
 const SHIELD_BUBBLE_COLOR = 0x4da6ff
 
 // ============ CONTRAIL ============
@@ -95,6 +97,26 @@ const BOSS_IMPACT_MAX_SCALE = 5
 
 // ============ GRID PULSE ============
 const GRID_PULSE_DURATION = 0.4
+
+// >> CORRIGIDO: PointsMaterial sem `map` desenha cada partícula como um QUADRADO sólido — de
+// longe (starfield) isso não incomoda, mas perto da nave (poeira ambiente) ficava parecendo uma
+// "constelação" de quadradinhos estranha. Esse sprite circular (gerado uma vez, num canvas)
+// deixa a poeira redonda e suave, como um ponto de luz de verdade. <<
+function makeCircleSprite() {
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.5, 'rgba(255,255,255,0.55)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  const texture = new THREE.CanvasTexture(canvas)
+  return texture
+}
 
 // sistema de efeitos visuais: starfield + poeira ambiente + efeitos transientes.
 // Todos os transientes são criados sob demanda e descartados quando a vida útil acaba.
@@ -150,17 +172,21 @@ export function createEffectsSystem(scene, opts = {}) {
   dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3))
   const dustMaterial = new THREE.PointsMaterial({
     color: DUST_COLOR, size: DUST_SIZE, sizeAttenuation: true,
-    transparent: true, opacity: 0.5, depthWrite: false, fog: false,
+    map: makeCircleSprite(), transparent: true, opacity: 0.4, depthWrite: false, fog: false,
   })
   const dustPoints = new THREE.Points(dustGeometry, dustMaterial)
   dustPoints.frustumCulled = false
   scene.add(dustPoints)
 
   // ============ SHIELD BUBBLE ============
-  const shieldBubbleGeometry = new THREE.SphereGeometry(SHIELD_BUBBLE_RADIUS, 20, 14)
+  // wireframe (poucos segmentos) em vez de esfera sólida — parece um grid de energia justo ao
+  // casco, não um orbe grande cobrindo a nave
+  // blending normal (não aditivo) — aditivo somava o brilho de cada linha que se cruza e
+  // deixava a grade parecendo acesa/brilhante demais mesmo com opacidade baixa
+  const shieldBubbleGeometry = new THREE.SphereGeometry(SHIELD_BUBBLE_RADIUS, 9, 6)
   const shieldBubbleMaterial = new THREE.MeshBasicMaterial({
-    color: SHIELD_BUBBLE_COLOR, transparent: true, opacity: 0.15,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    color: SHIELD_BUBBLE_COLOR, wireframe: true, transparent: true, opacity: 0.22,
+    depthWrite: false, fog: false,
   })
   const shieldBubble = new THREE.Mesh(shieldBubbleGeometry, shieldBubbleMaterial)
   shieldBubble.visible = false
@@ -529,7 +555,9 @@ export function createEffectsSystem(scene, opts = {}) {
         shieldPulseTimer += dt
         const pulse = 1 + Math.sin(shieldPulseTimer * 3) * 0.03
         shieldBubble.scale.setScalar(pulse)
-        shieldBubbleMaterial.opacity = 0.10 + frac * 0.15
+        // wireframe cobre bem menos área que uma esfera sólida, por isso a opacidade base é
+        // mais alta aqui do que era antes — senão o grid quase some
+        shieldBubbleMaterial.opacity = 0.12 + frac * 0.18
       }
     }
 
@@ -793,7 +821,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   function dispose() {
     scene.remove(stars); starGeometry.dispose(); starMaterial.dispose()
-    scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
+    scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.map?.dispose(); dustMaterial.dispose()
     scene.remove(shieldBubble); shieldBubbleGeometry.dispose(); shieldBubbleMaterial.dispose()
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }

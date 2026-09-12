@@ -49,6 +49,17 @@ Terceira fase (opcional, "recomendado") do documento de refatoração — fecha 
 
 **Refatoração completa** (Fases 1, 2 e 3 do documento do usuário) — `main.js`/`combat.js` agora têm `enemies.js` e `player.js` como módulos irmãos coesos, com `combat.js` continuando como fachada única que `main.js` conhece.
 
+## Correção de 2 efeitos visuais ruins do pacote de 22 — v0.28.1
+
+Pedido literal: *"Corrija esses efeitos novos adicionados no jogo, essa constelação estranha e esse orbe encima da nave"*. Rodei o jogo e vi os dois com meus próprios olhos antes de mexer (não assumi qual era o problema):
+
+- **"Orbe em cima da nave"** = a bolha de escudo (`shieldBubble` em `effects.js`) — era uma **esfera sólida com raio 3.4** (a nave inteira tem uns 3.8 de envergadura) desenhada com `AdditiveBlending`, visível o tempo todo que o escudo tem qualquer carga (ou seja, quase sempre) — na prática, um orbe grande cobrindo boa parte da tela. Corrigido em 3 passos incrementais (testados ao vivo entre cada um, o primeiro ainda ficou "grade brilhante demais"): raio 3.4→1.8 (justo ao casco), esfera sólida→wireframe (grade, não preenchimento), e trocado `AdditiveBlending` por blending normal (o aditivo somava o brilho de cada linha cruzada e deixava tudo aceso demais mesmo com opacidade baixa). Opacidade final: 0.12 a 0.30 (era 0.15 a 0.25, mas numa esfera sólida — nada a ver em termos de cobertura visual real).
+- **"Constelação estranha"** = a poeira ambiente (`dustPoints`) — `PointsMaterial` sem `map` desenha cada partícula como um **quadrado sólido**; de longe (starfield, radius 260+) isso nunca aparece, mas a poeira fica pertinho da nave (radius até 45) e alguns pontos ficam bem perto da câmera, onde o quadrado fica óbvio e parece uma "constelação" artificial de quadradinhos. Corrigido gerando um sprite circular (gradiente radial num `<canvas>`, uma vez só) e aplicando como `map` do material — agora são pontos redondos e suaves de verdade.
+
+**Testado ao vivo**: 4 rodadas de screenshot no Browser pane comparando antes/depois de cada ajuste da bolha (a primeira versão corrigida ainda estava ruim — mais visível que o orbe original, só que como grade — então continuei ajustando até ficar sutil). Confirmei visualmente que os quadrados da poeira sumiram. Zero erro no console em todas as recargas.
+
+**Versão**: v0.28.0 → v0.28.1.
+
 ## Processo (a partir de agora)
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
