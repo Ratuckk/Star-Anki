@@ -274,11 +274,11 @@ function mountGame(session) {
   const rail = createRailController(camera, scene)
   const effects = createEffectsSystem(scene, { grid })
   const enemies = createEnemiesSystem(scene, rail, effects)
-  const combat = createCombatSystem(scene, rail, effects, enemies)
+  const player = createPlayerSystem(session)
+  const combat = createCombatSystem(scene, rail, effects, enemies, player)
   const input = createInputState()
 
   const bindings = getBindings()
-  const player = createPlayerSystem(session)
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
   let debugVisible = false
@@ -419,14 +419,13 @@ function mountGame(session) {
     }
   }
 
-  // efeito de cada carta agora mora em player.js (é estado do jogador) — aqui só sincroniza
-  // combat.js com os stats atualizados e trata os efeitos colaterais que player.js não pode
-  // ter (hud/combat como dependência)
+  // efeito de cada carta mora em player.js (é estado do jogador) — combat.js já lê
+  // projectileCount/aimAssistAngle direto de player.config (Fase 3 da refatoração), então só
+  // fireCooldown (que tem lógica própria de override pro debug "Tiro infinito") e o wingman
+  // (mesh cosmético, vive em combat.js) ainda precisam de sincronização explícita aqui
   function applyRoguelikeCard(card) {
     player.applyCard(card)
-    combat.setProjectileCount(player.config.projectileCount)
     combat.setFireCooldown(player.config.fireCooldown)
-    combat.setAimAssistAngle(player.config.aimAssistAngle)
     combat.setWingmanCount(player.getWingmanCount())
     hud.setLives(session.lives, player.getMaxLives())
   }
@@ -1202,11 +1201,7 @@ function mountGame(session) {
       combat.setFireCooldown(infiniteAmmoActive ? 0 : player.config.fireCooldown)
       hud.debug.setToggleActive('infiniteAmmo', infiniteAmmoActive)
     },
-    maxBuffs: () => {
-      player.debugMaxBuffs()
-      combat.setAimAssistAngle(player.config.aimAssistAngle)
-      combat.setProjectileCount(player.config.projectileCount)
-    },
+    maxBuffs: () => player.debugMaxBuffs(),
     gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
     skipToBossFight: () => {
       if (phase === 'bossBuildup') bossBuildupTimer = 0

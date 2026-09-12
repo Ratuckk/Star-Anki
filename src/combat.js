@@ -73,7 +73,7 @@ const MAX_LOCK_RANGE = 90
 // que isso) e reaproveita PASS_BEHIND (já existente) pra saber se já ficou pra trás
 const MIN_LOCK_RANGE = 10
 
-export function createCombatSystem(scene, rail, effects, enemies) {
+export function createCombatSystem(scene, rail, effects, enemies, player) {
   const projectiles = []
   const quizTargets = []
   const bonusTargets = []
@@ -142,10 +142,12 @@ export function createCombatSystem(scene, rail, effects, enemies) {
     return base.position.clone().addScaledVector(base.right, lateralX).addScaledVector(base.up, lateralY)
   }
 
+  // Fase 3: projectileCount/aimAssistAngle não têm mais cópia própria aqui — lidos direto de
+  // player.config a cada uso. fireCooldownDuration continua LOCAL (não delegado) porque o
+  // debug "Tiro infinito" precisa poder zerá-lo por fora do stat real do jogador; combat.js
+  // ainda tem setFireCooldown() só por causa disso.
   let cooldown = 0
   let fireCooldownDuration = DEFAULT_FIRE_COOLDOWN
-  let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
-  let projectileCount = 1
   let quizRoomActive = false
   let quizShotsFired = 0
   let elapsed = 0
@@ -224,7 +226,7 @@ export function createCombatSystem(scene, rail, effects, enemies) {
   // filtro de distância — só trava alvo de pergunta dentro de MAX_LOCK_RANGE
   function findLockOnTarget(origin, direction) {
     let best = null
-    let bestAngle = aimAssistAngle
+    let bestAngle = player.config.aimAssistAngle
     for (const target of quizTargets) {
       if (target.dying) continue
       if (origin.distanceTo(target.mesh.position) > MAX_LOCK_RANGE) continue
@@ -245,6 +247,7 @@ export function createCombatSystem(scene, rail, effects, enemies) {
     if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
     lateralAxis.normalize()
 
+    const projectileCount = player.config.projectileCount
     const mid = (projectileCount - 1) / 2
     const visualScale = 1 + (projectileCount - 1) * PLAYER_PROJECTILE_GROWTH_PER_EXTRA
     for (let i = 0; i < projectileCount; i += 1) {
@@ -583,9 +586,9 @@ export function createCombatSystem(scene, rail, effects, enemies) {
 
     getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
+    // continua existindo só pro debug "Tiro infinito" poder zerar o cooldown por fora do stat
+    // real do jogador (ver comentário perto de fireCooldownDuration)
     setFireCooldown(seconds) { fireCooldownDuration = seconds },
-    setAimAssistAngle(radians) { aimAssistAngle = radians },
-    setProjectileCount(n) { projectileCount = n },
     setEnemyAggressiveness(multiplier) { enemies.setEnemyAggressiveness(multiplier) },
     setShowHitboxes(v) { showHitboxes = v; refreshHitboxes() },
 

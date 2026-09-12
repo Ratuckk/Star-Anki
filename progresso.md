@@ -34,6 +34,21 @@ Segunda fase do documento de refatoração do usuário — a mais invasiva (mexe
 
 **Versão**: v0.26.0 → v0.27.0.
 
+## Refatoração — Fase 3: config compartilhado entre `player.js` e `combat.js` — v0.28.0
+
+Terceira fase (opcional, "recomendado") do documento de refatoração — fecha a inconsistência que eu tinha documentado na Fase 2: a seção 2.5 do documento já mandava remover `combat.setProjectileCount`/`setAimAssistAngle` como se fosse parte da Fase 2, mas isso só é possível depois que `combat.js` recebe `player` como dependência, que é exatamente esta Fase 3. Fiz na sequência, em commit separado, pra fechar a lacuna sem misturar fases.
+
+- `createCombatSystem` ganha `player` como 5º parâmetro; `main.js` cria `player` **antes** de `combat` agora (ordem invertida da Fase 2).
+- `combat.js`: `projectileCount`/`aimAssistAngle` não têm mais cópia local — `fire()` e `findLockOnTarget()` leem `player.config.projectileCount`/`player.config.aimAssistAngle` direto a cada uso. `setProjectileCount`/`setAimAssistAngle` saíram da API pública.
+- **`setFireCooldown` foi a exceção que fiquei** (o documento mandava remover os 3 juntos): o debug "Tiro infinito" precisa poder zerar o cooldown de tiro *por fora* do stat real do jogador (`fireCooldown: 0` só enquanto o toggle está ligado, sem mexer no valor de verdade que as cartas "recarga mais rápida" vão aumentando). Se eu also remover esse setter e fizer `combat.js` ler `player.config.fireCooldown` direto, não sobra lugar nenhum pra aplicar esse override sem inventar um conceito novo em `player.js` (tipo uma flag de debug misturada com estado de jogador, que não faz sentido lá). `fireCooldownDuration` continua sendo estado local de `combat.js`, sincronizado explicitamente por `main.js` depois de cada `player.applyCard()` — exatamente como já era.
+- `main.js`: removidas as chamadas `combat.setProjectileCount(...)`/`combat.setAimAssistAngle(...)` de `applyRoguelikeCard` e do debug `maxBuffs`.
+
+**Testado ao vivo**: atirei (exercita `fire()` lendo `player.config.projectileCount`), rodei o debug "Aplicar buffs máximos" seguido de "Escolher carta roguelike" — as cartas "Tiro duplicado"/"Mira ampliada" corretamente NÃO apareceram entre as opções (confirma que `buildCardExcludeSet` está lendo o mesmo estado real de `player.js` que os buffs máximos escreveram, sem depender mais de nenhuma cópia em `combat.js`) — escolhi uma carta, sem erro no console em nenhum passo.
+
+**Versão**: v0.27.0 → v0.28.0.
+
+**Refatoração completa** (Fases 1, 2 e 3 do documento do usuário) — `main.js`/`combat.js` agora têm `enemies.js` e `player.js` como módulos irmãos coesos, com `combat.js` continuando como fachada única que `main.js` conhece.
+
 ## Processo (a partir de agora)
 
 Pedido do usuário: sempre citar o pedido literal dele no progresso.md e **sempre checar contra o código/dado real** antes de marcar algo como feito, em vez de assumir. Ficou claro que vale a pena logo na Fase 1 abaixo — eu tinha certeza (por um teste ao vivo antigo, com um baralho salvo desatualizado no localStorage) de que a triagem do baralho estava classificando errado; ao rodar `buildDeck` direto no arquivo atual descobri que na real 100% das perguntas caíam como "combate" e nenhuma como "painel" — um problema diferente do que eu tinha diagnosticado. Reportei a correção pro usuário em vez de deixar o diagnóstico errado por escrito.
