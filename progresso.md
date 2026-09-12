@@ -5,6 +5,13 @@
 - [x] Fase A — combate e precisão (giro-desvio, lock-on por varredura, dourado especial com hp/IA, +2 inimigos por erro) — v0.19.0.
 - [x] Ajuste fino do tiro carregado (dano 3x, tamanho +100%, wind-up mínimo de 1s) — v0.19.1.
 - [x] Barra e glow de carga só aparecem depois do wind-up — v0.19.2.
+- [x] Marcador de lock-on no inimigo também só depois do wind-up — v0.19.3 (não testado ao vivo, pedido explícito do usuário pra commitar direto).
+
+## Lock-on no inimigo só depois do wind-up — v0.19.3
+
+Mesma lógica da v0.19.2, agora pro marcador verde de lock-on: `combat.sweepLockOn` + `hud.setLockedEnemyMarkers` em `main.js` saíram de dentro do `if (inputState.firing)` geral e foram pra dentro do `if (isCharging)` — antes disso (durante o wind-up) nenhum inimigo é marcado, sem esperar pra sempre pra aparecer. Usuário pediu commit direto sem teste ao vivo desta vez.
+
+**Versão**: v0.19.2 → v0.19.3.
 
 ## Barra e glow de carga só depois do wind-up — v0.19.2
 

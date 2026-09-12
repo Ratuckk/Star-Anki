@@ -878,24 +878,24 @@ function mountGame(session) {
         const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
         hud.setChargeIndicator(true, chargeFrac)
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
+
+        // varre a mira sobre inimigos só depois do wind-up (carga de verdade já começou) —
+        // cada um que passa pela mira fica marcado (lock-on) pro teleguiado mirar exatamente
+        // neles ao soltar, em vez dos N mais próximos
+        combat.sweepLockOn(nosePos, fireDirection)
+        const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
+          const ndcL = s.worldPos.project(camera)
+          return {
+            id: s.id,
+            xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
+            yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
+          }
+        })
+        hud.setLockedEnemyMarkers(lockedBars)
       } else {
         hud.setChargeIndicator(false)
         effects.setChargeGlow(false)
       }
-
-      // varre a mira sobre inimigos o tempo todo que segura o botão (não só depois do mínimo
-      // de carga) — cada um que passa pela mira fica marcado (lock-on) pro teleguiado mirar
-      // exatamente neles ao soltar, em vez dos N mais próximos
-      combat.sweepLockOn(nosePos, fireDirection)
-      const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
-        const ndcL = s.worldPos.project(camera)
-        return {
-          id: s.id,
-          xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
-          yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
-        }
-      })
-      hud.setLockedEnemyMarkers(lockedBars)
     } else {
       if (isCharging) {
         const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
