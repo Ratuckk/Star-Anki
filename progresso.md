@@ -26,6 +26,12 @@ Antes de começar a Fase 3, o usuário pediu explicitamente: *"antes de tudo eu 
 
 **Versão**: v0.22.1 → v0.22.2.
 
+## Bugfix: tag de versão na tela ficou presa em v0.22.1 — v0.22.2 (correção)
+
+Usuário reportou "ainda é a 22.1" depois do merge do fix acima já estar na `main`. Não era cache (dessa vez) — era um bug de processo meu: `src/hud.js` tem uma tag de versão **hardcoded** no HTML da tela de pré-jogo (`v0.22.1` fixo, não gerada a partir de nenhum lugar central), e eu bumped a versão no `progresso.md`/commit sem lembrar de atualizar essa string também. Corrigido pra `v0.22.2`.
+
+**Lição pra próximas entregas**: sempre que bumped a versão no changelog, checar `src/hud.js` (linha da tag `.version-tag`) também — é o único lugar do código com o número hardcoded (conferido com grep em todo o projeto).
+
 ## Bugfix crítico: servidor local sem Cache-Control deixava o navegador preso em versões antigas
 
 O usuário relatou "a v0.22 não tá" depois de eu ter comitado e feito push da Fase 2. Investigando: `tools/run-game.mjs` (o servidor real que `start-game.bat` sobe pro usuário jogar) respondia todo arquivo com `res.writeHead(200, { 'Content-Type': ... })`, **sem nenhum header de cache**. Sem `Cache-Control`/`ETag`, o navegador aplica cache heurístico por conta própria e pode continuar servindo uma cópia de dias atrás do `.js` mesmo depois do arquivo mudar no disco e o servidor reiniciar — exatamente o que aconteceu. Isso bate 100% com um problema que eu já tinha documentado no ambiente de teste automatizado (via `preview_start`) na Fase 1/2, só que lá eu suspeitava (e ainda suspeito, confirmado de novo aqui) que é um proxy de cache específico da ferramenta de teste, sem forwarding pro servidor real — só que agora ficou claro que o PRÓPRIO `run-game.mjs` também tinha esse problema, e esse sim afeta o navegador de verdade do usuário.
