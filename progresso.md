@@ -53,6 +53,8 @@ Antes de implementar, o usuário exigiu explicitamente que eu fizesse **todas** 
 
 **Versão**: v0.22.2 → v0.23.0.
 
+**Teste ao vivo feito depois (sessão seguinte)**: repositório local estava desatualizado (essa fase foi feita numa sessão de nuvem via PR, sem passar por aqui) — dei `git pull` e testei no Browser pane local antes de seguir pra Fase 4. Confirmado com um baralho de teste: propulsão (A) e repulsão (S) drenam a barra compartilhada (`hud-boost-fill` 100%→0%) e ela recarrega sozinha em ~4.5s; giro completo (2 toques rápidos em Z) dispara sem erro no console. **Não testado**: os combos exclusivos do all-range (cambalhota Baixo+S, dash lateral A+Z/C) — exigem chegar no modo arena (dourado/chefe), não alcançado nesta verificação rápida.
+
 ## Bugfix: tag de versão na tela ficou presa em v0.22.1 — v0.22.2 (correção)
 
 Usuário reportou "ainda é a 22.1" depois do merge do fix acima já estar na `main`. Não era cache (dessa vez) — era um bug de processo meu: `src/hud.js` tem uma tag de versão **hardcoded** no HTML da tela de pré-jogo (`v0.22.1` fixo, não gerada a partir de nenhum lugar central), e eu bumped a versão no `progresso.md`/commit sem lembrar de atualizar essa string também. Corrigido pra `v0.22.2`.
