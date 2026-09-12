@@ -142,6 +142,11 @@ const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
 // antigo, ou pra baixo (60) pra exigir aproximação. <<
 const MAX_LOCK_RANGE = 90
 
+// pedido: o teleguiado deve "parar de mirar em inimigos que estão extremamente próximos ou
+// passaram pelo jogador" — usado em sweepLockOn (não deixa travar/mantém travado um inimigo
+// mais perto que isso) e reaproveita PASS_BEHIND (já existente) pra saber se já ficou pra trás
+const MIN_LOCK_RANGE = 10
+
 const TIME_ENEMY_COLOR = 0xb026ff
 const TIME_ENEMY_EMISSIVE = 0x4b0082
 const TIME_ENEMY_SPAWN_DISTANCE_MIN = 90
@@ -301,12 +306,27 @@ export function createCombatSystem(scene, rail, effects = null) {
 
   const lockedEnemies = new Set()
 
-  // >> AJUSTADO: filtro de distância — só trava/marca inimigo dentro de MAX_LOCK_RANGE <<
-  function sweepLockOn(origin, direction) {
+  // maxAllowed (main.js): quantos alvos podem estar travados NESTE instante do carregamento —
+  // 1 no início, +1 a cada HOMING_LOCK_INTERVAL_MS (pedido: travar um alvo novo por vez, não
+  // todos de uma vez). Sem isso, qualquer inimigo que passasse pela mira durante a carga toda
+  // ficava marcado, sem limite — o teto só valia na hora de disparar, não na marcação visual.
+  function sweepLockOn(origin, direction, maxAllowed = Infinity) {
+    const frame = rail.getFrameAt(0)
+    // solta quem ficou extremamente perto ou já passou pra trás do jogador antes de disparar —
+    // libera a vaga pra um alvo válido poder ser travado no lugar
+    for (const e of [...lockedEnemies]) {
+      if (e.dying) { lockedEnemies.delete(e); continue }
+      const rel = e.mesh.position.clone().sub(origin)
+      if (rel.length() < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) lockedEnemies.delete(e)
+    }
+    if (lockedEnemies.size >= maxAllowed) return
     for (const e of enemies) {
+      if (lockedEnemies.size >= maxAllowed) break
       if (e.dying || lockedEnemies.has(e)) continue
-      if (origin.distanceTo(e.mesh.position) > MAX_LOCK_RANGE) continue
-      const toTarget = e.mesh.position.clone().sub(origin).normalize()
+      const rel = e.mesh.position.clone().sub(origin)
+      const dist = rel.length()
+      if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
+      const toTarget = rel.clone().normalize()
       const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
       if (angle < ENEMY_LOCK_ANGLE) lockedEnemies.add(e)
     }

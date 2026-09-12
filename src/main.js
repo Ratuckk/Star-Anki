@@ -117,8 +117,11 @@ const LIVES_CAP = 5
 const HOMING_CHARGE_MIN_MS = 1000
 const HOMING_CHARGE_MAX_MS = 4000
 const HOMING_CHARGE_MIN_FLOOR_MS = 1000
-const HOMING_MIN_TARGETS = 2
-const HOMING_MAX_TARGETS_BASE = 5
+// pedido: o teleguiado trava 1 alvo assim que a carga de verdade começa (fim do wind-up) e
+// mais 1 a cada HOMING_LOCK_INTERVAL_MS de carga — com o base de 4 alvos, chega no teto aos
+// 1.5s de carga (4000-1000=3000ms de janela total, sobra folga pra cartas que aumentam o teto)
+const HOMING_LOCK_INTERVAL_MS = 500
+const HOMING_MAX_TARGETS_BASE = 4
 const HOMING_MAX_TARGETS_CAP = 8
 
 const DODGE_TAP_WINDOW_MS = 350
@@ -381,6 +384,15 @@ function mountGame(session) {
 
   function randomEnemyInterval() {
     return enemyIntervalMin + Math.random() * (enemyIntervalMax - enemyIntervalMin)
+  }
+
+  // quantos alvos o teleguiado pode ter travado NESTE instante do carregamento: 1 assim que a
+  // carga de verdade começa (heldMs === homingChargeMinMs) e +1 a cada HOMING_LOCK_INTERVAL_MS
+  // depois disso, até o teto atual (homingMaxTargets, que cartas aumentam). Usado tanto pra
+  // limitar sweepLockOn em tempo real quanto pro número de alvos no disparo final.
+  function currentHomingAllowedTargets(heldMs) {
+    const chargeMs = Math.max(0, heldMs - homingChargeMinMs)
+    return Math.max(1, Math.min(homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
   }
 
   function randomBonusInterval() {
@@ -879,7 +891,7 @@ function mountGame(session) {
         hud.setChargeIndicator(true, chargeFrac)
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
 
-        combat.sweepLockOn(nosePos, fireDirection)
+        combat.sweepLockOn(nosePos, fireDirection, currentHomingAllowedTargets(fireHeldMs))
         const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
           const ndcL = s.worldPos.project(camera)
           return {
@@ -895,9 +907,7 @@ function mountGame(session) {
       }
     } else {
       if (isCharging) {
-        const chargeFrac = Math.min(1, (fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs))
-        const targetCount = Math.round(HOMING_MIN_TARGETS + (homingMaxTargets - HOMING_MIN_TARGETS) * chargeFrac)
-        combat.fireHomingShot(nosePos, targetCount)
+        combat.fireHomingShot(nosePos, currentHomingAllowedTargets(fireHeldMs))
       }
       fireHeldMs = 0
       hud.setChargeIndicator(false)
