@@ -8,6 +8,7 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 
 const HOMING_PROJECTILE_SPEED = 46
+const HOMING_PROJECTILE_DAMAGE = 3
 const WINGMAN_OFFSETS = [3.2, -3.2]
 
 export const DEFAULT_FIRE_COOLDOWN = 0.2
@@ -125,7 +126,7 @@ export function createCombatSystem(scene, rail, effects = null) {
   const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
 
   // tiro teleguiado: mesmo formato, maior e roxo — visualmente distinto do tiro normal
-  const homingProjectileGeometry = new THREE.ConeGeometry(0.22, 1.4, 6)
+  const homingProjectileGeometry = new THREE.ConeGeometry(0.44, 2.8, 6)
   homingProjectileGeometry.rotateX(Math.PI / 2)
   const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xb84dff })
 
@@ -440,7 +441,7 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       const enemyHit = enemies.find((e) => !e.dying && projectile.mesh.position.distanceTo(e.mesh.position) <= hitRadiusFor(e))
       if (enemyHit) {
-        enemyHit.hp -= 1
+        enemyHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
         if (enemyHit.hp > 0) continue
         enemyHit.dying = true
@@ -469,7 +470,7 @@ export function createCombatSystem(scene, rail, effects = null) {
 
       const goldenHit = goldenTargets.find((g) => !g.dying && projectile.mesh.position.distanceTo(g.mesh.position) <= GOLDEN_SPECIAL_HIT_RADIUS)
       if (goldenHit) {
-        goldenHit.hp -= 1
+        goldenHit.hp -= projectile.damage ?? 1
         removeProjectile(projectile)
         if (goldenHit.hp > 0) continue
         goldenHit.dying = true
@@ -652,7 +653,7 @@ export function createCombatSystem(scene, rail, effects = null) {
         const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
         mesh.position.copy(origin)
         scene.add(mesh)
-        projectiles.push({ mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0, homingTarget: target })
+        projectiles.push({ mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0, homingTarget: target, damage: HOMING_PROJECTILE_DAMAGE })
       }
       if (effects) effects.muzzleFlash(origin, targets[0] ? targets[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1))
       return targets.length

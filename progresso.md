@@ -3,6 +3,19 @@
 - [ ] Fase B (ritmo/clareza) e Fase C (visual do trilho) — ver seção "Roadmap — próxima leva" no fim deste arquivo.
 - [ ] `.claude/launch.json`: CLAUDE.md menciona "dois `.claude/launch.json` que precisam ficar sincronizados". Criei um do zero na v0.15.0; não achei nem tive confirmação de onde ficaria um segundo. Perguntar ao usuário se surgir a dúvida de novo.
 - [x] Fase A — combate e precisão (giro-desvio, lock-on por varredura, dourado especial com hp/IA, +2 inimigos por erro) — v0.19.0.
+- [x] Ajuste fino do tiro carregado (dano 3x, tamanho +100%, wind-up mínimo de 1s) — v0.19.1.
+
+## Ajuste fino do tiro carregado — v0.19.1
+
+Pedido pontual do usuário, fora das fases A/B/C já planejadas:
+
+- **Dano do teleguiado**: cada projétil do tiro carregado agora causa 3 de dano (era 1, igual ao tiro normal) — `HOMING_PROJECTILE_DAMAGE` em `combat.js`, aplicado via `projectile.damage ?? 1` no lugar do `-= 1` fixo (afeta inimigos comuns e o dourado especial, que usam o mesmo caminho de hit).
+- **Tamanho do projétil teleguiado**: `homingProjectileGeometry` dobrado (raio 0.22→0.44, altura 1.4→2.8) — o cone fica visualmente 2x maior.
+- **Wind-up mínimo de 1s pra começar a carregar**: `HOMING_CHARGE_MIN_MS` (main.js) baixado de 2000 para 1000 — igual ao piso `HOMING_CHARGE_MIN_FLOOR_MS` que a carta "carga mais rápida" já usava. Como agora nascem iguais, essa carta ficou sem efeito possível desde o início da run; adicionei ela ao `buildCardExcludeSet` (não aparece mais como opção).
+
+**Testado ao vivo**: spawnei um inimigo tanque (5 hp) e disparei o teleguiado de debug duas vezes — o placar só subiu (+30, bônus de abate) depois do 2º tiro, confirmando 3 dano por tiro (3+3=6 ≥ 5) em vez do 1 antigo (que precisaria de 5 tiros). Tamanho maior do cone confirmado visualmente com hitboxes ligadas. `node --check` e `selftest.mjs` limpos.
+
+**Versão**: v0.19.0 → v0.19.1.
 
 ## Fase A — Combate e precisão — v0.19.0
 

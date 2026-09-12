@@ -121,7 +121,7 @@ const LIVES_CAP = 5
 // tiro teleguiado: segurar o botão de atirar carrega, de HOMING_CHARGE_MIN_MS (começa a valer)
 // até HOMING_CHARGE_MAX_MS (carga máxima); nº de alvos escala de HOMING_MIN_TARGETS até
 // homingMaxTargets (mutável, cartas aumentam) nesse intervalo
-const HOMING_CHARGE_MIN_MS = 2000
+const HOMING_CHARGE_MIN_MS = 1000
 const HOMING_CHARGE_MAX_MS = 4000
 const HOMING_CHARGE_MIN_FLOOR_MS = 1000
 const HOMING_MIN_TARGETS = 2
@@ -498,6 +498,7 @@ function mountGame(session) {
     if (projectileCount >= PROJECTILE_COUNT_CAP) exclude.add('extra-projectile')
     if (aimAssistAngle >= AIM_ASSIST_CAP) exclude.add('wider-lock')
     if (session.lives >= LIVES_CAP) exclude.add('extra-life')
+    if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
     return exclude
   }
 
