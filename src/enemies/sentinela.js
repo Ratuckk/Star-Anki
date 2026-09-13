@@ -21,6 +21,12 @@ const LEAVE_SPEED = 24 // bem mais rápido que o avanço do Blaster — "vai emb
 export const SENTINELA_SHOTS_TOTAL = 4
 export const SENTINELA_FIRE_INTERVAL = 1.8 // intervalo entre os 4 disparos
 
+// estados de verdade (com transição), diferente de "perfil" (escolhido no spawn, fixo pra
+// sempre — ver BLASTER_PROFILES em blaster.js). Mesmo padrão de campo que miniSwarm.js usa
+// (`swarmState`), só que genérico (`state`) — dá pra reaproveitar em outras classes futuras.
+export const SENTINELA_STATE_ENGAGING = 'engaging' // persegue mantendo distância, dispara
+export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera pra trás e some
+
 // a "moldura": raio externo cobre uma área generosa (compatível com ENEMY_BOX_X/Y=7, o
 // espalhamento típico de spawn/movimento de outros inimigos), raio interno (o buraco) dá espaço
 // real pra desviar sem chegar a ser trivial
@@ -53,15 +59,15 @@ export function spawnSentinela(scene, rail, id) {
   return {
     id, mesh, kind: SENTINELA_KIND, dying: false, deathT: 0, hp: SENTINELA_HP, maxHp: SENTINELA_HP, fireTimer: SENTINELA_FIRE_INTERVAL,
     shotsFired: 0,
-    leaving: false,
+    state: SENTINELA_STATE_ENGAGING,
   }
 }
 
-// engaja: corrige a posição pra ficar num "standoff" fixo à frente da câmera (mesmo princípio do
-// perfil 'follow' do Blaster) — nunca cruza o jogador. Ao esgotar os 4 disparos, acelera pra
-// trás (sentido oposto ao avanço do Blaster) até sair de tela.
+// engajando: corrige a posição pra ficar num "standoff" fixo à frente da câmera (mesmo princípio
+// do perfil 'follow' do Blaster) — nunca cruza o jogador. Ao esgotar os 4 disparos, transiciona
+// pra "indo embora": acelera pra trás (sentido oposto ao avanço do Blaster) até sair de tela.
 export function updateSentinelaMovement(enemy, dt, frame) {
-  if (enemy.leaving) {
+  if (enemy.state === SENTINELA_STATE_LEAVING) {
     enemy.mesh.position.addScaledVector(frame.forward, LEAVE_SPEED * dt)
     return
   }
@@ -71,7 +77,7 @@ export function updateSentinelaMovement(enemy, dt, frame) {
 }
 
 export function sentinelaPassBehind(enemy) {
-  return enemy.leaving ? PASS_BEHIND : PASS_BEHIND * 8
+  return enemy.state === SENTINELA_STATE_LEAVING ? PASS_BEHIND : PASS_BEHIND * 8
 }
 
 // dispara uma moldura quadrada travada na posição ATUAL do jogador (mesmo truque do laser do
@@ -115,7 +121,7 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
 
   enemy.shotsFired += 1
   if (enemy.shotsFired >= SENTINELA_SHOTS_TOTAL) {
-    enemy.leaving = true
+    enemy.state = SENTINELA_STATE_LEAVING
     enemy.fireTimer = Infinity
   }
   return true
