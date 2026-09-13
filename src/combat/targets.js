@@ -12,13 +12,27 @@ const BONUS_SPAWN_DISTANCE_MAX = 140
 const BONUS_BOX_X = 7
 const BONUS_BOX_Y = 5
 const BONUS_HIT_RADIUS = 1.6
+// piso de hitbox — asteroide minúsculo (scale 0.35) sem isso ficaria quase impossível de acertar
+const BONUS_HIT_RADIUS_MIN = 1.0
 const BONUS_DEATH_DURATION = 0.2
 const BONUS_KILL_BONUS = 50
-// pedido do usuário: variedade de tamanho — 0.7x a 1.6x, hitbox acompanha a escala real
-const BONUS_SCALE_MIN = 0.7
-const BONUS_SCALE_MAX = 1.6
+// Range expandido (era 0.7-1.6): 0.35 dá asteroide de verdade pequeno, 2.4 dá asteroide de
+// verdade grande — a variedade visual fica óbvia, não "médio pra médio".
+const BONUS_SCALE_MIN = 0.35
+const BONUS_SCALE_MAX = 2.4
 
 const PASS_BEHIND = -4
+
+// Distribuição enviesada pros EXTREMOS (não uniforme): metade dos valores cai perto do mínimo,
+// metade perto do máximo. A uniforme antiga amontoava tudo em volta do meio (~1.15x) — é o que
+// dava a sensação de "todo asteroide é do mesmo tamanho".
+function rollBonusScale() {
+  const r = Math.random()
+  const t = r < 0.5
+    ? Math.pow(Math.random(), 2) * 0.5       // [0, 0.5) enviesado pro 0
+    : 1 - Math.pow(Math.random(), 2) * 0.5   // (0.5, 1] enviesado pro 1
+  return BONUS_SCALE_MIN + t * (BONUS_SCALE_MAX - BONUS_SCALE_MIN)
+}
 
 // v0.29.6: +25% no tiro normal (não no teleguiado) — repassado por quem chama resolve*Hit
 const BOSS_ORB_HIT_RADIUS = 2.2
@@ -114,12 +128,19 @@ export function createTargetsSystem(scene, rail, effects) {
     }
   }
 
+  // Hitbox efetiva de um bônus — acompanha a escala real do mesh (o comentário antigo prometia
+  // isso, o código usava o raio fixo BONUS_HIT_RADIUS, então asteroide pequeno tinha hitbox do
+  // tamanho de um grande). Piso em BONUS_HIT_RADIUS_MIN pro extremo pequeno ainda ser acertável.
+  function bonusHitRadiusFor(bonus) {
+    return Math.max(BONUS_HIT_RADIUS_MIN, BONUS_HIT_RADIUS * (bonus.scale ?? 1))
+  }
+
   return {
     spawnBonusTarget() {
       const position = randomSpawnPositionOnPath(BONUS_SPAWN_DISTANCE_MIN, BONUS_SPAWN_DISTANCE_MAX, BONUS_BOX_X, BONUS_BOX_Y)
       const mesh = new THREE.Mesh(bonusGeometry, bonusMaterial)
       mesh.position.copy(position)
-      const scale = BONUS_SCALE_MIN + Math.random() * (BONUS_SCALE_MAX - BONUS_SCALE_MIN)
+      const scale = rollBonusScale()
       mesh.scale.setScalar(scale)
       mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
       scene.add(mesh)
@@ -180,18 +201,20 @@ export function createTargetsSystem(scene, rail, effects) {
 
     resolveBonusHit(prevPos, currPos, hitBuffer) {
       if (!bonusTargets.length) return null
-      const bonus = bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, currPos) <= BONUS_HIT_RADIUS + hitBuffer)
+      const bonus = bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, currPos) <= bonusHitRadiusFor(b) + hitBuffer)
       if (!bonus) return null
       bonus.dying = true
       bonus.deathT = 0
-      if (effects) effects.explosion(bonus.mesh.position, BONUS_COLOR, 0.9)
+      // explosão escala com o tamanho do asteroide — asteroide 2.4x dá uma explosão visivelmente
+      // maior que um 0.35x, reforçando visualmente a variedade
+      if (effects) effects.explosion(bonus.mesh.position, BONUS_COLOR, 0.9 * bonus.scale)
       return { points: BONUS_KILL_BONUS }
     },
 
     getMinimapBlips: () => bossOrbs.filter((o) => !o.dying).map((o) => ({ type: 'bossOrb', worldPos: o.mesh.position })),
 
     getHitboxTargets: () => [
-      ...bonusTargets.filter((b) => !b.dying).map((b) => ({ worldPos: b.mesh.position, radius: BONUS_HIT_RADIUS })),
+      ...bonusTargets.filter((b) => !b.dying).map((b) => ({ worldPos: b.mesh.position, radius: bonusHitRadiusFor(b) })),
       ...bossOrbs.filter((o) => !o.dying).map((o) => ({ worldPos: o.mesh.position, radius: BOSS_ORB_HIT_RADIUS })),
     ],
 
