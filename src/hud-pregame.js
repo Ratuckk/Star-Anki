@@ -8,7 +8,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.40.0</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.41.0</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')

@@ -3,6 +3,27 @@
 Continuação do [PROGRESSO.md](PROGRESSO.md) (histórico até v0.33.x, agora congelado). A partir desta
 entrega, toda documentação nova entra neste arquivo.
 
+## `main.js` reduzido: extrai `game-menu.js` e `debug-actions.js` — v0.41.0
+
+Pergunta do usuário: *"O que faria para melhorar a organização do código e diminuir as quantidades exorbitantes de código em cada js? Assim como fiz com os inimigos?"* — depois de confirmar (perguntando pras outras sessões) que ninguém mais estava editando `main.js`/`combat.js` no momento, comecei a mesma ideia dos splits de `enemies.js`/`combat.js`, mas aplicada ao `main.js` (1543 linhas, o mais monolítico do projeto: uma única closure `mountGame()` misturando state machine de fases, input/combos, debug panel e orquestração de HUD).
+
+Diferença importante em relação aos splits anteriores: `enemies.js`/`combat.js` dividiam bem porque cada pedaço (uma classe de inimigo, um sistema de combate) é bastante independente. `mountGame()`'s `tick()` não é assim — é uma função só, de ~600 linhas, lendo/escrevendo umas 30 variáveis mutáveis da mesma closure (phase, timers, flags). Dividir isso de verdade (a state machine de fases em si) exigiria agrupar esse estado num objeto e passar por parâmetro pra várias funções — um refactor bem maior e mais arriscado. Por segurança (e por ter várias sessões concorrentes mexendo no mesmo repo hoje), fiz só a parte que dá pra extrair com baixo risco nesta entrega — o resto fica pra uma Fase 2 futura:
+
+1. **`src/game-menu.js`** (novo, 175 linhas): todo o fluxo de menu/baralho/prática de painel que roda ANTES e DEPOIS de uma partida — `handlePlayDeck`, `handlePlayMergedDecks`, `restart`, `playAgain`, `renderEndScreen`, `startPainelPractice`, `downloadTagsExport` — nenhuma dessas funções tocava no loop de jogo (`tick()`) diretamente, só chamavam `mountGame(session)` como callback. Export único: `createGameMenu(mountGameFn)` (recebe `mountGame` por injeção, pra evitar import circular — `mountGame` mora em `main.js` e `game-menu.js` nunca importa de lá), devolve `{ restart }`.
+   - Acoplamento reverso resolvido: `endSector()` (dentro de `mountGame`) precisa mostrar a tela de fim (`renderEndScreen`, que é privada de `game-menu.js`) — resolvido passando `deck` e um pacote `menu = { sessionResults, renderEndScreen }` como 2º/3º parâmetro de `mountGame(session, deck, menu)`.
+   - `history` não precisou de nenhum parâmetro extra: `session.history` já é o MESMO objeto que `game-menu.js` persiste (`createSession`, desde a Fase 9, já grava `session.history = history`) — `recordResult` muta em vez de substituir, então os dois lados ficam sincronizados de graça.
+2. **`src/debug-actions.js`** (novo, 85 linhas): o objeto inteiro passado pra `hud.debug.bind({...})` (~70 linhas de bindings do painel de debug) virou `createDebugActions(deps)`. Continua dependendo de praticamente tudo (`combat`/`player`/`rail`/`effects`/`hud`/`session`) — é o painel de debug, "alcançar tudo" é esperado — mas isolar isso tira ~70 linhas do meio do `main.js`.
+   - `godMode`/`infiniteAmmoActive`/`hitboxesActive`/`slowMoActive` (4 `let` soltos) viraram um único objeto `debugFlags` compartilhado por referência — evita precisar de getter/setter pra cada um; os 2 pontos do `tick()` que liam essas flags (`dt` com câmera lenta, checagem de dano com god mode) agora leem `debugFlags.x`.
+   - `phase` (lido em 4 bindings) e `bossHealthBonus` (escrito em 1) continuam sendo `let` normais dentro de `mountGame`, só expostos por um getter (`getPhase`) e uma função de reset (`resetBossHealthBonus`) — não valia a pena promovê-los a objeto só por causa do painel de debug, já que são usados pervasivamente no resto do `tick()`/state machine que não foi tocado.
+
+`main.js`: 1543 → 1335 linhas (~13%, e as ~260 linhas que saíram foram pra dois arquivos com responsabilidade única e comentário de topo explicando a injeção de dependência).
+
+**Testado ao vivo**: `node --check` limpo nos 3 arquivos + `selftest.mjs`; joguei do menu (exercita `game-menu.js`: `restart`→`showDeckManager`→`handlePlayDeck`→`createSession`→`mountGame`) até o combate, zero erro no console; abri o painel de debug e cliquei God mode/Tiro infinito/Mostrar hitboxes/Câmera lenta (os 4 toggles ficaram verdes, confirma `debugFlags` funcionando) e "Ir para arena dourada" (confirma `getPhase()`/`startArenaCutscene` via `debug-actions.js`) — cutscene "Transicionando para o modo All-Range..." rodou normalmente, zero erro em nenhum clique.
+
+**Versão**: v0.40.0 → v0.41.0.
+
+**Nota de processo**: antes de mexer, confirmei com as sessões concorrentes (`star-anki-d5`, `star-anki-b8`, `star-anki-bf`) que ninguém mais estava editando `main.js` ou `combat.js` naquele momento — `main.js` tinha edições pendentes da `star-anki-d5` (Fase 5 de correções) e a divisão do `combat.js` era da `star-anki-b8`, ambas concluídas e commitadas (`5fb6dd4`, `0ad654e`) antes desta entrega começar.
+
 ## `combat.js` dividido por sistema em `src/combat/` — v0.40.0
 
 Pedido do usuário, depois de uma conversa sobre a mesma pergunta já feita pro `enemies.js`

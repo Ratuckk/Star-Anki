@@ -1,18 +1,18 @@
 import * as THREE from 'three'
-import { buildDeck, exportTagsTsv, parseAnkiExport, filterDeckByTags } from './anki.js'
-import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion, computeDifficultyBias } from './quiz.js'
+import { nextQuestion, resolveAnswer, getSummary, pickBonusCard, buildBonusQuestion, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat/index.js'
 import { createEnemiesSystem } from './enemies/index.js'
 import { createPlayerSystem } from './player.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
-import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
-import { loadHistory, saveHistory, recordResult } from './storage.js'
-import { getDeck, buildMergedDeck, buildReviewDeck, REVIEW_DECK_ID } from './decks.js'
+import { createGameHud } from './hud.js'
+import { saveHistory, recordResult } from './storage.js'
 import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
+import { createGameMenu } from './game-menu.js'
+import { createDebugActions } from './debug-actions.js'
 
 const CYCLE_MS = 110000 // era 90000 (pedido do usuário: 110s, compensado pelo avanço por kill abaixo)
 // pedido do usuário: "avance este timer em 2 para cada inimigo derrotado durante ele" — todo
@@ -175,159 +175,12 @@ const RAM_DAMAGE = 5
 // ============ VIGNETTE DE VIDA BAIXA ============
 const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 
-let deck = null
-let deckTexts = []
-let currentDeckIds = null
-let history = loadHistory()
-let sessionResults = []
-let painelDone = false
-
-// tagFilter (Fase 9, ideia de baralho "tags/categorias"): guids de assunto marcados no
-// gerenciador de baralhos — vazio joga o baralho inteiro, igual sempre foi.
-function handlePlayDeck(deckId, tagFilter = []) {
-  let built
-  let text = null
-  if (deckId === REVIEW_DECK_ID) {
-    // Fase 9 (ideia de baralho "revisão automática"): baralho virtual, recalculado na hora a
-    // partir do histórico — nunca fica obsoleto, e não existe texto original pra exportar tags.
-    built = buildReviewDeck(history)
-    if (!built) return
-  } else {
-    const entry = getDeck(deckId)
-    if (!entry) return
-    text = entry.text
-    built = buildDeck(text)
-    if (built.warning) return
-    if (tagFilter.length > 0) {
-      built = filterDeckByTags(built, tagFilter)
-      if (built.warning) return
-    }
-  }
-
-  currentDeckIds = deckId
-  deck = built
-  deckTexts = text ? [text] : []
-  sessionResults = []
-  painelDone = false
-  mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
-}
-
-function handlePlayMergedDecks(deckIds) {
-  const merged = buildMergedDeck(deckIds)
-  if (merged.error) return
-
-  currentDeckIds = deckIds
-  deck = merged.built
-  deckTexts = merged.texts
-  sessionResults = []
-  painelDone = false
-  mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
-}
-
-function restart() {
-  deck = null
-  deckTexts = []
-  showPreGameMenu({
-    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, history }),
-    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, startInAdd: true, history }),
-    onSettings: () => showSettingsScreen({ onBack: restart }),
-  })
-}
-
-function playAgain() {
-  if (Array.isArray(currentDeckIds)) handlePlayMergedDecks(currentDeckIds)
-  else if (currentDeckIds) handlePlayDeck(currentDeckIds)
-  else restart()
-}
-
-function renderEndScreen(summary) {
-  const practiceAvailable = !painelDone && deck.painelCards.length > 0
-  showSectorEnd({
-    summary,
-    onPlayAgain: playAgain,
-    practiceCount: practiceAvailable ? deck.painelCards.length : 0,
-    onPractice: practiceAvailable ? () => startPainelPractice(summary) : null,
-    onExportTags: downloadTagsExport,
-  })
-}
-
-function startPainelPractice(summary) {
-  const ordered = [...deck.painelCards].sort((a, b) => (history[b.guid]?.erros ?? 0) - (history[a.guid]?.erros ?? 0))
-  const session = createPainelSession(ordered)
-  let revealed = false
-
-  function onKeyDown(e) {
-    const card = nextPainelCard(session)
-    if (!card) return
-    if (!revealed && (e.code === 'Enter' || e.code === 'Space')) {
-      e.preventDefault()
-      reveal(card)
-    } else if (revealed && e.code === 'Digit1') {
-      assess(card, true)
-    } else if (revealed && e.code === 'Digit2') {
-      assess(card, false)
-    }
-  }
-  window.addEventListener('keydown', onKeyDown)
-
-  function renderCard() {
-    const card = nextPainelCard(session)
-    if (!card) {
-      window.removeEventListener('keydown', onKeyDown)
-      painelDone = true
-      renderEndScreen(summary)
-      return
-    }
-    revealed = false
-    showPainelCard({
-      index: session.pointer,
-      total: session.queue.length,
-      question: card.question,
-      onReveal: () => reveal(card),
-    })
-  }
-
-  function reveal(card) {
-    revealed = true
-    showPainelAnswer({
-      index: session.pointer,
-      total: session.queue.length,
-      question: card.question,
-      answer: card.answer,
-      onAssess: (correct) => assess(card, correct),
-    })
-  }
-
-  function assess(card, correct) {
-    history = recordResult(history, card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: card.guid, correct })
-    resolvePainel(session, correct)
-    renderCard()
-  }
-
-  renderCard()
-}
-
-function downloadTagsExport() {
-  deckTexts.forEach((text, i) => {
-    const { notes } = parseAnkiExport(text)
-    const guidsHere = new Set(notes.map((n) => n.guid))
-    const resultsHere = sessionResults.filter((r) => guidsHere.has(r.guid))
-    if (resultsHere.length === 0) return
-
-    const tsv = exportTagsTsv(text, resultsHere)
-    const blob = new Blob([tsv], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = deckTexts.length > 1 ? `star-anki-tags-${i + 1}.txt` : 'star-anki-tags.txt'
-    link.click()
-    URL.revokeObjectURL(url)
-  })
-}
-
-function mountGame(session) {
+// Fluxo de menu/baralho/painel de revisão mora em game-menu.js (extraído daqui) — mountGame
+// recebe `deck` e o pacote `menu` ({ sessionResults, renderEndScreen }) de lá, porque endSector()
+// precisa mostrar a tela de fim de partida. `session.history` já vem populado por createSession
+// (quiz.js) com o mesmo objeto de histórico que game-menu.js persiste, então mountGame nunca
+// precisa de uma cópia própria.
+function mountGame(session, deck, menu) {
   const hud = createGameHud()
 
   const scene = new THREE.Scene()
@@ -365,10 +218,8 @@ function mountGame(session) {
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
   let debugVisible = false
-  let godMode = false
-  let infiniteAmmoActive = false
-  let hitboxesActive = false
-  let slowMoActive = false
+  // objeto (não 4 lets soltos) pra poder ser compartilhado por referência com debug-actions.js
+  const debugFlags = { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false }
 
   let hitShakeTimer = 0
 
@@ -428,7 +279,7 @@ function mountGame(session) {
 
   // Fase 9 (ideia de baralho, item 1): desloca só o ponto de partida do intervalo de spawn
   // pelo histórico de erro do baralho — ver comentário de DIFFICULTY_BIAS_INTERVAL_RANGE_MS
-  const difficultyBias = computeDifficultyBias(deck.shooterCards, history)
+  const difficultyBias = computeDifficultyBias(deck.shooterCards, session.history)
   const difficultyBiasOffsetMs = (difficultyBias - 0.5) * 2 * DIFFICULTY_BIAS_INTERVAL_RANGE_MS
   let enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_MIN_BASE + difficultyBiasOffsetMs)
   let enemyIntervalMax = Math.max(enemyIntervalMin + 150, ENEMY_INTERVAL_MAX_BASE + difficultyBiasOffsetMs)
@@ -539,7 +390,7 @@ function mountGame(session) {
   function enterCombat() {
     phase = 'combat'
     isBossCycle = (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
-    isReviewQuestion = (history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
+    isReviewQuestion = (session.history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
     cycleTimer = isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
     enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
     normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
@@ -648,9 +499,9 @@ function mountGame(session) {
       bossBuildupTimer += BOSS_HUNT_BONUS_MS
     }
 
-    history = recordResult(history, outcome.card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: outcome.card.guid, correct })
+    recordResult(session.history, outcome.card.guid, correct)
+    saveHistory(session.history)
+    menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
     if (correct) {
       hud.setFeedback({
@@ -785,9 +636,9 @@ function mountGame(session) {
     const correct = outcome.type === 'correct'
     if (!correct) applyDifficulty()
 
-    history = recordResult(history, outcome.card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: outcome.card.guid, correct })
+    recordResult(session.history, outcome.card.guid, correct)
+    saveHistory(session.history)
+    menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
     hud.setBossActive(false)
     // v0.29.6: painel de feedback só pra acerto — erro vira um texto flutuante rápido
@@ -815,9 +666,9 @@ function mountGame(session) {
     hud.hideQuestionModal()
     const correct = outcome.type === 'correct'
 
-    history = recordResult(history, outcome.card.guid, correct)
-    saveHistory(history)
-    sessionResults.push({ guid: outcome.card.guid, correct })
+    recordResult(session.history, outcome.card.guid, correct)
+    saveHistory(session.history)
+    menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
     if (correct) {
       hud.setFeedback({
@@ -837,7 +688,7 @@ function mountGame(session) {
 
   function endSector() {
     teardown()
-    renderEndScreen(getSummary(session))
+    menu.renderEndScreen(getSummary(session))
   }
 
   function onResize() {
@@ -862,7 +713,7 @@ function mountGame(session) {
     if (stopped) return
     rafId = requestAnimationFrame(tick)
     const rawDt = Math.min((now - lastTime) / 1000, 0.1)
-    const dt = slowMoActive ? rawDt * 0.25 : rawDt
+    const dt = debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
     lastTime = now
 
     const inputState = input.update()
@@ -1232,7 +1083,7 @@ function mountGame(session) {
     }
 
     // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============
-    if (events.enemyHits > 0 && !player.isInvincible() && !godMode) {
+    if (events.enemyHits > 0 && !player.isInvincible() && !debugFlags.godMode) {
       hitShakeTimer = HIT_SHAKE_DURATION_MS
 
       // v0.34.0: alguns ataques específicos (laser da ampulheta mega, borda da moldura da
@@ -1461,75 +1312,16 @@ function mountGame(session) {
     else if (phase === 'questionPause' && pendingQuestionKind === 'normal') settleQuestion(outcome)
   }
 
-  hud.debug.bind({
-    spawnEnemy: () => combat.spawnEnemy(),
-    spawnTimeEnemy: () => combat.spawnTimeEnemy(),
-    spawnBonus: () => combat.spawnBonusTarget(),
-    spawnGolden: () => combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX }),
-    spawnTank: () => combat.spawnTankEnemy(),
-    spawnMiniSwarm: () => combat.spawnMiniSwarm(),
-    spawnTimeEnemyMega: () => combat.spawnTimeEnemyMega(),
-    spawnDetrito: () => combat.spawnDetrito(),
-    spawnSentinela: () => combat.spawnSentinela(),
-    forceCorrect: () => forceAnswerOutcome(true),
-    forceWrong: () => forceAnswerOutcome(false),
-    addScore: () => { session.score += 100 },
-    heal: () => player.heal(1),
-    damage: () => {
-      session.health = Math.max(0, session.health - 1)
-      if (applyHealthLoss()) endSector()
-    },
-    fullHeal: () => { session.health = player.getMaxHealth() },
-    loseLife: () => {
-      session.lives = Math.max(0, session.lives - 1)
-      hud.setLives(session.lives, player.getMaxLives())
-      if (session.lives <= 0) endSector()
-    },
-    rechargeShield: () => player.rechargeShield(),
-    godMode: () => {
-      godMode = !godMode
-      hud.debug.setToggleActive('godMode', godMode)
-    },
-    infiniteAmmo: () => {
-      infiniteAmmoActive = !infiniteAmmoActive
-      combat.setFireCooldown(infiniteAmmoActive ? 0 : player.config.fireCooldown)
-      hud.debug.setToggleActive('infiniteAmmo', infiniteAmmoActive)
-    },
-    maxBuffs: () => {
-      player.debugMaxBuffs()
-      combat.setWingmanCount(player.getWingmanCount())
-    },
-    // QoL: antes iam direto pra enterBossBuildup/enterGoldenArena, pulando a cutscene — não
-    // dava pra testar a transição sem esperar o gatilho natural (dourado 45-100s, chefe a cada
-    // 5 perguntas). Agora roteiam pela mesma startArenaCutscene que o jogo usa de verdade.
-    // skipToBossFight continua sendo o atalho SEM cutscene, pra testar só a luta em si.
-    gotoBoss: () => { if (phase === 'combat') startArenaCutscene('boss', enterBossBuildup) },
-    skipToBossFight: () => {
-      if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()
-      else if (phase === 'combat') { bossHealthBonus = 0; rail.enterArena(); enterBossFight() }
-    },
-    gotoGolden: () => { if (phase === 'combat') startArenaCutscene('golden', enterGoldenArena) },
-    clearCombatants: () => combat.clearAllCombatants(),
-    showHitboxes: () => {
-      hitboxesActive = !hitboxesActive
-      combat.setShowHitboxes(hitboxesActive)
-      hud.debug.setToggleActive('showHitboxes', hitboxesActive)
-    },
-    slowMo: () => {
-      slowMoActive = !slowMoActive
-      hud.debug.setToggleActive('slowMo', slowMoActive)
-    },
-    giveCard: () => { if (phase === 'combat') enterCardChoice(enterCombat) },
-    triggerFullDodge: () => {
-      player.grantInvincibility(1000)
-      if (player.isDeflectActive()) {
-        combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
-        effects.deflectBurst(rail.getPlayerPosition(), rail.getFrameAt(0).forward)
-      }
-      rail.debugForceBank(1, 1000)
-    },
-    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),
-  })
+  hud.debug.bind(createDebugActions({
+    combat, session, player, rail, effects, hud,
+    GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
+    debugFlags,
+    getPhase: () => phase,
+    resetBossHealthBonus: () => { bossHealthBonus = 0 },
+    applyHealthLoss, endSector, forceAnswerOutcome,
+    startArenaCutscene, enterBossBuildup, finishBossHunt, enterBossFight, enterGoldenArena,
+    enterCardChoice, enterCombat,
+  }))
 
   enterCombat()
   hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
@@ -1539,4 +1331,5 @@ function mountGame(session) {
   rafId = requestAnimationFrame(tick)
 }
 
+const { restart } = createGameMenu(mountGame)
 restart()
