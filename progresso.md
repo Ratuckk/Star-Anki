@@ -1,3 +1,21 @@
+## Perfis de movimento do inimigo vermelho comum — v0.33.1
+
+Pedido do usuário: variar o inimigo vermelho genérico (o que atira) dentro da MESMA classe, com padrões de movimento diferentes amarrados a cores diferentes — não itens soltos, a cor é a leitura do comportamento.
+
+**`enemies.js`**: 6 perfis sorteados no `spawnEnemy()` (`RED_PROFILES`), cada um com sua própria cor de mesh (reaproveitada como cor do telegraph, ver `RED_PROFILE_COLOR`) e sua própria função de deslocamento — `updateRedArenaMovement`/`updateRedRailMovement`, chamadas em vez do bloco genérico antigo só quando `enemy.kind === 'red'` (tanque/redutor/chefe seguem exatamente como antes, zero regressão neles):
+- **orbit** (vermelho padrão `0xff4d4d`): órbita contínua — em arena ao redor do jogador (comportamento antigo), em trilho ao redor do próprio ponto de spawn (antes ficava 100% parado).
+- **advance** (laranja `0xff7a29`): avança reto e rápido na direção do jogador/câmera.
+- **slow** (vinho escuro `0x7a2020`): mesma linha reta, bem mais devagar — fica mais tempo em tela.
+- **follow** (rosa `0xff2f8f`): mantém distância (se afasta se chegar perto demais) em vez de atravessar o jogador; em trilho, corrige a posição pra não "passar" fácil — usa um `PASS_BEHIND` bem mais tolerante (`RED_RAIL_FOLLOW_PASS_BEHIND`, 5×) só pra esse perfil.
+- **circular** (violeta `0xc61aff`): espiral — mesmo loop do orbit, mas o raio fecha com o tempo (arena) ou o centro da órbita anda na direção da câmera (trilho).
+- **evasive** (âmbar `0xffb347`): troca de direção lateral aleatoriamente a cada 0.4-0.9s (`rerollJukeDir`) — aproximação de "tentativa de desvio", não lê tiro de verdade do jogador (isso exigiria expor as posições dos projéteis do jogador de `combat.js` pra dentro de `enemies.js`, fora de escopo aqui).
+
+HP, dano, cadência de tiro e pontuação **não mudaram** — só cor do mesh/telegraph e trajetória. Removidas as constantes que ficaram mortas com a troca (`ENEMY_ARENA_SPEED_FACTOR_MIN/MAX`, `ENEMY_ORBIT_CHANCE`, `ENEMY_ORBIT_DURATION_MIN/MAX`, o `enemyMaterial` único) — viraram `RED_PROFILE_SPEED_RANGE` por perfil e `redProfileMaterials` (um material por perfil, disposto certinho no `dispose()`).
+
+**Nota de processo**: no meio desta entrega, uma sessão concorrente commitou (`8429d49`) todo o trabalho pendente das Fases 7-9 (documentado abaixo) — o commit já incluiu esta mudança junto (`git log`/`git show --stat` confirmam `enemies.js` com o diff esperado), então não sobrou nada pra eu commitar separado; só ajustei este arquivo depois.
+
+**Testado ao vivo**: `node --check` limpo; joguei do menu até o combate, usei o debug (`Spawnar inimigo vermelho` ×5) pra confirmar visualmente as cores distintas simultâneas (vinho escuro, vermelho vivo, âmbar, rosa em par) se aproximando em velocidades/trajetórias diferentes — screenshot confirmou. **Achado no caminho, não é bug meu**: a página do navegador ficou presa numa instância antiga (reload anterior não completou de verdade) e um monte de erro velho (`hud.setHorizon is not a function`, já resolvido na Fase 9 abaixo) ficou acumulado no console — um `navigate` com `force: true` limpou e confirmou zero erro real na sessão atual.
+
 ## Fase 9: ideias escolhidas (efeito visual de carta, controles all-range, baralhos) — v0.33.0
 
 Depois das 4 rodadas de "me dê ideias" (Fase 9), o usuário pediu pra pular a Fase 8 (comentar variáveis) e implementar direto alguns itens específicos das ideias: *"1: apenas a 4"* (bloco visual, item 4: facho de absorção ao escolher carta roguelike); *"2: 1, 2, 3, 4, 5 e 6: adicione uma pequena cutscene da nave realizando um summersault ao fazer o mesmo, ao invés de simplesmente dar um snap pro outro lado"* (bloco all-range: todos os 5 itens sugeridos + um 6º pedido na hora); *"3: nenhum"* (bloco variedade de inimigos, pulado); *"4: todos"* (bloco baralho, os 5 itens).
