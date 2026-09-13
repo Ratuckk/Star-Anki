@@ -3,6 +3,55 @@
 Continuação do [PROGRESSO.md](PROGRESSO.md) (histórico até v0.33.x, agora congelado). A partir desta
 entrega, toda documentação nova entra neste arquivo.
 
+## 6 animações de "peso físico" nas 3 naves selecionáveis — `rail.js`
+
+Pedido do usuário: depois de uma rodada de "me dê ideias" pra animação das 3 naves configuráveis
+(Clássica/Bombardeiro/Veloz), ele escolheu uma ideia (squash-stretch por peso percebido) e pediu
+mais 5 na mesma linha ("sensação de peso/massa") — as 6 juntas viraram esta entrega.
+
+**Mecanismo comum**: cada preset de `SHIP_PRESETS` ganhou um campo `weight` (0 = leve/ágil,
+1 = pesada/robusta — Clássica 0.5, Bombardeiro 1, Veloz 0.15). `shipPhysicsFor(preset)` interpola
+esse único número em 10 parâmetros (rigidez/amortecimento do spring de roll, força/decaimento do
+recuo, profundidade/decaimento da agachada, trepidação, esticada de boost, achatada de impacto,
+amortecimento do wobble) — mexer no "peso" de uma nave ajusta as 6 animações de uma vez.
+
+1. **Inércia no giro**: `roll`/`arenaRoll` trocaram a suavização exponencial simples
+   (`+= (alvo-atual)*(1-exp(-taxa*dt))`) por um spring-damper de verdade (Euler semi-implícito).
+   Nave pesada tem rigidez menor (responde mais devagar) E amortecimento menor (sub-amortecida —
+   "sobra" um pouco de rotação antes de assentar, overshoot real); a Veloz fica crítica/sem sobra.
+2. **Recuo no disparo**: `triggerRecoil()` soma um impulso que decai sozinho a cada frame
+   (`decayImpulse`), aplicado como deslocamento ao longo do -forward. `combat.tryFire()` (e
+   `projectiles.tryFire()`) passaram a devolver `true`/`false` pra `main.js` saber se o tiro saiu
+   de verdade antes de chamar o recuo (cooldown ainda ativo = sem recuo).
+3. **Agachada ao ligar o boost**: detecção de borda (`boostActive` false→true) dispara o mesmo
+   tipo de impulso decadente, deslocando a nave ao longo do -up.
+4. **Trepidação em alta velocidade**: jitter contínuo (`applyWeightJitter`) proporcional a
+   `boostBlend` (suavização do liga/desliga do boost) — mais forte nas naves leves.
+5. **Estica no boost / achata no impacto**: escala não uniforme (`ship.scale`) — o eixo do
+   comprimento estica com o boost e encolhe com o impacto (`triggerImpactSquash()`, chamado por
+   `main.js` no hit de verdade), a seção transversal compensa no sentido oposto.
+6. **Amortecimento pós-manobra**: giro completo e cambalhota, ao TERMINAREM (não durante),
+   somam um impulso de velocidade no mesmo spring-damper do roll — a nave balança um pouco extra
+   antes de estabilizar, mais nas pesadas.
+
+**Nota de processo — colisão real, não hipotética**: a primeira tentativa desta entrega foi
+inteiramente perdida — enquanto eu ainda tinha as edições em `rail.js` só no disco (não
+commitadas), outra sessão (branch `claude/exciting-turing-90bhle`, cuidando de "efeitos visuais e
+mecânicas de nave" no mesmo período) fez um merge (`535cabf`) que resultou no `rail.js` voltando
+à versão sem meu trabalho, sem nenhum conflito reportado — commits em Git não protegem edições
+não commitadas de outra sessão escrevendo no mesmo arquivo em disco. Refiz tudo do zero e
+commitei bem mais cedo desta vez (`914be1d`) especificamente pra reduzir essa janela.
+
+**Testado ao vivo**: `node --check` limpo em `rail.js`/`main.js`/`combat/index.js`/
+`combat/projectiles.js`. Como já havia um servidor de outra sessão na porta 8420 (com uma
+partida em andamento, incluindo os 5 inimigos novos dela visíveis em tela), naveguei pro mesmo
+`localhost:8420` (é estático, serve o disco atual pra qualquer aba) em vez de subir um servidor
+próprio — testei virar/atirar/impulsionar (modo trilho, cobre o grosso do código novo: spring de
+roll, recuo, agachada, trepidação, escala) e o debug "Testar giro/inclinação", zero erro de
+console em qualquer interação. **Não testado**: o modo arena especificamente (`updateArena` reusa
+as MESMAS funções já exercitadas em trilho, risco baixo) e a achatada de impacto de verdade (o
+atalho de debug "Causar 1 dano" pula `player.takeDamage()` direto, não passa pelo gatilho).
+
 ## `main.js` reduzido: extrai `game-menu.js` e `debug-actions.js` — v0.41.0
 
 Pergunta do usuário: *"O que faria para melhorar a organização do código e diminuir as quantidades exorbitantes de código em cada js? Assim como fiz com os inimigos?"* — depois de confirmar (perguntando pras outras sessões) que ninguém mais estava editando `main.js`/`combat.js` no momento, comecei a mesma ideia dos splits de `enemies.js`/`combat.js`, mas aplicada ao `main.js` (1543 linhas, o mais monolítico do projeto: uma única closure `mountGame()` misturando state machine de fases, input/combos, debug panel e orquestração de HUD).
