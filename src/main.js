@@ -13,6 +13,7 @@ import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
 import { createGameMenu } from './game-menu.js'
 import { createDebugActions } from './debug-actions.js'
+import { initMobileSupport, requestGameOrientation, releaseGameOrientation } from './mobile.js'
 
 const CYCLE_MS = 110000 // era 90000 (pedido do usuário: 110s, compensado pelo avanço por kill abaixo)
 // pedido do usuário: "avance este timer em 2 para cada inimigo derrotado durante ele" — todo
@@ -194,6 +195,9 @@ const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 // precisa de uma cópia própria.
 function mountGame(session, deck, menu) {
   const hud = createGameHud()
+  // suporte mobile: tela cheia + travar em paisagem, best-effort (ver mobile.js) — o aviso de
+  // "gire o celular" continua cobrindo o caso onde nenhum dos dois é suportado pelo navegador
+  requestGameOrientation()
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x0b0d12)
@@ -726,6 +730,7 @@ function mountGame(session, deck, menu) {
     combat.dispose()
     renderer.dispose()
     hud.unmount()
+    releaseGameOrientation()
   }
 
   function tick(now) {
@@ -1377,5 +1382,6 @@ function mountGame(session, deck, menu) {
   rafId = requestAnimationFrame(tick)
 }
 
+initMobileSupport()
 const { restart } = createGameMenu(mountGame)
 restart()

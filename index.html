@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Star Anki</title>
 <style>
   :root { color-scheme: dark; }
@@ -45,6 +45,11 @@
     padding: 0.6rem;
   }
   textarea { resize: vertical; }
+  /* mobile: sem isso, toques rápidos repetidos em botões pequenos (chips de gamepad, "Definir")
+     sofrem o atraso de ~300ms do navegador esperando um possível double-tap-pra-zoom, e às vezes
+     disparam zoom sem querer */
+  button, a, input, .gp-btn-chip, .deck-tag-chip { touch-action: manipulation; }
+
   button {
     font-size: 1.05rem;
     font-family: inherit;
@@ -607,6 +612,45 @@
   }
 
   [hidden] { display: none !important; }
+
+  /* ============ MOBILE ============ */
+  /* telas antes/depois da partida (menu, baralhos, configurações) continuam usáveis na vertical
+     no celular — só empilha linha com label longa + controle (settings-row/keybind-row) em vez
+     de espremer tudo numa linha só, que é o que quebrava em telas estreitas (ex: iPhone SE) */
+  @media (max-width: 480px) {
+    .settings-row, .keybind-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.4rem;
+    }
+  }
+
+  /* aviso de "gire o celular": só aparece sobre a tela de JOGO (ver mobile.js, syncRotateOverlay)
+     quando o aparelho está na vertical — a partida em si é exclusiva de controle físico (pedido
+     do usuário), então não tem controle por toque nenhum aqui, só o bloqueio + instrução */
+  #rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    background: #0b0d12;
+    color: #f5f5f7;
+    text-align: center;
+    padding: 2rem;
+  }
+  .rotate-overlay-icon {
+    font-size: 3.5rem;
+    animation: rotate-overlay-spin 1.6s ease-in-out infinite;
+  }
+  #rotate-overlay p { max-width: 22rem; font-size: 1.1rem; font-weight: 600; margin: 0; }
+  @keyframes rotate-overlay-spin {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-90deg); }
+  }
 </style>
 </head>
 <body>
