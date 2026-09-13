@@ -9,13 +9,20 @@ const PASS_BEHIND = -4
 // da explosão/impacto quando quem acerta o inimigo é o tiro carregado
 const HOMING_EXPLOSION_COLOR = 0x2bff88
 
+// v0.29.4 (QoL): temporários de módulo pra distanceToSegment (mesma razão de combat.js — essa
+// cópia é chamada por projétil × alvo × frame dentro de resolveProjectileHit).
+const _dtsSeg = new THREE.Vector3()
+const _dtsSub = new THREE.Vector3()
+const _dtsClose = new THREE.Vector3()
+
 function distanceToSegment(point, segStart, segEnd) {
-  const seg = segEnd.clone().sub(segStart)
-  const lenSq = seg.lengthSq()
+  _dtsSeg.subVectors(segEnd, segStart)
+  const lenSq = _dtsSeg.lengthSq()
   if (lenSq < 1e-8) return point.distanceTo(segStart)
-  const t = THREE.MathUtils.clamp(point.clone().sub(segStart).dot(seg) / lenSq, 0, 1)
-  const closest = segStart.clone().addScaledVector(seg, t)
-  return point.distanceTo(closest)
+  _dtsSub.subVectors(point, segStart)
+  const t = THREE.MathUtils.clamp(_dtsSub.dot(_dtsSeg) / lenSq, 0, 1)
+  _dtsClose.copy(segStart).addScaledVector(_dtsSeg, t)
+  return point.distanceTo(_dtsClose)
 }
 
 // ============ INIMIGO VERMELHO COMUM ============
@@ -107,6 +114,18 @@ const TIME_ENEMY_DEATH_DURATION = 0.2
 export const TIME_REDUCTION_MIN_MS = 3000
 export const TIME_REDUCTION_MAX_MS = 20000
 
+// QoL (v0.29.4): telegraph colorido por tipo de inimigo — antes, tudo saía 0xff5a3d e o
+// jogador não distinguia de longe se o aviso era de um vermelho comum (trivial), uma ampulheta
+// roxa (perde tempo), um tanque laranja (5hp) ou o chefe (rajada de 3). Cor = mesma cor do mesh
+// de cada inimigo, pro aviso já ser reconhecível antes do tiro sair.
+const TELEGRAPH_COLOR_BY_KIND = {
+  red: 0xff5a3d,
+  time: TIME_ENEMY_COLOR,
+  tank: TANK_ENEMY_COLOR,
+  boss: BOSS_ENEMY_COLOR,
+  miniSwarm: MINI_ENEMY_COLOR, // nunca atira, mas mapeado por consistência
+}
+
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
   const enemyProjectiles = []
@@ -182,7 +201,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   // ============ helpers de remoção ============
+  // QoL (v0.29.4): marca .dying = true ANTES de tirar do array — sem isso, quem tinha uma
+  // referência direta ao inimigo (projectile.homingTarget em combat.js) não tinha como saber
+  // que ele morreu sem fazer enemies.getAlive().includes(...) a cada frame, que era O(n) por
+  // projétil teleguiado por frame.
   function removeEnemy(e) {
+    e.dying = true
     scene.remove(e.mesh)
     enemies.splice(enemies.indexOf(e), 1)
   }
@@ -193,6 +217,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   function removeGoldenTarget(g) {
+    g.dying = true
     scene.remove(g.mesh)
     goldenTargets.splice(goldenTargets.indexOf(g), 1)
   }
@@ -265,6 +290,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         const toPlayer = playerPosition.clone().sub(g.mesh.position)
         if (toPlayer.lengthSq() > 1e-4) {
           g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)
+        }
+        // QoL (v0.29.4): telegraph ~0.3s antes do tiro, igual inimigos comuns/chefe — antes o
+        // dourado era o único que atirava "do nada", mesmo perseguindo em cadência curta
+        if (g.fireTimer > 0.3 && g.fireTimer - dt <= 0.3 && effects) {
+          effects.telegraph(g.mesh.position, GOLDEN_SPECIAL_COLOR)
         }
         g.fireTimer -= dt
         if (g.fireTimer <= 0) {
@@ -401,9 +431,19 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       }
 
-      // telegrafa o tiro ~0.3s antes de sair — avisa o jogador sem mudar a cadência real
+      // QoL (v0.29.4): telegraph colorido por tipo + deslocado pra fora do mesh do chefe.
+      // O chefe tem scale 5 e hitRadius 7 — sem o offset, o telegraph nascia DENTRO do corpo
+      // dele e ficava invisível até o tiro sair. Cor vem de TELEGRAPH_COLOR_BY_KIND.
       if (enemy.fireTimer > 0.3 && enemy.fireTimer - dt <= 0.3 && effects) {
-        effects.telegraph(enemy.mesh.position, 0xff5a3d)
+        const color = TELEGRAPH_COLOR_BY_KIND[enemy.kind] ?? 0xff5a3d
+        let tPos = enemy.mesh.position
+        if (enemy.kind === 'boss') {
+          const toPlayerDir = playerPosition.clone().sub(enemy.mesh.position)
+          if (toPlayerDir.lengthSq() > 1e-4) {
+            tPos = enemy.mesh.position.clone().addScaledVector(toPlayerDir.normalize(), BOSS_ENEMY_HIT_RADIUS)
+          }
+        }
+        effects.telegraph(tPos, color)
       }
       enemy.fireTimer -= dt
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
@@ -619,8 +659,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return enemies.reduce((n, e) => n + (e.kind === 'red' ? 1 : 0), 0)
     },
 
+    // QoL (v0.29.4): inclui mini-inimigos no pool de barras de vida (maxHp 1 < 2) — antes eles
+    // ficavam de fora do `maxHp > 1` mesmo sendo a ameaça mais visual do lote (mergulho em fila).
+    // Continua filtrando os "1 hit sem barra" que não interessam — o filtro é só sobre maxHp,
+    // mas com exceção explícita pra miniSwarm.
     getEnemySnapshots: () => [...enemies, ...goldenTargets]
-      .filter((e) => !e.dying && e.maxHp > 1)
+      .filter((e) => !e.dying && (e.maxHp > 1 || e.kind === 'miniSwarm'))
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone(), hp: e.hp, maxHp: e.maxHp })),
 
     getBossSnapshot: () => {
