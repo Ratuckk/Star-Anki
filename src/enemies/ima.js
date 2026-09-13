@@ -11,10 +11,15 @@ export const IMA_KIND = 'ima'
 export const IMA_COLOR = 0x4433ff
 export const IMA_HIT_RADIUS = 1.3
 export const IMA_DEATH_DURATION = 0.2
-export const IMA_HP = 2
+export const IMA_HP = 4
 export const IMA_KILL_BONUS = 15
-export const IMA_FIELD_RADIUS = 9 // alcance do efeito magnético sobre o tiro normal
-export const IMA_FIELD_STRENGTH = 26 // "aceleração" de desvio lateral aplicada em projectiles.js
+// campo maior = o projétil fica dentro por mais tempo acumulando mais desvio
+export const IMA_FIELD_RADIUS = 12
+// força ~7x maior que antes (era 26): com 26 o desvio total ficava em ~3-4° (imperceptível),
+// porque o efeito dura só ~0.3s (tempo de travessia do raio 9 a 60 u/s) e a força é somada à
+// velocidade POR FRAME em projectiles.js. 180 dá ~25° de desvio visível — a curva aparece de
+// verdade no tiro normal que passa perto. Ver tabela no comentário do projectiles.js.
+export const IMA_FIELD_STRENGTH = 180
 
 const GROUP_MIN = 3
 const GROUP_MAX = 5
