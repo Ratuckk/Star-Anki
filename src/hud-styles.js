@@ -399,6 +399,37 @@ export function injectHudExtraStyles() {
   70%  { opacity: 1; }
   100% { transform: translate(var(--tx), var(--ty)) scale(0.1); opacity: 0; }
 }
+
+/* ============ COLAPSO DE FOCO DA PERGUNTA (item 19, cutscene ideia 5) ============ */
+/* pedido do usuário: "partículas convergindo pro centro da tela" antes do modal de pergunta
+   aparecer, em vez dele dar snap direto — cada partícula nasce perto da borda (--sx/--sy,
+   calculado no JS) e a keyframe abaixo anima left/top até 50%/50% (centro exato onde o modal
+   nasce), sumindo de opacidade e encolhendo no caminho. */
+.question-focus-collapse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  overflow: hidden;
+}
+.question-focus-particle {
+  position: absolute;
+  left: var(--sx);
+  top: var(--sy);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7fe0ff;
+  box-shadow: 0 0 10px 3px rgba(127, 224, 255, 0.85);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0;
+  animation: question-focus-converge 280ms ease-in forwards;
+}
+@keyframes question-focus-converge {
+  0%   { opacity: 0; }
+  20%  { opacity: 1; }
+  100% { left: 50%; top: 50%; opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+}
 `
   document.head.appendChild(style)
 }

@@ -3,6 +3,81 @@
 Continuação do [PROGRESSO.md](PROGRESSO.md) (histórico até v0.33.x, agora congelado). A partir desta
 entrega, toda documentação nova entra neste arquivo.
 
+## `combat.js` dividido por sistema em `src/combat/` — v0.40.0
+
+Pedido do usuário, depois de uma conversa sobre a mesma pergunta já feita pro `enemies.js`
+("vale dividir por tamanho de código?"): dessa vez o corte não é por CLASSE (não existe essa
+distinção em `combat.js`), é por SISTEMA — e nem por tipo de projétil do jogador (normal vs.
+carregado), que eu desaconselhei antes por eles compartilharem o mesmo array e o mesmo loop de
+colisão contra inimigo/bônus/orbe (dividir ali forçaria duplicar essa lógica em 2 arquivos).
+
+**`src/combat/projectiles.js`**: tiro normal + carregado (teleguiado) JUNTOS — `tryFire`,
+`fireSingle`, `fireHomingShot`, `deflectNearbyProjectiles` (carta "giro rebatedor"), o loop de
+`update()` que move os projéteis e resolve colisão. Só delega a colisão específica de bônus/orbe
+pra `targets.resolveBossOrbHit`/`resolveBonusHit` (mesmo padrão já usado com
+`enemies.resolveProjectileHit`).
+
+**`src/combat/targets.js`**: alvos passivos que não atacam nem perseguem — bônus (asteroide,
+`spawnBonusTarget`) e os 6 orbes-pergunta da arena do chefe (`spawnBossOrbs`). Cada um expõe
+`resolve*Hit(prevPos, currPos, hitBuffer)`, que já aplica o efeito colateral (explosão, some) e
+devolve só o que quem chamou precisa saber.
+
+**`src/combat/lockon.js`**: trava do tiro carregado — `sweepLockOn`, `isAimingAtEnemy`, o array
+de "lock records" (`{entity, offset, seq}`), e um método novo, `takeLockedTargets(inRange)`, que
+substitui o antigo padrão de "ler `lockedEnemies` e depois zerar na mão" espalhado em
+`fireHomingShot` — agora concentrado num lugar só.
+
+**`src/combat/index.js`**: orquestrador — cria os 3 sistemas acima, mantém só o que não valia a
+pena isolar sozinho (escoltas/wingmen, hitbox de debug) e a montagem do `update()`. Mesma API
+pública de antes (`createCombatSystem(scene, rail, effects, enemies, player)`), então
+`main.js`/`player.js` só trocam o caminho do import.
+
+**Achado no caminho — bug real, não meu**: `spawnBonusTarget()` referenciava
+`BONUS_SCALE_MIN`/`BONUS_SCALE_MAX` (variação de tamanho do asteroide, item de uma entrega
+concorrente recente) sem essas constantes existirem em lugar nenhum do arquivo — `ReferenceError`
+certeiro toda vez que um bônus fosse spawnado. Corrigido ao migrar (`0.7`/`1.6`, os valores que já
+estavam citados no comentário ao lado).
+
+**Cuidado de arquitetura**: as geometrias com aleatoriedade por SESSÃO (o formato irregular do
+asteroide bônus, gerado 1x com jitter por vértice) precisam continuar sendo recriadas dentro de
+`createTargetsSystem()` a cada `mountGame()`, não em escopo de módulo — se fossem constantes de
+módulo (como a maioria das geometrias estáticas em `enemies/*.js`, sem problema ali por serem
+sempre a mesma forma), toda partida nova reaproveitaria a MESMA pedra sorteada na primeira vez
+que a aba carregou, em vez de uma forma nova por sessão como acontecia antes do split.
+
+**Nota de processo**: outra sessão concorrente entregou "Correções fase 6" (cutscene de foco na
+pergunta, v0.39.0) nos mesmos minutos, em `hud-game.js`/`hud-pregame.js`/`hud-styles.js` — ela
+mesma documentou ter ficado de fora de `combat`/`main`/`player` de propósito enquanto eu
+terminava. Nada conflitou (arquivos disjuntos), mas por estarem os dois grupos de mudança no
+mesmo disco na hora do commit, este commit inclui as duas entregas juntas (`node --check` limpo
+nos 3 arquivos dela também).
+
+**Testado ao vivo**: servidor estático, zero erro de console durante spawn de vermelho/bônus/
+dourado, 6 tiros normais, teste de tiro teleguiado (exercita `lockon.takeLockedTargets` +
+fallback de `enemies.getAlive()`), toggle de hitbox, e `+100 pontos` (confirmado via HUD
+atualizando de 0→100, prova de que o loop principal seguiu rodando integrado ao `combat/`
+novo — só bem mais lento que tempo real pela mesma limitação de rAF sem foco de SO já
+documentada no histórico deste projeto).
+
+**Versão**: v0.39.0 → v0.40.0.
+
+## Correções fase 6 (última da lista): cutscene de foco na pergunta — v0.39.0
+
+Item 19, o último da lista de 20 correções — o próprio usuário tinha marcado "deixe isso por último". Antes de implementar, fiz uma rodada de "me dê ideias" (6 conceitos de cutscene pra quando a pergunta aparece, cobrindo desde zoom na mira até holograma de cockpit) e o usuário escolheu a **ideia 5: partículas convergindo pro centro da tela**.
+
+**Nota de processo**: outra sessão está no meio da divisão de `combat.js` em `src/combat/` (arquivo antigo já aparece deletado no disco, `main.js`/`player.js` também modificados por ela) — não toquei em nenhum desses, só nos 3 arquivos que eu de fato editei (`hud-game.js`, `hud-styles.js`, `hud-pregame.js`). Não consegui subir meu próprio servidor de preview pra testar ao vivo (porta 8420 já em uso pelo servidor de outra sessão) — compensado com revisão cuidadosa do diff (a lógica de verdade do modal foi movida byte-a-byte pra dentro de `revealQuestionModal`, sem nenhuma mudança de comportamento nela).
+
+1. **`playFocusCollapse` + `revealQuestionModal`** (`hud-game.js`): `showQuestionModal({question, alternatives, onPick})` não popula mais o modal na hora — primeiro dispara `playFocusCollapse`, que spawna 10 partículas (divs) num raio ao redor do centro da tela (perto da borda), cada uma com posição inicial aleatória via CSS custom properties (`--sx`/`--sy`) e um pequeno atraso de animação pra não nascerem todas no mesmo instante. Só quando a animação termina (~350ms, `setTimeout`) o modal de verdade aparece, chamando a função que ANTES era o corpo direto de `showQuestionModal` (extraída, zero mudança de comportamento — clique ou número 1-4 continuam idênticos).
+2. **CSS da animação** (`hud-styles.js`, `.question-focus-collapse`/`.question-focus-particle`): puramente DOM/CSS, mesmo padrão já usado pelo `cardAbsorbBeam` (Fase 9) — precisa rodar independente do loop 3D porque o jogo já está em pausa total (`questionPause`/`bossQuestionPause`) no instante em que a pergunta aparece. A keyframe anima `left`/`top` de onde a partícula nasceu até 50%/50% (centro exato, onde o modal nasce), com opacidade e escala caindo no caminho.
+
+Como a função é `showQuestionModal` (compartilhada), o efeito vale pra pergunta normal, bônus dourado E orbe do chefe — os 3 fluxos, sem precisar mexer em `main.js`.
+
+**Testado**: `node --check` limpo em `hud-game.js`/`hud-styles.js`/`hud-pregame.js` e `selftest.mjs` passou. **Não confirmado ao vivo** (porta do servidor de preview em uso por outra sessão, não tentei forçar trocar de porta pra não mexer em config compartilhado `.claude/launch.json`) — compensado revisando que o corpo do modal foi só REALOCADO (comparei linha a linha com o código anterior, idêntico) e que o timing da animação CSS (280ms + até 60ms de delay aleatório) cabe dentro do timeout de remoção (350ms) sem cortar a animação no meio.
+
+**Com isso, a lista original de 20 correções está completa.**
+
+**Versão**: v0.38.0 → v0.39.0.
+
 ## Correções fase 5: nave sem piscar no rolamento, tiro carregado revisado, giro rebatedor, asteroide bônus, bug do all-range — v0.38.0
 
 Continuação da lista de 20 correções ("Siga" — usuário confirmou seguir com a Fase 5 como proposto).

@@ -1,4 +1,4 @@
-import { DEFAULT_FIRE_COOLDOWN } from './combat.js'
+import { DEFAULT_FIRE_COOLDOWN } from './combat/index.js'
 
 // ============ ESCUDO ============
 // camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).

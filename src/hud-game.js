@@ -247,6 +247,83 @@ export function createGameHud() {
     setTimeout(() => el.remove(), 450)
   }
 
+  // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro da tela"): em
+  // vez do modal de pergunta simplesmente dar snap, um punhado de partículas nasce espalhado
+  // perto das bordas e converge pro centro exato da tela (onde o modal vai aparecer) antes dele
+  // ser revelado de verdade. Puramente DOM/CSS, mesmo padrão do cardAbsorbBeam acima — preciso
+  // disso rodar independente do loop 3D porque o jogo já está em pausa total nesse instante.
+  const FOCUS_COLLAPSE_PARTICLES = 10
+  const FOCUS_COLLAPSE_MS = 350 // animação CSS (280ms) + folga pro maior animationDelay aleatório (até 60ms)
+  function playFocusCollapse(onComplete) {
+    const container = document.createElement('div')
+    container.className = 'question-focus-collapse'
+    for (let i = 0; i < FOCUS_COLLAPSE_PARTICLES; i += 1) {
+      const angle = (i / FOCUS_COLLAPSE_PARTICLES) * Math.PI * 2 + Math.random() * 0.4
+      const radius = 55 + Math.random() * 12 // % da tela a partir do centro — nasce perto da borda
+      const startX = 50 + Math.cos(angle) * radius
+      const startY = 50 + Math.sin(angle) * radius
+      const p = document.createElement('div')
+      p.className = 'question-focus-particle'
+      p.style.setProperty('--sx', `${startX}%`)
+      p.style.setProperty('--sy', `${startY}%`)
+      p.style.animationDelay = `${Math.random() * 60}ms`
+      container.appendChild(p)
+    }
+    root.appendChild(container)
+    setTimeout(() => {
+      container.remove()
+      onComplete()
+    }, FOCUS_COLLAPSE_MS)
+  }
+
+  // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
+  // terminar (ver showQuestionModal no objeto retornado). Comportamento idêntico ao que já
+  // existia (escolha por clique ou pelos números 1–4, via quizSlot1..4).
+  function revealQuestionModal({ question, alternatives, onPick }) {
+    questionModalTitle.textContent = question
+    questionModalList.innerHTML = ''
+    alternatives.forEach((alt, i) => {
+      const hex = COLOR_MAP[alt.color] ?? '#ffffff'
+      const btn = document.createElement('button')
+      btn.className = 'question-modal-card'
+      btn.style.borderColor = hex
+      // pequeno hint numérico no canto do card pra lembrar que 1–4 também funciona
+      btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span><span class="question-modal-hint">${i + 1}</span>`
+      btn.addEventListener('click', () => {
+        questionModalOverlay.hidden = true
+        if (questionModalKeyHandler) {
+          window.removeEventListener('keydown', questionModalKeyHandler)
+          questionModalKeyHandler = null
+        }
+        onPick(alt.slot)
+      })
+      questionModalList.appendChild(btn)
+    })
+    questionModalOverlay.hidden = false
+
+    // handler 1–4: se algum listener antigo ficou pendurado de um modal que não foi fechado
+    // direito, remove antes de registrar o novo (defensivo, evita disparo duplo)
+    if (questionModalKeyHandler) {
+      window.removeEventListener('keydown', questionModalKeyHandler)
+      questionModalKeyHandler = null
+    }
+    const bindings = getBindings()
+    questionModalKeyHandler = (e) => {
+      for (let i = 0; i < alternatives.length; i += 1) {
+        const codes = bindings.actions[`quizSlot${i + 1}`] || []
+        if (codes.includes(e.code)) {
+          e.preventDefault()
+          questionModalOverlay.hidden = true
+          window.removeEventListener('keydown', questionModalKeyHandler)
+          questionModalKeyHandler = null
+          onPick(alternatives[i].slot)
+          return
+        }
+      }
+    }
+    window.addEventListener('keydown', questionModalKeyHandler)
+  }
+
   const enemyBarPool = new Map()
   const lockMarkerPool = new Map()
 
@@ -401,48 +478,13 @@ export function createGameHud() {
     // padrão Digit1..Digit4) em vez de ter que clicar no card — quem remapeou os números nas
     // Configurações também funciona aqui, porque leio de getBindings() em vez de hardcodar.
     showQuestionModal({ question, alternatives, onPick }) {
-      questionModalTitle.textContent = question
-      questionModalList.innerHTML = ''
-      alternatives.forEach((alt, i) => {
-        const hex = COLOR_MAP[alt.color] ?? '#ffffff'
-        const btn = document.createElement('button')
-        btn.className = 'question-modal-card'
-        btn.style.borderColor = hex
-        // pequeno hint numérico no canto do card pra lembrar que 1–4 também funciona
-        btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span><span class="question-modal-hint">${i + 1}</span>`
-        btn.addEventListener('click', () => {
-          questionModalOverlay.hidden = true
-          if (questionModalKeyHandler) {
-            window.removeEventListener('keydown', questionModalKeyHandler)
-            questionModalKeyHandler = null
-          }
-          onPick(alt.slot)
-        })
-        questionModalList.appendChild(btn)
-      })
-      questionModalOverlay.hidden = false
-
-      // handler 1–4: se algum listener antigo ficou pendurado de um modal que não foi fechado
-      // direito, remove antes de registrar o novo (defensivo, evita disparo duplo)
-      if (questionModalKeyHandler) {
-        window.removeEventListener('keydown', questionModalKeyHandler)
-        questionModalKeyHandler = null
-      }
-      const bindings = getBindings()
-      questionModalKeyHandler = (e) => {
-        for (let i = 0; i < alternatives.length; i += 1) {
-          const codes = bindings.actions[`quizSlot${i + 1}`] || []
-          if (codes.includes(e.code)) {
-            e.preventDefault()
-            questionModalOverlay.hidden = true
-            window.removeEventListener('keydown', questionModalKeyHandler)
-            questionModalKeyHandler = null
-            onPick(alternatives[i].slot)
-            return
-          }
-        }
-      }
-      window.addEventListener('keydown', questionModalKeyHandler)
+      // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro"): em vez
+      // do modal simplesmente dar snap, um burst de partículas nas bordas da tela voa pro
+      // centro exato onde ele vai nascer, e só então o modal aparece de verdade. Puramente
+      // DOM/CSS (mesmo padrão do cardAbsorbBeam) — o jogo já está em pausa total nesse ponto
+      // (phase questionPause/bossQuestionPause), então um atraso visual de ~300ms aqui não
+      // acumula com nada, é só o "beat" da cutscene.
+      playFocusCollapse(() => revealQuestionModal({ question, alternatives, onPick }))
     },
 
     hideQuestionModal() {
