@@ -9,16 +9,33 @@ import { BLASTER_KILL_BONUS } from './blaster.js'
 // jogador pelo mesmo caminho genérico de todo mundo.
 export const DETRITO_KIND = 'detrito'
 export const DETRITO_COLOR = 0x888888
-export const DETRITO_HIT_RADIUS = 1.9
+// hit radius base — escala junto com o tamanho do mesh (ver detritoHitRadius abaixo). Antes era
+// fixo, então detrito pequeno/grande tinha o mesmo alcance de colisão, o que ficava esquisito
+// depois que a variação de tamanho entrou.
+const DETRITO_BASE_HIT_RADIUS = 1.9
+export const DETRITO_HIT_RADIUS = DETRITO_BASE_HIT_RADIUS // mantido pra compat (index.js ainda exporta)
 export const DETRITO_DEATH_DURATION = 0.2
-export const DETRITO_HP = 6
-export const DETRITO_KILL_BONUS = BLASTER_KILL_BONUS / 2 // confirmado com o usuário: bônus menor, não é alvo de combate de verdade
+export const DETRITO_HP = 9
+export const DETRITO_KILL_BONUS = BLASTER_KILL_BONUS / 2 // bônus menor, não é alvo de combate de verdade
+
 const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 140
+const SPAWN_DISTANCE_MAX = 250
 const BOX_X = 7
 const BOX_Y = 5
 const SPIN_RATE_MIN = 0.15
 const SPIN_RATE_MAX = 0.45
+
+// ============ TIERS DE TAMANHO ============
+// 3 categorias discretas em vez de distribuição contínua — contínua "todos parecem do mesmo
+// tamanho" na percepção do jogador. Pequeno/médio/grande, 1/3 de chance cada, com ±10% de
+// jitter interno pra não parecer fôrma.
+const DETRITO_SIZE_TIERS = [1, 2,3]
+const DETRITO_TIER_JITTER = 0.1
+
+function rollDetritoScale() {
+  const base = DETRITO_SIZE_TIERS[Math.floor(Math.random() * DETRITO_SIZE_TIERS.length)]
+  return base * (1 - DETRITO_TIER_JITTER + Math.random() * DETRITO_TIER_JITTER * 2)
+}
 
 const geometry = new THREE.IcosahedronGeometry(1.3, 0)
 const material = new THREE.MeshPhongMaterial({ color: DETRITO_COLOR, flatShading: true })
@@ -27,15 +44,24 @@ export function spawnDetrito(scene, rail, id) {
   const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.copy(position)
+  // tamanho variável por spawn — cada detrito tem seu próprio tamanho
+  const scale = rollDetritoScale()
+  mesh.scale.setScalar(scale)
   // rotação inicial aleatória — cada detrito nasce virado diferente, reforça a leitura de
   // "destroço no espaço" em vez de peça repetida
   mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
   scene.add(mesh)
   return {
     id, mesh, kind: DETRITO_KIND, dying: false, deathT: 0, hp: DETRITO_HP, maxHp: DETRITO_HP, fireTimer: Infinity,
+    scale, // guardado pra hitbox e animação de morte escalarem junto
     spinAxis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
     spinRate: SPIN_RATE_MIN + Math.random() * (SPIN_RATE_MAX - SPIN_RATE_MIN),
   }
+}
+
+// hitbox acompanha o tamanho real do mesh (escala multiplica o raio base)
+export function detritoHitRadius(enemy) {
+  return DETRITO_BASE_HIT_RADIUS * (enemy.scale ?? 1)
 }
 
 // giro lento e constante só por vida visual — sem lookAt (não "encara" o jogador, é um objeto
