@@ -186,10 +186,13 @@ const TIME_ENEMY_BOX_X = 7
 const TIME_ENEMY_BOX_Y = 5
 const TIME_ENEMY_HIT_RADIUS = 1.8
 const TIME_ENEMY_DEATH_DURATION = 0.2
-const TIME_ENEMY_MAX_HP = 3 // era 1 (item antigo do Fase C, pedido do usuário)
+const TIME_ENEMY_MAX_HP = 5 // era 3 (pedido do usuário: +2 de vida)
 const TIME_ENEMY_SPIN_RATE = 1.6 // rad/s, gira em cima do próprio eixo (item antigo do Fase C)
-export const TIME_REDUCTION_MIN_MS = 3000
-export const TIME_REDUCTION_MAX_MS = 20000
+// pedido do usuário: "ainda mais lento" — default de quem não seta speedFactor é 0.6 (ver
+// updateRedArenaMovement/branch genérico em updateEnemies), a ampulheta fica bem abaixo disso
+const TIME_ENEMY_SPEED_FACTOR = 0.3
+export const TIME_REDUCTION_MIN_MS = 10000 // era 3000 (pedido do usuário: faixa de 10 a 30s)
+export const TIME_REDUCTION_MAX_MS = 30000 // era 20000
 
 // QoL (v0.29.4): telegraph colorido por tipo de inimigo — antes, tudo saía 0xff5a3d e o
 // jogador não distinguia de longe se o aviso era de um vermelho comum (trivial), uma ampulheta
@@ -202,6 +205,13 @@ const TELEGRAPH_COLOR_BY_KIND = {
   miniSwarm: MINI_ENEMY_COLOR, // nunca atira, mas mapeado por consistência
 }
 
+// ============ PREVIEW DO CHEFE/DOURADO NO AVISO DE 5S ============
+// pedido do usuário: "sempre faça o inimigo dourado/boss inicialmente surgir BEM distante mas
+// visível na tela... antes de trocar para o all-range mode" — reto à frente no trilho, escala
+// aumentada pra compensar a distância e continuar lendo como "visível" de verdade
+const ARENA_PREVIEW_DISTANCE = 220
+const ARENA_PREVIEW_SCALE = { boss: BOSS_ENEMY_SCALE * 2.4, golden: 3.2 }
+
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
   const enemyProjectiles = []
@@ -210,6 +220,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   let nextEnemyId = 1
   let elapsed = 0
   let enemyAggression = 1
+  // pedido do usuário: durante o aviso de 5s, o chefe/dourado já aparece bem distante mas
+  // visível em tela, reto à frente no trilho, antes da cutscene de transição — mesh puramente
+  // decorativo (sem hp/IA/colisão), substituído pelo spawn de verdade quando a luta começa
+  let arenaPreviewMesh = null
   // pedido do usuário: "+1 na velocidade dos disparos dos inimigos por pergunta errada" — soma
   // direto na velocidade base do projétil comum (também usado pela rajada do chefe, que
   // reaproveita fireEnemyProjectile)
@@ -297,6 +311,28 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return rail.isArena()
       ? randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MIN, ENEMY_ARENA_SPAWN_MAX)
       : randomSpawnPositionOnPath(distanceMin, distanceMax, boxX, boxY)
+  }
+
+  function clearArenaPreview() {
+    if (!arenaPreviewMesh) return
+    scene.remove(arenaPreviewMesh)
+    arenaPreviewMesh = null
+  }
+
+  // mesh decorativo só (sem hp/IA/colisão) pro aviso de 5s — ver comentário da constante acima
+  function showArenaPreview(kind) {
+    clearArenaPreview()
+    const mesh = kind === 'boss'
+      ? new THREE.Mesh(bossEnemyGeometry, bossEnemyMaterial)
+      : kind === 'golden'
+        ? new THREE.Mesh(goldenGeometry, goldenMaterial)
+        : null
+    if (!mesh) return
+    const frame = rail.getFrameAt(ARENA_PREVIEW_DISTANCE)
+    mesh.position.copy(frame.position)
+    mesh.scale.setScalar(ARENA_PREVIEW_SCALE[kind] ?? 1)
+    scene.add(mesh)
+    arenaPreviewMesh = mesh
   }
 
   // ============ helpers de remoção ============
@@ -839,7 +875,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Fase 7 / item antigo do Fase C: "devia girar visualmente e ter 3 hp (hoje tem 1 e fica
       // parado)" — hp subiu de 1 pra TIME_ENEMY_MAX_HP; o giro em si é aplicado no tick (mesmo
       // branch de trilho que já faz o lookAt pro jogador, ver updateEnemies).
-      enemies.push({ id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0, hp: TIME_ENEMY_MAX_HP, maxHp: TIME_ENEMY_MAX_HP, fireTimer: randomEnemyFireInterval() })
+      enemies.push({
+        id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0,
+        hp: TIME_ENEMY_MAX_HP, maxHp: TIME_ENEMY_MAX_HP, fireTimer: randomEnemyFireInterval(),
+        speedFactor: TIME_ENEMY_SPEED_FACTOR,
+      })
     },
 
     spawnTankEnemy(hp = TANK_ENEMY_DEFAULT_HP) {
@@ -902,9 +942,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     // continua se comportando exatamente igual) + inimigos comuns/mini/tanque/chefe
     update(dt, playerPosition, opts = {}) {
       elapsed += dt
+      if (arenaPreviewMesh) arenaPreviewMesh.rotation.y += dt * 0.4
       updateGoldenTargets(dt, playerPosition)
       return updateEnemies(dt, playerPosition, opts.ramDamage || 0)
     },
+
+    showArenaPreview,
+    clearArenaPreview,
 
     updateProjectiles(dt, playerPosition) {
       return updateEnemyProjectiles(dt, playerPosition) + updateEnemyLasers(dt, playerPosition)
@@ -1096,6 +1140,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       for (const p of [...enemyProjectiles]) removeEnemyProjectile(p)
       for (const l of [...enemyLasers]) removeEnemyLaser(l)
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
+      clearArenaPreview()
       enemyGeometry.dispose()
       for (const m of redProfileMaterials.values()) m.dispose()
       miniEnemyMaterial.dispose()

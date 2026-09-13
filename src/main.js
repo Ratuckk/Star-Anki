@@ -14,7 +14,10 @@ import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
 
-const CYCLE_MS = 90000
+const CYCLE_MS = 110000 // era 90000 (pedido do usuário: 110s, compensado pelo avanço por kill abaixo)
+// pedido do usuário: "avance este timer em 2 para cada inimigo derrotado durante ele" — todo
+// kill de inimigo comum (não só o redutor de tempo, que já reduz bem mais) adianta o ciclo
+const ENEMY_KILL_CYCLE_ADVANCE_MS = 2000
 const WARNING_MS = 10000
 const FEEDBACK_MS = 1500
 // v0.29.6: errar não mostra mais o painel de feedback (resposta certa/pontos/combo) — só um
@@ -134,6 +137,11 @@ const ARENA_CUTSCENE_FOV_BUMP = 16
 // com o mesmo `pull` do zoom) — dá sensação de dolly/orbit de verdade em vez de câmera só
 // recuando em linha reta olhando pro mesmo ponto.
 const ARENA_CUTSCENE_ORBIT = 9
+
+// pedido do usuário: em vez do chefe simplesmente aparecer assim que a caçada de orbes termina
+// (acertou a última/errou/tempo acabou), roda a MESMA cutscene de câmera acima, só que mais
+// longa (pelo menos uns 5s "pro jogador respirar") antes de `enterBossFight` de verdade.
+const BOSS_SUMMON_CUTSCENE_MS = 5200
 
 // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
 // pedido do usuário: câmera lenta segurando na explosão do chefe/dourado ao ser derrotado,
@@ -364,10 +372,12 @@ function mountGame(session) {
 
   // ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE (Fase 5) ============
   let arenaCutsceneTimer = 0
+  let arenaCutsceneDurationMs = ARENA_CUTSCENE_MS // reaproveitada com valor maior pro summon do chefe (ver BOSS_SUMMON_CUTSCENE_MS)
   let arenaCutsceneOnDone = null // callback chamado quando a cutscene termina (enterGoldenArena/enterBossBuildup)
   let arenaCutsceneBaseCameraPos = null // posição da câmera capturada no instante em que a cutscene começa
   let arenaCutsceneBaseForward = null // direção "pra frente" da nave nesse mesmo instante
   let arenaCutsceneBaseRight = null // Fase 8: lateral da nave nesse instante, pro leve orbit da câmera
+  let arenaPreviewShown = false // já mostrou o preview distante do chefe/dourado nesse aviso de 5s?
 
   // ============ CUTSCENE DE MORTE (chefe/dourado) — câmera lenta segurando na explosão antes
   // de sair da arena, em vez da transição instantânea direto pro modo normal ============
@@ -656,15 +666,18 @@ function mountGame(session) {
     bossHealthBonus += BOSS_HP_PER_ERROR * bossOrbsRemaining
     bossOrbsRemaining = 0
     combat.clearBossOrbs()
-    enterBossFight()
+    // pedido do usuário: em vez do chefe simplesmente aparecer na hora, roda uma cutscene de
+    // pelo menos 5s ("pro jogador respirar") antes de invocar ele de verdade
+    startArenaCutscene('bossSummon', enterBossFight, BOSS_SUMMON_CUTSCENE_MS)
   }
 
   // usado tanto pro dourado quanto pro chefe: 5s de aviso (já em andamento antes desta chamada,
   // via hud.setArenaWarning) + cutscene de câmera se ajeitando (nave travada, ver tick()) antes
   // de `onDone` (enterGoldenArena/enterBossBuildup) finalmente rodar
-  function startArenaCutscene(kind, onDone) {
+  function startArenaCutscene(kind, onDone, durationMs = ARENA_CUTSCENE_MS) {
     phase = 'arenaCutscene'
-    arenaCutsceneTimer = ARENA_CUTSCENE_MS
+    arenaCutsceneTimer = durationMs
+    arenaCutsceneDurationMs = durationMs
     arenaCutsceneOnDone = onDone
     arenaCutsceneBaseCameraPos = camera.position.clone()
     arenaCutsceneBaseForward = rail.getFrameAt(0).forward.clone()
@@ -672,6 +685,10 @@ function mountGame(session) {
     hud.setArenaWarning(null)
     hud.setCountdown(null)
     hud.setArenaCutscene(kind)
+    // pedido do usuário: o preview do chefe/dourado ao longe (mostrado durante o aviso de 5s)
+    // só fazia sentido até aqui — a partir da cutscene de verdade, some (o combate real spawna
+    // o chefe/dourado de verdade em seguida)
+    combat.clearArenaPreview()
   }
 
   function enterBossFight() {
@@ -856,7 +873,7 @@ function mountGame(session) {
     // enterBossBuildup), que aí sim muda de fase e liga o modo all-range de verdade.
     if (phase === 'arenaCutscene') {
       arenaCutsceneTimer -= dt * 1000
-      const t = THREE.MathUtils.clamp(1 - Math.max(0, arenaCutsceneTimer) / ARENA_CUTSCENE_MS, 0, 1)
+      const t = THREE.MathUtils.clamp(1 - Math.max(0, arenaCutsceneTimer) / arenaCutsceneDurationMs, 0, 1)
       const pull = Math.sin(Math.min(1, t) * Math.PI)
       camera.position.copy(arenaCutsceneBaseCameraPos)
         .addScaledVector(arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
@@ -1109,6 +1126,14 @@ function mountGame(session) {
         }
       }
     }
+    // pedido do usuário: número roxo pequeno + ícone de ampulheta acima do redutor de tempo
+    // destruído, mostrando exatamente quanto tempo aquele kill reduziu do ciclo
+    if (events.timeReductionMs && events.timeReductionWorldPos) {
+      const ndcT = events.timeReductionWorldPos.project(camera)
+      const xFracT = THREE.MathUtils.clamp((ndcT.x + 1) / 2, 0, 1)
+      const yFracT = THREE.MathUtils.clamp((1 - ndcT.y) / 2, 0, 1)
+      hud.spawnDamageNumber(xFracT, yFracT, `${Math.round(events.timeReductionMs / 1000)}s ⏳`, { time: true, prefix: '-' })
+    }
 
     const ndc = reticleWorldPos.project(camera)
     hud.setReticlePosition(
@@ -1142,6 +1167,7 @@ function mountGame(session) {
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
+    if (events.enemyKills > 0) cycleTimer = Math.max(0, cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
 
     // pedido do usuário: cutscene em câmera lenta do chefe explodindo antes de sair da arena,
     // em vez da transição instantânea/awkward direto pro modo normal — a explosão de verdade
@@ -1249,6 +1275,18 @@ function mountGame(session) {
         // (confirmado com o usuário); o do dourado aparece por cima, sem esconder o contador
         const bossWarnActive = isBossCycle && cycleTimer > 0 && cycleTimer <= ARENA_WARNING_COUNTDOWN_MS
         const goldenWarnActive = !isBossCycle && goldenTimer > 0 && goldenTimer <= ARENA_WARNING_COUNTDOWN_MS
+        // pedido do usuário: o chefe/dourado já aparece bem distante mas visível assim que o
+        // aviso de 5s começa — dispara só na borda (não a cada frame) pra não recriar o mesh
+        if (bossWarnActive && !arenaPreviewShown) { combat.showArenaPreview('boss'); arenaPreviewShown = true }
+        else if (goldenWarnActive && !arenaPreviewShown) { combat.showArenaPreview('golden'); arenaPreviewShown = true }
+        if (!bossWarnActive && !goldenWarnActive) arenaPreviewShown = false
+        // pedido do usuário: segurar o impulso durante o aviso de 5s dobra a velocidade da
+        // contagem — indica visualmente que o jogador tá "se aproximando mais rápido" do
+        // chefe/dourado (uma segunda passada de decremento por cima da normal, só nessa janela)
+        if (player.isPropulsionActive()) {
+          if (bossWarnActive) cycleTimer = Math.max(0, cycleTimer - dt * 1000)
+          if (goldenWarnActive) goldenTimer = Math.max(0, goldenTimer - dt * 1000)
+        }
         if (bossWarnActive) {
           hud.setCountdown(null)
           hud.setArenaWarning('boss', Math.max(1, Math.ceil(cycleTimer / 1000)))

@@ -325,6 +325,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     let goldenSpecialHitIsHoming = false
     let goldenHitWorldPos = null
     let timeReductionMs = null
+    let timeReductionWorldPos = null
     let bossDefeated = false
     let bossDefeatedIsHoming = false
     let bossHitWorldPos = null
@@ -415,7 +416,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
           goldenHitWorldPos = hit.worldPos
         }
         if (hit.enemyKillPoints) enemyKillPoints += hit.enemyKillPoints
-        if (hit.timeReductionMs != null) timeReductionMs = hit.timeReductionMs
+        if (hit.timeReductionMs != null) { timeReductionMs = hit.timeReductionMs; timeReductionWorldPos = hit.worldPos }
         continue
       }
 
@@ -437,7 +438,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     return {
       enemyKills, enemyKillPoints, bonusKillPoints,
       goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
-      timeReductionMs, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+      timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
     }
   }
 
@@ -558,6 +559,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
     clearEnemies: () => enemies.clearEnemies(),
     clearGoldenTargets: () => enemies.clearGoldenTargets(),
+    showArenaPreview: (kind) => enemies.showArenaPreview(kind),
+    clearArenaPreview: () => enemies.clearArenaPreview(),
     clearOtherEnemies: () => enemies.clearOtherEnemies(),
 
     clearAllCombatants() {
@@ -640,7 +643,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       const {
         enemyKills, enemyKillPoints, bonusKillPoints,
         goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
-        timeReductionMs, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+        timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
       } = updateProjectiles(dt, aimDirection)
       updateBonusTargets(dt)
       updateBossOrbs(dt)
@@ -675,6 +678,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         goldenSpecialHitIsHoming,
         goldenHitWorldPos,
         timeReductionMs,
+        timeReductionWorldPos,
         bossDefeated: bossDefeated || ramBossDefeated,
         bossDefeatedIsHoming,
         bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || null,

@@ -30,6 +30,13 @@ export function injectHudExtraStyles() {
   text-shadow: 0 0 8px rgba(255,209,102,0.7), 0 0 2px rgba(0,0,0,0.95);
 }
 .hud-damage-number.big { font-size: 26px; }
+/* pedido do usuário: número roxo pequeno + ícone de ampulheta acima do redutor de tempo
+   destruído, deixando claro quanto tempo aquele kill específico reduziu do ciclo */
+.hud-damage-number.time {
+  color: #c77dff;
+  font-size: 13px;
+  text-shadow: 0 0 8px rgba(199,125,255,0.75), 0 0 2px rgba(0,0,0,0.95);
+}
 @keyframes hud-damage-float {
   0%   { transform: translate(-50%, -50%) translateY(4px) scale(0.6);  opacity: 0; }
   18%  { transform: translate(-50%, -50%) translateY(-4px) scale(1.18); opacity: 1; }

@@ -384,8 +384,13 @@ export function createGameHud() {
         : `Chefe se aproximando em ${seconds}s`
     },
 
-    // overlay de texto durante a cutscene de câmera/mapa se ajeitando — kind null esconde
+    // overlay de texto durante a cutscene de câmera/mapa se ajeitando — kind null esconde.
+    // 'bossSummon' (pedido do usuário): texto próprio pra cutscene de invocação do chefe, que
+    // roda depois da caçada de orbes em vez do chefe simplesmente aparecer na hora.
     setArenaCutscene(kind) {
+      arenaCutsceneOverlay.textContent = kind === 'bossSummon'
+        ? 'O chefe está sendo invocado...'
+        : 'Transicionando para o modo All-Range...'
       arenaCutsceneOverlay.hidden = !kind
     },
 
@@ -529,6 +534,7 @@ export function createGameHud() {
       if (opts.homing) el.classList.add('homing')
       if (opts.points) el.classList.add('points')
       if (opts.big) el.classList.add('big')
+      if (opts.time) el.classList.add('time')
       const prefix = opts.prefix != null ? opts.prefix : ''
       el.textContent = `${prefix}${value}`
       el.style.left = `${Math.max(0, Math.min(1, xFrac)) * 100}%`
