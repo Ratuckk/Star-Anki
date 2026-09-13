@@ -284,6 +284,10 @@ export function injectHudExtraStyles() {
 }
 
 /* ============ MODAL DE PERGUNTA COM PAUSA TOTAL (orbe do chefe) — Fase 5 ============ */
+/* pedido do usuário: o efeito de a pergunta aparecer era instantâneo demais (só um "hidden =
+   false", snap direto) — aplicados os princípios de animação discutidos (anticipation já
+   existia via playFocusCollapse/partículas convergindo; aqui entram exaggeration + follow
+   through no overlay/título via overshoot de escala, e secondary action no stagger dos cards) */
 .question-modal-overlay {
   position: absolute;
   inset: 0;
@@ -294,6 +298,11 @@ export function injectHudExtraStyles() {
   gap: 1.4rem;
   background: rgba(11, 13, 18, 0.85);
   z-index: 16;
+  animation: question-modal-overlay-in 220ms ease-out both;
+}
+@keyframes question-modal-overlay-in {
+  0%   { background: rgba(11, 13, 18, 0); }
+  100% { background: rgba(11, 13, 18, 0.85); }
 }
 .question-modal-title {
   margin: 0;
@@ -303,6 +312,7 @@ export function injectHudExtraStyles() {
   font-size: 1.7rem;
   font-weight: 700;
   text-shadow: 0 2px 8px #000;
+  animation: question-modal-pop-in 420ms cubic-bezier(0.22, 1.5, 0.4, 1) 90ms both;
 }
 .question-modal-list {
   display: flex;
@@ -327,8 +337,39 @@ export function injectHudExtraStyles() {
   font-family: inherit;
   font-size: 0.95rem;
   transition: transform 0.12s;
+  animation: question-modal-pop-in 380ms cubic-bezier(0.22, 1.5, 0.4, 1) both;
+  animation-delay: calc(200ms + var(--stagger, 0) * 90ms);
+}
+/* exaggeration (overshoot de escala/posição) + follow through (assenta de volta em 1/0) —
+   usada no título (delay fixo) e nos cards (delay escalonado por --stagger, uma sequência em
+   vez de todos juntos) */
+@keyframes question-modal-pop-in {
+  0%   { opacity: 0; transform: translateY(22px) scale(0.86); }
+  55%  { opacity: 1; transform: translateY(-5px) scale(1.05); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .question-modal-card:hover { transform: translateY(-4px); }
+/* burst de luz no centro exato onde o modal nasce — dispara junto do revealQuestionModal, dá o
+   "pouso" visual logo depois da convergência de partículas (question-focus-collapse) */
+.question-modal-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(127,224,255,0.85) 40%, rgba(127,224,255,0) 72%);
+  box-shadow: 0 0 40px 14px rgba(127, 224, 255, 0.55);
+  pointer-events: none;
+  z-index: 44;
+  animation: question-modal-burst-anim 500ms cubic-bezier(0.15, 0.85, 0.3, 1) forwards;
+}
+@keyframes question-modal-burst-anim {
+  0%   { transform: scale(0.2); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: scale(9); opacity: 0; }
+}
 .question-modal-card svg { flex-shrink: 0; }
 .question-modal-hint {
   position: absolute;

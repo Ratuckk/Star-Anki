@@ -276,10 +276,23 @@ export function createGameHud() {
     }, FOCUS_COLLAPSE_MS)
   }
 
+  // burst de luz no instante exato em que o modal nasce — mesmo ponto onde as partículas do
+  // playFocusCollapse convergiram; reforça o "pouso" da anticipation (princípio de Staging: guia
+  // o olho pro centro bem no momento em que título/cards começam a aparecer)
+  function questionModalBurst() {
+    const el = document.createElement('div')
+    el.className = 'question-modal-burst'
+    root.appendChild(el)
+    setTimeout(() => el.remove(), 520)
+  }
+
   // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
   // terminar (ver showQuestionModal no objeto retornado). Comportamento idêntico ao que já
-  // existia (escolha por clique ou pelos números 1–4, via quizSlot1..4).
+  // existia (escolha por clique ou pelos números 1–4, via quizSlot1..4) — a única mudança é
+  // visual: título e cards entram com exaggeration/follow-through (overshoot de escala) em vez
+  // de aparecerem instantâneos junto do overlay (pedido do usuário).
   function revealQuestionModal({ question, alternatives, onPick }) {
+    questionModalBurst()
     questionModalTitle.textContent = question
     questionModalList.innerHTML = ''
     alternatives.forEach((alt, i) => {
@@ -287,6 +300,7 @@ export function createGameHud() {
       const btn = document.createElement('button')
       btn.className = 'question-modal-card'
       btn.style.borderColor = hex
+      btn.style.setProperty('--stagger', i) // secondary action: cards entram em sequência, não juntos
       // pequeno hint numérico no canto do card pra lembrar que 1–4 também funciona
       btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span><span class="question-modal-hint">${i + 1}</span>`
       btn.addEventListener('click', () => {
