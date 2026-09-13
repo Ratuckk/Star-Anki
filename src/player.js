@@ -40,8 +40,8 @@ const FULL_SPIN_IFRAME_MS_BASE = 900
 // ============ PROPULSOR / REPULSOR (A/S) ============
 // 1 barra COMPARTILHADA entre os dois: ao usar qualquer um, a barra zera e recarrega devagar;
 // não dá pra usar de novo (nenhum dos dois) enquanto não encher totalmente.
-const BOOST_DURATION_MS = 900
-const BOOST_RECHARGE_MS = 4500
+const BOOST_DURATION_MS = 950
+const BOOST_RECHARGE_MS = 3000
 const PROPULSION_SPEED_MULT = 1.9 // multiplicador de velocidade de avanço durante o impulso
 const REPULSION_SPEED_MULT = 0.35 // multiplicador de velocidade de avanço durante a repulsão
 
