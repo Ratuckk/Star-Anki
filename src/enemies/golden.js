@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR } from './shared.js'
 
-// ============ ESPECIAL DOURADO + mini-naves ============
+// ============ ESPECIAL DOURADO + mini-naves + laser ============
 // Array próprio (`goldenTargets`) e resolução de hit à parte de `enemies` — já era assim no
 // enemies.js monolítico (o dourado só existe durante a fase 'goldenArena'), então este módulo
 // vira uma instância própria (factory) em vez de funções soltas como os outros arquivos de
@@ -28,6 +28,20 @@ const MINION_SPEED = 16
 const MINION_HIT_RADIUS = 0.9
 const MINION_MAX_RANGE = 140
 const MINION_COLOR = 0xffe066
+
+// ============ LASER GRANDE DO DOURADO ============
+// mesmo padrão do laser do chefe (trava a posição atual do jogador no momento do aviso, mostra
+// círculos crescendo por 2.5s, dispara um cone-laser gigante na direção travada). Era o único
+// tipo de ataque que faltava no dourado — antes ele só tinha projétil comum + mini-nave.
+// Valores ligeiramente menores que os do chefe, porque o dourado é menor (hit radius 2.2 vs 7).
+const GOLDEN_LASER_INTERVAL_MIN = 8.0
+const GOLDEN_LASER_INTERVAL_MAX = 12.0
+const GOLDEN_LASER_TELEGRAPH_S = 2.5
+const GOLDEN_LASER_RADIUS = 1.8
+const GOLDEN_LASER_LENGTH = 20
+const GOLDEN_LASER_SPEED = 70
+const GOLDEN_LASER_HIT_RADIUS = 2.8
+const GOLDEN_LASER_MAX_RANGE = 200
 
 export const goldenGeometry = new THREE.TorusKnotGeometry(1.1, 0.4, 80, 12)
 export const goldenMaterial = new THREE.MeshPhongMaterial({
@@ -63,6 +77,30 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     })
   }
 
+  // laser grande — mesmo formato do chefe (cone longo, additive blending, same quaternion
+  // technique). Empurra pro array compartilhado de lasers inimigos via ctx.pushLaser.
+  function fireGoldenLaser(g, targetPos, ctx) {
+    const startPos = g.mesh.position.clone()
+    const direction = targetPos.clone().sub(startPos).normalize()
+
+    const geo = new THREE.ConeGeometry(GOLDEN_LASER_RADIUS, GOLDEN_LASER_LENGTH, 8)
+    geo.rotateX(Math.PI / 2)
+    const mat = new THREE.MeshBasicMaterial({
+      color: GOLDEN_COLOR, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(startPos)
+    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+    scene.add(mesh)
+    ctx.pushLaser({
+      mesh, geo, mat,
+      velocity: direction.multiplyScalar(GOLDEN_LASER_SPEED), traveled: 0,
+      maxRange: GOLDEN_LASER_MAX_RANGE, hitRadius: GOLDEN_LASER_HIT_RADIUS,
+      shieldDamage: 1,
+    })
+  }
+
   return {
     spawn(opts = {}) {
       const { distanceMin = 40, distanceMax = 90 } = opts
@@ -83,11 +121,16 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         id: nextId(), mesh, dying: false, deathT: 0,
         hp: GOLDEN_HP, maxHp: GOLDEN_HP, fireTimer: randomGoldenFireInterval(),
         minionTimer: MINION_INTERVAL_MIN + Math.random() * (MINION_INTERVAL_MAX - MINION_INTERVAL_MIN),
+        // laser grande — cooldown inicial aleatório pra não disparar em uníssono se houver
+        // mais de um dourado em tela; telegraph e target começam zerados
+        laserCooldown: GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
+        laserTelegraphTimer: 0,
+        laserTargetPos: null,
         distanceMin, distanceMax, teleportCooldownTimer: 0,
       })
     },
 
-    // ctx = { fireEnemyProjectile, pushProjectile }
+    // ctx = { fireEnemyProjectile, pushProjectile, pushLaser }
     update(dt, playerPosition, ctx) {
       elapsed += dt
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
@@ -118,6 +161,24 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         if (g.minionTimer <= 0) {
           spawnMinion(g.mesh.position, playerPosition, ctx.pushProjectile)
           g.minionTimer = MINION_INTERVAL_MIN + Math.random() * (MINION_INTERVAL_MAX - MINION_INTERVAL_MIN)
+        }
+
+        // laser grande — mesmo fluxo do chefe: cooldown corre, dispara telegraph com a posição
+        // travada do jogador, espera o telegraph terminar, atira um laser na direção travada.
+        if (g.laserTelegraphTimer > 0) {
+          g.laserTelegraphTimer -= dt
+          if (g.laserTelegraphTimer <= 0) {
+            if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos, ctx)
+            g.laserTargetPos = null
+            g.laserCooldown = GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN)
+          }
+        } else {
+          g.laserCooldown -= dt
+          if (g.laserCooldown <= 0) {
+            g.laserTargetPos = playerPosition.clone()
+            g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
+            if (effects) effects.chargeCircle(g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
+          }
         }
       }
     },
