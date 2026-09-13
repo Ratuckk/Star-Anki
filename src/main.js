@@ -1179,6 +1179,7 @@ function mountGame(session) {
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),
       skipTrail: player.isRepulsionActive(), // freando = sem rastro de motor
+      ramActive,
     })
     effects.spawnContrailTick(combat.getWingmanPositions())
 

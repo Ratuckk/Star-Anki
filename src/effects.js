@@ -90,6 +90,35 @@ const ENGINE_FLAME_FLICKER_AMOUNT = 0.12
 const PROPULSION_BURST_COLOR = 0x2f8bff
 const PROPULSION_BURST_DURATION = 0.35
 
+// ============ IMPULSO ARÍETE (item 12) ============
+// pedido do usuário: o impulso ariete (carta "propulsion-ram") não tinha NENHUM efeito visual
+// pra indicar que está ativo — verifiquei o código, o dano de verdade acontece (ramDamage
+// repassado até enemies.js), só faltava feedback. "Aquele efeito antigo de escudo circular
+// azul" é a bolha de escudo (shieldBubble) que existiu em fases antigas e foi removida —
+// reconstruída aqui só pro ram (não mais ligada ao escudo normal), e "mais angular" vira um
+// icosaedro wireframe (facetado) em vez da esfera-grade original.
+const RAM_SHIELD_COLOR = 0x4da6ff
+const RAM_SHIELD_RADIUS = 2.0
+const RAM_SHIELD_SPIN_X = 0.8
+const RAM_SHIELD_SPIN_Y = 1.1
+const RAM_RING_INTERVAL = 0.12
+const RAM_RING_DURATION = 0.5
+const RAM_RING_COLOR = 0x4da6ff
+const RAM_RING_MAX_SCALE = 3.5
+const RAM_AFTERIMAGE_INTERVAL = 0.05
+const RAM_AFTERIMAGE_DURATION = 0.35
+const RAM_AFTERIMAGE_COLOR = 0x4da6ff
+
+// ============ TRAIL DE PROPULSÃO (item 12, restaurado) ============
+// pedido do usuário: de volta o rastro tipo cometa que existia antes da Fase 7 (removido junto
+// com o sistema antigo de partículas do motor), mas agora só aparece durante o IMPULSO em si —
+// a chama única (engineFlame, sempre visível) continua cobrindo o voo normal.
+const BOOST_TRAIL_INTERVAL = 0.05
+const BOOST_TRAIL_DURATION = 0.9
+const BOOST_TRAIL_SPEED = 14
+const BOOST_TRAIL_COLOR = 0xffa64d
+const BOOST_TRAIL_OPACITY = 0.5
+
 // ============ FOG WISPS (Fase 7 / item antigo do Fase C) ============
 // "asset/efeito que deixe a neblina reconhecível como neblina" — antes só o FogExp2 (sem
 // nenhuma pista visual direta). Nuvens grandes, suaves e esparsas, no mesmo padrão de volume
@@ -294,6 +323,18 @@ export function createEffectsSystem(scene, opts = {}) {
   engineFlameMesh.visible = false
   scene.add(engineFlameMesh)
 
+  // ============ ESCUDO DO IMPULSO ARÍETE (item 12, persistente) ============
+  // icosaedro wireframe (facetado/"anguloso") em vez da esfera-grade original — só visível
+  // enquanto o impulso ariete está de fato ativo (ramActive), ver update().
+  const ramShieldGeometry = new THREE.IcosahedronGeometry(1, 0)
+  const ramShieldMaterial = new THREE.MeshBasicMaterial({
+    color: RAM_SHIELD_COLOR, wireframe: true, transparent: true, opacity: 0.55,
+    depthWrite: false, fog: false,
+  })
+  const ramShieldMesh = new THREE.Mesh(ramShieldGeometry, ramShieldMaterial)
+  ramShieldMesh.visible = false
+  scene.add(ramShieldMesh)
+
   // ============ LISTAS DE TRANSIENTES ============
   const bursts = []
   const grayRings = []
@@ -311,7 +352,13 @@ export function createEffectsSystem(scene, opts = {}) {
   const bossImpactRings = []
   const chargeCircles = []
   const spinWinds = []
+  const ramRings = []
+  const ramAfterimages = []
+  const boostTrails = []
   let contrailTimer = 0
+  let ramRingTimer = 0
+  let ramAfterimageTimer = 0
+  let boostTrailTimer = 0
 
   // ============ SHOCKWAVE / RING HELPERS ============
   function makeRingMesh(colorHex, thickness = 0.15) {
@@ -436,6 +483,48 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.scale.setScalar(SPIN_WIND_START_SCALE)
     scene.add(mesh)
     spinWinds.push({ mesh, life: 0, spinDirection })
+  }
+
+  // argola perpendicular ao forward, ao redor do jogador — pedido do usuário, item 12 ("invoque
+  // argolas ao redor do jogador durante o impulso"), mesma técnica de spinWind/smokeRing
+  function ramRing(position, forward) {
+    const mesh = makeRingMesh(RAM_RING_COLOR, 0.14)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+    mesh.scale.setScalar(0.6)
+    scene.add(mesh)
+    ramRings.push({ mesh, life: 0 })
+  }
+
+  // afterimage da nave durante o impulso ariete (item 12) — silhueta simplificada (cone), mesmo
+  // padrão de homingAfterimage abaixo, só maior e azul (tema do ram) em vez de verde.
+  function ramAfterimage(position, forward) {
+    const geometry = new THREE.ConeGeometry(0.7, 3.6, 4)
+    geometry.rotateX(Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({
+      color: RAM_AFTERIMAGE_COLOR, transparent: true, opacity: 0.4,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+    scene.add(mesh)
+    ramAfterimages.push({ mesh, life: 0 })
+  }
+
+  // trail tipo cometa durante o impulso (qualquer propulsão, não só ram) — pedido do usuário,
+  // item 12 último pedido: "traga devolta esse trail de propulsar apenas quando o jogador
+  // realiza um impulso". Mesma técnica do antigo cometTrailParticle (removido na Fase 7).
+  function boostTrailParticle(position, forward) {
+    const geometry = new THREE.SphereGeometry(0.35, 6, 6)
+    const material = new THREE.MeshBasicMaterial({
+      color: BOOST_TRAIL_COLOR, transparent: true, opacity: BOOST_TRAIL_OPACITY,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    scene.add(mesh)
+    boostTrails.push({ mesh, life: 0, velocity: forward.clone().multiplyScalar(-BOOST_TRAIL_SPEED) })
   }
 
   function homingAfterimage(position, quaternion) {
@@ -633,7 +722,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { skipTrail = false, boostActive = false } = opts
+    const { skipTrail = false, boostActive = false, ramActive = false } = opts
     const now = performance.now()
     const cam = opts.camera
 
@@ -657,6 +746,38 @@ export function createEffectsSystem(scene, opts = {}) {
       engineFlameMaterial.opacity = THREE.MathUtils.lerp(ENGINE_FLAME_OPACITY, ENGINE_FLAME_BOOST_OPACITY, boostT)
     } else {
       engineFlameMesh.visible = false
+    }
+
+    // IMPULSO ARÍETE (item 12) — escudo angular + argolas + afterimage, só enquanto ramActive
+    if (ramActive && shipPosition && shipForward) {
+      ramShieldMesh.visible = true
+      ramShieldMesh.position.copy(shipPosition)
+      ramShieldMesh.scale.setScalar(RAM_SHIELD_RADIUS)
+      ramShieldMesh.rotation.x += dt * RAM_SHIELD_SPIN_X
+      ramShieldMesh.rotation.y += dt * RAM_SHIELD_SPIN_Y
+
+      ramRingTimer -= dt
+      if (ramRingTimer <= 0) {
+        ramRingTimer = RAM_RING_INTERVAL
+        ramRing(shipPosition, shipForward)
+      }
+      ramAfterimageTimer -= dt
+      if (ramAfterimageTimer <= 0) {
+        ramAfterimageTimer = RAM_AFTERIMAGE_INTERVAL
+        ramAfterimage(shipPosition, shipForward)
+      }
+    } else {
+      ramShieldMesh.visible = false
+    }
+
+    // TRAIL DE PROPULSÃO (item 12) — só durante o impulso de verdade, qualquer propulsão
+    if (boostActive && shipPosition && shipForward) {
+      boostTrailTimer -= dt
+      if (boostTrailTimer <= 0) {
+        boostTrailTimer = BOOST_TRAIL_INTERVAL
+        const exhaust = shipPosition.clone().addScaledVector(shipForward, -2.4)
+        boostTrailParticle(exhaust, shipForward)
+      }
     }
 
     // poeira ambiente — drift lento + wrap por eixo dentro do volume em espaço-mundo.
@@ -805,6 +926,47 @@ export function createEffectsSystem(scene, opts = {}) {
       w.mesh.scale.setScalar(scale)
       w.mesh.material.opacity = 0.75 * (1 - t)
       w.mesh.rotateZ(dt * SPIN_WIND_SPIN_RATE * w.spinDirection)
+    }
+
+    // RAM RINGS (item 12)
+    for (let i = ramRings.length - 1; i >= 0; i--) {
+      const r = ramRings[i]
+      r.life += dt
+      const t = r.life / RAM_RING_DURATION
+      if (t >= 1) {
+        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        ramRings.splice(i, 1); continue
+      }
+      const scale = 0.6 + (RAM_RING_MAX_SCALE - 0.6) * Math.sqrt(t)
+      r.mesh.scale.setScalar(scale)
+      r.mesh.material.opacity = 0.8 * (1 - t)
+    }
+
+    // RAM AFTERIMAGES (item 12)
+    for (let i = ramAfterimages.length - 1; i >= 0; i--) {
+      const a = ramAfterimages[i]
+      a.life += dt
+      const t = a.life / RAM_AFTERIMAGE_DURATION
+      if (t >= 1) {
+        scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose()
+        ramAfterimages.splice(i, 1); continue
+      }
+      a.mesh.material.opacity = 0.4 * (1 - t)
+      a.mesh.scale.setScalar(1 - t * 0.3)
+    }
+
+    // BOOST TRAIL (item 12, tipo cometa — só durante o impulso)
+    for (let i = boostTrails.length - 1; i >= 0; i--) {
+      const c = boostTrails[i]
+      c.life += dt
+      const t = c.life / BOOST_TRAIL_DURATION
+      if (t >= 1) {
+        scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose()
+        boostTrails.splice(i, 1); continue
+      }
+      c.mesh.position.addScaledVector(c.velocity, dt)
+      c.mesh.material.opacity = BOOST_TRAIL_OPACITY * (1 - t)
+      c.mesh.scale.setScalar(1 - t * 0.3)
     }
 
     // HOMING AFTERIMAGES
@@ -991,6 +1153,10 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
     scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); softCircleTexture.dispose()
     scene.remove(engineFlameMesh); engineFlameGeometry.dispose(); engineFlameMaterial.dispose()
+    scene.remove(ramShieldMesh); ramShieldGeometry.dispose(); ramShieldMaterial.dispose()
+    for (const r of ramRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
+    for (const a of ramAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const r of grayRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
@@ -1016,6 +1182,7 @@ export function createEffectsSystem(scene, opts = {}) {
     telegraphs.length = 0; glassShards.length = 0
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
     spinWinds.length = 0
+    ramRings.length = 0; ramAfterimages.length = 0; boostTrails.length = 0
     for (const layer of chargeGlowLayers) { scene.remove(layer.mesh); layer.geo.dispose(); layer.mat.dispose() }
   }
 
