@@ -27,16 +27,28 @@ export const SENTINELA_FIRE_INTERVAL = 1.8 // intervalo entre os 4 disparos
 export const SENTINELA_STATE_ENGAGING = 'engaging' // persegue mantendo distância, dispara
 export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera pra trás e some
 
-// a "moldura": raio externo cobre uma área generosa (compatível com ENEMY_BOX_X/Y=7, o
-// espalhamento típico de spawn/movimento de outros inimigos), raio interno (o buraco) dá espaço
-// real pra desviar sem chegar a ser trivial
-const GATE_OUTER_HALF = 9
-const GATE_INNER_HALF = 4
-const GATE_BAR_THICKNESS = 1.1
+// ============ TAMANHO DA MOLDURA ============
+// pedido do usuário: "quero que estes quadrados sejam maiores, como enquadramentos ao invés de
+// quadrados grandões... que abrem e fecham no meio". Antes: outer=9, inner=4 → moldura 18x18
+// com buraco 8x8 (buraco ocupava só 44% do lado, banda de 5 — lia como "bloco sólido com
+// buraco pequeno", não como janela). A "abre e fecha no meio" era perspectiva: o buraco
+// pequeno parecia abrir conforme a moldura se aproximava e fechar ao passar.
+//
+// Agora: outer=14 (moldura 28x28, 56% maior), inner=11 (buraco 22x22 — 78% do lado), banda de
+// apenas 3 (fina, lê como BORDA). A moldura agora é literalmente um enquadramento: o jogador
+// vê o buraco desde longe, entende "preciso passar por ali", sem ilusão de abertura/fechamento.
+const GATE_OUTER_HALF = 14
+const GATE_INNER_HALF = 11
+const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
 const GATE_SPEED = 34
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
+
+// Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
+// `pass-behind` normal (que despawna quem ficou ATRÁS) nunca dispara — ela ficava viva pra
+// sempre, invisível pela névoa mas ainda no array de inimigos. Despawna por distância à frente.
+const SENTINELA_LEAVE_DESPAWN_AHEAD = 220
 
 const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.7)
 const material = new THREE.MeshPhongMaterial({ color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true })
@@ -65,7 +77,7 @@ export function spawnSentinela(scene, rail, id) {
 
 // engajando: corrige a posição pra ficar num "standoff" fixo à frente da câmera (mesmo princípio
 // do perfil 'follow' do Blaster) — nunca cruza o jogador. Ao esgotar os 4 disparos, transiciona
-// pra "indo embora": acelera pra trás (sentido oposto ao avanço do Blaster) até sair de tela.
+// pra "indo embora": acelera pra frente (sentido do avanço do jogador) até sair de cena.
 export function updateSentinelaMovement(enemy, dt, frame) {
   if (enemy.state === SENTINELA_STATE_LEAVING) {
     enemy.mesh.position.addScaledVector(frame.forward, LEAVE_SPEED * dt)
@@ -78,6 +90,15 @@ export function updateSentinelaMovement(enemy, dt, frame) {
 
 export function sentinelaPassBehind(enemy) {
   return enemy.state === SENTINELA_STATE_LEAVING ? PASS_BEHIND : PASS_BEHIND * 8
+}
+
+// true quando a Sentinela em LEAVING já foi longe demais à frente da nave pra continuar
+// existindo — ver comentário em SENTINELA_LEAVE_DESPAWN_AHEAD. `index.js` chama isso no
+// branch de trilho pra despawnar de verdade (chamada é barata: só um dot de vetor).
+export function sentinelaShouldDespawn(enemy, frame) {
+  if (enemy.state !== SENTINELA_STATE_LEAVING) return false
+  const ahead = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+  return ahead > SENTINELA_LEAVE_DESPAWN_AHEAD
 }
 
 // dispara uma moldura quadrada travada na posição ATUAL do jogador (mesmo truque do laser do
