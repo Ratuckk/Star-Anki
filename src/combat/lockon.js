@@ -20,6 +20,9 @@ const MAX_LOCK_RANGE = 90
 // não deixa travar/mantém travado um inimigo mais perto que isso — evita travar algo que já vai
 // passar pelo jogador no próximo frame
 const MIN_LOCK_RANGE = 10
+// fallback de "raio" do alvo grande quando a entidade não expõe um — só pra limitar o quanto o
+// marcador verde pode se afastar do centro do mesh (ver comentário do sweepLockOn).
+const BIG_TARGET_FALLBACK_RADIUS = 6
 
 function isBigLockTarget(e) {
   return e.kind === 'boss' || e.kind === 'golden'
@@ -52,9 +55,14 @@ export function createLockOnSystem(rail, enemies) {
         const toTarget = rel.clone().normalize()
         const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
         if (angle >= ENEMY_LOCK_ANGLE) continue
-        // ponto na direção da mira mais próximo do centro do alvo — os quadrados verdes aparecem
-        // onde o jogador de fato mirou, não num ponto aleatório.
-        const offset = direction.clone().multiplyScalar(rel.dot(direction)).sub(rel)
+        // offset = vetor do centro do alvo até o ponto da mira mais próximo — usado só pra
+        // espalhar o marcador verde pelo CORPO de alvos grandes (chefe/dourado). Sem teto ele
+        // explode em inimigo pequeno: a 6° de desvio (limite do cone) e 90u de distância
+        // (MAX_LOCK_RANGE), o offset chega a ~9u e joga o marcador pra fora do mesh. Por isso:
+        //   - alvo comum → offset ZERO, marcador exatamente no centro do mesh
+        //   - alvo grande → offset clampado ao "raio" do alvo, sem vazar do corpo
+        const maxOffset = isBigLockTarget(e) ? (e.radius ?? BIG_TARGET_FALLBACK_RADIUS) : 0
+        const offset = direction.clone().multiplyScalar(rel.dot(direction)).sub(rel).clampLength(0, maxOffset)
         lockedEnemies.push({ entity: e, offset, seq: nextLockSeq++ })
       }
     },
