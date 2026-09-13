@@ -1,6 +1,7 @@
 import { getSettings, setSetting } from './settings.js'
 import { getBindings, setBinding, resetToDefaults, setGamepadBinding, codeToLabel, ACTIONS } from './keybindings.js'
 import { showScreen } from './hud-shared.js'
+import { SHIP_VISUAL_OPTIONS } from './rail.js'
 
 // Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
 // de comportamento.
@@ -65,6 +66,39 @@ export function showSettingsScreen({ onBack }) {
   enemyBarCheckbox.addEventListener('change', () => setSetting('showEnemyHealthBars', enemyBarCheckbox.checked))
   enemyBarRow.appendChild(enemyBarCheckbox)
   visualSection.appendChild(enemyBarRow)
+
+  // seletor da nave: 1 botão por preset de rail.js (SHIP_VISUAL_OPTIONS) — clicar troca na hora
+  // (setSetting persiste; a nave só é remontada de fato no início da PRÓXIMA partida, igual
+  // aos outros ajustes desta tela)
+  const shipRow = document.createElement('div')
+  shipRow.className = 'settings-row'
+  const shipLabel = document.createElement('label')
+  shipLabel.textContent = 'Visual da nave'
+  shipRow.appendChild(shipLabel)
+
+  const shipButtonsWrap = document.createElement('div')
+  shipButtonsWrap.className = 'btn-row'
+  const shipButtons = {}
+  for (const option of SHIP_VISUAL_OPTIONS) {
+    const btn = document.createElement('button')
+    btn.className = 'btn-secondary'
+    btn.textContent = option.label
+    btn.addEventListener('click', () => {
+      setSetting('shipVisual', option.id)
+      renderShipButtons()
+    })
+    shipButtons[option.id] = btn
+    shipButtonsWrap.appendChild(btn)
+  }
+  shipRow.appendChild(shipButtonsWrap)
+  visualSection.appendChild(shipRow)
+
+  function renderShipButtons() {
+    const current = getSettings().shipVisual
+    for (const [id, btn] of Object.entries(shipButtons)) btn.classList.toggle('active', id === current)
+  }
+  renderShipButtons()
+
   root.appendChild(visualSection)
 
   // Fase 9 (ideia all-range 5): sensibilidade de giro configurável

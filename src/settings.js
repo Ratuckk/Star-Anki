@@ -5,6 +5,8 @@ const DEFAULTS = {
   showEnemyHealthBars: false,
   // Fase 9 (ideia all-range 5): multiplicador de sensibilidade de giro no modo all-range
   arenaTurnSensitivity: 1,
+  // visual da nave — ids de SHIP_VISUAL_OPTIONS em rail.js ('default'/'bombardeiro'/'racer')
+  shipVisual: 'default',
 }
 
 function readAll() {
