@@ -1,3 +1,24 @@
+## 10 QoL em `player.js`, zero mudança de balance — v0.29.4
+
+Pedido do usuário: `src/player.js` inteiro reescrito com 10 melhorias de qualidade de código, explicitamente marcado *"Nenhuma outra mudança, nenhuma alteração de balance"*. Antes de aplicar, li o arquivo atual e comparei linha a linha contra o que foi mandado (trust but verify) — confirma exatamente o que foi descrito: guards defensivos, clamps e extrações puras, sem tocar em nenhuma constante de balance (caps, taxas, durações — todas idênticas).
+
+1. `triggerFullSpinIframes()` ganhou guard de cooldown + retorno boolean — hoje `main.js` já checa `isFullSpinOnCooldown()` antes de chamar, então o guard nunca dispara na prática; é defesa contra um chamador futuro.
+2. `debugMaxBuffs()` agora aplica **todos** os tetos (escudo, homing, wingman, i-frames, cartas booleanas, vidas) — antes só mexia em 2 de ~10 stats, apesar do nome prometer "máximos". Único dos 10 itens com efeito visível, mas é ferramenta de debug, não altera a run normal.
+3. `heal(amount)` valida `Number.isFinite`/`> 0` e devolve quanto curou — hoje só é chamado com `1` fixo (debug), sem efeito observável ainda.
+4. `getStats()` — método novo, snapshot de todos os stats mutáveis. Aditivo, nada quebra.
+5. `applyCard(card)` ganhou guard contra card inválido/`undefined` + retorno boolean — os 13 `case` ficaram byte-a-byte idênticos, só a borda mudou.
+6. `takeDamage()`: `Math.max(invincibleTimer, invincibilityDurationMs)` em vez de atribuição direta — hoje só é chamado quando `!isInvincible()` já é verdade no `main.js`, então o resultado é idêntico na prática.
+7. `canUseBoost`/`activatePropulsion`/`activateRepulsion` passaram a ler de um `boostReady()` extraído — mesma expressão booleana de antes (confirmado por De Morgan), só parou de estar copiada 3 vezes.
+8. `applyHealthLoss()` ganhou clamp de `session.lives` em 0 (evita ir a -1 se chamada duas vezes já morto) — só muda algo se a função for chamada de novo depois do game over, o que não acontece no fluxo atual.
+9. `rechargeShield()` devolve quanto restaurou de fato — paralelo ao `heal()`, mesma situação (chamado só via debug, retorno ainda não lido).
+10. `getLowHealthIntensity(thresholdFrac)` ganhou clamp em `[0.01, 1]` — o único call site sempre passa `0.4` fixo, então zero efeito hoje.
+
+**Extra aplicado também** (sugestão do próprio usuário, marcada como opcional/sem risco): o handler `maxBuffs` do debug em `main.js` agora chama `combat.setWingmanCount(player.getWingmanCount())` na sequência — sem isso os 2 wingmen do buff máximo ficavam invisíveis até a próxima carta escolhida.
+
+**Testado ao vivo**: joguei uma partida, cliquei "Aplicar buffs máximos" — os 2 wingmen (triângulos ciano) apareceram imediatamente ao lado da nave, barra de vidas foi a 5 pips — zero erro no console. `node --check` em `player.js`/`main.js` e `selftest.mjs` limpos.
+
+**Versão**: v0.29.3 → v0.29.4.
+
 ## Refatoração: `hud.js` (1652 linhas) dividido em 8 arquivos por responsabilidade — v0.29.3
 
 Pedido do usuário: um plano de refatoração detalhado (análise de coesão por bloco, proposta de 8 arquivos, e por que **não** vale a pena dividir `createGameHud` por dentro), pedindo pra executar. Segui o plano à risca — mesmo padrão já usado em `combat.js` → `enemies.js`/`player.js`: `hud.js` virou fachada, só re-exportando; `main.js` **não mudou uma linha de import**.

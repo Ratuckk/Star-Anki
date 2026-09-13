@@ -1276,7 +1276,10 @@ function mountGame(session) {
       combat.setFireCooldown(infiniteAmmoActive ? 0 : player.config.fireCooldown)
       hud.debug.setToggleActive('infiniteAmmo', infiniteAmmoActive)
     },
-    maxBuffs: () => player.debugMaxBuffs(),
+    maxBuffs: () => {
+      player.debugMaxBuffs()
+      combat.setWingmanCount(player.getWingmanCount())
+    },
     gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
     skipToBossFight: () => {
       if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()

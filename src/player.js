@@ -47,6 +47,12 @@ const BOOST_RECHARGE_MS = 4500
 const PROPULSION_SPEED_MULT = 1.9 // multiplicador de velocidade de avanço durante o impulso
 const REPULSION_SPEED_MULT = 0.35 // multiplicador de velocidade de avanço durante a repulsão
 
+// ============ BUFFS MÁXIMOS (debug) ============
+// quantas aplicações de cartas SEM CAP definido são tratadas como "máximo" pelo debug
+// "Aplicar buffs máximos" — ver comentário dentro de debugMaxBuffs(). Não é usado pelo jogo
+// normal, só pela ação de debug (mantido aqui pra ficar perto de onde é consumido).
+const DEBUG_MAX_UNCAPPED_STACKS = 4
+
 // estado do JOGADOR: vida/vidas, escudo, invencibilidade, boost, cooldowns e os stats que as
 // cartas roguelike mutam (projectileCount, fireCooldown, aimAssistAngle, homingMaxTargets...).
 // Não inclui posição/movimento (rail.js), nem projéteis/armas de verdade (combat.js) — só o
@@ -81,14 +87,30 @@ export function createPlayerSystem(session) {
   let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
   let projectileCount = PROJECTILE_COUNT_START
 
+  // QoL (v0.29.4): única fonte de verdade de "pode usar boost?" — antes a checagem estava
+  // copiada dentro de activatePropulsion/activateRepulsion, e canUseBoost() existia na API
+  // pública mas era código morto (nunca chamado). Agora os três pontos (público + os dois
+  // activate*) leem daqui.
+  function boostReady() {
+    return boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0
+  }
+
   // saúde zerada consome 1 vida e reabastece a saúde (e o escudo); zerar as vidas é que
   // realmente acaba a run. Chamar isso é seguro mesmo com saúde > 0 (vira no-op) — usado tanto
   // pelo dano em combate (takeDamage) quanto por errar uma pergunta (main.js decrementa
   // session.health e chama isso na sequência).
   function applyHealthLoss() {
     if (session.health > 0) return false
-    session.lives -= 1
+    // QoL (v0.29.4): clamp de session.lives em 0 — antes ia pra -1 se chamada duas vezes com
+    // health=0 (multi-hit no mesmo frame, ou debug + hit real), deixando o HUD de pips e o
+    // debug reportando um número negativo de vidas. O segundo guard evita decrementar de novo
+    // depois de já ter morrido.
     if (session.lives <= 0) return true
+    session.lives -= 1
+    if (session.lives <= 0) {
+      session.lives = 0
+      return true
+    }
     session.health = maxHealth
     shieldValue = shieldMax
     shieldRegenDelayTimer = 0
@@ -121,13 +143,49 @@ export function createPlayerSystem(session) {
     isPropulsionActive: () => propulsionActiveTimer > 0,
     isRepulsionActive: () => repulsionActiveTimer > 0,
     getPropulsionActiveTimer: () => propulsionActiveTimer,
+
     getLowHealthIntensity(thresholdFrac) {
-      const threshold = maxHealth * thresholdFrac
+      // QoL (v0.29.4): clamp de thresholdFrac em (0, 1] — antes, passar 0 desligava a vignette
+      // em silêncio (threshold=0, session.health >= 0 sempre true) e passar >1 a ligava com
+      // vida cheia (threshold maior que maxHealth). Hoje o único call site passa 0.4 via
+      // LOW_HEALTH_THRESHOLD_FRAC em main.js, mas o valor é ajustável e o método não protegia
+      // contra configuração inválida.
+      const frac = Math.max(0.01, Math.min(1, thresholdFrac))
+      const threshold = maxHealth * frac
       if (session.health >= threshold) return 0
       return Math.max(0, Math.min(1, 1 - session.health / threshold))
     },
 
+    // QoL (v0.29.4): snapshot de tudo que as cartas mutam — pra debug panel/HUD mostrarem os
+    // valores reais sem espalhar `player.config.X` em N lugares. Não substitui o `config`
+    // (que combat.js lê por getter pra evitar cópia desatualizada); só dá um ponto único de
+    // leitura pra debug/telemetria.
+    getStats() {
+      return {
+        projectileCount,
+        fireCooldown,
+        aimAssistAngle,
+        homingMaxTargets,
+        homingChargeMinMs,
+        homingChargeMaxMs,
+        shieldMax,
+        shieldValue,
+        shieldRegenDelayMs,
+        shieldRegenRate,
+        invincibilityDurationMs,
+        fullSpinIframeMs,
+        wingmanCount,
+        hasDeflect: deflectCardActive,
+        hasRam: ramCardActive,
+      }
+    },
+
+    // QoL (v0.29.4): guard contra card inválido + retorno boolean. Antes quebrava com
+    // `Cannot read property 'id' of undefined` se card fosse null, e não devolvia nada —
+    // main.js não tinha como saber que uma carta no cap foi ignorada (ex: bug de excludeSet).
     applyCard(card) {
+      if (!card || typeof card.id !== 'string') return false
+
       switch (card.id) {
         case 'extra-projectile':
           projectileCount = Math.min(PROJECTILE_COUNT_CAP, projectileCount + 1)
@@ -173,8 +231,9 @@ export function createPlayerSystem(session) {
           ramCardActive = true
           break
         default:
-          break
+          return false
       }
+      return true
     },
 
     buildCardExcludeSet() {
@@ -195,7 +254,11 @@ export function createPlayerSystem(session) {
     // !isInvincible() && !godMode antes de chamar isso). Absorve pelo escudo primeiro; sem
     // escudo, tira 1 de saúde e aplica a cascata de vida.
     takeDamage() {
-      invincibleTimer = invincibilityDurationMs
+      // QoL (v0.29.4): Math.max em vez de atribuição direta — antes, um hit RESCREVIA o timer
+      // de invencibilidade em vez de estender. main.js hoje sempre checa !isInvincible() antes,
+      // mas o guard vive no call site, não no método — qualquer chamador futuro (debug, carta
+      // nova) podia encurtar i-frames existentes sem querer.
+      invincibleTimer = Math.max(invincibleTimer, invincibilityDurationMs)
       shieldRegenDelayTimer = shieldRegenDelayMs
       if (shieldValue >= 1) {
         shieldValue -= 1
@@ -210,21 +273,28 @@ export function createPlayerSystem(session) {
     grantInvincibility(ms) { invincibleTimer = Math.max(invincibleTimer, ms) },
 
     // giro completo (Z/C, 2 toques): cooldown global + i-frames, num método só — as duas
-    // mudanças de estado sempre acontecem juntas quando o giro dispara de verdade
+    // mudanças de estado sempre acontecem juntas quando o giro dispara de verdade.
+    // QoL (v0.29.4): guard defensivo — o cooldown global não deve ser REINICIADO se um giro
+    // chegar aqui com o cooldown ainda correndo. main.js já checa isFullSpinOnCooldown() antes,
+    // mas o método em si não era defensivo: qualquer call site novo resetava o cooldown à toa.
+    // Retorna true/false pra quem chamar poder saber se o giro pegou.
     triggerFullSpinIframes() {
+      if (fullSpinCooldownTimer > 0) return false
       fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
       invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
+      return true
     },
 
-    canUseBoost: () => boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0,
+    canUseBoost: boostReady,
     activatePropulsion() {
-      if (boostCharge < 1 || propulsionActiveTimer > 0 || repulsionActiveTimer > 0) return false
+      // QoL (v0.29.4): usa boostReady() em vez de recopiar a mesma checagem inline
+      if (!boostReady()) return false
       propulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
       return true
     },
     activateRepulsion() {
-      if (boostCharge < 1 || propulsionActiveTimer > 0 || repulsionActiveTimer > 0) return false
+      if (!boostReady()) return false
       repulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
       return true
@@ -238,13 +308,54 @@ export function createPlayerSystem(session) {
       return factor
     },
 
-    heal(amount) { session.health = Math.min(maxHealth, session.health + amount) },
-    rechargeShield() { shieldValue = shieldMax; shieldRegenDelayTimer = 0 },
+    // QoL (v0.29.4): valida o argumento — amount negativo virava dano silencioso, NaN
+    // envenenava o estado permanentemente (Math.min(maxHealth, NaN) = NaN). Retorna o quanto
+    // curou de fato, pra quem chamar poder mostrar feedback ("curou 2") sem ler session.health
+    // por fora.
+    heal(amount) {
+      if (!Number.isFinite(amount) || amount <= 0) return 0
+      const before = session.health
+      session.health = Math.min(maxHealth, session.health + amount)
+      return session.health - before
+    },
 
-    // debug "Aplicar buffs máximos": pula direto pro teto, ignorando o ganho gradual por carta
+    // QoL (v0.29.4): devolve quanto restaurou de fato (paralelo a heal()), permitindo o debug/
+    // HUD mostrarem "escudo recarregado: 2 → 3" ou não mexer no estado se já estava cheio.
+    // Ainda reseta o delay de regen (senão o próximo hit pega o delay pendente do anterior).
+    rechargeShield() {
+      const before = shieldValue
+      shieldValue = shieldMax
+      shieldRegenDelayTimer = 0
+      return shieldMax - before
+    },
+
+    // debug "Aplicar buffs máximos": pula direto pro teto, ignorando o ganho gradual por carta.
+    // QoL (v0.29.4): antes só setava aimAssistAngle e projectileCount, apesar do nome prometer
+    // "buffs máximos". Agora aplica TODOS os tetos diretamente, refletindo o efeito de ter
+    // pegado cada carta até o cap. Cartas SEM cap definido (faster-shield-recharge,
+    // longer-invincibility, longer-dodge-iframe) usam DEBUG_MAX_UNCAPPED_STACKS como
+    // referência — não é um teto real, é só "uns stacks a mais pra dar pra ver o efeito".
+    //
+    // Nota: wingmanCount sobe aqui, mas o mesh do wingman vive em combat.js — quem chama
+    // (main.js, handler do debug) precisa rodar `combat.setWingmanCount(player.getWingmanCount())`
+    // na sequência pra o efeito aparecer.
     debugMaxBuffs() {
       aimAssistAngle = AIM_ASSIST_CAP
       projectileCount = PROJECTILE_COUNT_CAP
+      homingMaxTargets = HOMING_MAX_TARGETS_CAP
+      homingChargeMinMs = HOMING_CHARGE_MIN_FLOOR_MS
+      homingChargeMaxMs = homingChargeMinMs + 500
+      shieldMax = SHIELD_MAX_CAP
+      shieldValue = shieldMax
+      shieldRegenDelayMs = SHIELD_REGEN_DELAY_FLOOR_MS
+      shieldRegenRate = SHIELD_REGEN_RATE * Math.pow(1.3, DEBUG_MAX_UNCAPPED_STACKS)
+      invincibilityDurationMs = INVINCIBILITY_CAP_MS
+      fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE + 150 * DEBUG_MAX_UNCAPPED_STACKS
+      wingmanCount = WINGMAN_CAP
+      deflectCardActive = true
+      ramCardActive = true
+      session.lives = LIVES_CAP
+      maxLives = Math.max(maxLives, session.lives)
     },
 
     // tick (1x por frame, chamado pelo main.js antes de rail.update): decai todos os timers e
