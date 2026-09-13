@@ -94,6 +94,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnGoldenSpecial: (opts) => enemies.spawnGoldenSpecial(opts),
     spawnDetrito: () => enemies.spawnDetrito(),
     spawnSentinela: () => enemies.spawnSentinela(),
+    spawnReplica: () => enemies.spawnReplica(),
+    spawnFragata: () => enemies.spawnFragata(),
+    spawnVerme: () => enemies.spawnVerme(),
+    spawnImaSwarm: () => enemies.spawnImaSwarm(),
+    spawnSussurro: () => enemies.spawnSussurro(),
 
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),
