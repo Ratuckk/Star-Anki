@@ -878,7 +878,7 @@ function mountGame(session, deck, menu) {
 
     const isCharging = fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
-      if (!isCharging) combat.tryFire(nosePos, fireDirection)
+      if (!isCharging && combat.tryFire(nosePos, fireDirection)) rail.triggerRecoil()
       fireHeldMs += dt * 1000
       if (isCharging) {
         const chargeFrac = Math.min(1, (fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
@@ -1124,6 +1124,7 @@ function mountGame(session, deck, menu) {
       // esse valor e a escalada normal por erro, nunca o menor (não quero a dificuldade por erro
       // "abafar" o ataque especial nem o contrário)
       const result = player.takeDamage(Math.max(enemyDamageValue, events.enemyDamage || 1))
+      rail.triggerImpactSquash()
 
       if (result.absorbedByShield) {
         // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----

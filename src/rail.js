@@ -52,6 +52,9 @@ const SHIP_NOSE_OFFSET = 1.6
 // - default: a interceptadora original (corpo fino, asa delta dominante, 1 barbatana dorsal).
 // - bombardeiro: corpo largo/curto, asa mais retangular, 2 barbatanas nas pontas da asa (bicauda).
 // - racer: corpo bem alongado/fino, asa pequena bem varrida pra trás, 1 barbatana ventral.
+// `weight` (0 = leve/ágil, 1 = pesada/robusta) alimenta as animações de "peso físico" abaixo
+// (shipPhysicsFor) — cada nave já tinha identidade visual própria, isso estende a mesma
+// identidade pro MOVIMENTO (a Bombardeiro deve "sentir" pesada, não só parecer).
 export const SHIP_VISUAL_DEFAULT = 'default'
 const SHIP_PRESETS = {
   default: {
@@ -67,6 +70,7 @@ const SHIP_PRESETS = {
     finPosition: [0, 0.2, -1],
     finCount: 1,
     finSide: 'dorsal',
+    weight: 0.5,
   },
   bombardeiro: {
     label: 'Bombardeiro',
@@ -82,6 +86,7 @@ const SHIP_PRESETS = {
     finCount: 2,
     finSpread: 4.8,
     finSide: 'dorsal',
+    weight: 1,
   },
   racer: {
     label: 'Veloz',
@@ -96,10 +101,58 @@ const SHIP_PRESETS = {
     finPosition: [0, -0.3, -1.3],
     finCount: 1,
     finSide: 'ventral',
+    weight: 0.15,
   },
 }
 // pra popular o seletor em Configurações sem duplicar os nomes aqui
 export const SHIP_VISUAL_OPTIONS = Object.entries(SHIP_PRESETS).map(([id, p]) => ({ id, label: p.label }))
+
+// ============ ANIMAÇÕES DE "PESO FÍSICO" (por preset, via `weight` acima) ============
+// pedido do usuário: 6 animações que fazem a Bombardeiro "sentir" pesada e a Veloz "sentir" ágil
+// (a Clássica fica no meio) — cada par abaixo é o valor em weight=0 (mais leve) e weight=1 (mais
+// pesada); shipPhysicsFor interpola. Onde o efeito é mais forte no leve (treme mais, estica mais
+// no boost), o valor "LIGHT" já é o maior dos dois — a interpolação cuida do sentido certo.
+const ROLL_STIFFNESS_LIGHT = 220 // maior = responde mais rápido ao comando de banking
+const ROLL_STIFFNESS_HEAVY = 70
+const ROLL_DAMPING_LIGHT = 22 // alto = crítico, quase sem "sobra" de movimento
+const ROLL_DAMPING_HEAVY = 9 // baixo = sub-amortecido, balança um pouco antes de assentar
+const RECOIL_KICK_LIGHT = 0.03 // deslocamento (unidades) do coice ao atirar
+const RECOIL_KICK_HEAVY = 0.16
+const RECOIL_DECAY_LIGHT = 18 // maior = recuo curto e seco
+const RECOIL_DECAY_HEAVY = 6 // menor = recuo mais lento/prolongado
+const SQUAT_DEPTH_LIGHT = 0.05 // o quanto a traseira "agacha" ao ligar o boost
+const SQUAT_DEPTH_HEAVY = 0.32
+const SQUAT_DECAY_LIGHT = 14 // maior = volta rápido da agachada
+const SQUAT_DECAY_HEAVY = 5
+const SPEED_SHAKE_LIGHT = 0.045 // trepidação contínua durante boost — leve treme MAIS
+const SPEED_SHAKE_HEAVY = 0.012
+const BOOST_STRETCH_LIGHT = 0.22 // estica no eixo do corpo durante boost — leve estica MAIS
+const BOOST_STRETCH_HEAVY = 0.06
+const IMPACT_SQUASH_LIGHT = 0.06 // achata ao levar dano — pesada achata MAIS
+const IMPACT_SQUASH_HEAVY = 0.24
+const IMPACT_SQUASH_DECAY = 10 // igual pras 3 (só a profundidade varia)
+const WOBBLE_STIFFNESS = 90 // igual pras 3 — só a damping muda o quanto "sobra" balanço
+const WOBBLE_DAMPING_LIGHT = 20 // assenta quase na hora depois de giro/cambalhota
+const WOBBLE_DAMPING_HEAVY = 7 // continua balançando um pouco antes de estabilizar
+const WOBBLE_KICK = 0.35 // impulso de roll aplicado ao completar giro completo/cambalhota
+const BOOST_BLEND_RATE = 8 // suavização do liga/desliga do boost usada pelo stretch/trepidação
+
+function shipPhysicsFor(preset) {
+  const w = THREE.MathUtils.clamp(preset.weight ?? 0.5, 0, 1)
+  const mix = (light, heavy) => THREE.MathUtils.lerp(light, heavy, w)
+  return {
+    rollStiffness: mix(ROLL_STIFFNESS_LIGHT, ROLL_STIFFNESS_HEAVY),
+    rollDamping: mix(ROLL_DAMPING_LIGHT, ROLL_DAMPING_HEAVY),
+    recoilKick: mix(RECOIL_KICK_LIGHT, RECOIL_KICK_HEAVY),
+    recoilDecay: mix(RECOIL_DECAY_LIGHT, RECOIL_DECAY_HEAVY),
+    squatDepth: mix(SQUAT_DEPTH_LIGHT, SQUAT_DEPTH_HEAVY),
+    squatDecay: mix(SQUAT_DECAY_LIGHT, SQUAT_DECAY_HEAVY),
+    speedShake: mix(SPEED_SHAKE_LIGHT, SPEED_SHAKE_HEAVY),
+    boostStretch: mix(BOOST_STRETCH_LIGHT, BOOST_STRETCH_HEAVY),
+    impactSquash: mix(IMPACT_SQUASH_LIGHT, IMPACT_SQUASH_HEAVY),
+    wobbleDamping: mix(WOBBLE_DAMPING_LIGHT, WOBBLE_DAMPING_HEAVY),
+  }
+}
 
 const ARENA_TURN_RATE = 1.8
 const ARENA_PITCH_LIMIT = 1.2
@@ -222,6 +275,9 @@ function buildShip(variant = SHIP_VISUAL_DEFAULT) {
 export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEFAULT) {
   const curve = buildCurve()
   const length = curve.getLength()
+  // física de "peso" da nave escolhida (turn inertia, recuo, agachada de boost, etc.) —
+  // calculada uma vez, não muda durante a partida
+  const shipPhysics = shipPhysicsFor(SHIP_PRESETS[shipVisual] || SHIP_PRESETS[SHIP_VISUAL_DEFAULT])
 
   let distance = 0
   let playerX = 0
@@ -233,11 +289,22 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let lastMoveYSign = 0
   let lateralAccelTimer = 0
   let roll = 0
+  let rollVel = 0 // spring-damper (turn inertia) — ver springStep
   let speedMultiplier = 1
   let advancing = true
   let camDynamicT = 0 // Fase 6: acumulador do drift senoidal da câmera (modo normal)
   let curveRollSmoothed = 0 // Fase 8: roll por curvatura, suavizado entre frames
   let boostActive = false // Fase 8: liga o FOV de velocidade enquanto propulsor/repulsor ativos
+  let prevBoostActive = false // borda de subida (boost ligou agora) — dispara a agachada
+  let boostBlend = 0 // 0..1 suavizado — usado pelo estica-no-boost e pela trepidação em alta velocidade
+
+  // animações de "peso físico" (pedido do usuário) — cada uma é um impulso que decai sozinho,
+  // menos o wobble pós-manobra, que usa o mesmo spring-damper do roll
+  let recoilOffset = 0 // recuo ao atirar — deslocamento ao longo do -forward local
+  let squatOffset = 0 // agachada ao ligar o boost — deslocamento ao longo do -up local
+  let impactSquashT = 0 // achatada ao levar dano — 0 = sem efeito, decai até 0
+  let wobbleOffset = 0 // balanço de roll extra pós giro-completo/cambalhota
+  let wobbleVel = 0
 
   // Fase 9 (ideias all-range)
   let arenaIdleTimer = 0 // item 1: segundos desde o último input de direção real no all-range
@@ -255,6 +322,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let arenaYaw = 0
   let arenaPitch = 0
   let arenaRoll = 0
+  let arenaRollVel = 0 // spring-damper do arenaRoll (mesmo princípio do rollVel do trilho)
 
   // chacoalhar visual da nave ao levar hit — main.js decide a intensidade/decaimento a cada
   // frame; aqui só aplicamos um jitter na posição RENDERIZADA (depois de já ter orientado a
@@ -312,6 +380,48 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     ship.position.y += (Math.random() * 2 - 1) * shakeMagnitude
   }
 
+  // trepidação em alta velocidade (pedido do usuário): jitter contínuo separado do shake de
+  // dano acima — amplitude por nave (shipPhysics.speedShake), só ativo durante boost, suavizado
+  // por boostBlend pra não "ligar/desligar" seco
+  function applyWeightJitter() {
+    const magnitude = shipPhysics.speedShake * boostBlend
+    if (magnitude <= 0) return
+    ship.position.x += (Math.random() * 2 - 1) * magnitude
+    ship.position.y += (Math.random() * 2 - 1) * magnitude
+  }
+
+  // recuo do tiro + agachada do boost (pedido do usuário): deslocam a nave ao longo de eixos do
+  // FRAME atual (forward/up), não do local da nave — aplicado depois do lookAt/rotateZ, igual o
+  // shake de dano acima
+  function applyImpulseOffsets(forward, up) {
+    if (recoilOffset > 0) ship.position.addScaledVector(forward, -recoilOffset)
+    if (squatOffset > 0) ship.position.addScaledVector(up, -squatOffset)
+  }
+
+  // estica no boost / achata no impacto (pedido do usuário) — escala não-uniforme: o eixo do
+  // comprimento (Z local, alinhado ao forward depois do lookAt) estica ou encolhe, a seção
+  // transversal (X/Y) compensa no sentido oposto pra dar uma leve ilusão de volume constante
+  function applyWeightScale() {
+    const lengthScale = 1 + shipPhysics.boostStretch * boostBlend - shipPhysics.impactSquash * impactSquashT
+    const crossScale = 1 - 0.5 * shipPhysics.boostStretch * boostBlend + 0.5 * shipPhysics.impactSquash * impactSquashT
+    ship.scale.set(crossScale, crossScale, lengthScale)
+  }
+
+  // spring-damper genérico (Euler semi-implícito, estável) — usado tanto pro roll de verdade
+  // (turn inertia: nave pesada responde mais devagar E "sobra" um pouco antes de assentar)
+  // quanto pro wobble pós-manobra (mesma física, só o alvo é sempre 0).
+  function springStep(value, velocity, target, stiffness, damping, dt) {
+    const accel = (target - value) * stiffness - velocity * damping
+    const newVelocity = velocity + accel * dt
+    return { value: value + newVelocity * dt, velocity: newVelocity }
+  }
+
+  // impulso que só decai (recuo do tiro, agachada do boost, achatada de impacto) — sobe na hora
+  // do trigger, esse helper só cuida da parte "voltando pro zero" a cada frame
+  function decayImpulse(value, decayRate, dt) {
+    return value * Math.exp(-decayRate * dt)
+  }
+
   function dodgeInputDirection(input) {
     if (performance.now() < dodgeDebugOverrideUntil) return dodgeDebugOverrideDir
     return input.bank || 0
@@ -327,6 +437,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   function updateFullSpin(dt) {
     if (fullSpinT >= 1) return 0
     fullSpinT = Math.min(1, fullSpinT + dt / FULL_SPIN_DURATION)
+    // amortecimento pós-manobra (pedido do usuário): ao completar o giro AGORA (não em frames
+    // já >=1), dá um impulso de roll que o spring-damper do roll absorve sozinho, balançando
+    // mais ou menos conforme o peso da nave
+    if (fullSpinT >= 1) wobbleVel += WOBBLE_KICK * fullSpinDir
     return fullSpinT * Math.PI * 2 * fullSpinDir
   }
 
@@ -361,6 +475,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     summersaultT = Math.min(1, summersaultT + dt / SUMMERSAULT_DURATION)
     const eased = 1 - Math.pow(1 - summersaultT, 3)
     arenaYaw = summersaultStartYaw + Math.PI * eased
+    // mesmo amortecimento pós-manobra do giro completo, ao terminar a cambalhota
+    if (summersaultT >= 1) wobbleVel += WOBBLE_KICK * (Math.random() < 0.5 ? -1 : 1)
     return summersaultT * Math.PI * 2
   }
 
@@ -371,6 +487,16 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     emergencyBrakeTimer = EMERGENCY_BRAKE_DURATION
     emergencyBrakeCooldownTimer = EMERGENCY_BRAKE_COOLDOWN
     return true
+  }
+
+  // recuo do tiro (pedido do usuário) — chamado por main.js a cada disparo bem-sucedido
+  function triggerRecoil() {
+    recoilOffset += shipPhysics.recoilKick
+  }
+
+  // achatada ao levar dano (pedido do usuário) — chamado por main.js quando o jogador é atingido
+  function triggerImpactSquash() {
+    impactSquashT = 1
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -410,7 +536,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       arenaYaw -= (input.moveX * ARENA_TURN_RATE * turnSensitivity + (input.bank || 0) * ARENA_BANK_ASSIST_RATE * turnSensitivity) * dt
       arenaPitch = THREE.MathUtils.clamp(arenaPitch + input.moveY * ARENA_TURN_RATE * turnSensitivity * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
       const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
-      arenaRoll += (targetRoll - arenaRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
+      // turn inertia (pedido do usuário): spring-damper em vez de suavização exponencial simples
+      // — nave pesada (Bombardeiro) responde mais devagar E balança um pouco além do alvo antes
+      // de assentar; a Veloz responde quase seca, sem sobra perceptível
+      const arenaRollSpring = springStep(arenaRoll, arenaRollVel, targetRoll, shipPhysics.rollStiffness, shipPhysics.rollDamping, dt)
+      arenaRoll = arenaRollSpring.value
+      arenaRollVel = arenaRollSpring.velocity
 
       // Fase 9 (ideia 1): auto-nivelamento do pitch depois de ficar parado (sem input de
       // direção nenhum) por ARENA_AUTOLEVEL_IDLE_S — o roll já volta sozinho (alvo 0 quando
@@ -443,8 +574,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     ship.rotateZ(arenaRoll)
     ship.rotateZ(dodgeRoll)
     ship.rotateZ(fullSpinAngle)
+    ship.rotateZ(wobbleOffset)
     if (summersaultFlip) ship.rotateX(summersaultFlip)
+    applyWeightScale()
+    applyImpulseOffsets(forward, up)
     applyShakeJitter()
+    applyWeightJitter()
 
     const camTarget = arenaPos.clone()
       .addScaledVector(forward, -CAM_BEHIND)
@@ -461,6 +596,17 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   function update(dt, input) {
     updateDodgeRoll(dt, input)
     const fullSpinAngle = updateFullSpin(dt)
+
+    // animações de "peso físico": rodam uma vez por frame, independente do modo (trilho/arena)
+    boostBlend += ((boostActive ? 1 : 0) - boostBlend) * (1 - Math.exp(-BOOST_BLEND_RATE * dt))
+    if (boostActive && !prevBoostActive) squatOffset = Math.max(squatOffset, shipPhysics.squatDepth)
+    prevBoostActive = boostActive
+    squatOffset = decayImpulse(squatOffset, shipPhysics.squatDecay, dt)
+    recoilOffset = decayImpulse(recoilOffset, shipPhysics.recoilDecay, dt)
+    impactSquashT = decayImpulse(impactSquashT, IMPACT_SQUASH_DECAY, dt)
+    const wobbleSpring = springStep(wobbleOffset, wobbleVel, 0, WOBBLE_STIFFNESS, shipPhysics.wobbleDamping, dt)
+    wobbleOffset = wobbleSpring.value
+    wobbleVel = wobbleSpring.velocity
 
     // se algo fora daqui (ex: o punch de FOV na entrada da luta do chefe, em main.js) deixou o
     // FOV bem longe da base e não estamos boostando, não briga com esse efeito — só retoma o
@@ -513,7 +659,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     const frame = frameAtArcLength(distance)
 
     const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
-    roll += (targetRoll - roll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
+    // turn inertia (pedido do usuário) — mesmo spring-damper do arenaRoll acima
+    const rollSpring = springStep(roll, rollVel, targetRoll, shipPhysics.rollStiffness, shipPhysics.rollDamping, dt)
+    roll = rollSpring.value
+    rollVel = rollSpring.velocity
 
     const playerPos = frame.position.clone()
       .addScaledVector(frame.right, playerX)
@@ -525,7 +674,11 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     ship.rotateZ(roll)
     ship.rotateZ(dodgeRoll)
     ship.rotateZ(fullSpinAngle)
+    ship.rotateZ(wobbleOffset)
+    applyWeightScale()
+    applyImpulseOffsets(frame.forward, frame.up)
     applyShakeJitter()
+    applyWeightJitter()
 
     // Fase 6: drift senoidal lento por cima do follow normal — nunca abrupto, só um "respirar"
     // de câmera que some e volta ao longo de CAMERA_DYNAMIC_PERIOD segundos. As 3 ondas usam
@@ -597,6 +750,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerArenaLateralDash,
     triggerArenaSummersault,
     triggerEmergencyBrake,
+    // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
+    triggerRecoil,
+    triggerImpactSquash,
     enterArena,
     exitArena,
   }

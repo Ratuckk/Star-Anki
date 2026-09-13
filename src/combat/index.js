@@ -63,8 +63,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
   return {
     tryFire(origin, direction) {
-      if (!projectiles.tryFire(origin, direction)) return
+      if (!projectiles.tryFire(origin, direction)) return false
       for (const w of wingmen) projectiles.fireSingle(w.mesh.position, direction)
+      return true
     },
 
     fireHomingShot: (origin, maxTargets) => projectiles.fireHomingShot(origin, maxTargets),
