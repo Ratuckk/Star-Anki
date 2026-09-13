@@ -18,9 +18,15 @@ const BOSS_SHOTS_PER_VOLLEY = 3
 const LASER_INTERVAL_MIN = 6.0
 const LASER_INTERVAL_MAX = 10.0
 const LASER_TELEGRAPH_S = 3.0
-const LASER_SPEED = 65
-export const BOSS_LASER_HIT_RADIUS = 2.2
-const LASER_MAX_RANGE = 220
+// LASER GRANDE: era raio 0.55 / comprimento 12 — na prática, contra um chefe de escala 5 e raio
+// de colisão 7, o "laser" lia como um dardo fino invisível. Aumentado pra ficar proporcional ao
+// corpo do chefe (raio 2.5 = ~4.5x maior, comprimento 24 = 2x) e mais rápido pra parecer laser
+// de verdade e não um projétil lento.
+const LASER_RADIUS = 2.5
+const LASER_LENGTH = 24
+const LASER_SPEED = 80
+const LASER_MAX_RANGE = 240
+export const BOSS_LASER_HIT_RADIUS = 3.5  // era 2.2 — acompanha o visual maior
 export const BOSS_LASER_COLOR = 0xff2d4d
 
 // dodecaedro (12 faces regulares) é o poliedro pronto mais próximo de "decaedro facetado
@@ -66,8 +72,7 @@ function fireBossLaser(scene, ctx, enemy, targetPos) {
   const startPos = enemy.mesh.position.clone()
   const direction = targetPos.clone().sub(startPos).normalize()
 
-  // cone longo e fino alinhado com a direção do tiro — visual simples, sem shader custom
-  const geo = new THREE.ConeGeometry(0.55, 12, 8)
+  const geo = new THREE.ConeGeometry(LASER_RADIUS, LASER_LENGTH, 8)
   geo.rotateX(Math.PI / 2)
   const mat = new THREE.MeshBasicMaterial({
     color: BOSS_LASER_COLOR, transparent: true, opacity: 0.95,
@@ -108,10 +113,10 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
 export function explodeBoss(effects, position, isHoming = false) {
   const pos = position.clone()
   const mainColor = isHoming ? HOMING_EXPLOSION_COLOR : BOSS_COLOR
-  effects.explosion(pos, mainColor, 5.0, { rings: true })
+  effects.explosion(pos, mainColor, 5.0, { rings: true, isBoss: true })
   effects.shockwave(pos, BOSS_COLOR, 1.6)
-  setTimeout(() => effects.explosion(pos, 0xffaa33, 3.2, { rings: true }), 110)
-  setTimeout(() => effects.explosion(pos, mainColor, 3.8, { rings: true }), 240)
+  setTimeout(() => effects.explosion(pos, 0xffaa33, 3.2, { rings: true, isBoss: true }), 110)
+  setTimeout(() => effects.explosion(pos, mainColor, 3.8, { rings: true, isBoss: true }), 240)
 }
 
 export function disposeBoss() {
