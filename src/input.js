@@ -1,4 +1,4 @@
-import { getBindings, edgeCodes } from './keybindings.js'
+import { getBindings, edgeCodes, GAMEPAD_EDGE_ACTIONS } from './keybindings.js'
 
 const DEADZONE = 0.25
 
@@ -29,16 +29,22 @@ export function createInputState() {
   const state = { moveX: 0, moveY: 0, firing: false, bank: 0, propulsionHeld: false, repulsionHeld: false, pressed: new Set() }
   const keys = new Set()
   const pressedThisFrame = new Set()
-  let prevPadStart = false
 
-  // timestamps do último keydown de cada direção — usados para resolver conflito quando os
-  // dois lados ficam "pressionados" ao mesmo tempo (tecla presa por blur, ghosting de teclado)
+  // timestamps do último "aperto" de cada direção — usados para resolver conflito quando os
+  // dois lados ficam "pressionados" ao mesmo tempo (tecla presa por blur, ghosting de teclado).
+  // dodgeLeftTime/dodgeRightTime também são atualizados por botão de CONTROLE (readGamepadButtons
+  // abaixo, na borda de subida) — o mesmo tie-break serve pros dois tipos de entrada
   let leftTime = 0
   let rightTime = 0
   let upTime = 0
   let downTime = 0
   let dodgeLeftTime = 0
   let dodgeRightTime = 0
+
+  // último estado (por índice de botão) do primeiro controle conectado — usado só para detectar
+  // borda de subida por BOTÃO em readGamepadButtons, já que cada ação pode estar mapeada a um
+  // botão físico diferente
+  let prevPadButtons = {}
 
   function onKeyDown(e) {
     if (edgeCodeSet.has(e.code) && !keys.has(e.code)) pressedThisFrame.add(e.code)
@@ -104,11 +110,6 @@ export function createInputState() {
     let dodgeRightHeld = false
     for (const code of dodgeLeftCodes) if (keys.has(code)) { dodgeLeftHeld = true; break }
     for (const code of dodgeRightCodes) if (keys.has(code)) { dodgeRightHeld = true; break }
-    let bank = 0
-    if (dodgeLeftHeld) bank -= 1
-    if (dodgeRightHeld) bank += 1
-    if (dodgeLeftHeld && dodgeRightHeld) bank = dodgeLeftTime >= dodgeRightTime ? -1 : 1
-
     let propulsionHeld = false
     let repulsionHeld = false
     for (const code of propulsionCodes) if (keys.has(code)) { propulsionHeld = true; break }
@@ -118,58 +119,89 @@ export function createInputState() {
       moveX: Math.sign(moveX),
       moveY: Math.sign(moveY),
       firing,
-      bank,
+      dodgeLeftHeld,
+      dodgeRightHeld,
       propulsionHeld,
       repulsionHeld,
       active: moveX !== 0 || moveY !== 0 || firing,
     }
   }
 
-  function readGamepad() {
+  // eixo analógico continua igual a antes desta entrega — só o primeiro controle conectado com
+  // deflexão além da zona morta conta
+  function readGamepadAxes() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : []
-    let result = null
     for (const pad of pads) {
       if (!pad) continue
-
-      const startPressed = !!pad.buttons[9]?.pressed
-      if (startPressed && !prevPadStart) pressedThisFrame.add('GamepadStart')
-      prevPadStart = startPressed
-
-      if (result) continue
       const rawX = pad.axes[gp.axisX] ?? 0
       const rawY = pad.axes[gp.axisY] ?? 0
-      const firing = gp.fireButtons.some((i) => !!pad.buttons[i]?.pressed)
       const moveX = Math.abs(rawX) > DEADZONE ? rawX : 0
       const moveY = Math.abs(rawY) > DEADZONE ? (gp.invertY ? -rawY : rawY) : 0
-      if (moveX !== 0 || moveY !== 0 || firing) result = { moveX, moveY, firing }
+      if (moveX !== 0 || moveY !== 0) return { moveX, moveY }
     }
-    return result
+    return { moveX: 0, moveY: 0 }
+  }
+
+  // mapeamento genérico de botão → ação (gp.buttons, configurável nas configurações): só o
+  // primeiro controle conectado conta, pra não ter ambiguidade com 2+ controles plugados
+  function readGamepadButtons() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    const pad = [...pads].find(Boolean)
+
+    const currButtons = {}
+    if (pad) pad.buttons.forEach((b, i) => { currButtons[i] = !!b?.pressed })
+
+    const heldBy = (actionId) => (gp.buttons[actionId] || []).some((i) => currButtons[i])
+    const risingBy = (actionId) => (gp.buttons[actionId] || []).some((i) => currButtons[i] && !prevPadButtons[i])
+
+    const t = performance.now()
+    if (risingBy('dodgeLeft')) dodgeLeftTime = t
+    if (risingBy('dodgeRight')) dodgeRightTime = t
+    for (const actionId of GAMEPAD_EDGE_ACTIONS) {
+      if (risingBy(actionId)) pressedThisFrame.add(actionId)
+    }
+
+    prevPadButtons = currButtons
+    return {
+      firing: heldBy('fire'),
+      dodgeLeftHeld: heldBy('dodgeLeft'),
+      dodgeRightHeld: heldBy('dodgeRight'),
+      propulsionHeld: heldBy('propulsion'),
+      repulsionHeld: heldBy('repulsion'),
+    }
   }
 
   return {
     update() {
       const kb = readKeyboard()
-      const pad = readGamepad()
+      const axes = readGamepadAxes()
+      const padBtn = readGamepadButtons()
 
-      // teclado tem prioridade TOTAL quando está ativo, para drift de analógico nunca
-      // cancelar o input do teclado
-      let moveX, moveY, firing
+      // teclado tem prioridade TOTAL sobre o eixo analógico quando está ativo, para drift de
+      // analógico nunca cancelar o input do teclado — botões de controle (fire/dodge/propulsão)
+      // já são booleanos independentes, então esses só somam (OR) em vez de competir
+      let moveX, moveY
       if (kb.active) {
         moveX = kb.moveX
         moveY = kb.moveY
-        firing = kb.firing
       } else {
-        moveX = pad?.moveX ?? 0
-        moveY = pad?.moveY ?? 0
-        firing = pad?.firing ?? false
+        moveX = axes.moveX
+        moveY = axes.moveY
       }
+
+      const dodgeLeftHeld = kb.dodgeLeftHeld || padBtn.dodgeLeftHeld
+      const dodgeRightHeld = kb.dodgeRightHeld || padBtn.dodgeRightHeld
+      let bank = 0
+      if (dodgeLeftHeld) bank -= 1
+      if (dodgeRightHeld) bank += 1
+      if (dodgeLeftHeld && dodgeRightHeld) bank = dodgeLeftTime >= dodgeRightTime ? -1 : 1
 
       state.moveX = moveX
       state.moveY = moveY
-      state.firing = firing
-      state.bank = kb.bank
-      state.propulsionHeld = kb.propulsionHeld
-      state.repulsionHeld = kb.repulsionHeld
+      state.firing = kb.firing || padBtn.firing
+      state.bank = bank
+      state.propulsionHeld = kb.propulsionHeld || padBtn.propulsionHeld
+      state.repulsionHeld = kb.repulsionHeld || padBtn.repulsionHeld
       state.pressed = new Set(pressedThisFrame)
       pressedThisFrame.clear()
       return state

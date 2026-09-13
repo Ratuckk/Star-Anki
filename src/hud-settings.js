@@ -1,5 +1,8 @@
 import { getSettings, setSetting } from './settings.js'
-import { getBindings, setBinding, resetToDefaults, setGamepadBinding, codeToLabel, ACTIONS } from './keybindings.js'
+import {
+  getBindings, setBinding, resetToDefaults, setGamepadBinding, codeToLabel, ACTIONS,
+  GAMEPAD_ACTIONS, setGamepadActionButton, clearGamepadActionButton,
+} from './keybindings.js'
 import { showScreen } from './hud-shared.js'
 import { SHIP_VISUAL_OPTIONS } from './rail.js'
 
@@ -13,6 +16,12 @@ export function showSettingsScreen({ onBack }) {
   let gamepadRaf = null
   let waitingRebindAction = null
   let waitingRebindBtn = null
+  let waitingGpAction = null
+  let waitingGpBtn = null
+  // botões pressionados no frame anterior — usado só pra detectar a borda de subida enquanto
+  // se espera o próximo aperto pra mapear uma ação (evita capturar o mesmo aperto que abriu o
+  // modo "Pressione um botão..." se ele ainda estiver segurado)
+  let prevGpButtonsPressed = {}
 
   const back = document.createElement('button')
   back.className = 'back-link'
@@ -215,18 +224,87 @@ export function showSettingsScreen({ onBack }) {
   invertRow.appendChild(invertCheckbox)
   gpSection.appendChild(invertRow)
 
-  const fireLabel = document.createElement('p')
-  fireLabel.textContent = 'Eixos e botões do controle conectado (clique X/Y num eixo ou num botão pra usá-lo):'
-  gpSection.appendChild(fireLabel)
+  const axesLabel = document.createElement('p')
+  axesLabel.textContent = 'Eixos do controle conectado (clique X/Y num eixo pra usá-lo como movimento):'
+  gpSection.appendChild(axesLabel)
 
   const axesBarsWrap = document.createElement('div')
   gpSection.appendChild(axesBarsWrap)
+
+  // mapeamento genérico ação → botão: uma linha por ação (mesmo texto de ACTIONS, reaproveitado
+  // pra não duplicar os labels), clique em "Definir" espera o próximo aperto no controle
+  const gpActionsLabel = document.createElement('p')
+  gpActionsLabel.textContent = 'Ações mapeáveis a um botão do controle:'
+  gpSection.appendChild(gpActionsLabel)
+
+  const gpActionRows = document.createElement('div')
+  gpSection.appendChild(gpActionRows)
+  renderGpActionRows()
+
+  const buttonsLabel = document.createElement('p')
+  buttonsLabel.textContent = 'Botões do controle (feedback visual — pressione um físico pra ver qual índice é qual):'
+  gpSection.appendChild(buttonsLabel)
 
   const buttonsWrap = document.createElement('div')
   buttonsWrap.className = 'gp-buttons'
   gpSection.appendChild(buttonsWrap)
 
   root.appendChild(gpSection)
+
+  function actionLabel(actionId) {
+    return ACTIONS.find((a) => a.id === actionId)?.label || actionId
+  }
+
+  function renderGpActionRows() {
+    gpActionRows.innerHTML = ''
+    const bindings = getBindings()
+    for (const actionId of GAMEPAD_ACTIONS) {
+      const row = document.createElement('div')
+      row.className = 'keybind-row'
+      const label = document.createElement('span')
+      label.textContent = actionLabel(actionId)
+      row.appendChild(label)
+
+      const idxs = bindings.gamepad.buttons[actionId] || []
+      const btn = document.createElement('button')
+      btn.className = 'keybind-btn'
+      btn.textContent = idxs.length ? `Botão ${idxs.join(' / ')}` : '—'
+      btn.addEventListener('click', () => startGpRebind(actionId, btn))
+      row.appendChild(btn)
+
+      if (idxs.length) {
+        const clearBtn = document.createElement('button')
+        clearBtn.className = 'btn-secondary'
+        clearBtn.textContent = 'Limpar'
+        clearBtn.addEventListener('click', () => {
+          clearGamepadActionButton(actionId)
+          renderGpActionRows()
+        })
+        row.appendChild(clearBtn)
+      }
+
+      gpActionRows.appendChild(row)
+    }
+  }
+
+  function startGpRebind(actionId, btn) {
+    if (waitingGpBtn) {
+      waitingGpBtn.classList.remove('waiting')
+      waitingGpBtn.textContent = waitingGpBtn.dataset.prevLabel
+    }
+    waitingGpAction = actionId
+    waitingGpBtn = btn
+    btn.dataset.prevLabel = btn.textContent
+    btn.textContent = 'Pressione um botão no controle...'
+    btn.classList.add('waiting')
+  }
+
+  function assignGpButton(buttonIndex) {
+    setGamepadActionButton(waitingGpAction, buttonIndex)
+    waitingGpAction = null
+    waitingGpBtn = null
+    renderGpActionRows()
+  }
 
   function pollGamepad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : []
@@ -274,20 +352,28 @@ export function showSettingsScreen({ onBack }) {
         axesBarsWrap.appendChild(barRow)
       })
 
+      const currPressed = {}
       pad.buttons.forEach((b, i) => {
+        currPressed[i] = !!b.pressed
         const chip = document.createElement('button')
         chip.className = 'gp-btn-chip'
         if (b.pressed) chip.classList.add('pressed')
-        if (bindings.gamepad.fireButtons.includes(i)) chip.classList.add('selected')
         chip.textContent = String(i)
-        chip.title = 'Clique pra ativar/desativar como botão de tiro'
+        chip.title = waitingGpAction ? 'Clique pra usar este botão' : 'Índice do botão no controle'
         chip.addEventListener('click', () => {
-          const current = getBindings().gamepad.fireButtons
-          const next = current.includes(i) ? current.filter((x) => x !== i) : [...current, i]
-          setGamepadBinding('fireButtons', next)
+          if (waitingGpAction) assignGpButton(i)
         })
         buttonsWrap.appendChild(chip)
       })
+
+      // modo "Pressione um botão...": detecta a borda de subida (não o hold) pra não capturar
+      // o clique do mouse no botão "Definir" nem um botão físico que já estava segurado
+      if (waitingGpAction) {
+        for (let i = 0; i < pad.buttons.length; i += 1) {
+          if (currPressed[i] && !prevGpButtonsPressed[i]) { assignGpButton(i); break }
+        }
+      }
+      prevGpButtonsPressed = currPressed
     }
 
     gamepadRaf = requestAnimationFrame(pollGamepad)

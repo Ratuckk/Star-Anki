@@ -229,6 +229,45 @@ export function createGameHud() {
   // mesma ideia, pra tela de escolha de carta roguelike (pedido do usuário: selecionar as
   // cartas pelos números também, igual já funciona na pergunta)
   let cardChoiceKeyHandler = null
+  // função de parar (cancela o rAF) do watcher de controle de cada modal — mesmo padrão dos
+  // handlers de teclado acima, só que via polling em vez de evento
+  let questionModalGpStop = null
+  let cardChoiceGpStop = null
+
+  // suporte a controle genérico pra escolher um dos N slots (pergunta ou carta): como não existe
+  // "keydown" de gamepad, poll a cada rAF enquanto o modal estiver aberto e dispara onSlot(i) na
+  // borda de subida do botão mapeado pra quizSlot{i+1} nas Configurações (reusa os mesmos binds
+  // já usados pro teclado 1-4 — vazio por padrão até o jogador mapear um botão)
+  function watchGamepadSlots(count, onSlot) {
+    let raf = null
+    let prevPressed = {}
+    function poll() {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : []
+      const pad = [...pads].find(Boolean)
+      if (pad) {
+        const bindings = getBindings()
+        const currPressed = {}
+        pad.buttons.forEach((b, i) => { currPressed[i] = !!b?.pressed })
+        for (let i = 0; i < count; i += 1) {
+          const idxs = bindings.gamepad.buttons[`quizSlot${i + 1}`] || []
+          const rising = idxs.some((bi) => currPressed[bi] && !prevPressed[bi])
+          if (rising) {
+            stop()
+            onSlot(i)
+            return
+          }
+        }
+        prevPressed = currPressed
+      }
+      raf = requestAnimationFrame(poll)
+    }
+    function stop() {
+      if (raf) cancelAnimationFrame(raf)
+      raf = null
+    }
+    poll()
+    return stop
+  }
 
   // Fase 9 (ideia visual 4, bloco 1): "facho de absorção" — uma partícula de luz viajando do
   // card escolhido até a nave (aproximada pelo centro-baixo da tela) no instante da escolha,
@@ -295,6 +334,22 @@ export function createGameHud() {
     questionModalBurst()
     questionModalTitle.textContent = question
     questionModalList.innerHTML = ''
+
+    // ponto único de escolha (clique, tecla 1–4 ou botão de controle mapeado) — evita triplicar
+    // o teardown dos 3 listeners/watchers em cada caminho
+    function pick(i) {
+      questionModalOverlay.hidden = true
+      if (questionModalKeyHandler) {
+        window.removeEventListener('keydown', questionModalKeyHandler)
+        questionModalKeyHandler = null
+      }
+      if (questionModalGpStop) {
+        questionModalGpStop()
+        questionModalGpStop = null
+      }
+      onPick(alternatives[i].slot)
+    }
+
     alternatives.forEach((alt, i) => {
       const hex = COLOR_MAP[alt.color] ?? '#ffffff'
       const btn = document.createElement('button')
@@ -303,23 +358,20 @@ export function createGameHud() {
       btn.style.setProperty('--stagger', i) // secondary action: cards entram em sequência, não juntos
       // pequeno hint numérico no canto do card pra lembrar que 1–4 também funciona
       btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span><span class="question-modal-hint">${i + 1}</span>`
-      btn.addEventListener('click', () => {
-        questionModalOverlay.hidden = true
-        if (questionModalKeyHandler) {
-          window.removeEventListener('keydown', questionModalKeyHandler)
-          questionModalKeyHandler = null
-        }
-        onPick(alt.slot)
-      })
+      btn.addEventListener('click', () => pick(i))
       questionModalList.appendChild(btn)
     })
     questionModalOverlay.hidden = false
 
-    // handler 1–4: se algum listener antigo ficou pendurado de um modal que não foi fechado
-    // direito, remove antes de registrar o novo (defensivo, evita disparo duplo)
+    // se algum listener/watcher antigo ficou pendurado de um modal que não foi fechado direito,
+    // remove antes de registrar o novo (defensivo, evita disparo duplo)
     if (questionModalKeyHandler) {
       window.removeEventListener('keydown', questionModalKeyHandler)
       questionModalKeyHandler = null
+    }
+    if (questionModalGpStop) {
+      questionModalGpStop()
+      questionModalGpStop = null
     }
     const bindings = getBindings()
     questionModalKeyHandler = (e) => {
@@ -327,15 +379,13 @@ export function createGameHud() {
         const codes = bindings.actions[`quizSlot${i + 1}`] || []
         if (codes.includes(e.code)) {
           e.preventDefault()
-          questionModalOverlay.hidden = true
-          window.removeEventListener('keydown', questionModalKeyHandler)
-          questionModalKeyHandler = null
-          onPick(alternatives[i].slot)
+          pick(i)
           return
         }
       }
     }
     window.addEventListener('keydown', questionModalKeyHandler)
+    questionModalGpStop = watchGamepadSlots(alternatives.length, pick)
   }
 
   const enemyBarPool = new Map()
@@ -506,6 +556,10 @@ export function createGameHud() {
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
+      }
+      if (questionModalGpStop) {
+        questionModalGpStop()
+        questionModalGpStop = null
       }
     },
 
@@ -696,16 +750,21 @@ export function createGameHud() {
           window.removeEventListener('keydown', cardChoiceKeyHandler)
           cardChoiceKeyHandler = null
         }
+        if (cardChoiceGpStop) {
+          cardChoiceGpStop()
+          cardChoiceGpStop = null
+        }
+      }
+      function pick(i) {
+        cardAbsorbBeam(cardChoiceList.children[i].getBoundingClientRect())
+        close()
+        onPick(cards[i])
       }
       cards.forEach((card, i) => {
         const el = document.createElement('button')
         el.className = `roguelike-card category-${card.category}`
         el.innerHTML = `<span class="card-category">${CARD_CATEGORY_LABEL[card.category] ?? card.category}</span><h4>${card.label}</h4><p>${card.description}</p><span class="question-modal-hint">${i + 1}</span>`
-        el.addEventListener('click', () => {
-          cardAbsorbBeam(el.getBoundingClientRect())
-          close()
-          onPick(card)
-        })
+        el.addEventListener('click', () => pick(i))
         cardChoiceList.appendChild(el)
       })
       cardChoiceOverlay.hidden = false
@@ -714,20 +773,23 @@ export function createGameHud() {
         window.removeEventListener('keydown', cardChoiceKeyHandler)
         cardChoiceKeyHandler = null
       }
+      if (cardChoiceGpStop) {
+        cardChoiceGpStop()
+        cardChoiceGpStop = null
+      }
       const bindings = getBindings()
       cardChoiceKeyHandler = (e) => {
         for (let i = 0; i < cards.length; i += 1) {
           const codes = bindings.actions[`quizSlot${i + 1}`] || []
           if (codes.includes(e.code)) {
             e.preventDefault()
-            cardAbsorbBeam(cardChoiceList.children[i].getBoundingClientRect())
-            close()
-            onPick(cards[i])
+            pick(i)
             return
           }
         }
       }
       window.addEventListener('keydown', cardChoiceKeyHandler)
+      cardChoiceGpStop = watchGamepadSlots(cards.length, pick)
     },
 
     debug: {
@@ -744,7 +806,7 @@ export function createGameHud() {
 
     unmount() {
       // se o HUD for desmontado com o modal aberto (fim de setor, teardown), remove o listener
-      // global de keydown pra não vazar entre sessões
+      // global de keydown e o watcher de controle pra não vazar entre sessões
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
@@ -752,6 +814,14 @@ export function createGameHud() {
       if (cardChoiceKeyHandler) {
         window.removeEventListener('keydown', cardChoiceKeyHandler)
         cardChoiceKeyHandler = null
+      }
+      if (questionModalGpStop) {
+        questionModalGpStop()
+        questionModalGpStop = null
+      }
+      if (cardChoiceGpStop) {
+        cardChoiceGpStop()
+        cardChoiceGpStop = null
       }
       root.innerHTML = ''
     },

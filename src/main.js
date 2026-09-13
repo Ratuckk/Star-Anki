@@ -737,7 +737,7 @@ function mountGame(session, deck, menu) {
 
     const inputState = input.update()
 
-    if (isActionPressed(bindings, inputState.pressed, 'pause') || inputState.pressed.has('GamepadStart')) {
+    if (isActionPressed(bindings, inputState.pressed, 'pause')) {
       paused = !paused
       hud.setPaused(paused)
     }
