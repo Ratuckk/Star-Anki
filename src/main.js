@@ -134,6 +134,18 @@ const SENTINELA_SPAWN_CHANCE = 0.12
 const DETRITO_SPAWN_INTERVAL_MIN_MS = 4000
 const DETRITO_SPAWN_INTERVAL_MAX_MS = 8000
 
+// ============ 5 INIMIGOS NOVOS (ideias escolhidas pelo usuário) ============
+// Réplica/Verme/Sussurro: só trilho, mesma rotação de sorteio da leva normal (time/mini-swarm/
+// sentinela/blaster). Fragata-Escudo: só arena/all-range (o mecanismo de "flanquear" só faz
+// sentido lá). Enxame-Ímã: os dois modos, tem seu próprio timer independente (parado, não
+// precisa da mesma pausa-antes-de-pergunta dos outros — mesmo princípio do Detrito).
+const REPLICA_SPAWN_CHANCE = 0.1
+const VERME_SPAWN_CHANCE = 0.08
+const SUSSURRO_SPAWN_CHANCE = 0.1
+const FRAGATA_SPAWN_CHANCE = 0.15
+const IMA_SPAWN_INTERVAL_MIN_MS = 10000
+const IMA_SPAWN_INTERVAL_MAX_MS = 18000
+
 // ============ TRANSIÇÃO PARA ALL-RANGE MODE (dourado/chefe se aproximando) — Fase 5 ============
 // aviso visível ("surgindo em Ns") nos últimos ARENA_WARNING_COUNTDOWN_MS antes da arena
 const ARENA_WARNING_COUNTDOWN_MS = 5000
@@ -293,6 +305,9 @@ function mountGame(session, deck, menu) {
   // v0.34.0: timer independente do Detrito — não reseta por ciclo (enterCombat não mexe nele),
   // só pausa quando o jogo não está em combate de verdade nenhum (ver enemiesActive)
   let detritoTimer = randomDetritoInterval()
+  // mesmo princípio do Detrito: timer próprio, independente de ciclo/pausa-de-pergunta — o
+  // Enxame-Ímã é um campo estático, não uma leva de combate normal
+  let imaTimer = randomImaInterval()
 
   function currentEnemyCap() {
     return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + enemyCap
@@ -300,6 +315,10 @@ function mountGame(session, deck, menu) {
 
   function randomDetritoInterval() {
     return DETRITO_SPAWN_INTERVAL_MIN_MS + Math.random() * (DETRITO_SPAWN_INTERVAL_MAX_MS - DETRITO_SPAWN_INTERVAL_MIN_MS)
+  }
+
+  function randomImaInterval() {
+    return IMA_SPAWN_INTERVAL_MIN_MS + Math.random() * (IMA_SPAWN_INTERVAL_MAX_MS - IMA_SPAWN_INTERVAL_MIN_MS)
   }
 
   function randomEnemyInterval() {
@@ -811,6 +830,14 @@ function mountGame(session, deck, menu) {
     // em lutas de chefe/dourado o "mais próximo" quase sempre era ele mesmo, então a nave ficava
     // sendo puxada pra lá o tempo todo em vez de responder só ao controle manual do jogador.
     rail.update(dt, inputState)
+    // CRÍTICO: camera.lookAt() (chamado dentro de rail.update) atualiza camera.matrixWorld,
+    // mas NÃO camera.matrixWorldInverse — e Vector3.project(camera) usa matrixWorldInverse.
+    // Sem isso, TODO project() feito neste tick usa a câmera do frame ANTERIOR: marcador de
+    // lock, barra de vida de inimigo, número de dano, reticle e minimapa ficam deslocados pelo
+    // deslocamento do trilho entre frames (~0.37u a 60fps). O renderer só sincroniza no final
+    // do tick, tarde demais pros HUDs que leem .project() no meio do update.
+    camera.updateMatrixWorld()
+
     const playerPos = rail.getPlayerPosition()
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
@@ -961,6 +988,12 @@ function mountGame(session, deck, menu) {
       if (detritoTimer <= 0) {
         combat.spawnDetrito()
         detritoTimer = randomDetritoInterval()
+      }
+      // Enxame-Ímã: campo estático, funciona nos dois modos (ver comentário na declaração)
+      imaTimer -= dt * 1000
+      if (imaTimer <= 0) {
+        combat.spawnImaSwarm()
+        imaTimer = randomImaInterval()
       }
     }
 
@@ -1124,7 +1157,12 @@ function mountGame(session, deck, menu) {
     if (phase === 'goldenArena' || phase === 'bossBuildup') {
       enemyTimer -= dt * 1000
       if (enemyTimer <= 0) {
-        if (combat.getEnemyCount() < currentEnemyCap()) combat.spawnEnemy()
+        if (combat.getEnemyCount() < currentEnemyCap()) {
+          // Fragata-Escudo: só arena/all-range, o mecanismo de "flanquear o lado exposto" só
+          // faz sentido num espaço onde o jogador pode voar ao redor
+          if (Math.random() < FRAGATA_SPAWN_CHANCE) combat.spawnFragata()
+          else combat.spawnEnemy()
+        }
         enemyTimer = randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (phase === 'combat') {
@@ -1143,6 +1181,12 @@ function mountGame(session, deck, menu) {
             combat.spawnMiniSwarm()
           } else if (Math.random() < SENTINELA_SPAWN_CHANCE) {
             combat.spawnSentinela()
+          } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
+            combat.spawnReplica()
+          } else if (Math.random() < VERME_SPAWN_CHANCE) {
+            combat.spawnVerme()
+          } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
+            combat.spawnSussurro()
           } else {
             const room = Math.max(0, currentEnemyCap() - combat.getEnemyCount())
             const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
