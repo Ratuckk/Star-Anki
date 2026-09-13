@@ -81,21 +81,24 @@ function buildDeltaShape(halfSpan, frontLength, backLength) {
 
 function buildFinShape() {
   const shape = new THREE.Shape()
-  shape.moveTo(0.55, 0)
-  shape.lineTo(-0.3, 0)
-  shape.lineTo(0, 0.85)
+  shape.moveTo(0.65, 0)
+  shape.lineTo(-0.35, 0)
+  shape.lineTo(0, 1.1)
   shape.closePath()
   return shape
 }
 
+// Fase 7 (VISUAL): "deixe o design da nave mais triangular" — corpo mais fino e sem o giro de
+// 45° que antes apresentava uma face de losango/quadrado pra frente (lia como "caixinha" na
+// cabine); a asa delta cresceu bem mais que o corpo pra dominar a silhueta (triângulo lido de
+// cima, que é o ângulo mais comum de câmera do jogo) e a barbatana ficou mais alta/afiada.
 function buildShip() {
   const material = new THREE.MeshPhongMaterial({ color: SHIP_COLOR, flatShading: true, side: THREE.DoubleSide })
 
-  const body = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2.9, 4), material)
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.4, 3.4, 4), material)
   body.rotation.x = Math.PI / 2
-  body.rotation.y = Math.PI / 4
 
-  const wing = new THREE.Mesh(new THREE.ShapeGeometry(buildDeltaShape(1.9, 0.6, 0.7)), material)
+  const wing = new THREE.Mesh(new THREE.ShapeGeometry(buildDeltaShape(2.6, 0.9, 1.1)), material)
   wing.rotation.x = -Math.PI / 2
   wing.position.set(0, -0.05, -0.2)
 

@@ -160,7 +160,7 @@ export function injectHudExtraStyles() {
   background: repeating-conic-gradient(
     from 0deg at 50% 50%,
     transparent 0deg,
-    rgba(180, 230, 255, 0.55) 0.4deg,
+    rgba(255, 255, 255, 0.65) 0.4deg,
     transparent 0.8deg,
     transparent 45deg
   );

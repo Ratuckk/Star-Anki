@@ -1,5 +1,26 @@
 import * as THREE from 'three'
 
+// PointsMaterial sem `map` renderiza cada ponto como um quadrado sólido virado pra câmera — ok
+// pra poeira/faíscas pequenas (o quadrado não se nota), mas os wisps de neblina (Fase 7) são
+// grandes o bastante pra ficarem lendo como blocos cinza no meio do ar. Gera uma textura de
+// círculo suave (gradiente radial) na hora, sem depender de nenhum asset externo.
+function makeSoftCircleTexture() {
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.5, 'rgba(255,255,255,0.4)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  return texture
+}
+
 // ============ STARFIELD ============
 const STAR_COUNT = 1400
 const STAR_INNER_RADIUS = 260
@@ -32,14 +53,42 @@ const CHARGE_GLOW_LAYERS = [
   { scaleMin: 1.20, scaleMax: 2.40, opacityMin: 0.18, opacityMax: 0.10 },
 ]
 
-// ============ ENGINE TRAIL ============
-// QoL: era denso/opaco demais ("sopa de bolhas") — cadência, tamanho, opacidade e duração
-// cortados pra manter só a leitura de "estou voando", sem competir com o resto da tela.
-const ENGINE_TRAIL_INTERVAL = 0.06 // era 0.035
-const ENGINE_TRAIL_DURATION = 0.42 // era 0.7
-const ENGINE_TRAIL_SPEED = 8
-const ENGINE_TRAIL_SIZE = 0.14 // era 0.22 (embutido direto na SphereGeometry antes)
-const ENGINE_TRAIL_OPACITY = 0.45 // era 0.9
+// ============ ENGINE FLAME (Fase 7) ============
+// pedido: "o efeito visual de propulsar de movimento normal deve ser apenas uma animação única
+// de fogo azul constante ao invés de vários círculos" — substitui o antigo spawn de esferas
+// por intervalo (ENGINE_TRAIL_*/cauda-cometa) por UM único mesh persistente (chama), que só
+// muda de tamanho/cor/intensidade conforme o boost, em vez de multiplicar cópias.
+const ENGINE_FLAME_COLOR = 0x4db8ff
+const ENGINE_FLAME_BOOST_COLOR = 0x1f6bff
+const ENGINE_FLAME_LENGTH = 1.5
+const ENGINE_FLAME_BOOST_LENGTH = 3.4
+const ENGINE_FLAME_RADIUS = 0.34
+const ENGINE_FLAME_BOOST_RADIUS = 0.55
+const ENGINE_FLAME_OPACITY = 0.55
+const ENGINE_FLAME_BOOST_OPACITY = 0.85
+const ENGINE_FLAME_FLICKER_RATE = 16 // rad/s da oscilação de tamanho ("fogo vivo", sem ser vários círculos)
+const ENGINE_FLAME_FLICKER_AMOUNT = 0.12
+
+// ============ PROPULSION BURST (Fase 7) ============
+// "explosão azul em formato de fogo" no instante em que a propulsão é ativada — some com o
+// mesmo padrão de bloomSprite/explosion já usados no resto do jogo, só com cor/forma de chama.
+const PROPULSION_BURST_COLOR = 0x2f8bff
+const PROPULSION_BURST_DURATION = 0.35
+
+// ============ FOG WISPS (Fase 7 / item antigo do Fase C) ============
+// "asset/efeito que deixe a neblina reconhecível como neblina" — antes só o FogExp2 (sem
+// nenhuma pista visual direta). Nuvens grandes, suaves e esparsas, no mesmo padrão de volume
+// fixo em espaço-mundo da poeira ambiente (o jogador atravessa, não persegue a câmera).
+const FOG_WISP_COUNT = 46
+const FOG_WISP_SIZE_MIN = 3.5
+const FOG_WISP_SIZE_MAX = 7
+const FOG_WISP_OPACITY = 0.1
+const FOG_WISP_COLOR = 0xc7d6e8
+const FOG_WISP_AREA_CENTER = { x: -30, y: 2, z: -80 }
+const FOG_WISP_AREA_HALF_X = 140
+const FOG_WISP_AREA_HALF_Y = 18
+const FOG_WISP_AREA_HALF_Z = 140
+const FOG_WISP_DRIFT_SPEED = 0.6
 
 // ============ HOMING ============
 const HOMING_EFFECT_COLOR = 0x2bff88
@@ -68,14 +117,6 @@ const SHOCKWAVE_MAX_SCALE = 8
 // ============ TELEGRAPH ============
 const TELEGRAPH_DURATION = 0.35
 const TELEGRAPH_MAX_SCALE = 0.9
-
-// ============ COMET TRAIL ============
-// QoL: mesmo motivo do rastro normal — cadência e opacidade cortadas
-const COMET_TRAIL_INTERVAL = 0.05 // era 0.02
-const COMET_TRAIL_DURATION = 0.9
-const COMET_TRAIL_SPEED = 14
-const COMET_TRAIL_COLOR = 0xffa64d
-const COMET_TRAIL_OPACITY = 0.5 // era 0.85
 
 // ============ GLASS SHATTER ============
 const GLASS_SHARD_COUNT = 14
@@ -183,6 +224,34 @@ export function createEffectsSystem(scene, opts = {}) {
   dustPoints.frustumCulled = false
   scene.add(dustPoints)
 
+  // ============ FOG WISPS (Fase 7) ============
+  // nuvens grandes e esparsas, mesmo padrão de volume fixo da poeira ambiente (acima) — dá uma
+  // pista visual direta de "neblina" além do FogExp2 puro (que sozinho não tem nenhuma forma
+  // reconhecível, só escurece a distância).
+  const fogWispGeometry = new THREE.BufferGeometry()
+  const fogWispPositions = new Float32Array(FOG_WISP_COUNT * 3)
+  const fogWispVelocities = new Float32Array(FOG_WISP_COUNT * 3)
+  for (let i = 0; i < FOG_WISP_COUNT; i++) {
+    fogWispPositions[i*3]   = FOG_WISP_AREA_CENTER.x + (Math.random() * 2 - 1) * FOG_WISP_AREA_HALF_X
+    fogWispPositions[i*3+1] = FOG_WISP_AREA_CENTER.y + (Math.random() * 2 - 1) * FOG_WISP_AREA_HALF_Y
+    fogWispPositions[i*3+2] = FOG_WISP_AREA_CENTER.z + (Math.random() * 2 - 1) * FOG_WISP_AREA_HALF_Z
+    fogWispVelocities[i*3]   = (Math.random() - 0.5) * FOG_WISP_DRIFT_SPEED
+    fogWispVelocities[i*3+1] = (Math.random() - 0.5) * FOG_WISP_DRIFT_SPEED * 0.3
+    fogWispVelocities[i*3+2] = (Math.random() - 0.5) * FOG_WISP_DRIFT_SPEED
+  }
+  fogWispGeometry.setAttribute('position', new THREE.BufferAttribute(fogWispPositions, 3))
+  // PointsMaterial não suporta tamanho por vértice sem shader customizado — todo wisp usa o
+  // mesmo tamanho médio (mantém o mesmo padrão simples do resto do arquivo). `map` com a
+  // textura de círculo suave é o que faz ler como nuvem, não como quadrado cinza sólido.
+  const fogWispTexture = makeSoftCircleTexture()
+  const fogWispMaterial = new THREE.PointsMaterial({
+    color: FOG_WISP_COLOR, size: (FOG_WISP_SIZE_MIN + FOG_WISP_SIZE_MAX) / 2, sizeAttenuation: true,
+    map: fogWispTexture, transparent: true, opacity: FOG_WISP_OPACITY, depthWrite: false, fog: false,
+  })
+  const fogWispPoints = new THREE.Points(fogWispGeometry, fogWispMaterial)
+  fogWispPoints.frustumCulled = false
+  scene.add(fogWispPoints)
+
   // (bolha de escudo removida — o escudo continua funcionando mecanicamente, só não é mais
   // desenhado como esfera ao redor da nave)
 
@@ -199,10 +268,20 @@ export function createEffectsSystem(scene, opts = {}) {
     return { mesh, geo, mat, cfg }
   })
 
+  // ============ ENGINE FLAME (Fase 7, persistente — ver comentário da constante) ============
+  const engineFlameGeometry = new THREE.ConeGeometry(ENGINE_FLAME_RADIUS, ENGINE_FLAME_LENGTH, 10)
+  engineFlameGeometry.rotateX(-Math.PI / 2) // ponta aponta pra -Z local, alinhada com o eixo (0,0,-1) usado no update()
+  const engineFlameMaterial = new THREE.MeshBasicMaterial({
+    color: ENGINE_FLAME_COLOR, transparent: true, opacity: ENGINE_FLAME_OPACITY,
+    depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  })
+  const engineFlameMesh = new THREE.Mesh(engineFlameGeometry, engineFlameMaterial)
+  engineFlameMesh.visible = false
+  scene.add(engineFlameMesh)
+
   // ============ LISTAS DE TRANSIENTES ============
   const bursts = []
   const muzzleFlashes = []
-  const trailParticles = []
   const smokeRings = []
   const homingAfterimages = []
   const hitSparks = []
@@ -210,15 +289,12 @@ export function createEffectsSystem(scene, opts = {}) {
   const projectileTrails = []
   const shockwaves = []
   const telegraphs = []
-  const cometTrails = []
   const glassShards = []
   const bloomSprites = []
   const contrails = []
   const bossImpactRings = []
   const chargeCircles = []
   const spinWinds = []
-  let trailTimer = 0
-  let cometTimer = 0
   let contrailTimer = 0
 
   // ============ SHOCKWAVE / RING HELPERS ============
@@ -285,21 +361,12 @@ export function createEffectsSystem(scene, opts = {}) {
     muzzleFlashes.push({ mesh, life: 0 })
   }
 
-  function spawnTrailParticle(position, forward, boosting) {
-    const geometry = new THREE.SphereGeometry(ENGINE_TRAIL_SIZE, 6, 6)
-    const material = new THREE.MeshBasicMaterial({
-      color: boosting > 1 ? 0xffb066 : 0x8fdcff,
-      transparent: true, opacity: ENGINE_TRAIL_OPACITY,
-      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.copy(position)
-    scene.add(mesh)
-    trailParticles.push({
-      mesh, life: 0,
-      velocity: forward.clone().multiplyScalar(-ENGINE_TRAIL_SPEED * (boosting > 1 ? 1.6 : 1)),
-      scale: boosting > 1 ? 1.35 : 1,
-    })
+  // "explosão azul em formato de fogo" no instante em que a propulsão é ativada (Fase 7) —
+  // reaproveita o explosion() já existente (partículas + bloomSprite de punch), só na cor de
+  // chama e na saída do motor (atrás da nave) em vez de na ponta.
+  function propulsionBurst(position, direction) {
+    const exhaust = position.clone().addScaledVector(direction, -1.8)
+    explosion(exhaust, PROPULSION_BURST_COLOR, 1.1)
   }
 
   function smokeRing(position, direction) {
@@ -454,21 +521,6 @@ export function createEffectsSystem(scene, opts = {}) {
     chargeCircles.push({ group, life: 0, duration: durationSec })
   }
 
-  function cometTrailParticle(position, forward) {
-    const geometry = new THREE.SphereGeometry(0.35, 6, 6)
-    const material = new THREE.MeshBasicMaterial({
-      color: COMET_TRAIL_COLOR, transparent: true, opacity: COMET_TRAIL_OPACITY,
-      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.copy(position)
-    scene.add(mesh)
-    cometTrails.push({
-      mesh, life: 0,
-      velocity: forward.clone().multiplyScalar(-COMET_TRAIL_SPEED),
-    })
-  }
-
   function glassShatter(position, colorHex = 0x4da6ff) {
     const geometry = new THREE.TetrahedronGeometry(GLASS_SHARD_SIZE)
     const material = new THREE.MeshBasicMaterial({
@@ -540,27 +592,29 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { boosting = 1, skipTrail = false, boostActive = false } = opts
+    const { skipTrail = false, boostActive = false } = opts
     const now = performance.now()
 
-    // rastro do motor
+    // ENGINE FLAME (Fase 7) — chama única e persistente em vez de partículas spawnadas por
+    // intervalo: só muda tamanho/cor/opacidade conforme o boost, nunca multiplica cópias.
     if (!skipTrail && shipPosition && shipForward) {
-      trailTimer -= dt
-      if (trailTimer <= 0) {
-        const exhaust = shipPosition.clone().addScaledVector(shipForward, -1.8)
-        spawnTrailParticle(exhaust, shipForward, boosting)
-        trailTimer = ENGINE_TRAIL_INTERVAL / Math.max(0.5, boosting)
-      }
-
-      // cauda cometa durante boost
-      if (boostActive) {
-        cometTimer -= dt
-        if (cometTimer <= 0) {
-          const exhaust = shipPosition.clone().addScaledVector(shipForward, -2.4)
-          cometTrailParticle(exhaust, shipForward)
-          cometTimer = COMET_TRAIL_INTERVAL
-        }
-      }
+      engineFlameMesh.visible = true
+      const exhaust = shipPosition.clone().addScaledVector(shipForward, -1.8)
+      engineFlameMesh.position.copy(exhaust)
+      engineFlameMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), shipForward.clone().normalize())
+      const flicker = 1 + Math.sin(now * 0.001 * ENGINE_FLAME_FLICKER_RATE) * ENGINE_FLAME_FLICKER_AMOUNT
+      const boostT = boostActive ? 1 : 0
+      const radius = THREE.MathUtils.lerp(ENGINE_FLAME_RADIUS, ENGINE_FLAME_BOOST_RADIUS, boostT)
+      const length = THREE.MathUtils.lerp(ENGINE_FLAME_LENGTH, ENGINE_FLAME_BOOST_LENGTH, boostT)
+      engineFlameMesh.scale.set(
+        (radius / ENGINE_FLAME_RADIUS) * flicker,
+        (radius / ENGINE_FLAME_RADIUS) * flicker,
+        (length / ENGINE_FLAME_LENGTH) * flicker,
+      )
+      engineFlameMaterial.color.set(boostActive ? ENGINE_FLAME_BOOST_COLOR : ENGINE_FLAME_COLOR)
+      engineFlameMaterial.opacity = THREE.MathUtils.lerp(ENGINE_FLAME_OPACITY, ENGINE_FLAME_BOOST_OPACITY, boostT)
+    } else {
+      engineFlameMesh.visible = false
     }
 
     // poeira ambiente — drift lento + wrap por eixo dentro do volume em espaço-mundo.
@@ -582,6 +636,27 @@ export function createEffectsSystem(scene, opts = {}) {
         else if (arr[i3+1] < DUST_AREA_CENTER.y - DUST_AREA_HALF_Y) arr[i3+1] += DUST_AREA_HALF_Y * 2
         if (arr[i3+2] > DUST_AREA_CENTER.z + DUST_AREA_HALF_Z) arr[i3+2] -= DUST_AREA_HALF_Z * 2
         else if (arr[i3+2] < DUST_AREA_CENTER.z - DUST_AREA_HALF_Z) arr[i3+2] += DUST_AREA_HALF_Z * 2
+      }
+      attr.needsUpdate = true
+    }
+
+    // FOG WISPS (Fase 7) — mesmo padrão de drift+wrap da poeira ambiente acima, só que num
+    // volume menor/mais próximo e com nuvens bem maiores e mais suaves.
+    {
+      const attr = fogWispGeometry.attributes.position
+      const arr = attr.array
+      for (let i = 0; i < FOG_WISP_COUNT; i++) {
+        const i3 = i * 3
+        arr[i3]   += fogWispVelocities[i3]   * dt
+        arr[i3+1] += fogWispVelocities[i3+1] * dt
+        arr[i3+2] += fogWispVelocities[i3+2] * dt
+
+        if (arr[i3] > FOG_WISP_AREA_CENTER.x + FOG_WISP_AREA_HALF_X) arr[i3] -= FOG_WISP_AREA_HALF_X * 2
+        else if (arr[i3] < FOG_WISP_AREA_CENTER.x - FOG_WISP_AREA_HALF_X) arr[i3] += FOG_WISP_AREA_HALF_X * 2
+        if (arr[i3+1] > FOG_WISP_AREA_CENTER.y + FOG_WISP_AREA_HALF_Y) arr[i3+1] -= FOG_WISP_AREA_HALF_Y * 2
+        else if (arr[i3+1] < FOG_WISP_AREA_CENTER.y - FOG_WISP_AREA_HALF_Y) arr[i3+1] += FOG_WISP_AREA_HALF_Y * 2
+        if (arr[i3+2] > FOG_WISP_AREA_CENTER.z + FOG_WISP_AREA_HALF_Z) arr[i3+2] -= FOG_WISP_AREA_HALF_Z * 2
+        else if (arr[i3+2] < FOG_WISP_AREA_CENTER.z - FOG_WISP_AREA_HALF_Z) arr[i3+2] += FOG_WISP_AREA_HALF_Z * 2
       }
       attr.needsUpdate = true
     }
@@ -641,20 +716,6 @@ export function createEffectsSystem(scene, opts = {}) {
       }
       m.mesh.material.opacity = 1 - t
       m.mesh.scale.setScalar(1 + t * 1.5)
-    }
-
-    // TRAIL PARTICLES
-    for (let i = trailParticles.length - 1; i >= 0; i--) {
-      const p = trailParticles[i]
-      p.life += dt
-      const t = p.life / ENGINE_TRAIL_DURATION
-      if (t >= 1) {
-        scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose()
-        trailParticles.splice(i, 1); continue
-      }
-      p.mesh.position.addScaledVector(p.velocity, dt)
-      p.mesh.material.opacity = ENGINE_TRAIL_OPACITY * (1 - t)
-      p.mesh.scale.setScalar(p.scale * (1 - t * 0.6))
     }
 
     // SMOKE RINGS
@@ -777,20 +838,6 @@ export function createEffectsSystem(scene, opts = {}) {
       tg.mesh.material.opacity = 0.5 + 0.5 * Math.sin(t * Math.PI * 4)
     }
 
-    // COMET TRAILS
-    for (let i = cometTrails.length - 1; i >= 0; i--) {
-      const c = cometTrails[i]
-      c.life += dt
-      const t = c.life / COMET_TRAIL_DURATION
-      if (t >= 1) {
-        scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose()
-        cometTrails.splice(i, 1); continue
-      }
-      c.mesh.position.addScaledVector(c.velocity, dt)
-      c.mesh.material.opacity = COMET_TRAIL_OPACITY * (1 - t)
-      c.mesh.scale.setScalar(1 - t * 0.3)
-    }
-
     // GLASS SHARDS
     for (let i = glassShards.length - 1; i >= 0; i--) {
       const g = glassShards[i]
@@ -883,10 +930,11 @@ export function createEffectsSystem(scene, opts = {}) {
   function dispose() {
     scene.remove(stars); starGeometry.dispose(); starMaterial.dispose()
     scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
+    scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); fogWispTexture.dispose()
+    scene.remove(engineFlameMesh); engineFlameGeometry.dispose(); engineFlameMaterial.dispose()
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
-    for (const p of trailParticles) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
     for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
     for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const p of projectileTrails) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
@@ -898,15 +946,14 @@ export function createEffectsSystem(scene, opts = {}) {
     }
     chargeCircles.length = 0
     for (const t of telegraphs) { scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.dispose() }
-    for (const c of cometTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const g of glassShards) { for (const s of g.shards) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() } }
     for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
     for (const c of contrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
     bursts.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
-    trailParticles.length = 0; smokeRings.length = 0; homingAfterimages.length = 0
+    smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
-    telegraphs.length = 0; cometTrails.length = 0; glassShards.length = 0
+    telegraphs.length = 0; glassShards.length = 0
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
     spinWinds.length = 0
     for (const layer of chargeGlowLayers) { scene.remove(layer.mesh); layer.geo.dispose(); layer.mat.dispose() }
@@ -915,7 +962,7 @@ export function createEffectsSystem(scene, opts = {}) {
   return {
     update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
-    cometTrailParticle, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
+    propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind,
     dispose,
   }

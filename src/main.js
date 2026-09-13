@@ -913,8 +913,8 @@ function mountGame(session) {
     if (isActionPressed(bindings, inputState.pressed, 'propulsion')) {
       if (arenaNow && inputState.bank !== 0) {
         rail.triggerArenaLateralDash(inputState.bank)
-      } else {
-        player.activatePropulsion()
+      } else if (player.activatePropulsion()) {
+        effects.propulsionBurst(playerPos, noseFrame.forward)
       }
     }
     if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
@@ -996,7 +996,6 @@ function mountGame(session) {
     }
 
     effects.update(dt, playerPos, noseFrame.forward, {
-      boosting: speedMultiplier,
       camera,
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
@@ -1036,11 +1035,16 @@ function mountGame(session) {
         // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----
         hud.showShieldBlock()
         effects.shockwave(playerPos, 0x4da6ff, 0.6)
+        effects.explosion(playerPos, 0x4da6ff, 0.5)
         if (result.shieldBroke) effects.glassShatter(playerPos, 0x4da6ff)
       } else {
         // ---- dano DIRETO na vida: faixa vermelha nas laterais + flash rápido ----
         hud.showDamageSide()
         hud.damageFlash()
+        // Fase 7: "levar um acerto causa um efeito de explosão de tiro na nossa nave" — faltava
+        // qualquer efeito 3D na própria nave quando o dano ia direto na vida (só existia o
+        // shockwave azul do lado do escudo); agora todo acerto real também explode na nave.
+        effects.explosion(playerPos, 0xff4d4d, 0.7)
       }
 
       if (result.outOfLives) {

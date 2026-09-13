@@ -149,6 +149,8 @@ const TIME_ENEMY_BOX_X = 7
 const TIME_ENEMY_BOX_Y = 5
 const TIME_ENEMY_HIT_RADIUS = 1.8
 const TIME_ENEMY_DEATH_DURATION = 0.2
+const TIME_ENEMY_MAX_HP = 3 // era 1 (item antigo do Fase C, pedido do usuário)
+const TIME_ENEMY_SPIN_RATE = 1.6 // rad/s, gira em cima do próprio eixo (item antigo do Fase C)
 export const TIME_REDUCTION_MIN_MS = 3000
 export const TIME_REDUCTION_MAX_MS = 20000
 
@@ -504,6 +506,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       } else {
         // modo trilho: inimigo comum/time/tanque sempre com a ponta virada pro jogador
         enemy.mesh.lookAt(playerPosition)
+        // redutor de tempo: giro constante no próprio eixo por cima do lookAt (mesmo padrão do
+        // decaedro do chefe acima) — item antigo do Fase C, "devia girar visualmente"
+        if (enemy.kind === 'time') enemy.mesh.rotateY(dt * TIME_ENEMY_SPIN_RATE)
 
         const relative = enemy.mesh.position.clone().sub(frame.position)
         if (relative.dot(frame.forward) < PASS_BEHIND) {
@@ -687,7 +692,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const mesh = buildTimeEnemyMesh()
       mesh.position.copy(position)
       scene.add(mesh)
-      enemies.push({ id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: randomEnemyFireInterval() })
+      // Fase 7 / item antigo do Fase C: "devia girar visualmente e ter 3 hp (hoje tem 1 e fica
+      // parado)" — hp subiu de 1 pra TIME_ENEMY_MAX_HP; o giro em si é aplicado no tick (mesmo
+      // branch de trilho que já faz o lookAt pro jogador, ver updateEnemies).
+      enemies.push({ id: nextEnemyId++, mesh, kind: 'time', dying: false, deathT: 0, hp: TIME_ENEMY_MAX_HP, maxHp: TIME_ENEMY_MAX_HP, fireTimer: randomEnemyFireInterval() })
     },
 
     spawnTankEnemy(hp = TANK_ENEMY_DEFAULT_HP) {
