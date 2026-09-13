@@ -1,3 +1,20 @@
+## Refatoração: `hud.js` (1652 linhas) dividido em 8 arquivos por responsabilidade — v0.29.3
+
+Pedido do usuário: um plano de refatoração detalhado (análise de coesão por bloco, proposta de 8 arquivos, e por que **não** vale a pena dividir `createGameHud` por dentro), pedindo pra executar. Segui o plano à risca — mesmo padrão já usado em `combat.js` → `enemies.js`/`player.js`: `hud.js` virou fachada, só re-exportando; `main.js` **não mudou uma linha de import**.
+
+- **`hud-shared.js`** (23 linhas): `COLOR_MAP`, `shapeMarkup`, `showScreen` — helpers sem lógica de jogo, sem imports próprios.
+- **`hud-styles.js`** (316 linhas): `injectHudExtraStyles` + o CSS gigante injetado (números de dano, hit marker, vignettes, motion lines, faixas de dano, aviso/cutscene all-range, modal de pergunta). Só `hud-game.js` chama.
+- **`hud-pregame.js`** (39 linhas): `showPreGameMenu`. **Nota importante pra próximas sessões**: a tag de versão hardcoded (`.version-tag`, já causou bug de "versão presa" antes — v0.22.2) **mudou de arquivo**: antes vivia em `hud.js`, agora vive aqui.
+- **`hud-decks.js`** (337 linhas): `showDeckManager` — importa `buildDeck` (anki.js) + `listDecks/addDeck/updateDeck/removeDeck/getDeck` (decks.js).
+- **`hud-settings.js`** (238 linhas): `showSettingsScreen` — importa `getSettings/setSetting` (settings.js) + `getBindings/setBinding/resetToDefaults/setGamepadBinding/codeToLabel/ACTIONS` (keybindings.js).
+- **`hud-game.js`** (622 linhas): `createGameHud` — o HUD de partida inteiro, numa closure só. **Decisão deliberada de não dividir mais**: quase todo método compartilha o mesmo `root`/pools (`enemyBarPool`, `lockMarkerPool`, `questionModalKeyHandler`, etc.) — separar em vários arquivos exigiria passar 8 parâmetros por função ou reescrever como classe, mais risco de regressão (esse código já foi mexido em quase toda fase do projeto) do que ganho real. Arquivo grande, mas coeso.
+- **`hud-end.js`** (102 linhas): `showSectorEnd`, `showPainelCard`, `showPainelAnswer`.
+- **`hud.js`** (10 linhas): vira só 5 linhas de `export { ... } from './hud-*.js'`.
+
+**Testado ao vivo**: `node --check` em todos os 8 arquivos + `selftest.mjs` limpos; joguei o fluxo completo — pré-jogo → Configurações (editor de controles + gamepad renderizaram certo) → voltar → Gerenciador de baralhos (baralho salvo aparece, "Ver perguntas" funciona) → Jogar (HUD de partida inteiro: barras, mira, estrelas, nave) — zero erro no console em nenhuma tela.
+
+**Versão**: v0.29.2 → v0.29.3 (bump por convenção do projeto — comportamento não mudou).
+
 ## Correção: os 3 quadrados da mira de lock-on quase não davam pra ver — v0.29.2
 
 Pedido literal, depois de eu ter entregue a v0.29.1: *"cade os 3 quadrados que surgem em tamanhos diferentes, só á um"*. Rodei de novo e conferi contra o código: a animação **existia** (3 elementos, tamanhos e atraso diferentes), mas a sequência inteira durava só 0.44s e cada quadrado já começava a encolher/sumir assim que aparecia — rápido demais pra perceber no meio do jogo, sobrando só a impressão de "tem 1 quadrado" (o final, girando). Não era um bug de lógica, era um problema de timing/legibilidade.
