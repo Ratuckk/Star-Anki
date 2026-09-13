@@ -210,34 +210,6 @@ export function injectHudExtraStyles() {
 }
 .hud-boss-tint.active { opacity: 1; }
 
-/* ============ FLASH DE IMPACTO NO ACERTO (Fase 8, "aberração cromática") ============ */
-/* franja vermelho/ciano vindo de cada BORDA lateral (mesmo padrão do .hud-side-flash já
-   existente, só full-screen e nas 2 cores) — testado ao vivo: uma primeira versão com 2
-   radial-gradient quase sobrepostos (offset de poucos px) cancelava as cores num cinza neutro
-   via screen blend; gradiente linear a partir de cada lado separa de verdade (vermelho na
-   esquerda, ciano na direita, centro limpo onde o jogador está olhando) */
-.hud-hit-chromatic {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  z-index: 25;
-}
-.hud-hit-chromatic::before, .hud-hit-chromatic::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  mix-blend-mode: screen;
-}
-.hud-hit-chromatic::before { background: linear-gradient(to right, rgba(255, 45, 70, 0.6), transparent 45%); }
-.hud-hit-chromatic::after { background: linear-gradient(to left, rgba(45, 220, 255, 0.6), transparent 45%); }
-@keyframes hud-hit-chromatic-anim {
-  0%   { opacity: 0; }
-  30%  { opacity: 1; }
-  100% { opacity: 0; }
-}
-.hud-hit-chromatic.flash { animation: hud-hit-chromatic-anim 110ms ease-out; }
-
 /* ============ FAIXAS LATERAIS DE DANO: escudo (azul + grid) vs vida (vermelho) ============ */
 .hud-side-flash {
   position: absolute;

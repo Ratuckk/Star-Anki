@@ -45,12 +45,6 @@ export function createGameHud() {
   sideFlash.className = 'hud-side-flash'
   root.appendChild(sideFlash)
 
-  // Fase 8 (VISUAL): flash de "aberração cromática" no impacto de um tiro certeiro — separa
-  // visualmente "acertei" de "fui acertado" (que já usa vermelho no damageVignette/sideFlash)
-  const hitChromatic = document.createElement('div')
-  hitChromatic.className = 'hud-hit-chromatic'
-  root.appendChild(hitChromatic)
-
   // ============ MIRA + HIT MARKER ============
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
@@ -527,12 +521,6 @@ export function createGameHud() {
       hitMarkerTimeout = setTimeout(() => {
         hitMarkerEl.classList.remove('active', 'kill')
       }, killed ? 240 : 170)
-    },
-
-    flashHitImpact() {
-      hitChromatic.classList.remove('flash')
-      void hitChromatic.offsetWidth
-      hitChromatic.classList.add('flash')
     },
 
     spawnDamageNumber(xFrac, yFrac, value, opts = {}) {

@@ -329,9 +329,9 @@
   /* Fase 8 (VISUAL): mira "acende" quando um inimigo vivo está bem na frente dela
      (combat.isAimingAtEnemy) — só um hint, não trava nem garante o tiro */
   .reticle-ring.aiming {
-    border-color: #2bff88;
+    border-color: #ff3b3b;
     opacity: 0.95;
-    box-shadow: 0 0 9px rgba(43, 255, 136, 0.8);
+    box-shadow: 0 0 9px rgba(255, 59, 59, 0.8);
     transform: scale(1.22);
   }
   .hud-status {
@@ -596,6 +596,13 @@
   .hud-minimap-blip-enemy { background: #ff4d4d; box-shadow: 0 0 4px rgba(255, 77, 77, 0.9); }
   .hud-minimap-blip-golden { background: #ffd700; width: 9px; height: 9px; box-shadow: 0 0 5px rgba(255, 215, 0, 0.9); }
   .hud-minimap-blip-boss { background: #ff2d4d; width: 12px; height: 12px; box-shadow: 0 0 6px rgba(255, 45, 77, 1); }
+  .hud-minimap-blip-bossOrb {
+    background: #ffd166;
+    width: 8px; height: 8px;
+    border-radius: 3px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    box-shadow: 0 0 5px rgba(255, 209, 102, 0.9);
+  }
 
   [hidden] { display: none !important; }
 </style>

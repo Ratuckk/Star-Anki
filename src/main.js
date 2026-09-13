@@ -618,13 +618,13 @@ function mountGame(session) {
       pendingSectorOver = true
       pendingCardChoice = false
       phase = 'resolution'
-      phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
+      phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
       return
     }
 
     pendingCardChoice = correct
     phase = 'bossBuildupResolution'
-    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
+    phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
   }
 
   // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, vida dobrada uma vez
@@ -749,7 +749,7 @@ function mountGame(session) {
     pendingSectorOver = resolution.sectorOver || outOfLives
     pendingCardChoice = correct
     phase = 'resolution'
-    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
+    phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
   }
 
   function settleGoldenBonus(outcome) {
@@ -773,7 +773,7 @@ function mountGame(session) {
 
     pendingCardChoice = correct
     phase = 'goldenResolution'
-    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
+    phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
   }
 
   function endSector() {
@@ -1053,10 +1053,8 @@ function mountGame(session) {
     // ============ HIT MARKER ============
     if (events.enemyKills > 0 || events.bonusKillPoints > 0 || events.goldenSpecialHit || events.bossDefeated) {
       hud.hitMarker(true)
-      hud.flashHitImpact()
     } else if (events.hitsLog && events.hitsLog.length > 0) {
       hud.hitMarker(false)
-      hud.flashHitImpact()
     }
 
     // ============ FAÍSCAS + FLASH NO MESH + SHAKE DE KILL ============
@@ -1249,6 +1247,11 @@ function mountGame(session) {
     } else if (phase === 'bossBuildupResolution') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {
+        // bug reportado: o painel de "Acertou!" ficava preso na tela pra sempre depois disso —
+        // nem aqui, nem em finishBossHunt()/enterBossFight() ninguém limpava o feedback (os
+        // outros fluxos limpam via enterCombat()/resumeCombatFromGolden(), mas a caçada de
+        // orbes do chefe volta pra 'bossBuildup' direto, sem passar por nenhum dos dois).
+        hud.setFeedback(null)
         const proceed = () => {
           if (bossOrbsRemaining > 0 && bossBuildupTimer > 0) phase = 'bossBuildup'
           else finishBossHunt()
