@@ -79,11 +79,10 @@ const ARENA_BANK_ASSIST_RATE = 1.1
 const ARENA_AUTOLEVEL_IDLE_S = 1.0
 const ARENA_AUTOLEVEL_RATE = 1.2
 
-// item 3 — guinada extra e fraca em direção ao alvo mais próximo quando ele está bem fora do
-// centro da mira (opts.assistTarget, calculado por main.js). Só ajuda a "trazer" o alvo de
-// volta pra tela — ARENA_TURN_RATE continua sendo o controle principal, isso é só um empurrão.
-const ARENA_ASSIST_MIN_ANGLE = THREE.MathUtils.degToRad(35)
-const ARENA_ASSIST_TURN_RATE = 0.5
+// item 3 (guinada assistida rumo ao alvo mais próximo) foi REMOVIDO por pedido do usuário — em
+// lutas de chefe/dourado o "mais próximo" quase sempre era o próprio chefe/dourado, então a
+// nave ficava sendo puxada pra ele o tempo todo em vez de responder só ao controle manual.
+// Voltou a ser controle 100% manual em all-range, como era antes da Fase 9 introduzir isso.
 
 // item 4 — "freio de emergência": duplo toque em repulsão (sem Baixo, que já é a cambalhota)
 // trava a velocidade de avanço quase a zero por um instante curto, pra reposicionamento fino
@@ -329,7 +328,7 @@ export function createRailController(camera, scene) {
     mode = 'rail'
   }
 
-  function updateArena(dt, input, fullSpinAngle = 0, opts = {}) {
+  function updateArena(dt, input, fullSpinAngle = 0) {
     const summersaultFlip = updateSummersault(dt)
     const inSummersault = summersaultT < 1
 
@@ -354,21 +353,8 @@ export function createRailController(camera, scene) {
         arenaPitch += (0 - arenaPitch) * (1 - Math.exp(-ARENA_AUTOLEVEL_RATE * dt))
       }
 
-      // Fase 9 (ideia 3): guinada extra fraca em direção ao alvo mais próximo quando ele está
-      // bem fora do centro — nunca sobrepõe o controle manual acima, só soma um empurrão leve
-      if (opts.assistTarget) {
-        const forwardNow = forwardFromYawPitch(arenaYaw, arenaPitch)
-        const toTarget = opts.assistTarget.clone().sub(arenaPos).normalize()
-        const angle = Math.acos(THREE.MathUtils.clamp(forwardNow.dot(toTarget), -1, 1))
-        if (angle > ARENA_ASSIST_MIN_ANGLE) {
-          const rightNow = new THREE.Vector3().crossVectors(forwardNow, WORLD_UP).normalize()
-          const upNow = new THREE.Vector3().crossVectors(rightNow, forwardNow).normalize()
-          const yawError = toTarget.dot(rightNow)
-          const pitchError = toTarget.dot(upNow)
-          arenaYaw -= Math.sign(yawError) * ARENA_ASSIST_TURN_RATE * dt
-          arenaPitch = THREE.MathUtils.clamp(arenaPitch + Math.sign(pitchError) * ARENA_ASSIST_TURN_RATE * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
-        }
-      }
+      // guinada assistida rumo ao alvo mais próximo (Fase 9, ideia 3) REMOVIDA por pedido do
+      // usuário — controle 100% manual em all-range de novo, ver comentário da constante acima.
     }
 
     const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
@@ -404,7 +390,7 @@ export function createRailController(camera, scene) {
     lastPlayerPos = arenaPos.clone()
   }
 
-  function update(dt, input, opts = {}) {
+  function update(dt, input) {
     updateDodgeRoll(dt, input)
     const fullSpinAngle = updateFullSpin(dt)
 
@@ -418,7 +404,7 @@ export function createRailController(camera, scene) {
     }
 
     if (mode === 'arena') {
-      updateArena(dt, input, fullSpinAngle, opts)
+      updateArena(dt, input, fullSpinAngle)
       return
     }
 
