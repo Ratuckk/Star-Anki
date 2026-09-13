@@ -711,7 +711,11 @@ export function createEffectsSystem(scene, opts = {}) {
   // 3 anéis concêntricos que crescem ao longo de `durationSec`, marcando onde um laser vai
   // chegar — o jogador tem esse tempo todo pra sair de cima. Perto do fim (90%+) ficam sólidos,
   // sinal de "agora vai".
-  function chargeCircle(position, durationSec = 3.0, colorHex = 0xff4d4d) {
+  // `positionOrFn`: um THREE.Vector3 fixo (comportamento original) OU uma função `() => Vector3`
+  // chamada a cada frame — pedido do usuário: o telegraph do laser do chefe/dourado precisa
+  // continuar "mirando" a posição atual do jogador durante todo o aviso, não travar num ponto
+  // fixo no instante em que começou a marcar.
+  function chargeCircle(positionOrFn, durationSec = 3.0, colorHex = 0xff4d4d) {
     const group = new THREE.Group()
     for (let i = 0; i < 3; i += 1) {
       const geo = new THREE.RingGeometry(0.85, 1.0, 32)
@@ -722,11 +726,12 @@ export function createEffectsSystem(scene, opts = {}) {
       })
       group.add(new THREE.Mesh(geo, mat))
     }
+    const followFn = typeof positionOrFn === 'function' ? positionOrFn : null
+    if (!followFn) group.position.copy(positionOrFn)
     // billboard pra câmera a cada frame no update() — igual shockwave/bossImpactRing — pra
     // ficar sempre de frente pro jogador, não importa de onde o laser vem
-    group.position.copy(position)
     scene.add(group)
-    chargeCircles.push({ group, life: 0, duration: durationSec })
+    chargeCircles.push({ group, life: 0, duration: durationSec, followFn })
   }
 
   function glassShatter(position, colorHex = 0x4da6ff) {
@@ -1151,6 +1156,10 @@ export function createEffectsSystem(scene, opts = {}) {
         scene.remove(c.group)
         for (const child of c.group.children) { child.geometry.dispose(); child.material.dispose() }
         chargeCircles.splice(i, 1); continue
+      }
+      if (c.followFn) {
+        const p = c.followFn()
+        if (p) c.group.position.copy(p)
       }
       if (cam) c.group.quaternion.copy(cam.quaternion)
       c.group.children.forEach((child, idx) => {

@@ -549,8 +549,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     update(dt, playerPosition, opts = {}) {
       elapsed += dt
       if (arenaPreviewMesh) arenaPreviewMesh.rotation.y += dt * 0.4
-      golden.update(dt, playerPosition, goldenUpdateCtx)
-      return updateEnemies(dt, playerPosition, opts.ramDamage || 0)
+      const ramDamage = opts.ramDamage || 0
+      const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage)
+      const result = updateEnemies(dt, playerPosition, ramDamage)
+      return {
+        ...result,
+        ramGoldenDefeated: goldenRamResult?.ramGoldenDefeated || false,
+        ramGoldenWorldPos: goldenRamResult?.ramGoldenWorldPos || null,
+      }
     },
 
     updateProjectiles(dt, playerPosition) {

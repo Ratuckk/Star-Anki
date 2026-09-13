@@ -899,7 +899,8 @@ function mountGame(session, deck, menu) {
       }
     } else {
       if (isCharging) {
-        combat.fireHomingShot(nosePos, currentHomingAllowedTargets(fireHeldMs))
+        const isMaxCharge = fireHeldMs >= player.config.homingChargeMaxMs
+        combat.fireHomingShot(nosePos, currentHomingAllowedTargets(fireHeldMs), isMaxCharge)
       }
       fireHeldMs = 0
       effects.setChargeGlow(false)

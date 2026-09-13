@@ -14,7 +14,10 @@ const PROJECTILE_SPEED = 60
 const PROJECTILE_MAX_RANGE = 260
 const PROJECTILE_LATERAL_SPACING = 1.6
 const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
-const HOMING_PROJECTILE_DAMAGE = 3
+const HOMING_PROJECTILE_DAMAGE = 4 // pedido do usuário: era 3
+// pedido do usuário: segurar o tiro carregado até o limite (carga máxima) aumenta o dano de 4
+// pra 6 — recompensa esperar o círculo de carga encher de verdade, não só passar do mínimo.
+const HOMING_PROJECTILE_DAMAGE_MAX_CHARGE = 6
 const HOMING_AFTERIMAGE_INTERVAL = 0.035 // segundos entre cada cópia fantasma do rastro
 
 // tiro normal do jogador: 1 disparo central com 2 de dano (era 2 tiros de 1 dano lado a lado)
@@ -204,7 +207,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     fireSingle,
 
     // filtro de distância nos dois caminhos (locked e "N mais próximos")
-    fireHomingShot(origin, maxTargets) {
+    // isMaxCharge: true quando o jogador segurou até a carga máxima (não só passou do mínimo pra
+    // poder atirar) — nesse caso cada tiro sai com dano maior (ver HOMING_PROJECTILE_DAMAGE_MAX_CHARGE)
+    fireHomingShot(origin, maxTargets, isMaxCharge = false) {
       const inRange = (e) => origin.distanceTo(e.mesh.position) <= MAX_HOMING_RANGE
       const locked = lockon.takeLockedTargets(inRange)
       let targetList
@@ -215,6 +220,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
         targetList = alive.slice(0, Math.max(0, maxTargets))
       }
+      const damage = isMaxCharge ? HOMING_PROJECTILE_DAMAGE_MAX_CHARGE : HOMING_PROJECTILE_DAMAGE
       for (const target of targetList) {
         const direction = target.mesh.position.clone().sub(origin).normalize()
         const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
@@ -222,7 +228,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         scene.add(mesh)
         projectiles.push({
           mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0,
-          homingTarget: target, damage: HOMING_PROJECTILE_DAMAGE, isHoming: true, afterimageTimer: 0,
+          homingTarget: target, damage, isHoming: true, afterimageTimer: 0,
         })
       }
       const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)

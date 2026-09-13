@@ -8,7 +8,11 @@ const BOSS_EMISSIVE = 0x5c0018
 export const BOSS_SCALE = 5
 export const BOSS_HIT_RADIUS = 7
 export const BOSS_DEATH_DURATION = 0.6
-const BOSS_CHASE_SPEED = 7
+// pedido do usuário: "o boss principal mal se move, é pra ele se mover lentamente em direção ao
+// jogador" — 7 era quase estático perto da velocidade padrão de perseguição de inimigo comum em
+// arena (rail.getArenaSpeed()*0.5 ≈ 11) e da velocidade da própria nave (ARENA_SPEED=22).
+// Continua mais lento que um inimigo comum (ainda "lento", só que perceptível de verdade).
+const BOSS_CHASE_SPEED = 14
 const BOSS_FIRE_INTERVAL_MIN = 800
 const BOSS_FIRE_INTERVAL_MAX = 1600
 const BOSS_SHOTS_PER_VOLLEY = 3
@@ -18,15 +22,17 @@ const BOSS_SHOTS_PER_VOLLEY = 3
 const LASER_INTERVAL_MIN = 6.0
 const LASER_INTERVAL_MAX = 10.0
 const LASER_TELEGRAPH_S = 3.0
-// LASER GRANDE: era raio 0.55 / comprimento 12 — na prática, contra um chefe de escala 5 e raio
-// de colisão 7, o "laser" lia como um dardo fino invisível. Aumentado pra ficar proporcional ao
-// corpo do chefe (raio 2.5 = ~4.5x maior, comprimento 24 = 2x) e mais rápido pra parecer laser
-// de verdade e não um projétil lento.
-const LASER_RADIUS = 2.5
-const LASER_LENGTH = 24
-const LASER_SPEED = 80
+// LASER GRANDE: pedido do usuário — "é pra serem LASERS, [feixes] IMENSOS e rápidos o bastante
+// pro jogador só conseguir desviar na hora certa". Era raio 0.55/comprimento 12 (dardo fino),
+// depois só raio 2.5/comprimento 24 a 80u/s — ainda cruzava o alcance máximo em 3s inteiros,
+// mais torpedo lento que laser. Agora: bem maior (raio 4.5, comprimento 45) e ~7.5x mais rápido
+// (cruza o alcance máximo em ~0.4s) — só dá pra desviar reagindo no instante certo, não fugindo
+// a qualquer momento durante o voo.
+const LASER_RADIUS = 4.5
+const LASER_LENGTH = 45
+const LASER_SPEED = 600
 const LASER_MAX_RANGE = 240
-export const BOSS_LASER_HIT_RADIUS = 3.5  // era 2.2 — acompanha o visual maior
+export const BOSS_LASER_HIT_RADIUS = 5.0  // acompanha o raio visual maior
 export const BOSS_LASER_COLOR = 0xff2d4d
 
 // dodecaedro (12 faces regulares) é o poliedro pronto mais próximo de "decaedro facetado
@@ -89,6 +95,12 @@ function fireBossLaser(scene, ctx, enemy, targetPos) {
 // normal/rajada, que segue o fireTimer genérico)
 export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) {
   if (enemy.laserTelegraphTimer > 0) {
+    // pedido do usuário: antes travava a posição do jogador só no INÍCIO do telegraph e disparava
+    // ali mesmo 3s depois — dava pra sair de cima a qualquer momento durante o aviso e nunca
+    // precisar de fato reagir na hora do disparo. Agora continua "mirando" a posição ATUAL do
+    // jogador o tempo todo (o marcador visual acompanha via closure em `chargeCircle`), só o
+    // instante exato do disparo é que conta de verdade.
+    enemy.laserTargetPos = playerPosition.clone()
     enemy.laserTelegraphTimer -= dt
     if (enemy.laserTelegraphTimer <= 0) {
       if (enemy.laserTargetPos) fireBossLaser(scene, ctx, enemy, enemy.laserTargetPos)
@@ -98,11 +110,9 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
   } else {
     enemy.laserCooldown -= dt
     if (enemy.laserCooldown <= 0) {
-      // trava a posição do jogador AGORA — o laser vai pra onde ele estava, dando 3s pro
-      // jogador sair de cima (aviso clássico de rail shooter)
       enemy.laserTargetPos = playerPosition.clone()
       enemy.laserTelegraphTimer = LASER_TELEGRAPH_S
-      if (effects) effects.chargeCircle(enemy.laserTargetPos, LASER_TELEGRAPH_S, BOSS_LASER_COLOR)
+      if (effects) effects.chargeCircle(() => enemy.laserTargetPos, LASER_TELEGRAPH_S, BOSS_LASER_COLOR)
     }
   }
 }

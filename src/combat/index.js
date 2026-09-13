@@ -68,7 +68,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       return true
     },
 
-    fireHomingShot: (origin, maxTargets) => projectiles.fireHomingShot(origin, maxTargets),
+    fireHomingShot: (origin, maxTargets, isMaxCharge) => projectiles.fireHomingShot(origin, maxTargets, isMaxCharge),
     deflectNearbyProjectiles: (playerPos, radius) => projectiles.deflectNearbyProjectiles(playerPos, radius),
 
     setWingmanCount(n) {
@@ -157,6 +157,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       let ramKillPoints = 0
       let ramBossDefeated = false
       let ramBossWorldPos = null
+      let ramGoldenDefeated = false
+      let ramGoldenWorldPos = null
       if (enemiesActive) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
@@ -166,6 +168,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramKillPoints = enemyResult.ramKillPoints
         ramBossDefeated = enemyResult.ramBossDefeated
         ramBossWorldPos = enemyResult.ramBossWorldPos
+        ramGoldenDefeated = enemyResult.ramGoldenDefeated
+        ramGoldenWorldPos = enemyResult.ramGoldenWorldPos
         const projResult = enemies.updateProjectiles(dt, playerPosition)
         enemyHits += projResult.hits
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
@@ -181,9 +185,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bonusKillPoints,
         enemyHits,
         enemyDamage,
-        goldenSpecialHit,
+        goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated,
         goldenSpecialHitIsHoming,
-        goldenHitWorldPos,
+        goldenHitWorldPos: goldenHitWorldPos || ramGoldenWorldPos || null,
         timeReductionMs,
         timeReductionWorldPos,
         bossDefeated: bossDefeated || ramBossDefeated,

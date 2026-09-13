@@ -30,17 +30,21 @@ const MINION_MAX_RANGE = 140
 const MINION_COLOR = 0xffe066
 
 // ============ LASER GRANDE DO DOURADO ============
-// mesmo padrão do laser do chefe (trava a posição atual do jogador no momento do aviso, mostra
-// círculos crescendo por 2.5s, dispara um cone-laser gigante na direção travada). Era o único
-// tipo de ataque que faltava no dourado — antes ele só tinha projétil comum + mini-nave.
+// mesmo padrão do laser do chefe (mostra círculos crescendo durante o telegraph, dispara um
+// cone-laser gigante na direção travada). Era o único tipo de ataque que faltava no dourado —
+// antes ele só tinha projétil comum + mini-nave.
 // Valores ligeiramente menores que os do chefe, porque o dourado é menor (hit radius 2.2 vs 7).
+// pedido do usuário: "é pra serem LASERS, [feixes] IMENSOS e rápidos o bastante pro jogador só
+// conseguir desviar na hora certa" — velocidade multiplicada ~7x (cruza o alcance máximo em
+// ~0.4s em vez de ~2.9s, virou de fato "raio rápido" e não "torpedo lento") + raio/comprimento
+// maiores.
 const GOLDEN_LASER_INTERVAL_MIN = 8.0
 const GOLDEN_LASER_INTERVAL_MAX = 12.0
 const GOLDEN_LASER_TELEGRAPH_S = 2.5
-const GOLDEN_LASER_RADIUS = 1.8
-const GOLDEN_LASER_LENGTH = 20
-const GOLDEN_LASER_SPEED = 70
-const GOLDEN_LASER_HIT_RADIUS = 2.8
+const GOLDEN_LASER_RADIUS = 3.2
+const GOLDEN_LASER_LENGTH = 36
+const GOLDEN_LASER_SPEED = 500
+const GOLDEN_LASER_HIT_RADIUS = 4.0
 const GOLDEN_LASER_MAX_RANGE = 200
 
 export const goldenGeometry = new THREE.TorusKnotGeometry(1.1, 0.4, 80, 12)
@@ -131,9 +135,16 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     },
 
     // ctx = { fireEnemyProjectile, pushProjectile, pushLaser }
-    update(dt, playerPosition, ctx) {
+    // ramDamage > 0: carta roguelike "impulso aríete" ativa — pedido do usuário: antes o dourado
+    // não tomava dano NENHUM de ram, só deixava o jogador atravessar por dentro. Igual ao chefe,
+    // colisão com ram ativo vira dano de verdade (`ramGoldenDefeated`/`ramGoldenWorldPos`
+    // devolvidos pra `index.js` poder alimentar o mesmo `goldenSpecialHit` que o hit por
+    // projétil usa — sem isso a fase 'goldenArena' nunca saberia que o alvo morreu e travaria).
+    update(dt, playerPosition, ctx, ramDamage = 0) {
       elapsed += dt
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
+      let ramGoldenDefeated = false
+      let ramGoldenWorldPos = null
       for (const g of [...goldenTargets]) {
         if (g.dying) {
           g.deathT += dt / GOLDEN_DEATH_DURATION
@@ -141,6 +152,23 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           if (g.deathT >= 1) removeGoldenTarget(g)
           continue
         }
+
+        if (ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= GOLDEN_HIT_RADIUS) {
+          g.hp -= ramDamage
+          if (effects) effects.flashMesh(g.mesh)
+          if (g.hp <= 0) {
+            g.dying = true
+            g.deathT = 0
+            ramGoldenDefeated = true
+            ramGoldenWorldPos = g.mesh.position.clone()
+            if (effects) {
+              effects.explosion(g.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
+              effects.shockwave(g.mesh.position, GOLDEN_COLOR, 1.1)
+            }
+          }
+          continue
+        }
+
         g.mesh.scale.setScalar(pulse)
         g.mesh.rotation.y += dt * 0.6
         g.mesh.rotation.x += dt * 0.3
@@ -166,6 +194,10 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         // laser grande — mesmo fluxo do chefe: cooldown corre, dispara telegraph com a posição
         // travada do jogador, espera o telegraph terminar, atira um laser na direção travada.
         if (g.laserTelegraphTimer > 0) {
+          // pedido do usuário: o alvo continua "mirando" a posição ATUAL do jogador durante todo
+          // o telegraph, não trava só no instante em que começou — senão dava pra sair de cima
+          // a qualquer momento nos 2.5s e nunca precisar de fato desviar na hora do disparo.
+          g.laserTargetPos = playerPosition.clone()
           g.laserTelegraphTimer -= dt
           if (g.laserTelegraphTimer <= 0) {
             if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos, ctx)
@@ -177,10 +209,11 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           if (g.laserCooldown <= 0) {
             g.laserTargetPos = playerPosition.clone()
             g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
-            if (effects) effects.chargeCircle(g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
+            if (effects) effects.chargeCircle(() => g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
           }
         }
       }
+      return { ramGoldenDefeated, ramGoldenWorldPos }
     },
 
     resolveHit(prevPos, currPos, damage, isHoming, hitBuffer, effects) {
