@@ -10,16 +10,17 @@ const MINI_SWARM_MAX_COUNT = 10
 const MINI_SWARM_SPACING = 2
 const MINI_SWARM_PATROL_SPEED = 28
 const MINI_SWARM_PATROL_AMPLITUDE = 10
-const MINI_SWARM_PATROL_DURATION_MIN = 1.6
+const MINI_SWARM_PATROL_DURATION_MIN = 1.2
 const MINI_SWARM_PATROL_DURATION_MAX = 2.8
 const MINI_SWARM_DIVE_SPEED = 55
 const MINI_SWARM_DIVE_SPREAD = 7
-const MINI_SWARM_DIVE_MAX_S = 3
-const BLASTER_SPAWN_DISTANCE_MIN = 90
-const BLASTER_SPAWN_DISTANCE_MAX = 140
-const BLASTER_BOX_X = 7
-const BLASTER_BOX_Y = 5
+const MINI_SWARM_DIVE_MAX_S = 5
+const BLASTER_SPAWN_DISTANCE_MIN = 160
+const BLASTER_SPAWN_DISTANCE_MAX = 240
+const BLASTER_BOX_X = 9
+const BLASTER_BOX_Y = 6
 
+ 
 // v0.34.0: pedido do usuário — 2 padrões de mergulho novos além do reto original, cada um com
 // cor própria (o grupo inteiro sorteia 1 variante por spawn, todos os membros usam a mesma —
 // lê como "esse enxame ataca em zigue-zague", não "membro individual aleatório").
