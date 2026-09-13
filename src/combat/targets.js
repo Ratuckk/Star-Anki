@@ -2,48 +2,56 @@ import * as THREE from 'three'
 import { distanceToSegment } from '../enemies/shared.js'
 
 // ============ ALVOS NEUTROS — bônus (asteroide) + orbes-pergunta do chefe ============
-// Extraído de combat.js (v0.38.0, split por sistema): esses dois tipos de alvo não são
-// "inimigos" (não atacam, não perseguem) nem "projéteis" — só ficam parados/flutuando esperando
-// o jogador atirar neles. Ficam juntos aqui por serem a mesma categoria: alvo passivo.
 
 const BONUS_COLOR = 0x2bff6b
-const BONUS_SPAWN_DISTANCE_MIN = 90
-const BONUS_SPAWN_DISTANCE_MAX = 140
+// Distância TRAVADA (era 90-140). Se a distância varia muito, um asteroide pequeno perto fica
+// do mesmo tamanho aparente que um grande longe — a variação de escala se anula na percepção.
+// Com 100-115, o tamanho na tela É o scale, praticamente puro.
+const BONUS_SPAWN_DISTANCE_MIN = 100
+const BONUS_SPAWN_DISTANCE_MAX = 115
 const BONUS_BOX_X = 7
 const BONUS_BOX_Y = 5
-// raio de hitbox no MÉDIO (tier 1.1) — os outros tiers escalam junto com o mesh (ver
-// bonusHitRadiusFor). Antes era um raio fixo pra todo asteroide, então um 0.5x tinha hitbox de
-// um 1x (bug: o comentário prometia "acompanha a escala real", o código não fazia).
 const BONUS_HIT_RADIUS = 1.6
-// piso — asteroide do tier pequeno (scale 0.55) precisa continuar acertável
 const BONUS_HIT_RADIUS_MIN = 0.75
 const BONUS_DEATH_DURATION = 0.2
 const BONUS_KILL_BONUS = 50
 
 // ============ TIERS DE TAMANHO ============
-// 3 categorias discretas em vez de distribuição contínua: o jogador lê "esse é pequeno / médio /
-// grande" em vez de "esse é 0.83 e aquele é 0.91". Cada tier recebe ±10% de jitter pra não
-// parecer que saíram todos de fôrma — mas o olho ainda distingue os 3 grupos claramente.
-//
-// Antes disso a distribuição era contínua enviesada pros extremos, o que na prática fazia
-// ~40% dos spawns caírem abaixo de 1.0x (bem pequenos) — daí a percepção de "só sai asteroide
-// pequeno". Agora cada tier tem exatamente 1/3 de chance.
-const BONUS_SIZE_TIERS = [
-  { scale: 0.55 }, // pequeno
-  { scale: 1.1 },  // médio
-  { scale: 2.1 },  // grande
-]
-const BONUS_TIER_JITTER = 0.1 // ±10% dentro de cada tier
+// 3 categorias discretas, 1/3 de chance cada. 0.5 / 1.0 / 2.0 com ±10% de jitter dentro de cada
+// tier — "pequeno / médio / grande" é óbvio ao olho; a distribuição contínua antiga (0.7-1.6,
+// enviesada pro meio) amontoava tudo em ~1.1 e a percepção virava "sempre igual".
+const BONUS_SIZE_TIERS = [0.5, 1.0, 2.0]
+const BONUS_TIER_JITTER = 0.1
 
 function rollBonusScale() {
-  const tier = BONUS_SIZE_TIERS[Math.floor(Math.random() * BONUS_SIZE_TIERS.length)]
-  const jitter = 1 - BONUS_TIER_JITTER + Math.random() * BONUS_TIER_JITTER * 2
-  return tier.scale * jitter
+  const base = BONUS_SIZE_TIERS[Math.floor(Math.random() * BONUS_SIZE_TIERS.length)]
+  return base * (1 - BONUS_TIER_JITTER + Math.random() * BONUS_TIER_JITTER * 2)
+}
+
+// ============ GEOMETRIA POR SPAWN ============
+// Antes era UMA geometria compartilhada pela sessão inteira (criada uma vez em
+// createTargetsSystem) — todos os asteroides tinham o MESMO formato, só mudavam de escala. Isso
+// lê como "o mesmo objeto em tamanhos diferentes", não como "asteroides variados". Agora cada
+// spawn tem sua PRÓPRIA forma: icosaedro com deslocamento aleatório por vértice. Não é caro —
+// são ~20 vértices e no máximo 1-2 asteroides vivos por vez. Precisa ser disposado no
+// removeBonusTarget pra não vazar GPU memory.
+function makeBonusGeometry() {
+  const geo = new THREE.IcosahedronGeometry(1.1, 1)
+  const pos = geo.attributes.position
+  const v = new THREE.Vector3()
+  for (let i = 0; i < pos.count; i += 1) {
+    v.fromBufferAttribute(pos, i)
+    const n = v.clone().normalize()
+    // deslocamento maior que antes (era 0.4) — dá pra ver claramente que cada pedra é diferente
+    v.addScaledVector(n, (Math.random() - 0.5) * 0.7)
+    pos.setXYZ(i, v.x, v.y, v.z)
+  }
+  geo.computeVertexNormals()
+  return geo
 }
 
 const PASS_BEHIND = -4
 
-// v0.29.6: +25% no tiro normal (não no teleguiado) — repassado por quem chama resolve*Hit
 const BOSS_ORB_HIT_RADIUS = 2.2
 const BOSS_ORB_DEATH_DURATION = 0.2
 const BOSS_ORB_COLOR = 0xffd166
@@ -54,24 +62,6 @@ export function createTargetsSystem(scene, rail, effects) {
   const bossOrbs = []
   let elapsed = 0
 
-  // pedido do usuário: "adicione mais variedades de tamanho... e um shading pra parecer mais um
-  // asteroide" — geometria icosaédrica com os vértices deslocados aleatoriamente ao longo da
-  // própria normal (UMA VEZ por sessão — recriada a cada `createTargetsSystem`, então cada
-  // partida nova ganha uma forma de pedra diferente), tamanho varia por instância via mesh.scale
-  // no spawn. emissive fraco — menos "gema brilhando", mais rocha lida pela luz da cena.
-  const bonusGeometry = (() => {
-    const geo = new THREE.IcosahedronGeometry(1.1, 1)
-    const pos = geo.attributes.position
-    const v = new THREE.Vector3()
-    for (let i = 0; i < pos.count; i += 1) {
-      v.fromBufferAttribute(pos, i)
-      const n = v.clone().normalize()
-      v.addScaledVector(n, (Math.random() - 0.5) * 0.4)
-      pos.setXYZ(i, v.x, v.y, v.z)
-    }
-    geo.computeVertexNormals()
-    return geo
-  })()
   const bonusMaterial = new THREE.MeshPhongMaterial({
     color: BONUS_COLOR, flatShading: true, emissive: 0x0a6622, emissiveIntensity: 0.25,
   })
@@ -99,6 +89,8 @@ export function createTargetsSystem(scene, rail, effects) {
 
   function removeBonusTarget(b) {
     scene.remove(b.mesh)
+    // geometria é POR SPAWN agora (ver makeBonusGeometry) — precisa disposar aqui, senão vaza
+    b.mesh.geometry.dispose()
     bonusTargets.splice(bonusTargets.indexOf(b), 1)
   }
 
@@ -129,17 +121,14 @@ export function createTargetsSystem(scene, rail, effects) {
         if (orb.deathT >= 1) removeBossOrb(orb)
         continue
       }
-      // giro + pulso constantes — só pra ficar claro que é um marcador "vivo" de longe, não um
-      // inimigo nem um alvo comum.
       orb.mesh.rotation.y += dt * 0.8
       orb.mesh.children[1].rotation.z += dt * 1.6
       orb.mesh.scale.setScalar(1 + Math.sin(elapsed * 3 + orb.phase) * 0.08)
     }
   }
 
-  // Hitbox efetiva de um bônus — acompanha a escala real do mesh (o comentário antigo prometia
-  // isso, o código usava o raio fixo BONUS_HIT_RADIUS, então asteroide pequeno tinha hitbox do
-  // tamanho de um grande). Piso em BONUS_HIT_RADIUS_MIN pro extremo pequeno ainda ser acertável.
+  // hitbox acompanha a escala real (bug antigo: hitbox fixa de 1.6 pra todo asteroide, o
+  // comentário prometia "acompanha a escala real" mas o código usava constante)
   function bonusHitRadiusFor(bonus) {
     return Math.max(BONUS_HIT_RADIUS_MIN, BONUS_HIT_RADIUS * (bonus.scale ?? 1))
   }
@@ -147,7 +136,7 @@ export function createTargetsSystem(scene, rail, effects) {
   return {
     spawnBonusTarget() {
       const position = randomSpawnPositionOnPath(BONUS_SPAWN_DISTANCE_MIN, BONUS_SPAWN_DISTANCE_MAX, BONUS_BOX_X, BONUS_BOX_Y)
-      const mesh = new THREE.Mesh(bonusGeometry, bonusMaterial)
+      const mesh = new THREE.Mesh(makeBonusGeometry(), bonusMaterial)
       mesh.position.copy(position)
       const scale = rollBonusScale()
       mesh.scale.setScalar(scale)
@@ -160,8 +149,6 @@ export function createTargetsSystem(scene, rail, effects) {
       for (const bonus of [...bonusTargets]) if (!bonus.dying) removeBonusTarget(bonus)
     },
 
-    // 6 orbes genéricos espalhados pela arena do chefe — nenhum "é" uma pergunta específica até
-    // ser atingido; main.js decide qual pergunta mostrar (nextQuestion) na hora.
     spawnBossOrbs(count, opts = {}) {
       const { distanceMin = 45, distanceMax = 95 } = opts
       const origin = rail.getArenaCenter()
@@ -196,8 +183,6 @@ export function createTargetsSystem(scene, rail, effects) {
       updateBossOrbs(dt)
     },
 
-    // chamados pelo projectiles.js por projétil do jogador — cada um resolve E aplica o efeito
-    // colateral (some, explode, soma pontos), devolvendo só o que quem chama precisa saber
     resolveBossOrbHit(prevPos, currPos, hitBuffer) {
       if (!bossOrbs.length) return null
       const orb = bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, currPos) <= BOSS_ORB_HIT_RADIUS + hitBuffer)
@@ -214,8 +199,6 @@ export function createTargetsSystem(scene, rail, effects) {
       if (!bonus) return null
       bonus.dying = true
       bonus.deathT = 0
-      // explosão escala com o tamanho do asteroide — asteroide grande dá uma explosão visivelmente
-      // maior que um pequeno, reforçando visualmente a variedade
       if (effects) effects.explosion(bonus.mesh.position, BONUS_COLOR, 0.9 * bonus.scale)
       return { points: BONUS_KILL_BONUS }
     },
@@ -230,7 +213,8 @@ export function createTargetsSystem(scene, rail, effects) {
     dispose() {
       for (const b of [...bonusTargets]) removeBonusTarget(b)
       for (const o of [...bossOrbs]) removeBossOrb(o)
-      bonusGeometry.dispose()
+      // bônus: geometria é por spawn, já disposta em removeBonusTarget. Só o material é
+      // compartilhado.
       bonusMaterial.dispose()
       bossOrbGeometry.dispose()
       bossOrbMaterial.dispose()
