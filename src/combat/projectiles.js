@@ -124,6 +124,32 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         if (steeredDir.lengthSq() > 1e-6) projectile.velocity.copy(steeredDir.normalize().multiplyScalar(speed))
       }
 
+      // ============================================================
+      // >>> BLOCO NOVO — Enxame-Ímã: curva o tiro NORMAL quando passa perto <<<
+      // ============================================================
+      if (!projectile.isHoming) {
+        const magnetSources = enemies.getMagnetSources ? enemies.getMagnetSources() : []
+        if (magnetSources.length > 0) {
+          const speed = projectile.velocity.length()
+          const deflect = new THREE.Vector3()
+          for (const source of magnetSources) {
+            const toSource = source.position.clone().sub(projectile.mesh.position)
+            const dist = toSource.length()
+            if (dist > 1e-4 && dist < source.radius) {
+              const falloff = 1 - dist / source.radius
+              deflect.addScaledVector(toSource.normalize(), -source.strength * falloff * dt)
+            }
+          }
+          if (deflect.lengthSq() > 1e-8) {
+            projectile.velocity.add(deflect)
+            if (projectile.velocity.lengthSq() > 1e-6) projectile.velocity.normalize().multiplyScalar(speed)
+          }
+        }
+      }
+      // ============================================================
+      // >>> FIM DO BLOCO NOVO <<<
+      // ============================================================
+
       const prevPos = projectile.mesh.position.clone()
       const step = projectile.velocity.clone().multiplyScalar(dt)
       projectile.mesh.position.add(step)
