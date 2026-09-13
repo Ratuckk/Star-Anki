@@ -45,12 +45,18 @@ const EXPLOSION_PARTICLE_SIZE = 0.9
 // aleatório fixo (não coladas na câmera — de propósito, pra lerem como destroço de verdade
 // visto de lado, não um círculo plano sempre de frente).
 const EXPLOSION_GRAY_RING_COUNT_MIN = 1
-const EXPLOSION_GRAY_RING_COUNT_MAX = 2
+const EXPLOSION_GRAY_RING_COUNT_MAX = 3
 const EXPLOSION_GRAY_RING_COLOR = 0x999999
 const EXPLOSION_GRAY_RING_DURATION = 0.65
 const EXPLOSION_GRAY_RING_SCALE_MIN = 1.6
 const EXPLOSION_GRAY_RING_SCALE_MAX = 3.4
 const EXPLOSION_GRAY_RING_START_SCALE = 0.2
+// pedido do usuário: nem toda morte solta as argolas — chance de 45% (chefe: 80%, opts.isBoss)
+// em vez de sempre; e a argola em si passa a ser visível só de um lado (FrontSide) em vez dos
+// 2 lados do plano (DoubleSide, o padrão de makeRingMesh — só as cinzas mudam, os outros usos
+// de makeRingMesh continuam DoubleSide)
+const EXPLOSION_GRAY_RING_CHANCE_NORMAL = 0.45
+const EXPLOSION_GRAY_RING_CHANCE_BOSS = 0.8
 
 // ============ MUZZLE FLASH ============
 const MUZZLE_DURATION = 0.07
@@ -457,10 +463,12 @@ export function createEffectsSystem(scene, opts = {}) {
 
     // argolas cinzas grandes, tamanho e ângulo 3D aleatórios (fixo — não colam na câmera, pra
     // lerem como destroço de verdade visto de um ângulo qualquer, não um círculo sempre de frente)
-    if (opts.rings) {
+    const ringChance = opts.isBoss ? EXPLOSION_GRAY_RING_CHANCE_BOSS : EXPLOSION_GRAY_RING_CHANCE_NORMAL
+    if (opts.rings && Math.random() < ringChance) {
       const count = EXPLOSION_GRAY_RING_COUNT_MIN + Math.floor(Math.random() * (EXPLOSION_GRAY_RING_COUNT_MAX - EXPLOSION_GRAY_RING_COUNT_MIN + 1))
       for (let i = 0; i < count; i += 1) {
         const mesh = makeRingMesh(EXPLOSION_GRAY_RING_COLOR, 0.16 + Math.random() * 0.14)
+        mesh.material.side = THREE.FrontSide
         mesh.position.copy(position)
         mesh.quaternion.setFromEuler(new THREE.Euler(
           Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2,
