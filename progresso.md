@@ -1,3 +1,13 @@
+## Correção: os 3 quadrados da mira de lock-on quase não davam pra ver — v0.29.2
+
+Pedido literal, depois de eu ter entregue a v0.29.1: *"cade os 3 quadrados que surgem em tamanhos diferentes, só á um"*. Rodei de novo e conferi contra o código: a animação **existia** (3 elementos, tamanhos e atraso diferentes), mas a sequência inteira durava só 0.44s e cada quadrado já começava a encolher/sumir assim que aparecia — rápido demais pra perceber no meio do jogo, sobrando só a impressão de "tem 1 quadrado" (o final, girando). Não era um bug de lógica, era um problema de timing/legibilidade.
+
+**Corrigido** (`index.html`, `.enemy-lock-marker`): cada quadrado agora **segura** de verdade no próprio tamanho antes de encolher — keyframes com um platô em 60% (`0%→60%` parado no tamanho, `60%→100%` encolhe e some), em vez de começar a encolher no instante 0. Tamanhos mais distintos (2.4x e 1.7x, era 1.9x e 1.45x), opacidade total 1 (era 0.85) pra ficarem bem visíveis enquanto duram, borda mais grossa (3px) nos dois primeiros. Sequência total esticada de 0.44s pra ~0.64s (quadrado A visível 0→0.5s, B visível 0.22→0.72s, C entra em 0.44s e começa a girar em 0.64s).
+
+**Testado**: reabri o jogo, travei lock-on em 2 inimigos simultâneos de novo — confirmei visualmente o quadrado final girando (mesma confirmação da v0.29.1). **Não confirmado ao vivo desta vez** o instante exato dos 3 tamanhos aparecendo em sequência — tentei bastante (segurando o tiro, virando a nave pra alinhar com o inimigo, inclusive tentando ler a `Web Animations API` via console pra pegar o estado exato da animação no meio do caminho), mas a mesma limitação de mira precisa em modo arena + throttling de `requestAnimationFrame` sem foco real de SO (documentada desde a Fase 1) impediu pegar o inimigo na mira por tempo suficiente pra capturar o momento certo. Compensado com revisão cuidadosa dos keyframes (sintaxe e valores conferidos manualmente, semântica de CSS animation garante o comportamento descrito independente de bug de lógica do jogo).
+
+**Versão**: v0.29.1 → v0.29.2.
+
 ## Mira do jogador reduzida + nova mira do tiro carregado (quadrados convergindo) — v0.29.1
 
 Pedido literal, fora das fases do mega-pedido: *"faça uma mudança grande na mira do jogador, deixe ela 30% menor com 40% menos de opacidade, inclusive reduza os detalhes dela"* + *"quanto a mira do disparo carregado, faça ser uma animação de um quadrado verde ao invés de um círculo que surge em 3 de tamanhos diferentes (um maior que o outro) antes de dar lock-in por completo, ficando só um que fica girando no inimigo."*

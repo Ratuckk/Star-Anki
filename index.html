@@ -275,18 +275,22 @@
     box-shadow: 0 0 8px rgba(107, 255, 176, 0.8), inset 0 0 6px rgba(107, 255, 176, 0.5);
     opacity: 0;
   }
-  .enemy-lock-marker .lock-sq-a { animation: lock-sq-converge-a 0.35s ease-out forwards; }
-  .enemy-lock-marker .lock-sq-b { animation: lock-sq-converge-b 0.35s ease-out 0.12s forwards; }
+  .enemy-lock-marker .lock-sq-a { border-width: 3px; animation: lock-sq-converge-a 0.5s ease-out forwards; }
+  .enemy-lock-marker .lock-sq-b { border-width: 3px; animation: lock-sq-converge-b 0.5s ease-out 0.22s forwards; }
   .enemy-lock-marker .lock-sq-c {
-    animation: lock-sq-settle 0.2s ease-out 0.24s forwards, lock-sq-spin 1.6s linear 0.44s infinite;
+    animation: lock-sq-settle 0.2s ease-out 0.44s forwards, lock-sq-spin 1.6s linear 0.64s infinite;
   }
+  /* cada quadrado SEGURA de verdade no próprio tamanho (0%→60% parado) antes de encolher e
+     sumir (60%→100%) — sem essa pausa a diferença de tamanho passava rápido demais pra notar */
   @keyframes lock-sq-converge-a {
-    0% { transform: scale(1.9); opacity: 0.85; }
-    100% { transform: scale(1); opacity: 0; }
+    0%   { transform: scale(2.4); opacity: 1; }
+    60%  { transform: scale(2.4); opacity: 1; }
+    100% { transform: scale(1.3); opacity: 0; }
   }
   @keyframes lock-sq-converge-b {
-    0% { transform: scale(1.45); opacity: 0.85; }
-    100% { transform: scale(1); opacity: 0; }
+    0%   { transform: scale(1.7); opacity: 1; }
+    60%  { transform: scale(1.7); opacity: 1; }
+    100% { transform: scale(1.1); opacity: 0; }
   }
   @keyframes lock-sq-settle {
     0% { transform: scale(1) rotate(0deg); opacity: 0; }
