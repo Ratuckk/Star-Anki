@@ -304,6 +304,7 @@ function injectHudExtraStyles() {
   max-width: 90vw;
 }
 .question-modal-card {
+  position: relative;
   width: 240px;
   display: flex;
   align-items: center;
@@ -321,6 +322,19 @@ function injectHudExtraStyles() {
 }
 .question-modal-card:hover { transform: translateY(-4px); }
 .question-modal-card svg { flex-shrink: 0; }
+.question-modal-hint {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #8fa2b8;
+  background: rgba(11, 13, 18, 0.65);
+  border-radius: 6px;
+  padding: 1px 6px;
+  pointer-events: none;
+}
 `
   document.head.appendChild(style)
 }
@@ -331,7 +345,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   root.innerHTML = ''
 
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.29.1</span>'
+  title.innerHTML = 'Star Anki <span class="version-tag">v0.29.2</span>'
   root.appendChild(title)
 
   const desc = document.createElement('p')
@@ -1135,6 +1149,11 @@ export function createGameHud() {
     debugButtons[action.id] = btn
   }
 
+  // handler do keydown 1–4 do modal de pergunta — guardado pra remover quando o modal fecha
+  // (evita listener órfão se o modal abrir/fechar várias vezes, ou se `hideQuestionModal` for
+  // chamado de fora sem ter passado pelo clique)
+  let questionModalKeyHandler = null
+
   const enemyBarPool = new Map()
   const lockMarkerPool = new Map()
 
@@ -1279,26 +1298,61 @@ export function createGameHud() {
 
     // pausa total: pergunta+alternativas centralizadas, visual de card (Fase 5/6) — usado
     // quando o jogador atira num orbe do chefe. onPick(slot) resolve a escolha.
+    //
+    // desde a v0.29.2, também dá pra escolher pelos NÚMEROS 1–4 (reusa os binds quizSlot1..4,
+    // padrão Digit1..Digit4) em vez de ter que clicar no card — quem remapeou os números nas
+    // Configurações também funciona aqui, porque leio de getBindings() em vez de hardcodar.
     showQuestionModal({ question, alternatives, onPick }) {
       questionModalTitle.textContent = question
       questionModalList.innerHTML = ''
-      for (const alt of alternatives) {
+      alternatives.forEach((alt, i) => {
         const hex = COLOR_MAP[alt.color] ?? '#ffffff'
         const btn = document.createElement('button')
         btn.className = 'question-modal-card'
         btn.style.borderColor = hex
-        btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span>`
+        // pequeno hint numérico no canto do card pra lembrar que 1–4 também funciona
+        btn.innerHTML = `${shapeMarkup(alt.shape, hex)}<span>${alt.text}</span><span class="question-modal-hint">${i + 1}</span>`
         btn.addEventListener('click', () => {
           questionModalOverlay.hidden = true
+          if (questionModalKeyHandler) {
+            window.removeEventListener('keydown', questionModalKeyHandler)
+            questionModalKeyHandler = null
+          }
           onPick(alt.slot)
         })
         questionModalList.appendChild(btn)
-      }
+      })
       questionModalOverlay.hidden = false
+
+      // handler 1–4: se algum listener antigo ficou pendurado de um modal que não foi fechado
+      // direito, remove antes de registrar o novo (defensivo, evita disparo duplo)
+      if (questionModalKeyHandler) {
+        window.removeEventListener('keydown', questionModalKeyHandler)
+        questionModalKeyHandler = null
+      }
+      const bindings = getBindings()
+      questionModalKeyHandler = (e) => {
+        for (let i = 0; i < alternatives.length; i += 1) {
+          const codes = bindings.actions[`quizSlot${i + 1}`] || []
+          if (codes.includes(e.code)) {
+            e.preventDefault()
+            questionModalOverlay.hidden = true
+            window.removeEventListener('keydown', questionModalKeyHandler)
+            questionModalKeyHandler = null
+            onPick(alternatives[i].slot)
+            return
+          }
+        }
+      }
+      window.addEventListener('keydown', questionModalKeyHandler)
     },
 
     hideQuestionModal() {
       questionModalOverlay.hidden = true
+      if (questionModalKeyHandler) {
+        window.removeEventListener('keydown', questionModalKeyHandler)
+        questionModalKeyHandler = null
+      }
     },
 
     damageFlash() {
@@ -1487,6 +1541,12 @@ export function createGameHud() {
     },
 
     unmount() {
+      // se o HUD for desmontado com o modal aberto (fim de setor, teardown), remove o listener
+      // global de keydown pra não vazar entre sessões
+      if (questionModalKeyHandler) {
+        window.removeEventListener('keydown', questionModalKeyHandler)
+        questionModalKeyHandler = null
+      }
       root.innerHTML = ''
     },
   }
