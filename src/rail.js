@@ -1,7 +1,13 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 22
-const LATERAL_SPEED = 22
+// v0.29.6: nave mais calma por padrão, mas ganha uma pequena aceleração ao manter a MESMA
+// direção (X e Y) por LATERAL_ACCEL_HOLD_TIME segundos — sobe de LATERAL_SPEED_BASE até
+// LATERAL_SPEED_MAX (que é a velocidade lateral de antes desta mudança). Soltar ou trocar de
+// direção reseta o ganho na hora.
+const LATERAL_SPEED_BASE = 15
+const LATERAL_SPEED_MAX = 22
+const LATERAL_ACCEL_HOLD_TIME = 1.2
 const LATERAL_ACCEL_RATE = 22
 const BOX_X = 44
 const BOX_Y = 44
@@ -101,6 +107,10 @@ export function createRailController(camera, scene) {
   let playerY = 0
   let velX = 0
   let velY = 0
+  // v0.29.6: momentum de direção mantida — reseta assim que o sinal de X ou Y muda (ou pára)
+  let lastMoveXSign = 0
+  let lastMoveYSign = 0
+  let lateralAccelTimer = 0
   let roll = 0
   let speedMultiplier = 1
   let advancing = true
@@ -268,8 +278,20 @@ export function createRailController(camera, scene) {
 
     if (advancing) distance += RAIL_SPEED * speedMultiplier * dt
 
-    const targetVelX = input.moveX * LATERAL_SPEED
-    const targetVelY = input.moveY * LATERAL_SPEED
+    // v0.29.6: momentum — mantendo a mesma direção (X e Y) o suficiente, a velocidade lateral
+    // sobe de LATERAL_SPEED_BASE até LATERAL_SPEED_MAX; qualquer mudança de sinal (ou soltar)
+    // zera o ganho na hora, voltando pro base
+    const curXSign = Math.sign(input.moveX)
+    const curYSign = Math.sign(input.moveY)
+    const sameDir = (curXSign !== 0 || curYSign !== 0) && curXSign === lastMoveXSign && curYSign === lastMoveYSign
+    lateralAccelTimer = sameDir ? Math.min(LATERAL_ACCEL_HOLD_TIME, lateralAccelTimer + dt) : 0
+    lastMoveXSign = curXSign
+    lastMoveYSign = curYSign
+    const accelT = lateralAccelTimer / LATERAL_ACCEL_HOLD_TIME
+    const currentLateralSpeed = LATERAL_SPEED_BASE + (LATERAL_SPEED_MAX - LATERAL_SPEED_BASE) * accelT
+
+    const targetVelX = input.moveX * currentLateralSpeed
+    const targetVelY = input.moveY * currentLateralSpeed
     const accelBlend = 1 - Math.exp(-LATERAL_ACCEL_RATE * dt)
     velX += (targetVelX - velX) * accelBlend
     velY += (targetVelY - velY) * accelBlend

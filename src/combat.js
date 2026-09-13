@@ -65,6 +65,12 @@ const SHAPE_COLOR = { azul: 0x4da6ff, 'âmbar': 0xffb84d, magenta: 0xff4dd2, cia
 
 const BOSS_TARGET_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
+// v0.29.6: +25% no tiro normal (não no teleguiado) — a colisão é feita contra o SEGMENTO
+// percorrido no frame, então "aumentar a hitbox" aqui significa somar essa folga ao raio de
+// acerto de cada tipo de alvo, só quando o projétil não é homing (o teleguiado já tem seu
+// próprio cone bem maior e é uma mecânica de precisão à parte).
+const PROJECTILE_HIT_BUFFER = 0.3
+
 // ============ ORBES-PERGUNTA DO CHEFE (Fase 5) ============
 // substituem o antigo "atire na alternativa certa entre 4 formas espalhadas" — agora são
 // marcadores genéricos e idênticos: acertar QUALQUER um dispara a próxima pergunta da fila
@@ -105,7 +111,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   const bonusTargets = []
   const bossOrbs = []
 
-  const projectileGeometry = new THREE.ConeGeometry(0.168, 1.2, 5)
+  // +25% de tamanho visual (v0.29.6): 0.168/1.2 → 0.21/1.5
+  const projectileGeometry = new THREE.ConeGeometry(0.21, 1.5, 5)
   projectileGeometry.rotateX(Math.PI / 2)
   const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
 
@@ -382,8 +389,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       // QoL (v0.29.4): guard de array vazio — quizTargets/bossOrbs/bonusTargets estão vazios na
       // maior parte do tempo (combate normal, arena do chefe, etc.); sem o guard, cada projétil
       // rodava o .find (com callback + distanceToSegment) em array vazio por nada.
+      const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER
       const targetHit = quizTargets.length
-        ? quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS)
+        ? quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS + hitBuffer)
         : null
       if (targetHit) {
         targetHit.dying = true
@@ -395,7 +403,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
 
       const orbHit = bossOrbs.length
-        ? bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS)
+        ? bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS + hitBuffer)
         : null
       if (orbHit) {
         orbHit.dying = true
@@ -409,6 +417,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       const hit = enemies.resolveProjectileHit(prevPos, projectile.mesh.position, {
         damage: projectile.damage ?? 1,
         isHoming: !!projectile.isHoming,
+        hitBuffer,
       })
       if (hit) {
         removeProjectile(projectile)
@@ -433,7 +442,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
 
       const bonusHit = bonusTargets.length
-        ? bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS)
+        ? bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS + hitBuffer)
         : null
       if (bonusHit) {
         bonusHit.dying = true

@@ -37,6 +37,31 @@ export function injectHudExtraStyles() {
   100% { transform: translate(-50%, -50%) translateY(-48px) scale(0.9); opacity: 0; }
 }
 
+/* ============ TEXTO FLUTUANTE DE ERRO (v0.29.6) ============ */
+/* substitui o painel grande de feedback quando o jogador erra uma pergunta — pequeno,
+   vermelho, sobe e some sozinho em 3s, sem travar a leitura da tela */
+.hud-error-float {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: #ff4d4d;
+  text-shadow: 0 0 8px rgba(255, 40, 40, 0.85), 0 1px 2px rgba(0,0,0,0.95);
+  pointer-events: none;
+  z-index: 30;
+  animation: hud-error-float-anim 3000ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+@keyframes hud-error-float-anim {
+  0%   { transform: translate(-50%, -50%) translateY(8px)  scale(0.7); opacity: 0; }
+  15%  { transform: translate(-50%, -50%) translateY(-2px) scale(1.1); opacity: 1; }
+  75%  { transform: translate(-50%, -50%) translateY(-14px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) translateY(-32px) scale(0.95); opacity: 0; }
+}
+
 /* ============ HIT MARKER (X na mira) ============ */
 .hit-marker {
   position: absolute;

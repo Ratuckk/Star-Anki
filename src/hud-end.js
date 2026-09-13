@@ -8,7 +8,9 @@ export function showSectorEnd({ summary, onPlayAgain, practiceCount = 0, onPract
   root.innerHTML = ''
 
   const title = document.createElement('h2')
-  title.textContent = 'Setor concluído'
+  // v0.29.6: modo infinito — só chega aqui quando o jogador morre (zera as vidas), não mais
+  // por "acabar o setor"
+  title.textContent = 'Fim de jogo'
   root.appendChild(title)
 
   const stats = document.createElement('p')

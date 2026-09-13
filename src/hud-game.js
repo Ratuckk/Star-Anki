@@ -188,14 +188,6 @@ export function createGameHud() {
   cardChoiceList.className = 'card-choice-list'
   cardChoiceOverlay.appendChild(cardChoiceList)
 
-  const chargeBar = document.createElement('div')
-  chargeBar.className = 'hud-charge-bar'
-  chargeBar.hidden = true
-  root.appendChild(chargeBar)
-  const chargeBarFill = document.createElement('div')
-  chargeBarFill.className = 'hud-charge-bar-fill'
-  chargeBar.appendChild(chargeBarFill)
-
   const debugPanel = document.createElement('div')
   debugPanel.className = 'debug-panel'
   debugPanel.hidden = true
@@ -501,6 +493,17 @@ export function createGameHud() {
       setTimeout(() => el.remove(), 950)
     },
 
+    // v0.29.6: errar pergunta não mostra mais o painel de feedback (resposta certa/pontos) —
+    // só isso, um texto vermelho pequeno que sobe e some sozinho em 3s. O jogo continua
+    // "pausado" (fase de resolução) até ele sumir, mas sem UI grande no meio da tela.
+    showErrorFloat(text = 'Errou!') {
+      const el = document.createElement('div')
+      el.className = 'hud-error-float'
+      el.textContent = text
+      root.appendChild(el)
+      setTimeout(() => el.remove(), 3000)
+    },
+
     setEnemyHealthBars(list) {
       const seen = new Set()
       for (const item of list) {
@@ -590,11 +593,6 @@ export function createGameHud() {
         cardChoiceList.appendChild(el)
       }
       cardChoiceOverlay.hidden = false
-    },
-
-    setChargeIndicator(active, fraction = 0) {
-      chargeBar.hidden = !active
-      if (active) chargeBarFill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
     },
 
     debug: {

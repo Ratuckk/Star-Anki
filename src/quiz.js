@@ -7,7 +7,6 @@ export const SLOT_STYLES = [
   { slot: 3, shape: 'icosaedro', color: 'ciano' },
 ]
 
-const SECTOR_SIZE = 10
 export const STARTING_HEALTH = 10
 export const STARTING_LIVES = 3
 const COMBO_STEP = 0.15
@@ -22,19 +21,21 @@ function shuffle(array) {
   return result
 }
 
+// modo infinito (v0.29.6): não fatia mais em SECTOR_SIZE — a fila começa com o baralho
+// inteiro (erradas primeiro, resto embaralhado) e nextQuestion() recicla (reembaralha e volta
+// pro início) quando esgota. Guarda `allShooterCards` só pra essa reciclagem.
 export function createSession(deck, opts = {}) {
   const { shooterCards } = deck
   const history = opts.history || {}
   const startingHealth = opts.startingHealth ?? STARTING_HEALTH
   const startingLives = opts.startingLives ?? STARTING_LIVES
-  const sectorSize = Math.min(SECTOR_SIZE, shooterCards.length)
 
   const withErrors = shuffle(shooterCards.filter((c) => (history[c.guid]?.erros ?? 0) > 0))
   withErrors.sort((a, b) => history[b.guid].erros - history[a.guid].erros)
   const usedGuids = new Set(withErrors.map((c) => c.guid))
   const rest = shuffle(shooterCards.filter((c) => !usedGuids.has(c.guid)))
 
-  const queue = [...withErrors, ...rest].slice(0, sectorSize)
+  const queue = [...withErrors, ...rest]
 
   return {
     queue,
@@ -44,7 +45,7 @@ export function createSession(deck, opts = {}) {
     comboMultiplier: 1.0,
     score: 0,
     log: [],
-    sectorSize,
+    allShooterCards: shooterCards,
   }
 }
 
@@ -61,7 +62,12 @@ function buildAlternatives(card, allCards) {
 }
 
 export function nextQuestion(session, allCards) {
-  if (session.pointer >= session.sectorSize || session.lives <= 0) return null
+  if (session.lives <= 0) return null
+  // fila esgotou: reembaralha o baralho inteiro e recomeça — é o que faz o jogo ser infinito
+  if (session.pointer >= session.queue.length) {
+    session.queue = shuffle(session.allShooterCards)
+    session.pointer = 0
+  }
   return buildAlternatives(session.queue[session.pointer], allCards)
 }
 
@@ -101,15 +107,13 @@ export function resolveAnswer(session, outcome) {
     points,
   })
 
-  // esgotar a saúde aqui NÃO termina o setor sozinho — main.js decide se consome uma vida
-  // (e reabastece a saúde) ou se é de fato game over, dependendo de quantas vidas restam
-  const sectorOver = session.pointer >= session.sectorSize
-
+  // modo infinito (v0.29.6): não existe mais "fim de setor" por acabar as perguntas — só
+  // zerar as vidas termina o jogo (main.js decide isso via applyHealthLoss/outOfLives)
   return {
     points,
     comboMultiplier: session.comboMultiplier,
     healthRemaining: session.health,
-    sectorOver,
+    sectorOver: false,
     comboBroken: type !== 'correct',
   }
 }

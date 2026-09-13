@@ -28,6 +28,19 @@ function distanceToSegment(point, segStart, segEnd) {
   return point.distanceTo(_dtsClose)
 }
 
+// v0.29.6: explosão de kill do chefe — bem maior/espalhafatosa que a de um inimigo comum,
+// com 2 camadas extras defasadas (setTimeout) e uma onda de choque, pra dar peso de "chefe
+// morrendo" de verdade. `position` é clonado porque o mesh que morreu pode já ter sido
+// removido da cena pelo tempo que os timeouts disparam.
+function explodeBoss(effects, position, isHoming = false) {
+  const pos = position.clone()
+  const mainColor = isHoming ? HOMING_EXPLOSION_COLOR : BOSS_ENEMY_COLOR
+  effects.explosion(pos, mainColor, 5.0)
+  effects.shockwave(pos, BOSS_ENEMY_COLOR, 1.6)
+  setTimeout(() => effects.explosion(pos, 0xffaa33, 3.2), 110)
+  setTimeout(() => effects.explosion(pos, mainColor, 3.8), 240)
+}
+
 // ============ INIMIGO VERMELHO COMUM ============
 const ENEMY_COLOR = 0xff4d4d
 const ENEMY_SPAWN_DISTANCE_MIN = 90
@@ -93,6 +106,18 @@ const BOSS_ENEMY_FIRE_INTERVAL_MIN = 800
 const BOSS_ENEMY_FIRE_INTERVAL_MAX = 1600
 const BOSS_ENEMY_SHOTS_PER_VOLLEY = 3
 
+// ============ LASER DO CHEFE (v0.29.6) ============
+// telegrafado por 3s (círculos crescendo, ver effects.chargeCircle) na posição ATUAL do
+// jogador no instante em que o laser "trava o alvo" — dá tempo real de sair de cima antes do
+// disparo, clássico "aviso de laser" de rail shooter
+const BOSS_LASER_INTERVAL_MIN = 6.0
+const BOSS_LASER_INTERVAL_MAX = 10.0
+const BOSS_LASER_TELEGRAPH_S = 3.0
+const BOSS_LASER_SPEED = 65
+const BOSS_LASER_HIT_RADIUS = 2.2
+const BOSS_LASER_MAX_RANGE = 220
+const BOSS_LASER_COLOR = 0xff2d4d
+
 // ============ ESPECIAL DOURADO ============
 const GOLDEN_SPECIAL_COLOR = 0xfff2a0
 const GOLDEN_SPECIAL_EMISSIVE = 0xffb300
@@ -104,6 +129,16 @@ const GOLDEN_SPECIAL_HP = 10
 const GOLDEN_CHASE_SPEED = 9
 const GOLDEN_FIRE_INTERVAL_MIN = 1200
 const GOLDEN_FIRE_INTERVAL_MAX = 2400
+// v0.29.6: além do tiro, o dourado solta mini-naves amarelas que perseguem o jogador numa
+// velocidade parecida com a da nave (LATERAL_SPEED_MAX de rail.js) — reaproveita o array
+// enemyProjectiles com homing:true, então colide/deflete igual qualquer outro tiro inimigo
+const GOLDEN_MINION_INTERVAL_MIN = 2.4
+const GOLDEN_MINION_INTERVAL_MAX = 3.6
+const GOLDEN_MINION_SPEED = 16
+const GOLDEN_MINION_HIT_RADIUS = 0.9
+const GOLDEN_MINION_MAX_RANGE = 140
+const GOLDEN_MINION_TURN_RATE = 2.5
+const GOLDEN_MINION_COLOR = 0xffe066
 
 // ============ REDUTOR DE TEMPO ============
 const TIME_ENEMY_COLOR = 0xb026ff
@@ -132,6 +167,7 @@ const TELEGRAPH_COLOR_BY_KIND = {
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
   const enemyProjectiles = []
+  const enemyLasers = []
   const goldenTargets = []
   let nextEnemyId = 1
   let elapsed = 0
@@ -161,7 +197,17 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const timeEnemyGeometry = new THREE.ConeGeometry(0.9, 1.3, 4)
   const timeEnemyMaterial = new THREE.MeshPhongMaterial({ color: TIME_ENEMY_COLOR, emissive: TIME_ENEMY_EMISSIVE, flatShading: true })
   const tankEnemyMaterial = new THREE.MeshPhongMaterial({ color: TANK_ENEMY_COLOR, flatShading: true })
+  // v0.29.6: chefe vira decaedro móvel — Three.js não tem decaedro nativo (10 faces), o
+  // dodecaedro (12 faces regulares) é o poliedro pronto mais próximo dessa leitura de "bolota
+  // facetada girando". Gira sozinho em updateEnemies, independente de olhar pro jogador.
+  const bossEnemyGeometry = new THREE.DodecahedronGeometry(1, 0)
   const bossEnemyMaterial = new THREE.MeshPhongMaterial({ color: BOSS_ENEMY_COLOR, emissive: BOSS_ENEMY_EMISSIVE, flatShading: true })
+  // mini-nave amarela solta pelo dourado — cone deitado pequeno, mesma técnica de pré-rotação
+  const goldenMinionGeometry = new THREE.ConeGeometry(0.28, 1.0, 3)
+  goldenMinionGeometry.rotateX(Math.PI / 2)
+  const goldenMinionMaterial = new THREE.MeshPhongMaterial({
+    color: GOLDEN_MINION_COLOR, emissive: 0x996600, emissiveIntensity: 0.8, flatShading: true,
+  })
 
   function buildTimeEnemyMesh() {
     const top = new THREE.Mesh(timeEnemyGeometry, timeEnemyMaterial)
@@ -309,8 +355,31 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           fireEnemyProjectile({ mesh: g.mesh }, playerPosition)
           g.fireTimer = randomGoldenFireInterval()
         }
+
+        // v0.29.6: solta uma mini-nave amarela perseguidora, independente do tiro normal
+        g.minionTimer -= dt
+        if (g.minionTimer <= 0) {
+          spawnGoldenMinion(g.mesh.position, playerPosition)
+          g.minionTimer = GOLDEN_MINION_INTERVAL_MIN + Math.random() * (GOLDEN_MINION_INTERVAL_MAX - GOLDEN_MINION_INTERVAL_MIN)
+        }
       }
     }
+  }
+
+  function spawnGoldenMinion(originPos, playerPosition) {
+    const mesh = new THREE.Mesh(goldenMinionGeometry, goldenMinionMaterial)
+    mesh.position.copy(originPos)
+    const dir = playerPosition.clone().sub(originPos).normalize()
+    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
+    scene.add(mesh)
+    enemyProjectiles.push({
+      mesh,
+      velocity: dir.clone().multiplyScalar(GOLDEN_MINION_SPEED),
+      traveled: 0,
+      homing: true,
+      maxRange: GOLDEN_MINION_MAX_RANGE,
+      hitRadius: GOLDEN_MINION_HIT_RADIUS,
+    })
   }
 
   // ============ IA dos inimigos comuns/mini/tanque/chefe ============
@@ -346,11 +415,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             enemy.deathT = 0
             if (enemy.kind === 'boss') {
               ramBossDefeated = true
-              if (effects) effects.explosion(enemy.mesh.position, BOSS_ENEMY_COLOR, 3)
+              if (effects) explodeBoss(effects, enemy.mesh.position)
             } else {
               ramKills += 1
               ramKillPoints += ENEMY_KILL_BONUS
-              if (effects) effects.explosion(enemy.mesh.position, enemy.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.1)
+              if (effects) effects.explosion(enemy.mesh.position, enemy.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR, 1.6)
             }
           }
           continue
@@ -428,6 +497,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           enemy.mesh.position.addScaledVector(toPlayer, BOSS_ENEMY_CHASE_SPEED * dt)
           enemy.mesh.lookAt(playerPosition)
         }
+        // decaedro móvel: rotação constante em 2 eixos por cima do lookAt, pra não parecer um
+        // poliedro parado
+        enemy.mesh.rotateX(dt * 0.6)
+        enemy.mesh.rotateY(dt * 0.9)
       } else {
         // modo trilho: inimigo comum/time/tanque sempre com a ponta virada pro jogador
         enemy.mesh.lookAt(playerPosition)
@@ -462,23 +535,103 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         else fireEnemyProjectile(enemy, playerPosition)
         enemy.fireTimer = enemy.kind === 'boss' ? randomBossFireInterval() : randomEnemyFireInterval()
       }
+
+      // ============ LASER DO CHEFE: telegrafado 3s, dispara na posição travada ============
+      if (enemy.kind === 'boss') {
+        if (enemy.laserTelegraphTimer > 0) {
+          enemy.laserTelegraphTimer -= dt
+          if (enemy.laserTelegraphTimer <= 0) {
+            if (enemy.laserTargetPos) fireBossLaser(enemy, enemy.laserTargetPos)
+            enemy.laserTargetPos = null
+            enemy.laserCooldown = BOSS_LASER_INTERVAL_MIN + Math.random() * (BOSS_LASER_INTERVAL_MAX - BOSS_LASER_INTERVAL_MIN)
+          }
+        } else {
+          enemy.laserCooldown -= dt
+          if (enemy.laserCooldown <= 0) {
+            // trava a posição do jogador AGORA — o laser vai pra onde ele estava, dando 3s
+            // pro jogador sair de cima (aviso clássico de rail shooter)
+            enemy.laserTargetPos = playerPosition.clone()
+            enemy.laserTelegraphTimer = BOSS_LASER_TELEGRAPH_S
+            if (effects) effects.chargeCircle(enemy.laserTargetPos, BOSS_LASER_TELEGRAPH_S, BOSS_LASER_COLOR)
+          }
+        }
+      }
     }
     return { hits, ramKills, ramKillPoints, ramBossDefeated }
+  }
+
+  function fireBossLaser(enemy, targetPos) {
+    const startPos = enemy.mesh.position.clone()
+    const direction = targetPos.clone().sub(startPos).normalize()
+
+    // cone longo e fino alinhado com a direção do tiro — visual simples, sem shader custom
+    const geo = new THREE.ConeGeometry(0.55, 12, 8)
+    geo.rotateX(Math.PI / 2)
+    const mat = new THREE.MeshBasicMaterial({
+      color: BOSS_LASER_COLOR, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(startPos)
+    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+    scene.add(mesh)
+    enemyLasers.push({ mesh, geo, mat, velocity: direction.multiplyScalar(BOSS_LASER_SPEED), traveled: 0 })
+  }
+
+  function updateEnemyLasers(dt, playerPosition) {
+    let hits = 0
+    for (const laser of [...enemyLasers]) {
+      const step = laser.velocity.clone().multiplyScalar(dt)
+      const prevPos = laser.mesh.position.clone()
+      laser.mesh.position.add(step)
+      laser.traveled += step.length()
+
+      if (distanceToSegment(playerPosition, prevPos, laser.mesh.position) <= BOSS_LASER_HIT_RADIUS) {
+        hits += 1
+        removeEnemyLaser(laser)
+        continue
+      }
+      if (laser.traveled > BOSS_LASER_MAX_RANGE) removeEnemyLaser(laser)
+    }
+    return hits
+  }
+
+  function removeEnemyLaser(l) {
+    scene.remove(l.mesh)
+    l.geo.dispose()
+    l.mat.dispose()
+    enemyLasers.splice(enemyLasers.indexOf(l), 1)
   }
 
   function updateEnemyProjectiles(dt, playerPosition) {
     let hits = 0
     for (const projectile of [...enemyProjectiles]) {
+      // v0.29.6: mini-naves do dourado perseguem de verdade — guinada suave rumo à posição
+      // atual do jogador, com teto de curva (GOLDEN_MINION_TURN_RATE) pra não ser um homing
+      // perfeito/impossível de despistar
+      if (projectile.homing) {
+        const desired = playerPosition.clone().sub(projectile.mesh.position).normalize()
+        const current = projectile.velocity.clone().normalize()
+        current.lerp(desired, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
+        if (current.lengthSq() > 1e-6) {
+          projectile.velocity.copy(current.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
+          projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, current)
+        }
+      }
+
       const step = projectile.velocity.clone().multiplyScalar(dt)
       projectile.mesh.position.add(step)
       projectile.traveled += step.length()
 
-      if (playerPosition.distanceTo(projectile.mesh.position) <= ENEMY_PROJECTILE_HIT_RADIUS) {
+      const hitRadius = projectile.hitRadius ?? ENEMY_PROJECTILE_HIT_RADIUS
+      const maxRange = projectile.maxRange ?? ENEMY_PROJECTILE_MAX_RANGE
+
+      if (playerPosition.distanceTo(projectile.mesh.position) <= hitRadius) {
         hits += 1
         removeEnemyProjectile(projectile)
         continue
       }
-      if (projectile.traveled > ENEMY_PROJECTILE_MAX_RANGE) removeEnemyProjectile(projectile)
+      if (projectile.traveled > maxRange) removeEnemyProjectile(projectile)
     }
     return hits
   }
@@ -548,11 +701,17 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     spawnBossEnemy(hp) {
       const position = randomSpawnAroundArena(ENEMY_ARENA_SPAWN_MAX * 0.6, ENEMY_ARENA_SPAWN_MAX)
-      const mesh = new THREE.Mesh(enemyGeometry, bossEnemyMaterial)
+      const mesh = new THREE.Mesh(bossEnemyGeometry, bossEnemyMaterial)
       mesh.position.copy(position)
       mesh.scale.setScalar(BOSS_ENEMY_SCALE)
       scene.add(mesh)
-      enemies.push({ id: nextEnemyId++, mesh, kind: 'boss', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1 })
+      enemies.push({
+        id: nextEnemyId++, mesh, kind: 'boss', dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1,
+        // v0.29.6: laser grande telegrafado (3s de aviso via círculos crescendo)
+        laserCooldown: BOSS_LASER_INTERVAL_MIN + Math.random() * (BOSS_LASER_INTERVAL_MAX - BOSS_LASER_INTERVAL_MIN),
+        laserTelegraphTimer: 0,
+        laserTargetPos: null,
+      })
     },
 
     spawnGoldenSpecial(opts = {}) {
@@ -578,6 +737,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         hp: GOLDEN_SPECIAL_HP,
         maxHp: GOLDEN_SPECIAL_HP,
         fireTimer: randomGoldenFireInterval(),
+        minionTimer: GOLDEN_MINION_INTERVAL_MIN + Math.random() * (GOLDEN_MINION_INTERVAL_MAX - GOLDEN_MINION_INTERVAL_MIN),
       })
     },
 
@@ -591,7 +751,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     updateProjectiles(dt, playerPosition) {
-      return updateEnemyProjectiles(dt, playerPosition)
+      return updateEnemyProjectiles(dt, playerPosition) + updateEnemyLasers(dt, playerPosition)
     },
 
     // colisão dos tiros do JOGADOR contra inimigos e o especial dourado — checa inimigo
@@ -599,8 +759,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     resolveProjectileHit(prevPos, currPos, projectileMeta = {}) {
       const damage = projectileMeta.damage ?? 1
       const isHoming = !!projectileMeta.isHoming
+      // v0.29.6: folga extra do tiro normal (+25%), repassada por combat.js — 0 pro teleguiado
+      const hitBuffer = projectileMeta.hitBuffer || 0
 
-      const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e))
+      const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
         enemyHit.hp -= damage
         if (isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
@@ -618,12 +780,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           enemyHit.deathT = 0
           if (enemyHit.kind === 'boss') {
             bossDefeated = true
-            if (effects) effects.explosion(enemyHit.mesh.position, isHoming ? HOMING_EXPLOSION_COLOR : BOSS_ENEMY_COLOR, 3)
+            if (effects) explodeBoss(effects, enemyHit.mesh.position, isHoming)
           } else {
             enemyKillPoints = ENEMY_KILL_BONUS
             if (enemyHit.kind === 'time') timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
             const killColor = isHoming ? HOMING_EXPLOSION_COLOR : (enemyHit.kind === 'time' ? TIME_ENEMY_COLOR : ENEMY_COLOR)
-            if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.1)
+            if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6)
           }
         }
         return {
@@ -638,7 +800,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       }
 
-      const goldenHit = goldenTargets.find((g) => !g.dying && distanceToSegment(g.mesh.position, prevPos, currPos) <= GOLDEN_SPECIAL_HIT_RADIUS)
+      const goldenHit = goldenTargets.find((g) => !g.dying && distanceToSegment(g.mesh.position, prevPos, currPos) <= GOLDEN_SPECIAL_HIT_RADIUS + hitBuffer)
       if (goldenHit) {
         goldenHit.hp -= damage
         // QoL: o dourado nunca piscava — combat.js exclui `kind === 'golden'` do hitsLog (de
@@ -650,7 +812,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (killed) {
           goldenHit.dying = true
           goldenHit.deathT = 0
-          if (effects) effects.explosion(goldenHit.mesh.position, isHoming ? HOMING_EXPLOSION_COLOR : GOLDEN_SPECIAL_COLOR, 1.8)
+          // v0.29.6: kill maior/mais espalhafatoso (era 1.8) + onda de choque
+          const killColor = isHoming ? HOMING_EXPLOSION_COLOR : GOLDEN_SPECIAL_COLOR
+          if (effects) {
+            effects.explosion(goldenHit.mesh.position, killColor, 2.8)
+            effects.shockwave(goldenHit.mesh.position, GOLDEN_SPECIAL_COLOR, 1.1)
+          }
         }
         return {
           kind: 'golden',
@@ -727,6 +894,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     clearEnemies() {
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
+      for (const l of [...enemyLasers]) removeEnemyLaser(l)
     },
 
     clearGoldenTargets() {
@@ -736,12 +904,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     clearAll() {
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
+      for (const l of [...enemyLasers]) removeEnemyLaser(l)
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
     },
 
     dispose() {
       for (const e of [...enemies]) removeEnemy(e)
       for (const p of [...enemyProjectiles]) removeEnemyProjectile(p)
+      for (const l of [...enemyLasers]) removeEnemyLaser(l)
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
       enemyGeometry.dispose()
       enemyMaterial.dispose()
@@ -753,7 +923,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       timeEnemyGeometry.dispose()
       timeEnemyMaterial.dispose()
       tankEnemyMaterial.dispose()
+      bossEnemyGeometry.dispose()
       bossEnemyMaterial.dispose()
+      goldenMinionGeometry.dispose()
+      goldenMinionMaterial.dispose()
     },
   }
 }

@@ -8,19 +8,29 @@ const STAR_FLATTEN = 0.55
 const STAR_SIZE = 1.0
 
 // ============ EXPLOSION ============
-const EXPLOSION_PARTICLES = 16
-const EXPLOSION_DURATION = 0.55
-const EXPLOSION_SPEED_MIN = 10
-const EXPLOSION_SPEED_MAX = 22
-const EXPLOSION_PARTICLE_SIZE = 0.7
+// v0.29.6: maior e mais espalhafatosa — mais partículas, mais rápidas, maiores, e um flash
+// central (bloomSprite) somado por cima pra dar o "punch" que faltava
+const EXPLOSION_PARTICLES = 26 // era 16
+const EXPLOSION_DURATION = 0.75 // era 0.55
+const EXPLOSION_SPEED_MIN = 14 // era 10
+const EXPLOSION_SPEED_MAX = 28 // era 22
+const EXPLOSION_PARTICLE_SIZE = 0.9 // era 0.7
 
 // ============ MUZZLE FLASH ============
 const MUZZLE_DURATION = 0.07
 
 // ============ CHARGE GLOW ============
-const CHARGE_GLOW_MIN_SCALE = 0.35
-const CHARGE_GLOW_MAX_SCALE = 1.6
 const CHARGE_GLOW_AHEAD = 2.2
+// v0.29.6: verde-lima em 4 camadas concêntricas em vez de 1 esfera azul — cada camada tem seu
+// próprio tamanho/opacidade min-max, interpolados pela fração de carga. SÃO a referência visual
+// de quanto falta carregar agora (a barra de carga no HUD foi removida).
+const CHARGE_GLOW_COLOR = 0xaaff33
+const CHARGE_GLOW_LAYERS = [
+  { scaleMin: 0.30, scaleMax: 0.85, opacityMin: 0.85, opacityMax: 0.40 },
+  { scaleMin: 0.55, scaleMax: 1.30, opacityMin: 0.55, opacityMax: 0.28 },
+  { scaleMin: 0.85, scaleMax: 1.80, opacityMin: 0.32, opacityMax: 0.18 },
+  { scaleMin: 1.20, scaleMax: 2.40, opacityMin: 0.18, opacityMax: 0.10 },
+]
 
 // ============ ENGINE TRAIL ============
 // QoL: era denso/opaco demais ("sopa de bolhas") — cadência, tamanho, opacidade e duração
@@ -176,15 +186,18 @@ export function createEffectsSystem(scene, opts = {}) {
   // (bolha de escudo removida — o escudo continua funcionando mecanicamente, só não é mais
   // desenhado como esfera ao redor da nave)
 
-  // ============ CHARGE GLOW ============
-  const chargeGlowGeometry = new THREE.SphereGeometry(1, 16, 12)
-  const chargeGlowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x4da6ff, transparent: true, opacity: 0.55,
-    depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  // ============ CHARGE GLOW (v0.29.6: 4 esferas verde-lima) ============
+  const chargeGlowLayers = CHARGE_GLOW_LAYERS.map((cfg) => {
+    const geo = new THREE.SphereGeometry(1, 20, 14)
+    const mat = new THREE.MeshBasicMaterial({
+      color: CHARGE_GLOW_COLOR, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.visible = false
+    scene.add(mesh)
+    return { mesh, geo, mat, cfg }
   })
-  const chargeGlow = new THREE.Mesh(chargeGlowGeometry, chargeGlowMaterial)
-  chargeGlow.visible = false
-  scene.add(chargeGlow)
 
   // ============ LISTAS DE TRANSIENTES ============
   const bursts = []
@@ -202,6 +215,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const bloomSprites = []
   const contrails = []
   const bossImpactRings = []
+  const chargeCircles = []
   const spinWinds = []
   let trailTimer = 0
   let cometTimer = 0
@@ -222,11 +236,15 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ EFEITOS EXISTENTES ============
   function setChargeGlow(active, fraction, position, direction) {
-    chargeGlow.visible = active
-    if (!active) return
-    const scale = CHARGE_GLOW_MIN_SCALE + (CHARGE_GLOW_MAX_SCALE - CHARGE_GLOW_MIN_SCALE) * Math.max(0, Math.min(1, fraction))
-    chargeGlow.scale.setScalar(scale)
-    chargeGlow.position.copy(position).addScaledVector(direction, CHARGE_GLOW_AHEAD)
+    const f = Math.max(0, Math.min(1, fraction || 0))
+    for (const layer of chargeGlowLayers) {
+      layer.mesh.visible = active
+      if (!active) continue
+      const { scaleMin, scaleMax, opacityMin, opacityMax } = layer.cfg
+      layer.mesh.scale.setScalar(scaleMin + (scaleMax - scaleMin) * f)
+      layer.mat.opacity = opacityMin + (opacityMax - opacityMin) * f
+      layer.mesh.position.copy(position).addScaledVector(direction, CHARGE_GLOW_AHEAD)
+    }
   }
 
   function explosion(position, colorHex, size = 1) {
@@ -251,6 +269,8 @@ export function createEffectsSystem(scene, opts = {}) {
     points.frustumCulled = false
     scene.add(points)
     bursts.push({ points, velocities, life: 0 })
+    // flash central que expande rápido — dá o "punch" que faltava nas explosões menores
+    bloomSprite(position, colorHex, size * 0.8)
   }
 
   function muzzleFlash(position, direction) {
@@ -293,7 +313,9 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().normalize())
     mesh.scale.setScalar(0.4)
     scene.add(mesh)
-    smokeRings.push({ mesh, life: 0 })
+    // v0.29.6: a argola viaja pra frente (mesma direção do disparo) em vez de ficar parada
+    // na origem — combina melhor com o tiro carregado saindo voando
+    smokeRings.push({ mesh, life: 0, velocity: direction.clone().normalize().multiplyScalar(22) })
   }
 
   // giro completo (Z/C, 2 toques): anel de vento no plano do roll (perpendicular ao forward
@@ -408,6 +430,28 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.scale.setScalar(0.15)
     scene.add(mesh)
     telegraphs.push({ mesh, life: 0 })
+  }
+
+  // ============ CHARGE CIRCLE (laser do chefe, v0.29.6) ============
+  // 3 anéis concêntricos que crescem ao longo de `durationSec`, marcando onde um laser vai
+  // chegar — o jogador tem esse tempo todo pra sair de cima. Perto do fim (90%+) ficam sólidos,
+  // sinal de "agora vai".
+  function chargeCircle(position, durationSec = 3.0, colorHex = 0xff4d4d) {
+    const group = new THREE.Group()
+    for (let i = 0; i < 3; i += 1) {
+      const geo = new THREE.RingGeometry(0.85, 1.0, 32)
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex, transparent: true, opacity: 0.75,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+        depthWrite: false, fog: false,
+      })
+      group.add(new THREE.Mesh(geo, mat))
+    }
+    // billboard pra câmera a cada frame no update() — igual shockwave/bossImpactRing — pra
+    // ficar sempre de frente pro jogador, não importa de onde o laser vem
+    group.position.copy(position)
+    scene.add(group)
+    chargeCircles.push({ group, life: 0, duration: durationSec })
   }
 
   function cometTrailParticle(position, forward) {
@@ -622,6 +666,7 @@ export function createEffectsSystem(scene, opts = {}) {
         scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose()
         smokeRings.splice(i, 1); continue
       }
+      s.mesh.position.addScaledVector(s.velocity, dt)
       s.mesh.scale.setScalar(0.4 + t * 4.5)
       s.mesh.material.opacity = 0.6 * (1 - t)
     }
@@ -696,6 +741,26 @@ export function createEffectsSystem(scene, opts = {}) {
       s.mesh.scale.setScalar(scale)
       s.mesh.material.opacity = 0.9 * (1 - t)
       if (cam) s.mesh.quaternion.copy(cam.quaternion)
+    }
+
+    // CHARGE CIRCLES (laser do chefe) — 3 anéis, cada um cresce numa velocidade diferente
+    // (o mais interno mais rápido) pra dar sensação de "convergindo por dentro"; nos últimos
+    // 10% ficam quase sólidos, sinalizando "vai disparar"
+    for (let i = chargeCircles.length - 1; i >= 0; i--) {
+      const c = chargeCircles[i]
+      c.life += dt
+      const t = c.life / c.duration
+      if (t >= 1) {
+        scene.remove(c.group)
+        for (const child of c.group.children) { child.geometry.dispose(); child.material.dispose() }
+        chargeCircles.splice(i, 1); continue
+      }
+      if (cam) c.group.quaternion.copy(cam.quaternion)
+      c.group.children.forEach((child, idx) => {
+        const speed = 1.0 + idx * 0.6
+        child.scale.setScalar(1.0 + t * 4.0 * speed)
+        child.material.opacity = t > 0.9 ? 1.0 : 0.75 * (1 - t * 0.4)
+      })
     }
 
     // TELEGRAPHS
@@ -827,6 +892,11 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const p of projectileTrails) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
     for (const s of shockwaves) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
     for (const s of bossImpactRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
+    for (const c of chargeCircles) {
+      scene.remove(c.group)
+      for (const child of c.group.children) { child.geometry.dispose(); child.material.dispose() }
+    }
+    chargeCircles.length = 0
     for (const t of telegraphs) { scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.dispose() }
     for (const c of cometTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const g of glassShards) { for (const s of g.shards) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() } }
@@ -839,12 +909,12 @@ export function createEffectsSystem(scene, opts = {}) {
     telegraphs.length = 0; cometTrails.length = 0; glassShards.length = 0
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
     spinWinds.length = 0
-    scene.remove(chargeGlow); chargeGlowGeometry.dispose(); chargeGlowMaterial.dispose()
+    for (const layer of chargeGlowLayers) { scene.remove(layer.mesh); layer.geo.dispose(); layer.mat.dispose() }
   }
 
   return {
     update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage,
-    hitSpark, flashMesh, projectileTrail, shockwave, telegraph,
+    hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     cometTrailParticle, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind,
     dispose,

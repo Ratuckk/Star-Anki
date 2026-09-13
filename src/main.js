@@ -19,6 +19,9 @@ const WARNING_MS = 10000
 const RECALL_MS = 3500
 const ALT_MS = 6000
 const FEEDBACK_MS = 1500
+// v0.29.6: errar não mostra mais o painel de feedback (resposta certa/pontos/combo) — só um
+// texto flutuante vermelho pequeno por 3s, e o jogo segura a fase por esse tempo
+const WRONG_FEEDBACK_MS = 3000
 const SPEED_STEP = 0.05
 const BOOST_EVERY_CORRECT = 2
 const GROUND_Y = -10
@@ -591,27 +594,31 @@ function mountGame(session) {
     saveHistory(history)
     sessionResults.push({ guid: outcome.card.guid, correct })
 
-    hud.setFeedback({
-      correct,
-      correctAnswer: outcome.card.answer,
-      points: resolution.points,
-      comboMultiplier: resolution.comboMultiplier,
-      health: resolution.healthRemaining,
-      accuracyBonus: outcome.accuracyBonus,
-    })
+    if (correct) {
+      hud.setFeedback({
+        correct: true,
+        correctAnswer: outcome.card.answer,
+        points: resolution.points,
+        comboMultiplier: resolution.comboMultiplier,
+        health: resolution.healthRemaining,
+        accuracyBonus: outcome.accuracyBonus,
+      })
+    } else {
+      hud.showErrorFloat('Errou!')
+    }
 
     const outOfLives = applyHealthLoss()
     if (resolution.sectorOver || outOfLives) {
       pendingSectorOver = true
       pendingCardChoice = false
       phase = 'resolution'
-      phaseTimer = FEEDBACK_MS
+      phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
       return
     }
 
     pendingCardChoice = correct
     phase = 'bossBuildupResolution'
-    phaseTimer = FEEDBACK_MS
+    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
   }
 
   // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, vida dobrada uma vez
@@ -717,20 +724,25 @@ function mountGame(session) {
     hud.setQuestion(null)
     hud.setAlternatives(null)
     hud.setBossActive(false)
-    hud.setFeedback({
-      correct: outcome.type === 'correct',
-      correctAnswer: outcome.card.answer,
-      points: resolution.points,
-      comboMultiplier: resolution.comboMultiplier,
-      health: resolution.healthRemaining,
-      accuracyBonus: outcome.accuracyBonus,
-    })
+    // v0.29.6: painel de feedback só pra acerto — erro vira um texto flutuante rápido
+    if (correct) {
+      hud.setFeedback({
+        correct: true,
+        correctAnswer: outcome.card.answer,
+        points: resolution.points,
+        comboMultiplier: resolution.comboMultiplier,
+        health: resolution.healthRemaining,
+        accuracyBonus: outcome.accuracyBonus,
+      })
+    } else {
+      hud.showErrorFloat('Errou!')
+    }
 
     const outOfLives = applyHealthLoss()
     pendingSectorOver = resolution.sectorOver || outOfLives
     pendingCardChoice = correct
     phase = 'resolution'
-    phaseTimer = FEEDBACK_MS
+    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
   }
 
   function settleGoldenBonus(outcome) {
@@ -743,16 +755,20 @@ function mountGame(session) {
 
     hud.setQuestion(null)
     hud.setAlternatives(null)
-    hud.setFeedback({
-      correct,
-      correctAnswer: outcome.card.answer,
-      bonus: true,
-      accuracyBonus: outcome.accuracyBonus,
-    })
+    if (correct) {
+      hud.setFeedback({
+        correct: true,
+        correctAnswer: outcome.card.answer,
+        bonus: true,
+        accuracyBonus: outcome.accuracyBonus,
+      })
+    } else {
+      hud.showErrorFloat('Errou!')
+    }
 
     pendingCardChoice = correct
     phase = 'goldenResolution'
-    phaseTimer = FEEDBACK_MS
+    phaseTimer = correct ? FEEDBACK_MS : WRONG_FEEDBACK_MS
   }
 
   function endSector() {
@@ -797,10 +813,12 @@ function mountGame(session) {
     }
     if (paused) return
 
-    // ============ PAUSA TOTAL: PERGUNTA DO CHEFE (orbe atingido) ============
-    // nave travada, sem input nenhum — só espera a escolha no modal (hud.showQuestionModal),
-    // que resolve via settleBossBuildupQuestion. Continua renderizando a cena parada.
-    if (phase === 'bossQuestionPause') {
+    // ============ PAUSA TOTAL: PERGUNTA DO CHEFE OU ESCOLHA DE CARTA ROGUELIKE ============
+    // nave travada, sem input nenhum — só espera a resolução (modal do chefe ou clique na
+    // carta). cardChoice entrou aqui na v0.29.6: antes disso o jogo continuava rodando por
+    // baixo do overlay de cartas (inimigos atirando, tudo se movendo enquanto o jogador
+    // escolhia). Continua renderizando a cena parada.
+    if (phase === 'bossQuestionPause' || phase === 'cardChoice') {
       renderer.render(scene, camera)
       return
     }
@@ -867,7 +885,6 @@ function mountGame(session) {
       fireHeldMs += dt * 1000
       if (isCharging) {
         const chargeFrac = Math.min(1, (fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
-        hud.setChargeIndicator(true, chargeFrac)
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
 
         combat.sweepLockOn(nosePos, fireDirection, currentHomingAllowedTargets(fireHeldMs))
@@ -881,7 +898,6 @@ function mountGame(session) {
         })
         hud.setLockedEnemyMarkers(lockedBars)
       } else {
-        hud.setChargeIndicator(false)
         effects.setChargeGlow(false)
       }
     } else {
@@ -889,7 +905,6 @@ function mountGame(session) {
         combat.fireHomingShot(nosePos, currentHomingAllowedTargets(fireHeldMs))
       }
       fireHeldMs = 0
-      hud.setChargeIndicator(false)
       effects.setChargeGlow(false)
       combat.clearLockedEnemies()
       hud.setLockedEnemyMarkers([])
