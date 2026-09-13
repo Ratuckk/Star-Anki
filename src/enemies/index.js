@@ -20,8 +20,29 @@ import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
 import { DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS, spawnDetrito, updateDetritoSpin, disposeDetrito } from './detrito.js'
 import {
   SENTINELA_KIND, SENTINELA_COLOR, SENTINELA_HIT_RADIUS, SENTINELA_DEATH_DURATION, SENTINELA_FIRE_INTERVAL,
-  spawnSentinela, updateSentinelaMovement, sentinelaPassBehind, sentinelaFire, resolveGateHit, disposeSentinela,
+  spawnSentinela, updateSentinelaMovement, sentinelaPassBehind, sentinelaFire, resolveGateHit,
+  sentinelaShouldDespawn, disposeSentinela,
 } from './sentinela.js'
+import {
+  REPLICA_KIND, REPLICA_COLOR, REPLICA_HIT_RADIUS, REPLICA_DEATH_DURATION, REPLICA_KILL_BONUS,
+  spawnReplica, updateReplicaMovement, replicaPassBehind, disposeReplica,
+} from './replica.js'
+import {
+  FRAGATA_KIND, FRAGATA_BODY_COLOR, FRAGATA_SHIELD_COLOR, FRAGATA_HIT_RADIUS, FRAGATA_DEATH_DURATION, FRAGATA_KILL_BONUS,
+  spawnFragata, updateFragataMovement, isFragataShielded, disposeFragata,
+} from './fragata.js'
+import {
+  VERME_KIND, VERME_COLOR, VERME_HIT_RADIUS, VERME_DEATH_DURATION, VERME_KILL_BONUS,
+  spawnVerme, updateVermeMovement, severChainAt, disposeVerme,
+} from './verme.js'
+import {
+  IMA_KIND, IMA_COLOR, IMA_HIT_RADIUS, IMA_DEATH_DURATION, IMA_KILL_BONUS, IMA_FIELD_RADIUS, IMA_FIELD_STRENGTH,
+  spawnImaSwarm, updateImaSpin, disposeIma,
+} from './ima.js'
+import {
+  SUSSURRO_KIND, SUSSURRO_COLOR, SUSSURRO_HIT_RADIUS, SUSSURRO_DEATH_DURATION, SUSSURRO_KILL_BONUS,
+  spawnSussurro, updateSussurro, sussurroShouldSummon, disposeSussurro,
+} from './sussurro.js'
 
 export { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS }
 
@@ -128,6 +149,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case TANK_KIND: return TANK_HIT_RADIUS
       case DETRITO_KIND: return DETRITO_HIT_RADIUS
       case SENTINELA_KIND: return SENTINELA_HIT_RADIUS
+      case REPLICA_KIND: return REPLICA_HIT_RADIUS
+      case FRAGATA_KIND: return FRAGATA_HIT_RADIUS
+      case VERME_KIND: return VERME_HIT_RADIUS
+      case IMA_KIND: return IMA_HIT_RADIUS
+      case SUSSURRO_KIND: return SUSSURRO_HIT_RADIUS
       default: return BLASTER_HIT_RADIUS
     }
   }
@@ -139,6 +165,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case TANK_KIND: return TANK_DEATH_DURATION
       case DETRITO_KIND: return DETRITO_DEATH_DURATION
       case SENTINELA_KIND: return SENTINELA_DEATH_DURATION
+      case REPLICA_KIND: return REPLICA_DEATH_DURATION
+      case FRAGATA_KIND: return FRAGATA_DEATH_DURATION
+      case VERME_KIND: return VERME_DEATH_DURATION
+      case IMA_KIND: return IMA_DEATH_DURATION
+      case SUSSURRO_KIND: return SUSSURRO_DEATH_DURATION
       default: return BLASTER_DEATH_DURATION
     }
   }
@@ -153,18 +184,30 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case BOSS_KIND: return BOSS_COLOR
       case DETRITO_KIND: return DETRITO_COLOR
       case SENTINELA_KIND: return SENTINELA_COLOR
+      case REPLICA_KIND: return REPLICA_COLOR
+      case FRAGATA_KIND: return FRAGATA_BODY_COLOR
+      case VERME_KIND: return VERME_COLOR
+      case IMA_KIND: return IMA_COLOR
+      case SUSSURRO_KIND: return SUSSURRO_COLOR
       default: return 0xff5a3d
     }
   }
 
   function killPointsFor(kind) {
-    return kind === DETRITO_KIND ? DETRITO_KILL_BONUS : BLASTER_KILL_BONUS
+    if (kind === DETRITO_KIND) return DETRITO_KILL_BONUS
+    if (kind === REPLICA_KIND) return REPLICA_KILL_BONUS
+    if (kind === FRAGATA_KIND) return FRAGATA_KILL_BONUS
+    if (kind === VERME_KIND) return VERME_KILL_BONUS
+    if (kind === IMA_KIND) return IMA_KILL_BONUS
+    if (kind === SUSSURRO_KIND) return SUSSURRO_KILL_BONUS
+    return BLASTER_KILL_BONUS
   }
 
   function passBehindFor(enemy) {
     if (enemy.kind === BLASTER_KIND) return blasterPassBehind(enemy)
     if (enemy.kind === TIME_KIND) return timePassBehind(enemy)
     if (enemy.kind === SENTINELA_KIND) return sentinelaPassBehind(enemy)
+    if (enemy.kind === REPLICA_KIND) return replicaPassBehind()
     return PASS_BEHIND
   }
 
@@ -227,12 +270,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             } else {
               ramKills += 1
               ramKillPoints += killPointsFor(enemy.kind)
+              if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies)
               if (effects) effects.explosion(enemy.mesh.position, colorFor(enemy), 1.6, { rings: true })
             }
           }
           continue
         }
         if (enemy.kind !== BOSS_KIND) {
+          if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies)
           removeEnemy(enemy)
           continue
         }
@@ -246,12 +291,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
 
       const isDetrito = enemy.kind === DETRITO_KIND
+      const isIma = enemy.kind === IMA_KIND
       if (enemy.kind === BOSS_KIND) {
         updateBossMovement(enemy, dt, playerPosition)
-      } else if (isDetrito) {
-        // obstáculo: sem chase, só gira por vida visual. Em trilho ainda passa pra trás e some
-        // (senão acumularia pra sempre); em arena, persiste até morrer, igual todo outro kind lá.
-        updateDetritoSpin(enemy, dt)
+      } else if (isDetrito || isIma) {
+        // obstáculo estático: sem chase, só gira por vida visual. Em trilho ainda passa pra trás
+        // e some (senão acumularia pra sempre); em arena, persiste até morrer, igual todo outro
+        // kind lá. Enxame-ímã reaproveita 100% esse comportamento — só muda o giro visual.
+        if (isDetrito) updateDetritoSpin(enemy, dt)
+        else updateImaSpin(enemy, dt)
         if (!inArena) {
           const relative = enemy.mesh.position.clone().sub(frame.position)
           if (relative.dot(frame.forward) < PASS_BEHIND) { removeEnemy(enemy); continue }
@@ -259,6 +307,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       } else if (inArena) {
         if (enemy.kind === BLASTER_KIND) {
           updateBlasterArenaMovement(enemy, dt, playerPosition, frame, rail.getArenaSpeed() * 0.5)
+        } else if (enemy.kind === FRAGATA_KIND) {
+          updateFragataMovement(enemy, dt, playerPosition, rail.getArenaSpeed() * 0.5)
         } else {
           // tank/time (genérico): chase reto ou órbita, mesma lógica de sempre
           const speedCap = rail.getArenaSpeed() * 0.5
@@ -276,8 +326,30 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       } else {
         // modo trilho
         if (enemy.kind === BLASTER_KIND) updateBlasterRailMovement(enemy, dt, frame)
-        else if (enemy.kind === SENTINELA_KIND) updateSentinelaMovement(enemy, dt, frame)
-        enemy.mesh.lookAt(playerPosition)
+        else if (enemy.kind === SENTINELA_KIND) {
+          updateSentinelaMovement(enemy, dt, frame)
+          // BUG FIX: Sentinela em LEAVING voa pra FRENTE (mais rápido que o jogador), então o
+          // pass-behind normal abaixo (que despawna quem ficou ATRÁS) nunca dispara nela — ela
+          // ficava viva pra sempre, invisível pela névoa mas ainda no array de inimigos (ainda
+          // podia ser travada pelo tiro teleguiado). Despawna por distância à frente.
+          if (sentinelaShouldDespawn(enemy, frame)) { removeEnemy(enemy); continue }
+        }
+        else if (enemy.kind === REPLICA_KIND) updateReplicaMovement(enemy, dt, rail, frame)
+        else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, frame)
+        else if (enemy.kind === SUSSURRO_KIND) {
+          updateSussurro(enemy, dt, frame)
+          if (sussurroShouldSummon(enemy)) {
+            const count = 2 + Math.floor(Math.random() * 2)
+            for (let i = 0; i < count; i += 1) {
+              const reinforcement = spawnBlaster(scene, rail, nextEnemyId++)
+              reinforcement.fireTimer = randomEnemyFireInterval()
+              enemies.push(reinforcement)
+            }
+          }
+        }
+        // Réplica/Verme não olham pro jogador (não faz sentido pro conceito de cada um) — os
+        // outros continuam com a ponta virada pro jogador, comportamento de sempre.
+        if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND) enemy.mesh.lookAt(playerPosition)
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
 
         const relative = enemy.mesh.position.clone().sub(frame.position)
@@ -428,6 +500,37 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (enemy) enemies.push(enemy)
     },
 
+    spawnReplica() {
+      const enemy = spawnReplica(scene, rail, nextEnemyId++)
+      if (enemy) enemies.push(enemy)
+    },
+
+    spawnFragata() {
+      const enemy = spawnFragata(scene, rail, nextEnemyId++)
+      if (enemy) enemies.push(enemy)
+    },
+
+    spawnVerme() {
+      const segments = spawnVerme(scene, rail, () => nextEnemyId++)
+      for (const e of segments) enemies.push(e)
+    },
+
+    spawnImaSwarm() {
+      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++)
+      for (const e of group) enemies.push(e)
+    },
+
+    spawnSussurro() {
+      const enemy = spawnSussurro(scene, rail, nextEnemyId++)
+      if (enemy) enemies.push(enemy)
+    },
+
+    // Fase de ideias de inimigos: fonte do campo magnético do Enxame-Ímã, consumida direto por
+    // combat/projectiles.js (só o tiro NORMAL reage — o teleguiado ignora, ver comentário lá)
+    getMagnetSources: () => enemies
+      .filter((e) => e.kind === IMA_KIND && !e.dying)
+      .map((e) => ({ position: e.mesh.position.clone(), radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })),
+
     spawnBossEnemy(hp) {
       enemies.push(spawnBossEnemy(scene, rail, nextEnemyId++, hp))
     },
@@ -462,6 +565,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
+        // Fragata-Escudo: bloqueia dano vindo do lado que a blindagem cobre AGORA — o projétil
+        // ainda "bate" (spark âmbar), mas não desconta hp nem conta como acerto de verdade.
+        if (enemyHit.kind === FRAGATA_KIND && isFragataShielded(enemyHit, prevPos)) {
+          if (effects) effects.hitSpark(enemyHit.mesh.position, FRAGATA_SHIELD_COLOR)
+          return {
+            kind: enemyHit.kind, killed: false, blocked: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+            enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: false,
+          }
+        }
         enemyHit.hp -= damage
         if (isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         if (enemyHit.kind === BOSS_KIND && effects) {
@@ -481,6 +593,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           } else {
             enemyKillPoints = killPointsFor(enemyHit.kind)
             if (enemyHit.kind === TIME_KIND) timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+            if (enemyHit.kind === VERME_KIND) severChainAt(enemyHit, enemies)
             const killColor = isHoming ? HOMING_EXPLOSION_COLOR : colorFor(enemyHit)
             if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6, { rings: true })
           }
@@ -588,6 +701,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       disposeBoss()
       disposeDetrito()
       disposeSentinela()
+      disposeReplica()
+      disposeFragata()
+      disposeVerme()
+      disposeIma()
+      disposeSussurro()
     },
   }
 }
