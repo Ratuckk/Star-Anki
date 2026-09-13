@@ -24,7 +24,7 @@ import {
 import {
   SENTINELA_KIND, SENTINELA_COLOR, SENTINELA_HIT_RADIUS, SENTINELA_DEATH_DURATION, SENTINELA_FIRE_INTERVAL,
   spawnSentinela, updateSentinelaMovement, sentinelaPassBehind, sentinelaFire, resolveGateHit,
-  sentinelaShouldDespawn, disposeSentinela,
+  updateGateAnimation, sentinelaShouldDespawn, disposeSentinela,
 } from './sentinela.js'
 import {
   REPLICA_KIND, REPLICA_COLOR, REPLICA_HIT_RADIUS, REPLICA_DEATH_DURATION, REPLICA_KILL_BONUS,
@@ -330,7 +330,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // modo trilho
         if (enemy.kind === BLASTER_KIND) updateBlasterRailMovement(enemy, dt, frame)
         else if (enemy.kind === SENTINELA_KIND) {
-          updateSentinelaMovement(enemy, dt, frame)
+          updateSentinelaMovement(enemy, dt, frame, rail)
           // BUG FIX: Sentinela em LEAVING voa pra FRENTE (mais rápido que o jogador), então o
           // pass-behind normal abaixo (que despawna quem ficou ATRÁS) nunca dispara nela — ela
           // ficava viva pra sempre, invisível pela névoa mas ainda no array de inimigos (ainda
@@ -452,6 +452,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let hits = 0
     let damage = 1
     for (const gate of [...enemyGates]) {
+      updateGateAnimation(gate, dt)
       const step = gate.velocity.clone().multiplyScalar(dt)
       gate.mesh.position.add(step)
       gate.traveled += step.length()

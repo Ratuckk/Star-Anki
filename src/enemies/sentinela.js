@@ -17,6 +17,7 @@ const BOX_Y = 4
 
 const ENGAGE_STANDOFF = 55 // distância-alvo à frente da câmera, mantida enquanto ataca
 const ENGAGE_SPEED = 8
+const LATERAL_TRACK_RATE = 7 // "1/tempo" de resposta lateral — alto o bastante pra travar no jogador
 const LEAVE_SPEED = 24 // bem mais rápido que o avanço do Blaster — "vai embora" de vez
 export const SENTINELA_SHOTS_TOTAL = 4
 export const SENTINELA_FIRE_INTERVAL = 1.8 // intervalo entre os 4 disparos
@@ -44,6 +45,12 @@ const GATE_SPEED = 34
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
+// pedido do usuário: a moldura tem que abrir e fechar de verdade (buraco encolhendo até virar
+// bloco sólido, sem passagem segura, e voltando a abrir), não ficar com o buraco sempre do
+// mesmo tamanho até o resolve final. GATE_MIN_INNER_HALF > 0 evita o buraco colapsar pra uma
+// escala zero exata (glitch visual de matriz degenerada no Three.js).
+const GATE_CYCLE_PERIOD = 0.75 // segundos por ciclo completo (aberto → fechado → aberto)
+const GATE_MIN_INNER_HALF = 0.01
 
 // Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
 // `pass-behind` normal (que despawna quem ficou ATRÁS) nunca dispara — ela ficava viva pra
@@ -78,7 +85,12 @@ export function spawnSentinela(scene, rail, id) {
 // engajando: corrige a posição pra ficar num "standoff" fixo à frente da câmera (mesmo princípio
 // do perfil 'follow' do Blaster) — nunca cruza o jogador. Ao esgotar os 4 disparos, transiciona
 // pra "indo embora": acelera pra frente (sentido do avanço do jogador) até sair de cena.
-export function updateSentinelaMovement(enemy, dt, frame) {
+// pedido do usuário: enquanto ataca, ela precisa travar na MESMA lateral do jogador (não só na
+// mesma distância à frente) — senão o jogador simplesmente desvia de lado e passa reto por ela
+// sem nunca precisar acertar as molduras. `rail.getPlayerLateral()` dá o offset lateral cru do
+// jogador em relação ao trilho; persegue esse valor com resposta rápida (não instantânea, pra
+// não "teleportar") em vez de deixar a lateral livre.
+export function updateSentinelaMovement(enemy, dt, frame, rail) {
   if (enemy.state === SENTINELA_STATE_LEAVING) {
     enemy.mesh.position.addScaledVector(frame.forward, LEAVE_SPEED * dt)
     return
@@ -86,6 +98,14 @@ export function updateSentinelaMovement(enemy, dt, frame) {
   const along = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
   const correction = along > ENGAGE_STANDOFF ? -1 : along < ENGAGE_STANDOFF * 0.6 ? 1 : 0
   enemy.mesh.position.addScaledVector(frame.forward, correction * ENGAGE_SPEED * dt)
+
+  const lateral = rail.getPlayerLateral()
+  const relative = enemy.mesh.position.clone().sub(frame.position)
+  const currentX = relative.dot(frame.right)
+  const currentY = relative.dot(frame.up)
+  const ease = Math.min(1, LATERAL_TRACK_RATE * dt)
+  enemy.mesh.position.addScaledVector(frame.right, (lateral.x - currentX) * ease)
+  enemy.mesh.position.addScaledVector(frame.up, (lateral.y - currentY) * ease)
 }
 
 export function sentinelaPassBehind(enemy) {
@@ -125,8 +145,9 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
   scene.add(group)
 
-  ctx.pushGate({
+  const gate = {
     mesh: group,
+    bars: { top, bottom, left, right },
     dir,
     right: new THREE.Vector3(1, 0, 0).applyQuaternion(group.quaternion),
     up: new THREE.Vector3(0, 1, 0).applyQuaternion(group.quaternion),
@@ -134,11 +155,14 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
     targetDistance,
     traveled: 0,
     velocity: dir.clone().multiplyScalar(GATE_SPEED),
+    phase: 0,
     innerHalf: GATE_INNER_HALF,
     outerHalf: GATE_OUTER_HALF,
     damage: GATE_DAMAGE,
     shieldDamage: GATE_SHIELD_DAMAGE,
-  })
+  }
+  applyGateVisual(gate)
+  ctx.pushGate(gate)
 
   enemy.shotsFired += 1
   if (enemy.shotsFired >= SENTINELA_SHOTS_TOTAL) {
@@ -148,9 +172,42 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   return true
 }
 
+// redimensiona as 4 barras (compartilham geometria entre todas as molduras, só a escala/posição
+// de cada instância muda) pra o buraco visual bater com `gate.innerHalf` no instante atual —
+// banda cresce conforme o buraco encolhe, até cobrir o quadro inteiro (fechado = sem passagem).
+function applyGateVisual(gate) {
+  const innerHalf = gate.innerHalf
+  const band = Math.max(GATE_MIN_INNER_HALF, GATE_OUTER_HALF - innerHalf)
+  const bandCenter = (GATE_OUTER_HALF + innerHalf) / 2
+  const bandScale = band / GATE_BAND
+  const holeScale = Math.max(GATE_MIN_INNER_HALF, innerHalf) / GATE_INNER_HALF
+  const { top, bottom, left, right } = gate.bars
+  top.scale.y = bandScale
+  top.position.y = bandCenter
+  bottom.scale.y = bandScale
+  bottom.position.y = -bandCenter
+  left.scale.set(bandScale, holeScale, 1)
+  left.position.x = -bandCenter
+  right.scale.set(bandScale, holeScale, 1)
+  right.position.x = bandCenter
+}
+
+// pedido do usuário: a moldura abre e fecha de verdade enquanto viaja até o jogador (cosseno —
+// começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) — chamado a cada
+// frame pelo orquestrador em `updateEnemyGates`, antes de mover a moldura.
+export function updateGateAnimation(gate, dt) {
+  gate.phase += dt
+  const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / GATE_CYCLE_PERIOD)
+  gate.innerHalf = GATE_INNER_HALF * t
+  applyGateVisual(gate)
+}
+
 // chamado quando a moldura chega na distância travada — projeta a posição ATUAL do jogador (que
 // pode ter se movido pra desviar, é o ponto da mecânica) nos eixos locais da moldura (fixados no
 // disparo). Dentro do buraco ou além da borda externa = seguro; na faixa entre os dois = dano.
+// como `gate.innerHalf` é atualizado a cada frame por `updateGateAnimation`, o resultado depende
+// também de EM QUE FASE do ciclo aberto/fechado a moldura estava no instante exato da chegada —
+// fechada (innerHalf ≈ 0) machuca em qualquer posição dentro do quadro, aberta é só a borda fina.
 export function resolveGateHit(gate, playerPosition) {
   const rel = playerPosition.clone().sub(gate.mesh.position)
   const localX = rel.dot(gate.right)

@@ -66,7 +66,8 @@ export function spawnMiniSwarm(scene, rail, nextId) {
       patrolBase: base.clone(),
       patrolPhase,
       patrolTimer: patrolDuration,
-      diveTarget: null,
+      diveDir: null,
+      diveBase: null,
       diveElapsed: 0,
       diveAnglePhase: Math.random() * Math.PI * 2,
     })
@@ -89,29 +90,36 @@ export function updateMiniSwarm(enemy, dt, ctx) {
     if (enemy.patrolTimer <= 0) {
       enemy.swarmState = 'dive'
       const spread = (Math.random() * 2 - 1) * MINI_SWARM_DIVE_SPREAD
-      enemy.diveTarget = playerPosition.clone().addScaledVector(frame.right, spread)
+      const diveTarget = playerPosition.clone().addScaledVector(frame.right, spread)
+      const toTarget = diveTarget.clone().sub(enemy.mesh.position)
+      enemy.diveDir = toTarget.lengthSq() > 1e-4 ? toTarget.normalize() : frame.forward.clone().negate()
+      enemy.diveBase = enemy.mesh.position.clone()
     }
     return
   }
 
+  // base do mergulho anda reto na direção travada no início (diveTarget não se move mais depois
+  // disso); zigue-zague/hélice são um OFFSET lateral em cima dessa reta, não uma leve curva de
+  // direção — só assim o desvio (±6 no zigue-zague, raio 4.5 na hélice) fica visível de verdade.
+  // A versão anterior perturbava o vetor de direção (unitário) por um valor já escalado por dt
+  // e renormalizava em seguida, o que anulava quase todo o efeito (virava um chacoalhar
+  // imperceptível em vez de zigue-zague/rodopio).
   enemy.diveElapsed += dt
-  const toTarget = enemy.diveTarget.clone().sub(enemy.mesh.position)
-  if (toTarget.lengthSq() > 1e-4) {
-    toTarget.normalize()
-    if (enemy.variant === 'zigzag') {
-      const lateral = Math.sin(enemy.diveAnglePhase + elapsed * ZIGZAG_FREQUENCY) * ZIGZAG_AMPLITUDE
-      toTarget.addScaledVector(frame.right, lateral * dt)
-    } else if (enemy.variant === 'spiral') {
-      enemy.diveAnglePhase += SPIRAL_ANGULAR_SPEED * dt
-      const spiralOffset = new THREE.Vector3()
-        .addScaledVector(frame.right, Math.cos(enemy.diveAnglePhase) * SPIRAL_RADIUS)
-        .addScaledVector(frame.up, Math.sin(enemy.diveAnglePhase) * SPIRAL_RADIUS)
-      toTarget.add(spiralOffset.multiplyScalar(dt))
-    }
-    toTarget.normalize()
-    enemy.mesh.position.addScaledVector(toTarget, MINI_SWARM_DIVE_SPEED * dt)
-    enemy.mesh.lookAt(enemy.mesh.position.clone().add(toTarget))
+  const basePos = enemy.diveBase.clone().addScaledVector(enemy.diveDir, MINI_SWARM_DIVE_SPEED * enemy.diveElapsed)
+  const offset = new THREE.Vector3()
+  if (enemy.variant === 'zigzag') {
+    const lateral = Math.sin(enemy.diveAnglePhase + elapsed * ZIGZAG_FREQUENCY) * ZIGZAG_AMPLITUDE
+    offset.addScaledVector(frame.right, lateral)
+  } else if (enemy.variant === 'spiral') {
+    enemy.diveAnglePhase += SPIRAL_ANGULAR_SPEED * dt
+    offset.addScaledVector(frame.right, Math.cos(enemy.diveAnglePhase) * SPIRAL_RADIUS)
+    offset.addScaledVector(frame.up, Math.sin(enemy.diveAnglePhase) * SPIRAL_RADIUS)
   }
+  const prevPos = enemy.mesh.position.clone()
+  enemy.mesh.position.copy(basePos).add(offset)
+  const facing = enemy.mesh.position.clone().sub(prevPos)
+  if (facing.lengthSq() > 1e-6) enemy.mesh.lookAt(enemy.mesh.position.clone().add(facing))
+
   const relative = enemy.mesh.position.clone().sub(frame.position)
   if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || relative.dot(frame.forward) < PASS_BEHIND) {
     removeEnemy(enemy)
