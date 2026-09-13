@@ -464,10 +464,6 @@ export function createGameHud() {
       reticle.style.top = `${yFrac * 100}%`
     },
 
-    setReticleLocked(locked) {
-      reticle.classList.toggle('locked', !!locked)
-    },
-
     hitMarker(killed = false) {
       hitMarkerEl.classList.remove('active', 'kill')
       void hitMarkerEl.offsetWidth

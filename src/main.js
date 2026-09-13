@@ -17,7 +17,6 @@ import { pickRandomCards } from './roguelike.js'
 const CYCLE_MS = 90000
 const WARNING_MS = 10000
 const RECALL_MS = 3500
-const ALT_MS = 6000
 const FEEDBACK_MS = 1500
 // v0.29.6: errar não mostra mais o painel de feedback (resposta certa/pontos/combo) — só um
 // texto flutuante vermelho pequeno por 3s, e o jogo segura a fase por esse tempo
@@ -90,7 +89,6 @@ const BONUS_INTERVAL_MIN = 9000
 const BONUS_INTERVAL_MAX = 16000
 
 const REVIEW_ENEMY_INTERVAL_MULT = 0.6
-const REVIEW_ANSWER_MS_MULT = 0.75
 
 const GOLDEN_INTERVAL_MIN_MS = 45000
 const GOLDEN_INTERVAL_MAX_MS = 100000
@@ -335,8 +333,10 @@ function mountGame(session) {
   let isBossCycle = false
   let isReviewQuestion = false
   let bossDifficulty = 0
-  let altTotalMs = ALT_MS
   let bonusTimer = 0
+  // Fase 6: qual settle function usar enquanto phase === 'questionPause' — normal e dourado
+  // compartilham a mesma fase de pausa (o chefe tem a dele própria, bossQuestionPause)
+  let pendingQuestionKind = null
 
   let goldenTimer = randomGoldenInterval()
   let goldenArenaTimer = 0
@@ -374,55 +374,6 @@ function mountGame(session) {
     return GOLDEN_ARENA_MS_MIN + Math.random() * (GOLDEN_ARENA_MS_MAX - GOLDEN_ARENA_MS_MIN)
   }
 
-  function computeTimeBonus(totalMs) {
-    const elapsed = Math.min(Math.max(totalMs - phaseTimer, 0), totalMs)
-    return 1.5 - (elapsed / totalMs) * 0.5
-  }
-
-  function slotForPressed(pressedSet) {
-    for (let i = 0; i < 4; i += 1) {
-      if (isActionPressed(bindings, pressedSet, `quizSlot${i + 1}`)) return i
-    }
-    return undefined
-  }
-
-  function processAnswerPhase(events, inputState, dt, totalMs, mode) {
-    let outcome = null
-
-    if (events.targetHit) {
-      const shotsFired = combat.getQuizShotsFired()
-      outcome = {
-        type: events.targetHit.isCorrect ? 'correct' : 'wrong',
-        card: questionResult.card,
-        timeBonus: computeTimeBonus(totalMs),
-        accuracyBonus: Math.max(1.0, 1.2 - 0.1 * (shotsFired - 1)),
-      }
-    } else {
-      const slot = slotForPressed(inputState.pressed)
-      if (slot !== undefined) {
-        outcome = {
-          type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
-          card: questionResult.card,
-          timeBonus: computeTimeBonus(totalMs),
-          accuracyBonus: 1.2,
-        }
-      } else {
-        phaseTimer -= dt * 1000
-        if (phaseTimer <= 0) {
-          outcome = {
-            type: 'timeout',
-            card: questionResult.card,
-            timeBonus: computeTimeBonus(totalMs),
-            accuracyBonus: Math.max(1.0, 1.2 - 0.1 * combat.getQuizShotsFired()),
-          }
-        }
-      }
-    }
-
-    if (!outcome) return
-    if (mode === 'golden') settleGoldenBonus(outcome)
-    else settleQuestion(outcome)
-  }
 
   function applySpeedProgression(type) {
     if (type === 'correct') {
@@ -516,6 +467,10 @@ function mountGame(session) {
     hud.setFeedback(null)
   }
 
+  // Fase 6: pergunta normal também pausa tudo e usa o modal centralizado (mesmo modelo do
+  // chefe, Fase 5) — não é mais "voa e atira nos 4 alvos flutuantes". pendingQuestionKind
+  // marca qual settle function usar enquanto phase === 'questionPause' (normal ou dourado
+  // compartilham a mesma fase de pausa).
   function enterAlternatives() {
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
@@ -523,12 +478,20 @@ function mountGame(session) {
       return
     }
     questionResult = result
-    phase = 'alternatives'
-    altTotalMs = ALT_MS * (isReviewQuestion ? REVIEW_ANSWER_MS_MULT : 1)
-    phaseTimer = altTotalMs
-    hud.setQuestion(result.card.question)
-    hud.setAlternatives(result.alternatives)
-    combat.spawnQuizTargets(result.alternatives)
+    pendingQuestionKind = 'normal'
+    phase = 'questionPause'
+    hud.showQuestionModal({
+      question: result.card.question,
+      alternatives: result.alternatives,
+      onPick: (slot) => {
+        settleQuestion({
+          type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
+          card: questionResult.card,
+          timeBonus: 1.2,
+          accuracyBonus: 1.2,
+        })
+      },
+    })
   }
 
   // Fase 5: a caçada agora é literal — 6 orbes-pergunta genéricos espalhados pela arena
@@ -698,11 +661,20 @@ function mountGame(session) {
   function enterGoldenAlternatives() {
     const result = buildBonusQuestion(goldenCard, deck.allCards)
     questionResult = result
-    phase = 'goldenAlternatives'
-    phaseTimer = ALT_MS
-    hud.setQuestion(result.card.question)
-    hud.setAlternatives(result.alternatives)
-    combat.spawnQuizTargets(result.alternatives)
+    pendingQuestionKind = 'golden'
+    phase = 'questionPause'
+    hud.showQuestionModal({
+      question: result.card.question,
+      alternatives: result.alternatives,
+      onPick: (slot) => {
+        settleGoldenBonus({
+          type: slot === questionResult.correctSlot ? 'correct' : 'wrong',
+          card: questionResult.card,
+          timeBonus: 1.2,
+          accuracyBonus: 1.2,
+        })
+      },
+    })
   }
 
   function applyHealthLoss() {
@@ -710,7 +682,7 @@ function mountGame(session) {
   }
 
   function settleQuestion(outcome) {
-    combat.clearQuizTargets()
+    hud.hideQuestionModal()
     const resolution = resolveAnswer(session, outcome)
     applySpeedProgression(outcome.type)
 
@@ -721,8 +693,6 @@ function mountGame(session) {
     saveHistory(history)
     sessionResults.push({ guid: outcome.card.guid, correct })
 
-    hud.setQuestion(null)
-    hud.setAlternatives(null)
     hud.setBossActive(false)
     // v0.29.6: painel de feedback só pra acerto — erro vira um texto flutuante rápido
     if (correct) {
@@ -746,15 +716,13 @@ function mountGame(session) {
   }
 
   function settleGoldenBonus(outcome) {
-    combat.clearQuizTargets()
+    hud.hideQuestionModal()
     const correct = outcome.type === 'correct'
 
     history = recordResult(history, outcome.card.guid, correct)
     saveHistory(history)
     sessionResults.push({ guid: outcome.card.guid, correct })
 
-    hud.setQuestion(null)
-    hud.setAlternatives(null)
     if (correct) {
       hud.setFeedback({
         correct: true,
@@ -813,12 +781,12 @@ function mountGame(session) {
     }
     if (paused) return
 
-    // ============ PAUSA TOTAL: PERGUNTA DO CHEFE OU ESCOLHA DE CARTA ROGUELIKE ============
-    // nave travada, sem input nenhum — só espera a resolução (modal do chefe ou clique na
-    // carta). cardChoice entrou aqui na v0.29.6: antes disso o jogo continuava rodando por
-    // baixo do overlay de cartas (inimigos atirando, tudo se movendo enquanto o jogador
-    // escolhia). Continua renderizando a cena parada.
-    if (phase === 'bossQuestionPause' || phase === 'cardChoice') {
+    // ============ PAUSA TOTAL: PERGUNTA (CHEFE/NORMAL/DOURADO) OU CARTA ROGUELIKE ============
+    // nave travada, sem input nenhum — só espera a resolução (modal ou clique na carta).
+    // questionPause é da Fase 6: pergunta normal e bônus dourado passaram a pausar tudo igual
+    // ao chefe (Fase 5), em vez de "voa e atira nos 4 alvos flutuantes". cardChoice entrou
+    // antes disso, na v0.29.6. Continua renderizando a cena parada.
+    if (phase === 'bossQuestionPause' || phase === 'questionPause' || phase === 'cardChoice') {
       renderer.render(scene, camera)
       return
     }
@@ -970,7 +938,6 @@ function mountGame(session) {
     const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
     const events = combat.update(dt, playerPos, {
       enemiesActive,
-      aimOrigin: nosePos,
       aimDirection: fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
     })
@@ -1008,14 +975,11 @@ function mountGame(session) {
       }
     }
 
-    const lockOn = combat.getLockOnTarget()
-    const reticleScreenPos = lockOn ? lockOn.mesh.position.clone() : reticleWorldPos
-    const ndc = reticleScreenPos.project(camera)
+    const ndc = reticleWorldPos.project(camera)
     hud.setReticlePosition(
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
       THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
     )
-    hud.setReticleLocked(!!lockOn)
 
     if (showEnemyHealthBars) {
       const bars = combat.getEnemySnapshots().map((s) => {
@@ -1148,8 +1112,6 @@ function mountGame(session) {
         if (isBossCycle) startArenaCutscene('boss', enterBossBuildup)
         else enterAlternatives()
       }
-    } else if (phase === 'alternatives') {
-      processAnswerPhase(events, inputState, dt, altTotalMs, 'normal')
     } else if (phase === 'bossBuildup') {
       bossBuildupTimer -= dt * 1000
       hud.setCountdown(Math.max(0, Math.ceil(bossBuildupTimer / 1000)), bossBuildupTimer <= WARNING_MS)
@@ -1188,8 +1150,6 @@ function mountGame(session) {
     } else if (phase === 'goldenRecall') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) enterGoldenAlternatives()
-    } else if (phase === 'goldenAlternatives') {
-      processAnswerPhase(events, inputState, dt, ALT_MS, 'golden')
     } else if (phase === 'resolution') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {
@@ -1258,9 +1218,9 @@ function mountGame(session) {
   function forceAnswerOutcome(correct) {
     if (!questionResult) return
     const outcome = { type: correct ? 'correct' : 'wrong', card: questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
-    if (phase === 'goldenAlternatives') settleGoldenBonus(outcome)
-    else if (phase === 'bossQuestionPause') settleBossBuildupQuestion(outcome)
-    else if (phase === 'alternatives') settleQuestion(outcome)
+    if (phase === 'bossQuestionPause') settleBossBuildupQuestion(outcome)
+    else if (phase === 'questionPause' && pendingQuestionKind === 'golden') settleGoldenBonus(outcome)
+    else if (phase === 'questionPause' && pendingQuestionKind === 'normal') settleQuestion(outcome)
   }
 
   hud.debug.bind({

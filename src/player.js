@@ -1,4 +1,4 @@
-import { DEFAULT_FIRE_COOLDOWN, DEFAULT_AIM_ASSIST_ANGLE } from './combat.js'
+import { DEFAULT_FIRE_COOLDOWN } from './combat.js'
 
 // ============ ESCUDO ============
 // camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
@@ -19,8 +19,6 @@ const LIVES_CAP = 5
 
 const FIRE_COOLDOWN_MULT_PER_CORRECT = 0.85
 const FIRE_COOLDOWN_FLOOR = 0.06
-const AIM_ASSIST_STEP = (1.5 * Math.PI) / 180
-const AIM_ASSIST_CAP = (14 * Math.PI) / 180
 const PROJECTILE_COUNT_CAP = 4
 const PROJECTILE_COUNT_START = 1
 
@@ -84,7 +82,6 @@ export function createPlayerSystem(session) {
   let ramCardActive = false
 
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
-  let aimAssistAngle = DEFAULT_AIM_ASSIST_ANGLE
   let projectileCount = PROJECTILE_COUNT_START
 
   // QoL (v0.29.4): única fonte de verdade de "pode usar boost?" — antes a checagem estava
@@ -122,7 +119,6 @@ export function createPlayerSystem(session) {
     config: {
       get projectileCount() { return projectileCount },
       get fireCooldown() { return fireCooldown },
-      get aimAssistAngle() { return aimAssistAngle },
       get homingMaxTargets() { return homingMaxTargets },
       get homingChargeMinMs() { return homingChargeMinMs },
       get homingChargeMaxMs() { return homingChargeMaxMs },
@@ -164,7 +160,6 @@ export function createPlayerSystem(session) {
       return {
         projectileCount,
         fireCooldown,
-        aimAssistAngle,
         homingMaxTargets,
         homingChargeMinMs,
         homingChargeMaxMs,
@@ -195,9 +190,6 @@ export function createPlayerSystem(session) {
           break
         case 'wingman':
           wingmanCount = Math.min(WINGMAN_CAP, wingmanCount + 1)
-          break
-        case 'wider-lock':
-          aimAssistAngle = Math.min(AIM_ASSIST_CAP, aimAssistAngle + AIM_ASSIST_STEP)
           break
         case 'more-homing-targets':
           homingMaxTargets = Math.min(HOMING_MAX_TARGETS_CAP, homingMaxTargets + 1)
@@ -243,7 +235,6 @@ export function createPlayerSystem(session) {
       if (shieldMax >= SHIELD_MAX_CAP) exclude.add('extra-shield-charge')
       if (homingMaxTargets >= HOMING_MAX_TARGETS_CAP) exclude.add('more-homing-targets')
       if (projectileCount >= PROJECTILE_COUNT_CAP) exclude.add('extra-projectile')
-      if (aimAssistAngle >= AIM_ASSIST_CAP) exclude.add('wider-lock')
       if (session.lives >= LIVES_CAP) exclude.add('extra-life')
       if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
       if (ramCardActive) exclude.add('propulsion-ram')
@@ -340,7 +331,6 @@ export function createPlayerSystem(session) {
     // (main.js, handler do debug) precisa rodar `combat.setWingmanCount(player.getWingmanCount())`
     // na sequência pra o efeito aparecer.
     debugMaxBuffs() {
-      aimAssistAngle = AIM_ASSIST_CAP
       projectileCount = PROJECTILE_COUNT_CAP
       homingMaxTargets = HOMING_MAX_TARGETS_CAP
       homingChargeMinMs = HOMING_CHARGE_MIN_FLOOR_MS

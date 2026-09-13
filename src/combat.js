@@ -44,24 +44,6 @@ const PLAYER_PROJECTILE_STEER_RATE = 2.2
 const PLAYER_PROJECTILE_GROWTH_PER_EXTRA = 0.15
 
 export const DEFAULT_FIRE_COOLDOWN = 0.2
-export const DEFAULT_AIM_ASSIST_ANGLE = THREE.MathUtils.degToRad(4)
-
-const QUIZ_TARGET_DISTANCE = 150
-const QUIZ_HIT_RADIUS = 1.3
-const QUIZ_DEATH_DURATION = 0.15
-const QUIZ_SLOT_OFFSETS = [
-  { x: -3.5, y: 2 },
-  { x: 3.5, y: 2 },
-  { x: -3.5, y: -2 },
-  { x: 3.5, y: -2 },
-]
-const SHAPE_GEOMETRY = {
-  octaedro: () => new THREE.OctahedronGeometry(1.1),
-  cubo: () => new THREE.BoxGeometry(1.5, 1.5, 1.5),
-  tetraedro: () => new THREE.TetrahedronGeometry(1.3),
-  icosaedro: () => new THREE.IcosahedronGeometry(1.1),
-}
-const SHAPE_COLOR = { azul: 0x4da6ff, 'âmbar': 0xffb84d, magenta: 0xff4dd2, ciano: 0x4dfff2 }
 
 const BOSS_TARGET_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
@@ -93,11 +75,10 @@ const BONUS_KILL_BONUS = 50
 // ao soltar, o teleguiado mira exatamente nos marcados em vez dos N mais próximos
 const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
 
-// distância máxima (unidades de mundo) para um alvo poder ser travado/auto-mirável. Vale tanto
-// pra detecção da mira (findLockOnTarget) quanto pro teleguiado (sweepLockOn e a seleção de
-// alvos em fireHomingShot). Sem isso, dá pra "magnetizar" tiro em inimigo a centenas de
-// unidades de distância. Ajuste pra cima (150+) se quiser voltar ao comportamento antigo, ou
-// pra baixo (60) pra exigir aproximação.
+// distância máxima (unidades de mundo) para um alvo poder ser travado/auto-mirável pelo
+// teleguiado (sweepLockOn e a seleção de alvos em fireHomingShot). Sem isso, dá pra
+// "magnetizar" tiro em inimigo a centenas de unidades de distância. Ajuste pra cima (150+) se
+// quiser voltar ao comportamento antigo, ou pra baixo (60) pra exigir aproximação.
 const MAX_LOCK_RANGE = 90
 
 // o teleguiado deve "parar de mirar em inimigos que estão extremamente próximos ou passaram
@@ -107,7 +88,6 @@ const MIN_LOCK_RANGE = 10
 
 export function createCombatSystem(scene, rail, effects, enemies, player) {
   const projectiles = []
-  const quizTargets = []
   const bonusTargets = []
   const bossOrbs = []
 
@@ -160,20 +140,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   function refreshHitboxes() {
     while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
     if (!showHitboxes) return
-    for (const t of quizTargets) if (!t.dying) markHitbox(t.mesh.position, QUIZ_HIT_RADIUS)
     for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS)
     for (const o of bossOrbs) if (!o.dying) markHitbox(o.mesh.position, BOSS_ORB_HIT_RADIUS)
     for (const item of enemies.getHitboxTargets()) markHitbox(item.worldPos, item.radius)
-  }
-
-  function makeQuizTargetMesh(alt) {
-    return new THREE.Mesh(SHAPE_GEOMETRY[alt.shape](), new THREE.MeshPhongMaterial({ color: SHAPE_COLOR[alt.color], flatShading: true }))
-  }
-
-  function projectAhead(distance) {
-    const frame = rail.getFrameAt(0)
-    const position = frame.position.clone().addScaledVector(frame.forward, distance)
-    return { position, right: frame.right, up: frame.up }
   }
 
   function projectAheadOnPath(distanceAhead) {
@@ -195,8 +164,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   // ainda tem setFireCooldown() só por causa disso.
   let cooldown = 0
   let fireCooldownDuration = DEFAULT_FIRE_COOLDOWN
-  let quizRoomActive = false
-  let quizShotsFired = 0
   let elapsed = 0
 
   const wingmen = []
@@ -213,8 +180,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       w.mesh.lookAt(pos.clone().add(frame.forward))
     })
   }
-
-  let currentLockOn = null
 
   const lockedEnemies = new Set()
 
@@ -249,13 +214,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     projectiles.splice(projectiles.indexOf(p), 1)
   }
 
-  function removeQuizTarget(t) {
-    scene.remove(t.mesh)
-    t.mesh.geometry.dispose()
-    t.mesh.material.dispose()
-    quizTargets.splice(quizTargets.indexOf(t), 1)
-  }
-
   function removeBonusTarget(b) {
     scene.remove(b.mesh)
     bonusTargets.splice(bonusTargets.indexOf(b), 1)
@@ -280,23 +238,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       orb.mesh.children[1].rotation.z += dt * 1.6
       orb.mesh.scale.setScalar(1 + Math.sin(elapsed * 3 + orb.phase) * 0.08)
     }
-  }
-
-  // filtro de distância — só trava alvo de pergunta dentro de MAX_LOCK_RANGE
-  function findLockOnTarget(origin, direction) {
-    let best = null
-    let bestAngle = player.config.aimAssistAngle
-    for (const target of quizTargets) {
-      if (target.dying) continue
-      if (origin.distanceTo(target.mesh.position) > MAX_LOCK_RANGE) continue
-      const toTarget = target.mesh.position.clone().sub(origin).normalize()
-      const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
-      if (angle < bestAngle) {
-        bestAngle = angle
-        best = target
-      }
-    }
-    return best
   }
 
   function fire(origin, direction) {
@@ -338,7 +279,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   }
 
   function updateProjectiles(dt, aimDirection) {
-    let hitEvent = null
     let enemyKills = 0
     let enemyKillPoints = 0
     let bonusKillPoints = 0
@@ -386,22 +326,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         }
       }
 
-      // QoL (v0.29.4): guard de array vazio — quizTargets/bossOrbs/bonusTargets estão vazios na
-      // maior parte do tempo (combate normal, arena do chefe, etc.); sem o guard, cada projétil
-      // rodava o .find (com callback + distanceToSegment) em array vazio por nada.
+      // QoL (v0.29.4): guard de array vazio — bossOrbs/bonusTargets estão vazios na maior parte
+      // do tempo (combate normal, etc.); sem o guard, cada projétil rodava o .find (com callback
+      // + distanceToSegment) em array vazio por nada.
       const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER
-      const targetHit = quizTargets.length
-        ? quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS + hitBuffer)
-        : null
-      if (targetHit) {
-        targetHit.dying = true
-        targetHit.deathT = 0
-        if (!hitEvent) hitEvent = { slot: targetHit.slot, isCorrect: targetHit.isCorrect }
-        if (effects) effects.explosion(targetHit.mesh.position, targetHit.colorHex ?? 0xffffff, 0.9)
-        removeProjectile(projectile)
-        continue
-      }
-
       const orbHit = bossOrbs.length
         ? bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS + hitBuffer)
         : null
@@ -456,22 +384,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (projectile.traveled > PROJECTILE_MAX_RANGE) removeProjectile(projectile)
     }
 
-    return { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog }
-  }
-
-  function updateQuizTargets(dt) {
-    const frame = rail.getFrameAt(0)
-    for (const target of [...quizTargets]) {
-      if (target.dying) {
-        target.deathT += dt / QUIZ_DEATH_DURATION
-        target.mesh.scale.setScalar(Math.max(0, 1 - target.deathT))
-        if (target.deathT >= 1) removeQuizTarget(target)
-        continue
-      }
-      if (target.noCull) continue
-      const relative = target.mesh.position.clone().sub(frame.position)
-      if (relative.dot(frame.forward) < PASS_BEHIND) removeQuizTarget(target)
-    }
+    return { enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog }
   }
 
   function updateBonusTargets(dt) {
@@ -492,7 +405,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     tryFire(origin, direction) {
       if (cooldown > 0) return
       cooldown = fireCooldownDuration
-      if (quizRoomActive) quizShotsFired += 1
       fire(origin, direction)
       for (const w of wingmen) fireSingle(w.mesh.position, direction)
     },
@@ -594,11 +506,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearAllCombatants() {
       enemies.clearAll()
       for (const projectile of [...projectiles]) removeProjectile(projectile)
-      // QoL (v0.29.4): sem isso, o Set de alvos travados e o lock atual sobreviviam a um
-      // clear — os marcadores de lock no HUD ficavam pendurados por alguns frames até o
-      // próximo sweepLockOn limpar.
+      // QoL (v0.29.4): sem isso, o Set de alvos travados sobrevivia a um clear — os marcadores
+      // de lock no HUD ficavam pendurados por alguns frames até o próximo sweepLockOn limpar.
       lockedEnemies.clear()
-      currentLockOn = null
     },
 
     spawnBonusTarget() {
@@ -612,30 +522,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearBonusTargets() {
       for (const bonus of [...bonusTargets]) {
         if (!bonus.dying) removeBonusTarget(bonus)
-      }
-    },
-
-    spawnQuizTargets(alternatives) {
-      quizRoomActive = true
-      quizShotsFired = 0
-      const base = projectAhead(QUIZ_TARGET_DISTANCE)
-      for (const alt of alternatives) {
-        const offset = QUIZ_SLOT_OFFSETS[alt.slot]
-        const position = base.position.clone()
-          .addScaledVector(base.right, offset.x)
-          .addScaledVector(base.up, offset.y)
-
-        const mesh = makeQuizTargetMesh(alt)
-        mesh.position.copy(position)
-        scene.add(mesh)
-        quizTargets.push({
-          mesh,
-          slot: alt.slot,
-          isCorrect: alt.isCorrect,
-          dying: false,
-          deathT: 0,
-          colorHex: SHAPE_COLOR[alt.color] ?? 0xffffff,
-        })
       }
     },
 
@@ -674,23 +560,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       for (const orb of [...bossOrbs]) if (!orb.dying) removeBossOrb(orb)
     },
 
-    clearQuizTargets() {
-      quizRoomActive = false
-      for (const target of [...quizTargets]) {
-        if (!target.dying) removeQuizTarget(target)
-      }
-      for (const projectile of [...projectiles]) removeProjectile(projectile)
-    },
-
-    getQuizShotsFired: () => quizShotsFired,
-
     sweepLockOn,
     clearLockedEnemies() { lockedEnemies.clear() },
     getLockedEnemySnapshots: () => [...lockedEnemies]
       .filter((e) => !e.dying)
       .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone() })),
-
-    getLockOnTarget: () => (currentLockOn && !currentLockOn.dying ? currentLockOn : null),
 
     // continua existindo só pro debug "Tiro infinito" poder zerar o cooldown por fora do stat
     // real do jogador (ver comentário perto de fireCooldownDuration)
@@ -700,19 +574,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
     update(dt, playerPosition, opts = {}) {
       const enemiesActive = opts.enemiesActive !== false
-      const aimOrigin = opts.aimOrigin
       const aimDirection = opts.aimDirection
       elapsed += dt
       cooldown = Math.max(0, cooldown - dt)
 
-      if (aimOrigin && aimDirection) {
-        currentLockOn = findLockOnTarget(aimOrigin, aimDirection)
-      } else {
-        currentLockOn = null
-      }
-
-      const { hitEvent, enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog } = updateProjectiles(dt, aimDirection)
-      updateQuizTargets(dt)
+      const { enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog } = updateProjectiles(dt, aimDirection)
       updateBonusTargets(dt)
       updateBossOrbs(dt)
 
@@ -736,7 +602,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (showHitboxes) refreshHitboxes()
 
       return {
-        targetHit: hitEvent,
         enemyKills: enemyKills + ramKills,
         enemyKillPoints: enemyKillPoints + ramKillPoints,
         bonusKillPoints,
@@ -751,14 +616,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
     dispose() {
       for (const p of [...projectiles]) removeProjectile(p)
-      for (const t of [...quizTargets]) removeQuizTarget(t)
       for (const b of [...bonusTargets]) removeBonusTarget(b)
       for (const o of [...bossOrbs]) removeBossOrb(o)
       for (const w of [...wingmen]) scene.remove(w.mesh)
       wingmen.length = 0
-      // QoL (v0.29.4): idem clearAllCombatants — não deixa Set/lock órfão vazar entre sessões
+      // QoL (v0.29.4): idem clearAllCombatants — não deixa Set de lock órfão vazar entre sessões
       lockedEnemies.clear()
-      currentLockOn = null
       enemies.dispose()
       projectileGeometry.dispose()
       projectileMaterial.dispose()

@@ -19,6 +19,16 @@ const CAM_HEIGHT = 3
 
 const CAM_FOLLOW_LATERAL = 0.3
 
+// Fase 6: câmera mais dinâmica no modo normal — um drift lento (senoidal, nunca abrupto) de
+// posição lateral/vertical por cima do follow normal, mais um "dutch angle" leve (a câmera
+// mesma se inclina, não o mundo) — dá a sensação de ângulos mais diagonais em certos trechos
+// sem nunca atrapalhar a leitura do jogo (mira/hitbox não dependem da câmera, só do estado
+// real da nave, que fica intocado). Puramente cosmético.
+const CAMERA_DYNAMIC_PERIOD = 17 // segundos por ciclo completo do drift
+const CAMERA_DYNAMIC_LATERAL = 2.4
+const CAMERA_DYNAMIC_VERTICAL = 1.1
+const CAMERA_DYNAMIC_ROLL = 0.1 // radianos (~5.7°) de inclinação máxima da câmera
+
 const SHIP_NOSE_OFFSET = 1.6
 const SHIP_COLOR = 0xeaf3ff
 
@@ -114,6 +124,7 @@ export function createRailController(camera, scene) {
   let roll = 0
   let speedMultiplier = 1
   let advancing = true
+  let camDynamicT = 0 // Fase 6: acumulador do drift senoidal da câmera (modo normal)
   let lastFrame = frameAtArcLength(0)
   let lastPlayerPos = lastFrame.position.clone()
 
@@ -327,13 +338,25 @@ export function createRailController(camera, scene) {
     ship.rotateZ(fullSpinAngle)
     applyShakeJitter()
 
+    // Fase 6: drift senoidal lento por cima do follow normal — nunca abrupto, só um "respirar"
+    // de câmera que some e volta ao longo de CAMERA_DYNAMIC_PERIOD segundos. As 3 ondas usam
+    // fases diferentes (offset + frequência levemente distintas) pra não ficarem sincronizadas
+    // e parecerem mecânicas.
+    camDynamicT += dt
+    const cyclePhase = (camDynamicT / CAMERA_DYNAMIC_PERIOD) * Math.PI * 2
+    const dynLateral = Math.sin(cyclePhase) * CAMERA_DYNAMIC_LATERAL
+    const dynVertical = Math.sin(cyclePhase * 0.7 + 1.3) * CAMERA_DYNAMIC_VERTICAL
+    const dynRoll = Math.sin(cyclePhase * 0.5 + 2.1) * CAMERA_DYNAMIC_ROLL
+
     const camTarget = frame.position.clone()
-      .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL)
-      .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL + CAM_HEIGHT)
+      .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL + dynLateral)
+      .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL + CAM_HEIGHT + dynVertical)
       .addScaledVector(frame.forward, -CAM_BEHIND)
 
     camera.position.lerp(camTarget, 1 - Math.exp(-CAM_LAG_RATE * dt))
-    camera.up.copy(frame.up)
+    // "dutch angle" leve: inclina o UP da câmera em torno do forward antes do lookAt — a nave
+    // e a mira não são afetadas, só o enquadramento
+    camera.up.copy(frame.up).applyAxisAngle(frame.forward, dynRoll)
     camera.lookAt(camera.position.clone().add(frame.forward))
 
     lastFrame = frame

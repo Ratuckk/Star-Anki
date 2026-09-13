@@ -11,7 +11,6 @@ export const ROGUELIKE_CARDS = [
   { id: 'extra-projectile', category: 'ofensivo', label: 'Tiro duplicado', description: '+1 projétil disparado por tiro.' },
   { id: 'faster-fire', category: 'ofensivo', label: 'Recarga rápida', description: 'Reduz o tempo entre disparos.' },
   { id: 'wingman', category: 'ofensivo', label: 'Nave de apoio', description: 'Uma nave cosmética passa a atirar com você (não leva dano).' },
-  { id: 'wider-lock', category: 'ofensivo', label: 'Mira ampliada', description: 'A mira trava alvos com mais facilidade.' },
   { id: 'more-homing-targets', category: 'ofensivo', label: 'Enxame teleguiado', description: 'O tiro carregado atinge mais alvos de uma vez.' },
 
   { id: 'extra-shield-charge', category: 'defensivo', label: 'Escudo reforçado', description: '+1 carga máxima de escudo.' },

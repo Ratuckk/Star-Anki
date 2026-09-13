@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 // ============ (duplicadas de combat.js — pequenas, sem estado, seguras de duplicar) ============
-// combat.js também usa PASS_BEHIND (pra quizTargets/bonusTargets) e distanceToSegment (pro
+// combat.js também usa PASS_BEHIND (pra bonusTargets/bossOrbs) e distanceToSegment (pro
 // hit-test dos tiros do jogador) — como enemies.js não pode importar combat.js (dependência
 // circular: combat.js importa createEnemiesSystem daqui), essas duas ficam com cópia própria.
 const PASS_BEHIND = -4
