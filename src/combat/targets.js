@@ -11,28 +11,37 @@ const BONUS_SPAWN_DISTANCE_MIN = 90
 const BONUS_SPAWN_DISTANCE_MAX = 140
 const BONUS_BOX_X = 7
 const BONUS_BOX_Y = 5
+// raio de hitbox no MÉDIO (tier 1.1) — os outros tiers escalam junto com o mesh (ver
+// bonusHitRadiusFor). Antes era um raio fixo pra todo asteroide, então um 0.5x tinha hitbox de
+// um 1x (bug: o comentário prometia "acompanha a escala real", o código não fazia).
 const BONUS_HIT_RADIUS = 1.6
-// piso de hitbox — asteroide minúsculo (scale 0.35) sem isso ficaria quase impossível de acertar
-const BONUS_HIT_RADIUS_MIN = 1.0
+// piso — asteroide do tier pequeno (scale 0.55) precisa continuar acertável
+const BONUS_HIT_RADIUS_MIN = 0.75
 const BONUS_DEATH_DURATION = 0.2
 const BONUS_KILL_BONUS = 50
-// Range expandido (era 0.7-1.6): 0.35 dá asteroide de verdade pequeno, 2.4 dá asteroide de
-// verdade grande — a variedade visual fica óbvia, não "médio pra médio".
-const BONUS_SCALE_MIN = 0.35
-const BONUS_SCALE_MAX = 2.4
+
+// ============ TIERS DE TAMANHO ============
+// 3 categorias discretas em vez de distribuição contínua: o jogador lê "esse é pequeno / médio /
+// grande" em vez de "esse é 0.83 e aquele é 0.91". Cada tier recebe ±10% de jitter pra não
+// parecer que saíram todos de fôrma — mas o olho ainda distingue os 3 grupos claramente.
+//
+// Antes disso a distribuição era contínua enviesada pros extremos, o que na prática fazia
+// ~40% dos spawns caírem abaixo de 1.0x (bem pequenos) — daí a percepção de "só sai asteroide
+// pequeno". Agora cada tier tem exatamente 1/3 de chance.
+const BONUS_SIZE_TIERS = [
+  { scale: 0.55 }, // pequeno
+  { scale: 1.1 },  // médio
+  { scale: 2.1 },  // grande
+]
+const BONUS_TIER_JITTER = 0.1 // ±10% dentro de cada tier
+
+function rollBonusScale() {
+  const tier = BONUS_SIZE_TIERS[Math.floor(Math.random() * BONUS_SIZE_TIERS.length)]
+  const jitter = 1 - BONUS_TIER_JITTER + Math.random() * BONUS_TIER_JITTER * 2
+  return tier.scale * jitter
+}
 
 const PASS_BEHIND = -4
-
-// Distribuição enviesada pros EXTREMOS (não uniforme): metade dos valores cai perto do mínimo,
-// metade perto do máximo. A uniforme antiga amontoava tudo em volta do meio (~1.15x) — é o que
-// dava a sensação de "todo asteroide é do mesmo tamanho".
-function rollBonusScale() {
-  const r = Math.random()
-  const t = r < 0.5
-    ? Math.pow(Math.random(), 2) * 0.5       // [0, 0.5) enviesado pro 0
-    : 1 - Math.pow(Math.random(), 2) * 0.5   // (0.5, 1] enviesado pro 1
-  return BONUS_SCALE_MIN + t * (BONUS_SCALE_MAX - BONUS_SCALE_MIN)
-}
 
 // v0.29.6: +25% no tiro normal (não no teleguiado) — repassado por quem chama resolve*Hit
 const BOSS_ORB_HIT_RADIUS = 2.2
@@ -205,8 +214,8 @@ export function createTargetsSystem(scene, rail, effects) {
       if (!bonus) return null
       bonus.dying = true
       bonus.deathT = 0
-      // explosão escala com o tamanho do asteroide — asteroide 2.4x dá uma explosão visivelmente
-      // maior que um 0.35x, reforçando visualmente a variedade
+      // explosão escala com o tamanho do asteroide — asteroide grande dá uma explosão visivelmente
+      // maior que um pequeno, reforçando visualmente a variedade
       if (effects) effects.explosion(bonus.mesh.position, BONUS_COLOR, 0.9 * bonus.scale)
       return { points: BONUS_KILL_BONUS }
     },
