@@ -12,6 +12,23 @@ const PASS_BEHIND = -4
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 
+// v0.29.4 (QoL): temporários de módulo pra distanceToSegment não alocar 3 Vector3 por chamada.
+// A função é chamada por projétil × alvo × frame (centenas de vezes num pico de enxame), então
+// cada .clone() era pressão de GC pura. Mesma fórmula, zero alocação.
+const _dtsSeg = new THREE.Vector3()
+const _dtsSub = new THREE.Vector3()
+const _dtsClose = new THREE.Vector3()
+
+function distanceToSegment(point, segStart, segEnd) {
+  _dtsSeg.subVectors(segEnd, segStart)
+  const lenSq = _dtsSeg.lengthSq()
+  if (lenSq < 1e-8) return point.distanceTo(segStart)
+  _dtsSub.subVectors(point, segStart)
+  const t = THREE.MathUtils.clamp(_dtsSub.dot(_dtsSeg) / lenSq, 0, 1)
+  _dtsClose.copy(segStart).addScaledVector(_dtsSeg, t)
+  return point.distanceTo(_dtsClose)
+}
+
 const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
 const HOMING_PROJECTILE_DAMAGE = 3
 const HOMING_AFTERIMAGE_INTERVAL = 0.035 // segundos entre cada cópia fantasma do rastro
@@ -258,15 +275,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     }
   }
 
-  function distanceToSegment(point, segStart, segEnd) {
-    const seg = segEnd.clone().sub(segStart)
-    const lenSq = seg.lengthSq()
-    if (lenSq < 1e-8) return point.distanceTo(segStart)
-    const t = THREE.MathUtils.clamp(point.clone().sub(segStart).dot(seg) / lenSq, 0, 1)
-    const closest = segStart.clone().addScaledVector(seg, t)
-    return point.distanceTo(closest)
-  }
-
   // filtro de distância — só trava alvo de pergunta dentro de MAX_LOCK_RANGE
   function findLockOnTarget(origin, direction) {
     let best = null
@@ -311,11 +319,15 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     if (effects) effects.muzzleFlash(origin, shotDirection)
   }
 
-  function fireSingle(origin, direction) {
+  // QoL (v0.29.4): fireSingle agora carrega PLAYER_PROJECTILE_DAMAGE por padrão — antes, wingman
+  // e "giro rebatedor" caíam no `damage ?? 1` de updateProjectiles e causavam METADE do dano do
+  // tiro normal, apesar de usarem o mesmo projétil. Mesma fórmula, mesmo comportamento visual,
+  // só o número do dano foi corrigido. Quem quiser um tiro fraco de propósito passa o 3º arg.
+  function fireSingle(origin, direction, damage = PLAYER_PROJECTILE_DAMAGE) {
     const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
     mesh.position.copy(origin)
     scene.add(mesh)
-    projectiles.push({ mesh, velocity: direction.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0 })
+    projectiles.push({ mesh, velocity: direction.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0, damage })
   }
 
   function updateProjectiles(dt, aimDirection) {
@@ -332,8 +344,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     const hitsLog = []
 
     for (const projectile of [...projectiles]) {
+      // QoL (v0.29.4): checa .dying direto em vez de `enemies.getAlive().includes(...)` — aquela
+      // versão fazia um filter() do array inteiro POR projétil teleguiado POR frame. O .dying
+      // basta porque removeEnemy() em enemies.js agora marca .dying = true antes de tirar da
+      // lista (ver mudança correspondente lá).
       if (projectile.homingTarget) {
-        if (projectile.homingTarget.dying || !enemies.getAlive().includes(projectile.homingTarget)) {
+        if (projectile.homingTarget.dying) {
           projectile.homingTarget = null
         } else {
           const desired = projectile.homingTarget.mesh.position.clone().sub(projectile.mesh.position).normalize()
@@ -363,7 +379,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         }
       }
 
-      const targetHit = quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS)
+      // QoL (v0.29.4): guard de array vazio — quizTargets/bossOrbs/bonusTargets estão vazios na
+      // maior parte do tempo (combate normal, arena do chefe, etc.); sem o guard, cada projétil
+      // rodava o .find (com callback + distanceToSegment) em array vazio por nada.
+      const targetHit = quizTargets.length
+        ? quizTargets.find((t) => !t.dying && distanceToSegment(t.mesh.position, prevPos, projectile.mesh.position) <= QUIZ_HIT_RADIUS)
+        : null
       if (targetHit) {
         targetHit.dying = true
         targetHit.deathT = 0
@@ -373,7 +394,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         continue
       }
 
-      const orbHit = bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS)
+      const orbHit = bossOrbs.length
+        ? bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, projectile.mesh.position) <= BOSS_ORB_HIT_RADIUS)
+        : null
       if (orbHit) {
         orbHit.dying = true
         orbHit.deathT = 0
@@ -409,7 +432,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         continue
       }
 
-      const bonusHit = bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS)
+      const bonusHit = bonusTargets.length
+        ? bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS)
+        : null
       if (bonusHit) {
         bonusHit.dying = true
         bonusHit.deathT = 0
@@ -545,7 +570,14 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),
     getBossSnapshot: () => enemies.getBossSnapshot(),
-    getMinimapBlips: () => enemies.getMinimapBlips(),
+
+    // QoL (v0.29.4): os orbes-pergunta do chefe também aparecem no minimapa — antes, a fase
+    // 'bossBuildup' mostrava inimigos comuns mas não mostrava o que o jogador precisa achar,
+    // o que derrotava o propósito do minimapa em modo arena.
+    getMinimapBlips: () => [
+      ...enemies.getMinimapBlips(),
+      ...bossOrbs.filter((o) => !o.dying).map((o) => ({ type: 'bossOrb', worldPos: o.mesh.position })),
+    ],
 
     clearEnemies: () => enemies.clearEnemies(),
     clearGoldenTargets: () => enemies.clearGoldenTargets(),
@@ -553,6 +585,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearAllCombatants() {
       enemies.clearAll()
       for (const projectile of [...projectiles]) removeProjectile(projectile)
+      // QoL (v0.29.4): sem isso, o Set de alvos travados e o lock atual sobreviviam a um
+      // clear — os marcadores de lock no HUD ficavam pendurados por alguns frames até o
+      // próximo sweepLockOn limpar.
+      lockedEnemies.clear()
+      currentLockOn = null
     },
 
     spawnBonusTarget() {
@@ -594,10 +631,15 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     },
 
     // 6 orbes genéricos espalhados pela arena do chefe (Fase 5) — nenhum "é" uma pergunta
-    // específica até ser atingido; main.js decide qual pergunta mostrar (nextQuestion) na hora
+    // específica até ser atingido; main.js decide qual pergunta mostrar (nextQuestion) na hora.
+    //
+    // QoL (v0.29.4): origem é o CENTRO da arena (rail.getArenaCenter()), não rail.getFrameAt(0)
+    // — em modo arena, getFrameAt(0) retorna a posição ATUAL do jogador, então os orbes nasciam
+    // todos amontoados na frente dele se ele estivesse perto da borda na transição. O resultado
+    // era metade da arena vazia e "ache e atire em todas" virando "atire nos 6 na sua frente".
     spawnBossOrbs(count, opts = {}) {
       const { distanceMin = 45, distanceMax = 95 } = opts
-      const frame = rail.getFrameAt(0)
+      const origin = rail.getArenaCenter()
       for (let i = 0; i < count; i += 1) {
         const azimuth = Math.random() * Math.PI * 2
         const elevation = (Math.random() * 2 - 1) * BOSS_TARGET_ELEVATION_MAX
@@ -613,7 +655,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         const ring = new THREE.Mesh(bossOrbRingGeometry, bossOrbRingMaterial)
         ring.rotation.x = Math.PI / 2
         group.add(ring)
-        group.position.copy(frame.position.clone().add(offset))
+        group.position.copy(origin.clone().add(offset))
         scene.add(group)
         bossOrbs.push({ mesh: group, dying: false, deathT: 0, phase: Math.random() * Math.PI * 2 })
       }
@@ -705,6 +747,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       for (const o of [...bossOrbs]) removeBossOrb(o)
       for (const w of [...wingmen]) scene.remove(w.mesh)
       wingmen.length = 0
+      // QoL (v0.29.4): idem clearAllCombatants — não deixa Set/lock órfão vazar entre sessões
+      lockedEnemies.clear()
+      currentLockOn = null
       enemies.dispose()
       projectileGeometry.dispose()
       projectileMaterial.dispose()
