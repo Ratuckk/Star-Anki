@@ -131,6 +131,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         laserTelegraphTimer: 0,
         laserTargetPos: null,
         distanceMin, distanceMax, teleportCooldownTimer: 0,
+        ramHitActive: false,
       })
     },
 
@@ -153,21 +154,32 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           continue
         }
 
-        if (ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= GOLDEN_HIT_RADIUS) {
-          g.hp -= ramDamage
-          if (effects) effects.flashMesh(g.mesh)
-          if (g.hp <= 0) {
-            g.dying = true
-            g.deathT = 0
-            ramGoldenDefeated = true
-            ramGoldenWorldPos = g.mesh.position.clone()
-            if (effects) {
-              effects.explosion(g.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
-              effects.shockwave(g.mesh.position, GOLDEN_COLOR, 1.1)
+        // BUG corrigido: aplicava `ramDamage` A CADA FRAME enquanto o jogador ficasse
+        // sobreposto (a 60fps, RAM_DAMAGE=5 vira ~300 hp/s — matava os 20 hp do dourado no
+        // primeiro encostão, bem mais forte que o pretendido). `ramHitActive` só deixa aplicar
+        // dano na BORDA DE SUBIDA (quando entra no raio vindo de fora) — um hit por encostada,
+        // igual bate/some. Continua "congelado" (sem mover/atirar) enquanto durar a sobreposição,
+        // e o flag reresta assim que o jogador sai do raio, liberando um novo hit na próxima vez.
+        const inRamRange = ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= GOLDEN_HIT_RADIUS
+        if (inRamRange) {
+          if (!g.ramHitActive) {
+            g.ramHitActive = true
+            g.hp -= ramDamage
+            if (effects) effects.flashMesh(g.mesh)
+            if (g.hp <= 0) {
+              g.dying = true
+              g.deathT = 0
+              ramGoldenDefeated = true
+              ramGoldenWorldPos = g.mesh.position.clone()
+              if (effects) {
+                effects.explosion(g.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
+                effects.shockwave(g.mesh.position, GOLDEN_COLOR, 1.1)
+              }
             }
           }
           continue
         }
+        g.ramHitActive = false
 
         g.mesh.scale.setScalar(pulse)
         g.mesh.rotation.y += dt * 0.6

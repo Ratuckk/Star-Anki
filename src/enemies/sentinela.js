@@ -15,8 +15,15 @@ const SPAWN_DISTANCE_MAX = 130
 const BOX_X = 6
 const BOX_Y = 4
 
-const ENGAGE_STANDOFF = 55 // distância-alvo à frente da câmera, mantida enquanto ataca
-const ENGAGE_SPEED = 8
+// pedido do usuário: standoff bem maior (fica mais longe do jogador) — 55 era perto demais.
+// Com o alvo tão mais distante, a correção discreta antiga (+1/0/-1 * ENGAGE_SPEED=8) nunca
+// alcançava: a nave anda a 22u/s e 8 é mais lento até que ISSO, sem contar que virava um
+// liga/desliga brusco (jitter) perto do standoff. Trocado por um modelo proporcional —
+// corrige mais forte quanto maior a diferença, sem overshoot brusco — com teto ACIMA da
+// velocidade da nave, senão ela nunca alcançaria de qualquer jeito.
+const ENGAGE_STANDOFF = 180 // distância-alvo à frente da câmera, mantida enquanto ataca
+const ENGAGE_SPEED_GAIN = 0.3 // proporcional: quanto maior a diferença pro standoff, mais forte corrige
+const ENGAGE_SPEED_MAX = 26 // teto — precisa ser MAIOR que a velocidade da nave (22) pra conseguir alcançar
 const LATERAL_TRACK_RATE = 7 // "1/tempo" de resposta lateral — alto o bastante pra travar no jogador
 const LEAVE_SPEED = 24 // bem mais rápido que o avanço do Blaster — "vai embora" de vez
 export const SENTINELA_SHOTS_TOTAL = 4
@@ -30,18 +37,16 @@ export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera
 
 // ============ TAMANHO DA MOLDURA ============
 // pedido do usuário: "quero que estes quadrados sejam maiores, como enquadramentos ao invés de
-// quadrados grandões... que abrem e fecham no meio". Antes: outer=9, inner=4 → moldura 18x18
-// com buraco 8x8 (buraco ocupava só 44% do lado, banda de 5 — lia como "bloco sólido com
-// buraco pequeno", não como janela). A "abre e fecha no meio" era perspectiva: o buraco
-// pequeno parecia abrir conforme a moldura se aproximava e fechar ao passar.
-//
-// Agora: outer=14 (moldura 28x28, 56% maior), inner=11 (buraco 22x22 — 78% do lado), banda de
-// apenas 3 (fina, lê como BORDA). A moldura agora é literalmente um enquadramento: o jogador
-// vê o buraco desde longe, entende "preciso passar por ali", sem ilusão de abertura/fechamento.
+// quadrados grandões... que abrem e fecham no meio" — outer=14 (moldura 28x28), inner=11
+// (buraco 22x22 — 78% do lado), banda de apenas 3 (fina, lê como BORDA). A moldura é
+// literalmente um enquadramento: o jogador vê o buraco desde longe, entende "preciso passar
+// por ali" — o abrir/fechar de verdade é outra mecânica, ver `updateGateAnimation` abaixo.
 const GATE_OUTER_HALF = 14
 const GATE_INNER_HALF = 11
 const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
-const GATE_SPEED = 34
+// standoff (ENGAGE_STANDOFF) subiu bastante — a moldura precisa viajar mais longe até o
+// jogador, então a velocidade sobe junto (senão o tempo de voo ficaria absurdo).
+const GATE_SPEED = 100
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
@@ -49,7 +54,15 @@ const GATE_COLOR = 0x3fa9f5
 // bloco sólido, sem passagem segura, e voltando a abrir), não ficar com o buraco sempre do
 // mesmo tamanho até o resolve final. GATE_MIN_INNER_HALF > 0 evita o buraco colapsar pra uma
 // escala zero exata (glitch visual de matriz degenerada no Three.js).
-const GATE_CYCLE_PERIOD = 0.75 // segundos por ciclo completo (aberto → fechado → aberto)
+//
+// BUG corrigido: o período do ciclo era uma constante fixa (0.75s) desacoplada do tempo de
+// voo real (que depende da distância até o jogador no instante do disparo) — o número de
+// pulsos abrir/fechar até a chegada era imprevisível (podia ser 1 ou podia ser 6, dependendo
+// só de onde o jogador estava quando a moldura foi disparada). Agora o período é calculado NA
+// HORA do disparo em função do tempo de voo (`targetDistance / GATE_SPEED`), dividido por um
+// número fixo de ciclos — sempre ~3 pulsos completos até a chegada, não importa a distância.
+const GATE_CYCLES_PER_FLIGHT = 3
+const GATE_MIN_CYCLE_PERIOD = 0.3 // segurança: nunca deixa o período ficar tão curto que pisque
 const GATE_MIN_INNER_HALF = 0.01
 
 // Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
@@ -96,8 +109,8 @@ export function updateSentinelaMovement(enemy, dt, frame, rail) {
     return
   }
   const along = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
-  const correction = along > ENGAGE_STANDOFF ? -1 : along < ENGAGE_STANDOFF * 0.6 ? 1 : 0
-  enemy.mesh.position.addScaledVector(frame.forward, correction * ENGAGE_SPEED * dt)
+  const forwardSpeed = THREE.MathUtils.clamp((ENGAGE_STANDOFF - along) * ENGAGE_SPEED_GAIN, -ENGAGE_SPEED_MAX, ENGAGE_SPEED_MAX)
+  enemy.mesh.position.addScaledVector(frame.forward, forwardSpeed * dt)
 
   const lateral = rail.getPlayerLateral()
   const relative = enemy.mesh.position.clone().sub(frame.position)
@@ -145,6 +158,11 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
   scene.add(group)
 
+  // período do ciclo sincronizado com o tempo de voo de VERDADE — ver comentário em
+  // GATE_CYCLES_PER_FLIGHT acima
+  const flightTime = targetDistance / GATE_SPEED
+  const cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, flightTime / GATE_CYCLES_PER_FLIGHT)
+
   const gate = {
     mesh: group,
     bars: { top, bottom, left, right },
@@ -156,6 +174,7 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
     traveled: 0,
     velocity: dir.clone().multiplyScalar(GATE_SPEED),
     phase: 0,
+    cyclePeriod,
     innerHalf: GATE_INNER_HALF,
     outerHalf: GATE_OUTER_HALF,
     damage: GATE_DAMAGE,
@@ -194,10 +213,11 @@ function applyGateVisual(gate) {
 
 // pedido do usuário: a moldura abre e fecha de verdade enquanto viaja até o jogador (cosseno —
 // começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) — chamado a cada
-// frame pelo orquestrador em `updateEnemyGates`, antes de mover a moldura.
+// frame pelo orquestrador em `updateEnemyGates`, antes de mover a moldura. `gate.cyclePeriod`
+// é calculado por moldura (não uma constante global) — ver GATE_CYCLES_PER_FLIGHT.
 export function updateGateAnimation(gate, dt) {
   gate.phase += dt
-  const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / GATE_CYCLE_PERIOD)
+  const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / gate.cyclePeriod)
   gate.innerHalf = GATE_INNER_HALF * t
   applyGateVisual(gate)
 }

@@ -262,28 +262,39 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (playerPosition.distanceTo(enemy.mesh.position) <= hitRadius) {
         hits += 1
         if (ramDamage > 0) {
-          enemy.hp -= ramDamage
-          if (enemy.hp <= 0) {
-            enemy.dying = true
-            enemy.deathT = 0
-            if (enemy.kind === BOSS_KIND) {
-              ramBossDefeated = true
-              ramBossWorldPos = enemy.mesh.position.clone()
-              if (effects) explodeBoss(effects, enemy.mesh.position)
-            } else {
-              ramKills += 1
-              ramKillPoints += killPointsFor(enemy.kind)
-              if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies)
-              if (effects) effects.explosion(enemy.mesh.position, colorFor(enemy), 1.6, { rings: true })
+          // BUG corrigido: aplicava `ramDamage` A CADA FRAME de sobreposição — pro chefe (hp
+          // alto, fica vários frames dentro do raio) isso multiplicava o dano de verdade muito
+          // além do pretendido. `ramHitActive` só deixa bater na BORDA DE SUBIDA (entrando no
+          // raio vindo de fora) — um hit por encostada. Continua congelado (sem mover) enquanto
+          // durar a sobreposição; o flag reseta assim que sai do raio.
+          if (!enemy.ramHitActive) {
+            enemy.ramHitActive = true
+            enemy.hp -= ramDamage
+            if (enemy.hp <= 0) {
+              enemy.dying = true
+              enemy.deathT = 0
+              if (enemy.kind === BOSS_KIND) {
+                ramBossDefeated = true
+                ramBossWorldPos = enemy.mesh.position.clone()
+                if (effects) explodeBoss(effects, enemy.mesh.position)
+              } else {
+                ramKills += 1
+                ramKillPoints += killPointsFor(enemy.kind)
+                if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies)
+                if (effects) effects.explosion(enemy.mesh.position, colorFor(enemy), 1.6, { rings: true })
+              }
             }
           }
           continue
         }
+        enemy.ramHitActive = false
         if (enemy.kind !== BOSS_KIND) {
           if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies)
           removeEnemy(enemy)
           continue
         }
+      } else {
+        enemy.ramHitActive = false
       }
 
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
@@ -308,14 +319,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           if (relative.dot(frame.forward) < PASS_BEHIND) { removeEnemy(enemy); continue }
         }
       } else if (inArena) {
+        // pedido do usuário: inimigos comuns muito lentos em arena — *0.5 limitava a metade da
+        // velocidade do jogador, subido pra *0.7. Fragata mantém *0.5 de propósito (ela é uma
+        // "parede móvel" que só precisa alcançar o standoff, não perseguir agressivamente).
         if (enemy.kind === BLASTER_KIND) {
-          updateBlasterArenaMovement(enemy, dt, playerPosition, frame, rail.getArenaSpeed() * 0.5)
+          updateBlasterArenaMovement(enemy, dt, playerPosition, frame, rail.getArenaSpeed() * 0.7)
         } else if (enemy.kind === FRAGATA_KIND) {
           updateFragataMovement(enemy, dt, playerPosition, rail.getArenaSpeed() * 0.5)
         } else {
-          // tank/time (genérico): chase reto ou órbita, mesma lógica de sempre
-          const speedCap = rail.getArenaSpeed() * 0.5
-          const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
+          // tank/time (genérico): chase reto ou órbita, mesma lógica de sempre — default do
+          // speedFactor subiu de 0.6 pra 0.8 junto com o teto acima
+          const speedCap = rail.getArenaSpeed() * 0.7
+          const chaseSpeed = (enemy.speedFactor ?? 0.8) * speedCap
           const desiredDir = playerPosition.clone().sub(enemy.mesh.position)
           if (desiredDir.lengthSq() > 1e-4) {
             desiredDir.normalize()

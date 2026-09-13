@@ -29,7 +29,9 @@ const SPIN_RATE_MAX = 0.45
 // 3 categorias discretas em vez de distribuição contínua — contínua "todos parecem do mesmo
 // tamanho" na percepção do jogador. Pequeno/médio/grande, 1/3 de chance cada, com ±10% de
 // jitter interno pra não parecer fôrma.
-const DETRITO_SIZE_TIERS = [1, 2,3]
+// pedido do usuário: tamanhos ainda maiores — mesmo o tier "pequeno" precisa ser visivelmente
+// maior que antes. Tier grande (5) já ultrapassa a envergadura da nave (~3.8) de propósito.
+const DETRITO_SIZE_TIERS = [1.5, 3, 5]
 const DETRITO_TIER_JITTER = 0.1
 
 function rollDetritoScale() {
