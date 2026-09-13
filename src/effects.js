@@ -23,9 +23,13 @@ const CHARGE_GLOW_MAX_SCALE = 1.6
 const CHARGE_GLOW_AHEAD = 2.2
 
 // ============ ENGINE TRAIL ============
-const ENGINE_TRAIL_INTERVAL = 0.035
-const ENGINE_TRAIL_DURATION = 0.7
+// QoL: era denso/opaco demais ("sopa de bolhas") — cadência, tamanho, opacidade e duração
+// cortados pra manter só a leitura de "estou voando", sem competir com o resto da tela.
+const ENGINE_TRAIL_INTERVAL = 0.06 // era 0.035
+const ENGINE_TRAIL_DURATION = 0.42 // era 0.7
 const ENGINE_TRAIL_SPEED = 8
+const ENGINE_TRAIL_SIZE = 0.14 // era 0.22 (embutido direto na SphereGeometry antes)
+const ENGINE_TRAIL_OPACITY = 0.45 // era 0.9
 
 // ============ HOMING ============
 const HOMING_EFFECT_COLOR = 0x2bff88
@@ -40,7 +44,7 @@ const HIT_SPARK_SPEED_MAX = 14
 const HIT_SPARK_SIZE = 0.35
 
 // ============ FLASH MESH ============
-const FLASH_DURATION = 0.06
+const FLASH_DURATION = 0.12 // era 0.06 — rápido demais pra perceber a 60fps
 const FLASH_COLOR = 0xffffff
 
 // ============ PROJECTILE TRAIL ============
@@ -56,10 +60,12 @@ const TELEGRAPH_DURATION = 0.35
 const TELEGRAPH_MAX_SCALE = 0.9
 
 // ============ COMET TRAIL ============
-const COMET_TRAIL_INTERVAL = 0.02
+// QoL: mesmo motivo do rastro normal — cadência e opacidade cortadas
+const COMET_TRAIL_INTERVAL = 0.05 // era 0.02
 const COMET_TRAIL_DURATION = 0.9
 const COMET_TRAIL_SPEED = 14
 const COMET_TRAIL_COLOR = 0xffa64d
+const COMET_TRAIL_OPACITY = 0.5 // era 0.85
 
 // ============ GLASS SHATTER ============
 const GLASS_SHARD_COUNT = 14
@@ -97,6 +103,15 @@ const BOSS_IMPACT_MAX_SCALE = 5
 
 // ============ GRID PULSE ============
 const GRID_PULSE_DURATION = 0.4
+
+// ============ SPIN WIND (giro completo) ============
+// anel que "varre o ar" no plano do roll, acompanhando o giro de 360° — não é uma explosão,
+// é mais um sopro circular. Perpendicular ao forward da nave (mesma técnica do smokeRing).
+const SPIN_WIND_DURATION = 0.5
+const SPIN_WIND_START_SCALE = 0.5
+const SPIN_WIND_MAX_SCALE = 4.5
+const SPIN_WIND_COLOR = 0xb4e4ff
+const SPIN_WIND_SPIN_RATE = 8 // rad/s, sentido igual ao giro (direction)
 
 // sistema de efeitos visuais: starfield + poeira ambiente + efeitos transientes.
 // Todos os transientes são criados sob demanda e descartados quando a vida útil acaba.
@@ -187,6 +202,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const bloomSprites = []
   const contrails = []
   const bossImpactRings = []
+  const spinWinds = []
   let trailTimer = 0
   let cometTimer = 0
   let contrailTimer = 0
@@ -250,10 +266,10 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function spawnTrailParticle(position, forward, boosting) {
-    const geometry = new THREE.SphereGeometry(0.22, 6, 6)
+    const geometry = new THREE.SphereGeometry(ENGINE_TRAIL_SIZE, 6, 6)
     const material = new THREE.MeshBasicMaterial({
       color: boosting > 1 ? 0xffb066 : 0x8fdcff,
-      transparent: true, opacity: 0.9,
+      transparent: true, opacity: ENGINE_TRAIL_OPACITY,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(geometry, material)
@@ -278,6 +294,18 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.scale.setScalar(0.4)
     scene.add(mesh)
     smokeRings.push({ mesh, life: 0 })
+  }
+
+  // giro completo (Z/C, 2 toques): anel de vento no plano do roll (perpendicular ao forward
+  // da nave), expandindo e girando no sentido do giro. `spinDirection` é -1 (esquerda) ou 1
+  // (direita) — só define o sentido do giro visual do anel, sem relação com o dano/deflect.
+  function spinWind(position, forward, spinDirection = 1) {
+    const mesh = makeRingMesh(SPIN_WIND_COLOR, 0.12)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+    mesh.scale.setScalar(SPIN_WIND_START_SCALE)
+    scene.add(mesh)
+    spinWinds.push({ mesh, life: 0, spinDirection })
   }
 
   function homingAfterimage(position, quaternion) {
@@ -320,8 +348,18 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities, life: 0 })
   }
 
+  // QoL: alguns inimigos (redutor de tempo) são um THREE.Group com vários meshes filhos, sem
+  // `.material` próprio — antes disso, esses eram os ÚNICOS inimigos que nunca piscavam ao
+  // levar dano, porque a função retornava direto no guard. Agora desce recursivamente e pisca
+  // cada filho com material (cada um vira sua própria entrada em activeFlashes).
   function flashMesh(mesh, durationSec = FLASH_DURATION) {
-    if (!mesh || !mesh.material) return
+    if (!mesh) return
+    if (!mesh.material) {
+      if (Array.isArray(mesh.children)) {
+        for (const child of mesh.children) flashMesh(child, durationSec)
+      }
+      return
+    }
     let entry = activeFlashes.find((f) => f.mesh === mesh)
     if (!entry) {
       if (!mesh.material.__origColorSaved) {
@@ -375,7 +413,7 @@ export function createEffectsSystem(scene, opts = {}) {
   function cometTrailParticle(position, forward) {
     const geometry = new THREE.SphereGeometry(0.35, 6, 6)
     const material = new THREE.MeshBasicMaterial({
-      color: COMET_TRAIL_COLOR, transparent: true, opacity: 0.85,
+      color: COMET_TRAIL_COLOR, transparent: true, opacity: COMET_TRAIL_OPACITY,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(geometry, material)
@@ -571,7 +609,7 @@ export function createEffectsSystem(scene, opts = {}) {
         trailParticles.splice(i, 1); continue
       }
       p.mesh.position.addScaledVector(p.velocity, dt)
-      p.mesh.material.opacity = 0.9 * (1 - t)
+      p.mesh.material.opacity = ENGINE_TRAIL_OPACITY * (1 - t)
       p.mesh.scale.setScalar(p.scale * (1 - t * 0.6))
     }
 
@@ -586,6 +624,21 @@ export function createEffectsSystem(scene, opts = {}) {
       }
       s.mesh.scale.setScalar(0.4 + t * 4.5)
       s.mesh.material.opacity = 0.6 * (1 - t)
+    }
+
+    // SPIN WINDS (giro completo)
+    for (let i = spinWinds.length - 1; i >= 0; i--) {
+      const w = spinWinds[i]
+      w.life += dt
+      const t = w.life / SPIN_WIND_DURATION
+      if (t >= 1) {
+        scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose()
+        spinWinds.splice(i, 1); continue
+      }
+      const scale = SPIN_WIND_START_SCALE + (SPIN_WIND_MAX_SCALE - SPIN_WIND_START_SCALE) * Math.sqrt(t)
+      w.mesh.scale.setScalar(scale)
+      w.mesh.material.opacity = 0.75 * (1 - t)
+      w.mesh.rotateZ(dt * SPIN_WIND_SPIN_RATE * w.spinDirection)
     }
 
     // HOMING AFTERIMAGES
@@ -669,7 +722,7 @@ export function createEffectsSystem(scene, opts = {}) {
         cometTrails.splice(i, 1); continue
       }
       c.mesh.position.addScaledVector(c.velocity, dt)
-      c.mesh.material.opacity = 0.85 * (1 - t)
+      c.mesh.material.opacity = COMET_TRAIL_OPACITY * (1 - t)
       c.mesh.scale.setScalar(1 - t * 0.3)
     }
 
@@ -779,11 +832,13 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const g of glassShards) { for (const s of g.shards) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() } }
     for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
     for (const c of contrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
+    for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
     bursts.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
     trailParticles.length = 0; smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
     telegraphs.length = 0; cometTrails.length = 0; glassShards.length = 0
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
+    spinWinds.length = 0
     scene.remove(chargeGlow); chargeGlowGeometry.dispose(); chargeGlowMaterial.dispose()
   }
 
@@ -791,7 +846,7 @@ export function createEffectsSystem(scene, opts = {}) {
     update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph,
     cometTrailParticle, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
-    gridPulse, spawnContrailTick,
+    gridPulse, spawnContrailTick, spinWind,
     dispose,
   }
 }

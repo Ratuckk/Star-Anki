@@ -5,6 +5,9 @@ import * as THREE from 'three'
 // hit-test dos tiros do jogador) — como enemies.js não pode importar combat.js (dependência
 // circular: combat.js importa createEnemiesSystem daqui), essas duas ficam com cópia própria.
 const PASS_BEHIND = -4
+// mesmo eixo usado em combat.js pra orientar projéteis (a geometria do cone nasce apontando
+// pro +Z local) — usado em fireEnemyProjectile pra virar o cone na direção do tiro
+const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 // mesma cor do teleguiado em combat.js (HOMING_EXPLOSION_COLOR) — mantém consistência visual
 // da explosão/impacto quando quem acerta o inimigo é o tiro carregado
 const HOMING_EXPLOSION_COLOR = 0x2bff88
@@ -142,7 +145,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const enemyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR, flatShading: true })
   // material próprio dos mini-inimigos, vermelho mais CLARO — distingue do inimigo comum
   const miniEnemyMaterial = new THREE.MeshPhongMaterial({ color: MINI_ENEMY_COLOR, flatShading: true })
-  const enemyProjectileGeometry = new THREE.SphereGeometry(0.35, 8, 8)
+  // QoL: era uma esfera — vira cone (mesma técnica de pré-rotação do enemyGeometry acima),
+  // orientado na direção do tiro em fireEnemyProjectile. Raio mantido igual à esfera antiga;
+  // ENEMY_PROJECTILE_HIT_RADIUS (hitbox) não muda, é só o visual.
+  const enemyProjectileGeometry = new THREE.ConeGeometry(0.35, 1.4, 6)
+  enemyProjectileGeometry.rotateX(Math.PI / 2)
   const enemyProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a3d })
   const goldenGeometry = new THREE.TorusKnotGeometry(1.1, 0.4, 80, 12)
   const goldenMaterial = new THREE.MeshPhongMaterial({
@@ -263,6 +270,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       Math.random() - 0.5,
     ).normalize()
     direction.applyAxisAngle(errAxis, errAngle)
+    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 
     scene.add(mesh)
     enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED), traveled: 0 })
@@ -633,6 +641,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const goldenHit = goldenTargets.find((g) => !g.dying && distanceToSegment(g.mesh.position, prevPos, currPos) <= GOLDEN_SPECIAL_HIT_RADIUS)
       if (goldenHit) {
         goldenHit.hp -= damage
+        // QoL: o dourado nunca piscava — combat.js exclui `kind === 'golden'` do hitsLog (de
+        // propósito, ver histórico), e é o hitsLog que dispara flashMesh em main.js. Como aqui
+        // é quem já tem a referência do mesh, dispara direto em vez de reabrir o hitsLog.
+        if (effects) effects.flashMesh(goldenHit.mesh)
         if (isHoming && effects) effects.explosion(goldenHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         const killed = goldenHit.hp <= 0
         if (killed) {

@@ -907,6 +907,7 @@ function mountGame(session) {
         if (nowMs - lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(-1)
           player.triggerFullSpinIframes()
+          effects.spinWind(playerPos, noseFrame.forward, -1)
           if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
         }
         lastDodgeLeftTapAt = nowMs
@@ -919,6 +920,7 @@ function mountGame(session) {
         if (nowMs - lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(1)
           player.triggerFullSpinIframes()
+          effects.spinWind(playerPos, noseFrame.forward, 1)
           if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
         }
         lastDodgeRightTapAt = nowMs
@@ -969,7 +971,7 @@ function mountGame(session) {
     if (events.hitsLog && events.hitsLog.length > 0) {
       for (const h of events.hitsLog) {
         effects.hitSpark(h.worldPos, h.isHoming ? 0x2bff88 : 0xffb066)
-        if (h.meshRef) effects.flashMesh(h.meshRef, 0.06)
+        if (h.meshRef) effects.flashMesh(h.meshRef)
       }
     }
     if (events.enemyKills > 0) {
@@ -1020,6 +1022,7 @@ function mountGame(session) {
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),
+      skipTrail: player.isRepulsionActive(), // freando = sem rastro de motor
     })
     effects.spawnContrailTick(combat.getWingmanPositions())
 
@@ -1280,12 +1283,16 @@ function mountGame(session) {
       player.debugMaxBuffs()
       combat.setWingmanCount(player.getWingmanCount())
     },
-    gotoBoss: () => { if (phase === 'combat') enterBossBuildup() },
+    // QoL: antes iam direto pra enterBossBuildup/enterGoldenArena, pulando a cutscene — não
+    // dava pra testar a transição sem esperar o gatilho natural (dourado 45-100s, chefe a cada
+    // 5 perguntas). Agora roteiam pela mesma startArenaCutscene que o jogo usa de verdade.
+    // skipToBossFight continua sendo o atalho SEM cutscene, pra testar só a luta em si.
+    gotoBoss: () => { if (phase === 'combat') startArenaCutscene('boss', enterBossBuildup) },
     skipToBossFight: () => {
       if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()
       else if (phase === 'combat') { bossHealthMultiplier = 1; rail.enterArena(); enterBossFight() }
     },
-    gotoGolden: () => { if (phase === 'combat') enterGoldenArena() },
+    gotoGolden: () => { if (phase === 'combat') startArenaCutscene('golden', enterGoldenArena) },
     clearCombatants: () => combat.clearAllCombatants(),
     showHitboxes: () => {
       hitboxesActive = !hitboxesActive
