@@ -17,7 +17,10 @@ import {
   spawnBossEnemy, updateBossMovement, randomBossFireInterval, fireBossVolley, updateBossLaser, explodeBoss, disposeBoss,
 } from './boss.js'
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
-import { DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS, spawnDetrito, updateDetritoSpin, disposeDetrito } from './detrito.js'
+import {
+  DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS,
+  spawnDetrito, updateDetritoSpin, detritoHitRadius, disposeDetrito,
+} from './detrito.js'
 import {
   SENTINELA_KIND, SENTINELA_COLOR, SENTINELA_HIT_RADIUS, SENTINELA_DEATH_DURATION, SENTINELA_FIRE_INTERVAL,
   spawnSentinela, updateSentinelaMovement, sentinelaPassBehind, sentinelaFire, resolveGateHit,
@@ -147,7 +150,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case TIME_KIND: return TIME_HIT_RADIUS
       case MINI_SWARM_KIND: return miniSwarmHitRadius()
       case TANK_KIND: return TANK_HIT_RADIUS
-      case DETRITO_KIND: return DETRITO_HIT_RADIUS
+      case DETRITO_KIND: return detritoHitRadius(enemy)
       case SENTINELA_KIND: return SENTINELA_HIT_RADIUS
       case REPLICA_KIND: return REPLICA_HIT_RADIUS
       case FRAGATA_KIND: return FRAGATA_HIT_RADIUS
@@ -230,7 +233,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const bossLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
   const timeLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
   const projectileCtx = { fireEnemyProjectile }
-  const goldenUpdateCtx = { fireEnemyProjectile, pushProjectile: (p) => enemyProjectiles.push(p) }
+  const goldenUpdateCtx = { fireEnemyProjectile, pushProjectile: (p) => enemyProjectiles.push(p), pushLaser: (l) => enemyLasers.push(l) }
 
   // ============ IA principal ============
   // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
