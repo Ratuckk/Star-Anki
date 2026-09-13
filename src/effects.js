@@ -29,15 +29,28 @@ const STAR_FLATTEN = 0.55
 const STAR_SIZE = 1.0
 
 // ============ EXPLOSION ============
-// pedido do usuário (definição explícita do efeito): "diversos círculos se expandindo e
-// sumindo rapidamente com redução de opacidade" — substitui a explosão antiga (partículas
-// esféricas voando) por vários anéis billboard nascendo em sequência (pequeno atraso entre
-// eles), cada um crescendo até um raio maior que o anterior enquanto a opacidade cai a zero.
-const EXPLOSION_RING_COUNT = 4
-const EXPLOSION_RING_DURATION = 0.4
-const EXPLOSION_RING_STAGGER = 0.06
-const EXPLOSION_RING_THICKNESS = 0.22
-const EXPLOSION_RING_START_SCALE = 0.15
+// pedido do usuário: "volte atrás" pras partículas pequenas (a v0.32.1 tinha trocado isso por
+// anéis colados na câmera, "círculos feios estranhos" — não era o pedido) — de volta ao burst
+// de partículas pequenas voando pra fora, só que agora com textura circular de verdade
+// (softCircleTexture, já usada nos wisps de neblina) no lugar de PointsMaterial sem `map`, que
+// é o que fazia cada partícula renderizar como quadrado sólido antes.
+const EXPLOSION_PARTICLES = 26
+const EXPLOSION_DURATION = 0.75
+const EXPLOSION_SPEED_MIN = 14
+const EXPLOSION_SPEED_MAX = 28
+const EXPLOSION_PARTICLE_SIZE = 0.9
+
+// pedido do usuário: além das partículas, explosão de INIMIGO morrendo (não dano na nave, não
+// burst de propulsão) ganha 1-2 argolas grandes CINZAS, tamanho aleatório, em ângulo 3D
+// aleatório fixo (não coladas na câmera — de propósito, pra lerem como destroço de verdade
+// visto de lado, não um círculo plano sempre de frente).
+const EXPLOSION_GRAY_RING_COUNT_MIN = 1
+const EXPLOSION_GRAY_RING_COUNT_MAX = 2
+const EXPLOSION_GRAY_RING_COLOR = 0x999999
+const EXPLOSION_GRAY_RING_DURATION = 0.65
+const EXPLOSION_GRAY_RING_SCALE_MIN = 1.6
+const EXPLOSION_GRAY_RING_SCALE_MAX = 3.4
+const EXPLOSION_GRAY_RING_START_SCALE = 0.2
 
 // ============ MUZZLE FLASH ============
 const MUZZLE_DURATION = 0.07
@@ -245,10 +258,10 @@ export function createEffectsSystem(scene, opts = {}) {
   // PointsMaterial não suporta tamanho por vértice sem shader customizado — todo wisp usa o
   // mesmo tamanho médio (mantém o mesmo padrão simples do resto do arquivo). `map` com a
   // textura de círculo suave é o que faz ler como nuvem, não como quadrado cinza sólido.
-  const fogWispTexture = makeSoftCircleTexture()
+  const softCircleTexture = makeSoftCircleTexture()
   const fogWispMaterial = new THREE.PointsMaterial({
     color: FOG_WISP_COLOR, size: (FOG_WISP_SIZE_MIN + FOG_WISP_SIZE_MAX) / 2, sizeAttenuation: true,
-    map: fogWispTexture, transparent: true, opacity: FOG_WISP_OPACITY, depthWrite: false, fog: false,
+    map: softCircleTexture, transparent: true, opacity: FOG_WISP_OPACITY, depthWrite: false, fog: false,
   })
   const fogWispPoints = new THREE.Points(fogWispGeometry, fogWispMaterial)
   fogWispPoints.frustumCulled = false
@@ -283,6 +296,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ LISTAS DE TRANSIENTES ============
   const bursts = []
+  const grayRings = []
   const muzzleFlashes = []
   const smokeRings = []
   const homingAfterimages = []
@@ -325,23 +339,55 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
-  function explosion(position, colorHex, size = 1) {
-    // "diversos círculos se expandindo e sumindo rapidamente com redução de opacidade" — cada
-    // anel nasce com um pequeno atraso (life negativo, contado no update()) em relação ao
-    // anterior, e cresce até um raio maior que o anterior (i-ésimo anel = mais externo).
-    for (let i = 0; i < EXPLOSION_RING_COUNT; i += 1) {
-      const mesh = makeRingMesh(colorHex, EXPLOSION_RING_THICKNESS)
-      mesh.position.copy(position)
-      mesh.scale.setScalar(EXPLOSION_RING_START_SCALE)
-      mesh.material.opacity = 0
-      scene.add(mesh)
-      bursts.push({
-        mesh, life: -i * EXPLOSION_RING_STAGGER,
-        maxScale: (1.8 + i * 1.15) * size,
-      })
+  // opts.rings: só as explosões de INIMIGO sendo destruído (chefe/dourado/comum) pedem as
+  // argolas cinzas grandes extras — dano na nave e o burst de propulsão continuam só com as
+  // partículas pequenas (pedido do usuário, escopo explícito: "as explosões de inimigos").
+  function explosion(position, colorHex, size = 1, opts = {}) {
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(EXPLOSION_PARTICLES * 3)
+    const velocities = new Float32Array(EXPLOSION_PARTICLES * 3)
+    for (let i = 0; i < EXPLOSION_PARTICLES; i++) {
+      positions[i*3] = position.x; positions[i*3+1] = position.y; positions[i*3+2] = position.z
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      const speed = (EXPLOSION_SPEED_MIN + Math.random() * (EXPLOSION_SPEED_MAX - EXPLOSION_SPEED_MIN)) * size
+      velocities[i*3] = Math.sin(phi) * Math.cos(theta) * speed
+      velocities[i*3+1] = Math.sin(phi) * Math.sin(theta) * speed
+      velocities[i*3+2] = Math.cos(phi) * speed
     }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: colorHex, size: EXPLOSION_PARTICLE_SIZE * size, sizeAttenuation: true,
+      map: softCircleTexture, transparent: true, opacity: 1, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.frustumCulled = false
+    scene.add(points)
+    bursts.push({ points, velocities, life: 0 })
+
     // flash central que expande rápido — dá o "punch" que faltava nas explosões menores
     bloomSprite(position, colorHex, size * 0.8)
+
+    // argolas cinzas grandes, tamanho e ângulo 3D aleatórios (fixo — não colam na câmera, pra
+    // lerem como destroço de verdade visto de um ângulo qualquer, não um círculo sempre de frente)
+    if (opts.rings) {
+      const count = EXPLOSION_GRAY_RING_COUNT_MIN + Math.floor(Math.random() * (EXPLOSION_GRAY_RING_COUNT_MAX - EXPLOSION_GRAY_RING_COUNT_MIN + 1))
+      for (let i = 0; i < count; i += 1) {
+        const mesh = makeRingMesh(EXPLOSION_GRAY_RING_COLOR, 0.16 + Math.random() * 0.14)
+        mesh.position.copy(position)
+        mesh.quaternion.setFromEuler(new THREE.Euler(
+          Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2,
+        ))
+        mesh.scale.setScalar(EXPLOSION_GRAY_RING_START_SCALE)
+        mesh.material.opacity = 0
+        scene.add(mesh)
+        grayRings.push({
+          mesh, life: -Math.random() * 0.1,
+          maxScale: (EXPLOSION_GRAY_RING_SCALE_MIN + Math.random() * (EXPLOSION_GRAY_RING_SCALE_MAX - EXPLOSION_GRAY_RING_SCALE_MIN)) * size,
+        })
+      }
+    }
   }
 
   function muzzleFlash(position, direction) {
@@ -657,22 +703,44 @@ export function createEffectsSystem(scene, opts = {}) {
       attr.needsUpdate = true
     }
 
-    // EXPLOSION RINGS — "diversos círculos se expandindo e sumindo rapidamente com redução de
-    // opacidade" (pedido do usuário). life negativo = ainda não nasceu (atraso escalonado entre
-    // os anéis de uma mesma explosão); ao nascer, cresce rápido até maxScale e a opacidade cai.
+    // EXPLOSION BURSTS — partículas pequenas voando pra fora com atrito, revertido ao estilo de
+    // antes da v0.32.1 (pedido do usuário) — agora com textura circular de verdade, não mais
+    // PointsMaterial sem `map` (que renderizava cada partícula como quadrado sólido).
     for (let i = bursts.length - 1; i >= 0; i--) {
       const b = bursts[i]
       b.life += dt
-      if (b.life < 0) continue
-      const t = b.life / EXPLOSION_RING_DURATION
+      const t = b.life / EXPLOSION_DURATION
       if (t >= 1) {
-        scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose()
+        scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose()
         bursts.splice(i, 1); continue
       }
-      const scale = EXPLOSION_RING_START_SCALE + (b.maxScale - EXPLOSION_RING_START_SCALE) * Math.sqrt(t)
-      b.mesh.scale.setScalar(scale)
-      b.mesh.material.opacity = 0.85 * (1 - t)
-      if (cam) b.mesh.quaternion.copy(cam.quaternion)
+      const attr = b.points.geometry.attributes.position
+      const arr = attr.array
+      const drag = Math.max(0, 1 - dt * 2.5)
+      for (let j = 0; j < arr.length; j += 3) {
+        arr[j] += b.velocities[j] * dt
+        arr[j+1] += b.velocities[j+1] * dt
+        arr[j+2] += b.velocities[j+2] * dt
+        b.velocities[j] *= drag; b.velocities[j+1] *= drag; b.velocities[j+2] *= drag
+      }
+      attr.needsUpdate = true
+      b.points.material.opacity = Math.max(0, 1 - t)
+    }
+
+    // ARGOLAS CINZAS GRANDES (só explosão de inimigo, ver opts.rings) — ângulo fixo (setado na
+    // criação, NÃO billboard) pra ler como destroço de verdade visto de um ângulo qualquer.
+    for (let i = grayRings.length - 1; i >= 0; i--) {
+      const r = grayRings[i]
+      r.life += dt
+      if (r.life < 0) continue
+      const t = r.life / EXPLOSION_GRAY_RING_DURATION
+      if (t >= 1) {
+        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        grayRings.splice(i, 1); continue
+      }
+      const scale = EXPLOSION_GRAY_RING_START_SCALE + (r.maxScale - EXPLOSION_GRAY_RING_START_SCALE) * Math.sqrt(t)
+      r.mesh.scale.setScalar(scale)
+      r.mesh.material.opacity = 0.8 * (1 - t)
     }
 
     // HIT SPARKS
@@ -921,9 +989,10 @@ export function createEffectsSystem(scene, opts = {}) {
   function dispose() {
     scene.remove(stars); starGeometry.dispose(); starMaterial.dispose()
     scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
-    scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); fogWispTexture.dispose()
+    scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); softCircleTexture.dispose()
     scene.remove(engineFlameMesh); engineFlameGeometry.dispose(); engineFlameMaterial.dispose()
-    for (const b of bursts) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
+    for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
+    for (const r of grayRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
     for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
@@ -941,7 +1010,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
     for (const c of contrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
-    bursts.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
+    bursts.length = 0; grayRings.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
     smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
     telegraphs.length = 0; glassShards.length = 0

@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS } from './enemies.js'
+import { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS } from './enemies/index.js'
 
 // re-exportado pra não quebrar quem importava essas duas constantes daqui (combat.js era o
 // dono antes da Fase 1 da refatoração enemies.js/player.js)
@@ -541,9 +541,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnMiniSwarm: () => enemies.spawnMiniSwarm(),
     spawnTimeEnemy: () => enemies.spawnTimeEnemy(),
+    spawnTimeEnemyMega: () => enemies.spawnTimeEnemyMega(),
     spawnTankEnemy: (hp) => enemies.spawnTankEnemy(hp),
     spawnBossEnemy: (hp) => enemies.spawnBossEnemy(hp),
     spawnGoldenSpecial: (opts) => enemies.spawnGoldenSpecial(opts),
+    spawnDetrito: () => enemies.spawnDetrito(),
+    spawnSentinela: () => enemies.spawnSentinela(),
 
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),
@@ -649,6 +652,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       updateBossOrbs(dt)
 
       let enemyHits = 0
+      // dano-base de cada hit no jogador — a maioria fica em 1; alguns ataques específicos
+      // (laser da ampulheta mega, borda da moldura da sentinela) declaram um valor maior no
+      // próprio projétil/laser (ver enemies/index.js), e aqui vira o MAIOR valor do frame (não
+      // soma — um frame com vários hits simultâneos ainda conta como 1 golpe, mesmo espírito de
+      // "1 hit por frame" que já existia)
+      let enemyDamage = 1
       let ramKills = 0
       let ramKillPoints = 0
       let ramBossDefeated = false
@@ -662,7 +671,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramKillPoints = enemyResult.ramKillPoints
         ramBossDefeated = enemyResult.ramBossDefeated
         ramBossWorldPos = enemyResult.ramBossWorldPos
-        enemyHits += enemies.updateProjectiles(dt, playerPosition)
+        const projResult = enemies.updateProjectiles(dt, playerPosition)
+        enemyHits += projResult.hits
+        if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
       }
 
       updateWingmen()
@@ -674,6 +685,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyKillPoints: enemyKillPoints + ramKillPoints,
         bonusKillPoints,
         enemyHits,
+        enemyDamage,
         goldenSpecialHit,
         goldenSpecialHitIsHoming,
         goldenHitWorldPos,

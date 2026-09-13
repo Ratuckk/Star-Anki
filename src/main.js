@@ -3,7 +3,7 @@ import { buildDeck, exportTagsTsv, parseAnkiExport, filterDeckByTags } from './a
 import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat.js'
-import { createEnemiesSystem } from './enemies.js'
+import { createEnemiesSystem } from './enemies/index.js'
 import { createPlayerSystem } from './player.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
@@ -122,6 +122,15 @@ const GOLDEN_SPREAD_MIN = 40
 const GOLDEN_SPREAD_MAX = 90
 
 const TIME_ENEMY_SPAWN_CHANCE = 0.2
+// v0.34.0: variante grande da ampulheta — sorteada dentro do mesmo branch de spawn da normal
+const TIME_ENEMY_MEGA_CHANCE = 0.2
+// v0.34.0: sentinela entra na mesma rotação de spawn normal (time/mini-swarm/blaster) — mais
+// rara, é um mini-encontro de 4 disparos, não um inimigo qualquer
+const SENTINELA_SPAWN_CHANCE = 0.12
+// v0.34.0: Detrito (obstáculo cinza) — pedido do usuário: NÃO segue a pausa antes de
+// pergunta/dourado nem o currentEnemyCap(), só o "tá em combate de verdade" (enemiesActive)
+const DETRITO_SPAWN_INTERVAL_MIN_MS = 4000
+const DETRITO_SPAWN_INTERVAL_MAX_MS = 8000
 
 // ============ TRANSIÇÃO PARA ALL-RANGE MODE (dourado/chefe se aproximando) — Fase 5 ============
 // aviso visível ("surgindo em Ns") nos últimos ARENA_WARNING_COUNTDOWN_MS antes da arena
@@ -428,9 +437,16 @@ function mountGame(session) {
 
   let enemyCap = 0
   let normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
+  // v0.34.0: timer independente do Detrito — não reseta por ciclo (enterCombat não mexe nele),
+  // só pausa quando o jogo não está em combate de verdade nenhum (ver enemiesActive)
+  let detritoTimer = randomDetritoInterval()
 
   function currentEnemyCap() {
     return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + enemyCap
+  }
+
+  function randomDetritoInterval() {
+    return DETRITO_SPAWN_INTERVAL_MIN_MS + Math.random() * (DETRITO_SPAWN_INTERVAL_MAX_MS - DETRITO_SPAWN_INTERVAL_MIN_MS)
   }
 
   function randomEnemyInterval() {
@@ -938,20 +954,10 @@ function mountGame(session) {
 
     player.update(dt)
 
-    // Fase 9 (ideia all-range, item 3): guinada extra fraca em direção ao inimigo mais próximo
-    // quando ele está fora do centro da mira — só no all-range, e só um hint, não sobrepõe o
-    // controle manual. Usa a posição do inimigo do FIM do frame anterior (combat/enemies ainda
-    // não rodaram neste frame) — 1 frame de atraso, imperceptível num assist tão fraco.
-    let assistTarget = null
-    if (rail.isArena()) {
-      const prevPos = rail.getPlayerPosition()
-      let nearestDist = Infinity
-      for (const s of combat.getEnemySnapshots()) {
-        const d = prevPos.distanceTo(s.worldPos)
-        if (d < nearestDist) { nearestDist = d; assistTarget = s.worldPos }
-      }
-    }
-    rail.update(dt, inputState, { assistTarget })
+    // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9) —
+    // em lutas de chefe/dourado o "mais próximo" quase sempre era ele mesmo, então a nave ficava
+    // sendo puxada pra lá o tempo todo em vez de responder só ao controle manual do jogador.
+    rail.update(dt, inputState)
     const playerPos = rail.getPlayerPosition()
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
@@ -1085,6 +1091,18 @@ function mountGame(session) {
     if (ramActive) player.grantInvincibility(player.getPropulsionActiveTimer())
 
     const enemiesActive = phase === 'combat' || phase === 'goldenArena' || phase === 'bossBuildup' || phase === 'bossFight'
+
+    // v0.34.0: Detrito spawna no timer próprio, sem checar spawnPauseThreshold/currentEnemyCap()
+    // — só "tá em combate de verdade" importa (pedido do usuário, confirmado: ignora as duas
+    // regras que os outros inimigos seguem)
+    if (enemiesActive) {
+      detritoTimer -= dt * 1000
+      if (detritoTimer <= 0) {
+        combat.spawnDetrito()
+        detritoTimer = randomDetritoInterval()
+      }
+    }
+
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimDirection: fireDirection,
@@ -1205,7 +1223,11 @@ function mountGame(session) {
     if (events.enemyHits > 0 && !player.isInvincible() && !godMode) {
       hitShakeTimer = HIT_SHAKE_DURATION_MS
 
-      const result = player.takeDamage(enemyDamageValue)
+      // v0.34.0: alguns ataques específicos (laser da ampulheta mega, borda da moldura da
+      // sentinela) declaram seu próprio dano "pesado" (events.enemyDamage) — usa o MAIOR entre
+      // esse valor e a escalada normal por erro, nunca o menor (não quero a dificuldade por erro
+      // "abafar" o ataque especial nem o contrário)
+      const result = player.takeDamage(Math.max(enemyDamageValue, events.enemyDamage || 1))
 
       if (result.absorbedByShield) {
         // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----
@@ -1246,9 +1268,12 @@ function mountGame(session) {
         if (normalSpawnTimer <= 0) {
           normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
           if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
-            combat.spawnTimeEnemy()
+            if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
+            else combat.spawnTimeEnemy()
           } else if (Math.random() < MINI_SWARM_CHANCE) {
             combat.spawnMiniSwarm()
+          } else if (Math.random() < SENTINELA_SPAWN_CHANCE) {
+            combat.spawnSentinela()
           } else {
             const room = Math.max(0, currentEnemyCap() - combat.getEnemyCount())
             const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
@@ -1425,6 +1450,9 @@ function mountGame(session) {
     spawnGolden: () => combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX }),
     spawnTank: () => combat.spawnTankEnemy(),
     spawnMiniSwarm: () => combat.spawnMiniSwarm(),
+    spawnTimeEnemyMega: () => combat.spawnTimeEnemyMega(),
+    spawnDetrito: () => combat.spawnDetrito(),
+    spawnSentinela: () => combat.spawnSentinela(),
     forceCorrect: () => forceAnswerOutcome(true),
     forceWrong: () => forceAnswerOutcome(false),
     addScore: () => { session.score += 100 },
