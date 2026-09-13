@@ -67,6 +67,10 @@ export function createPlayerSystem(session) {
 
   let invincibilityDurationMs = INVINCIBILITY_MS
   let invincibleTimer = 0
+  // pedido do usuário: "não pisque a nave no rolamento, dê afterimage" — precisa saber SE o
+  // invincibleTimer atual veio do giro completo (rolamento) especificamente, já que ele e o
+  // i-frame de dano/ram compartilham o mesmo timer. Timer paralelo, só pra essa distinção.
+  let rollIframeTimer = 0
 
   let wingmanCount = 0
   let deflectCardActive = false
@@ -129,6 +133,9 @@ export function createPlayerSystem(session) {
     getShieldValue: () => shieldValue,
     getShieldMax: () => shieldMax,
     isInvincible: () => invincibleTimer > 0,
+    // pedido do usuário: nave não pisca durante o rolamento — main.js usa isso pra suprimir o
+    // flicker padrão de invencibilidade e mostrar afterimage no lugar só nessa janela
+    isRollIframeActive: () => rollIframeTimer > 0,
     getInvincibleRemainingMs: () => invincibleTimer,
     isFullSpinOnCooldown: () => fullSpinCooldownTimer > 0,
     isDeflectActive: () => deflectCardActive,
@@ -284,6 +291,7 @@ export function createPlayerSystem(session) {
       if (fullSpinCooldownTimer > 0) return false
       fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
       invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
+      rollIframeTimer = fullSpinIframeMs
       return true
     },
 
@@ -364,6 +372,7 @@ export function createPlayerSystem(session) {
     // lógica de decaimento em si.
     update(dt) {
       invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
+      rollIframeTimer = Math.max(0, rollIframeTimer - dt * 1000)
       fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
       if (propulsionActiveTimer > 0) propulsionActiveTimer = Math.max(0, propulsionActiveTimer - dt * 1000)
       if (repulsionActiveTimer > 0) repulsionActiveTimer = Math.max(0, repulsionActiveTimer - dt * 1000)

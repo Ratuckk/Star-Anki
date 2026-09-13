@@ -32,6 +32,11 @@ const ENEMY_FIRE_RANGE = 120
 const ENEMY_FIRE_MIN_DISTANCE = 14
 const ENEMY_PROJECTILE_SPEED = 26
 const ENEMY_PROJECTILE_MAX_RANGE = 100
+// pedido do usuário: "os tiros deles nunca chegam em você" no all-range — bug real, confirmado.
+// Em arena, `inFireRange` deixava atirar de QUALQUER distância (até ENEMY_ARENA_SPAWN_MAX =
+// 160), mas o projétil se autodestrói em ENEMY_PROJECTILE_MAX_RANGE (100) — de longe, o tiro
+// sempre expirava no meio do caminho. Precisa estar dentro deste raio pra atirar de verdade.
+const ENEMY_ARENA_FIRE_MAX_DISTANCE = 85
 const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 const ENEMY_AIM_ERROR_DEG = 5
 
@@ -293,7 +298,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.fireTimer -= dt
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
       const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
-      const inFireRange = (inArena || enemy.kind === BOSS_KIND || relativeForward < ENEMY_FIRE_RANGE) && distToPlayer > ENEMY_FIRE_MIN_DISTANCE
+      const inFireRange = distToPlayer > ENEMY_FIRE_MIN_DISTANCE && (
+        inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE
+          : enemy.kind === BOSS_KIND || relativeForward < ENEMY_FIRE_RANGE
+      )
       if (enemy.fireTimer <= 0 && inFireRange) {
         let handled = false
         if (enemy.kind === BOSS_KIND) { fireBossVolley(enemy, playerPosition, projectileCtx); handled = true }

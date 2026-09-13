@@ -102,8 +102,10 @@ const DIFFICULTY_BIAS_INTERVAL_RANGE_MS = 250
 
 // ============ FASE 4: TETO DE INIMIGOS E TAXA DE SPAWN DO MODO NORMAL ============
 const ENEMY_CAP_NORMAL_BASE = 16
-const ENEMY_CAP_ARENA_BASE = 20
+const ENEMY_CAP_ARENA_BASE = 14 // era 20 (pedido do usuário: geração no all-range "um pouco demais")
 const ENEMY_CAP_STEP_PER_ERROR = 1
+// pedido do usuário: spawn no all-range um pouco mais espaçado que o padrão (randomEnemyInterval)
+const ARENA_ENEMY_INTERVAL_MULT = 1.3
 
 const NORMAL_SPAWN_INTERVAL_MS = 2500
 const NORMAL_SPAWN_MIN_COUNT = 2
@@ -1038,7 +1040,11 @@ function mountGame(session) {
           rail.triggerFullSpin(-1)
           player.triggerFullSpinIframes()
           effects.spinWind(playerPos, noseFrame.forward, -1)
-          if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+          if (player.isDeflectActive()) {
+            combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+            // pedido do usuário: argolas azuis + afterimage marcando o giro rebatedor de verdade
+            effects.deflectBurst(playerPos, noseFrame.forward)
+          }
         }
         lastDodgeLeftTapAt = nowMs
       }
@@ -1051,7 +1057,11 @@ function mountGame(session) {
           rail.triggerFullSpin(1)
           player.triggerFullSpinIframes()
           effects.spinWind(playerPos, noseFrame.forward, 1)
-          if (player.isDeflectActive()) combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+          if (player.isDeflectActive()) {
+            combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
+            // pedido do usuário: argolas azuis + afterimage marcando o giro rebatedor de verdade
+            effects.deflectBurst(playerPos, noseFrame.forward)
+          }
         }
         lastDodgeRightTapAt = nowMs
       }
@@ -1180,6 +1190,7 @@ function mountGame(session) {
       boostActive: player.isPropulsionActive(),
       skipTrail: player.isRepulsionActive(), // freando = sem rastro de motor
       ramActive,
+      rollActive: player.isRollIframeActive(),
     })
     effects.spawnContrailTick(combat.getWingmanPositions())
 
@@ -1249,13 +1260,19 @@ function mountGame(session) {
         return
       }
     }
-    rail.setShipVisible(!player.isInvincible() || Math.floor(player.getInvincibleRemainingMs() / INVINCIBILITY_FLICKER_MS) % 2 === 0)
+    // pedido do usuário: não pisca durante o rolamento (giro completo) — o afterimage (ver
+    // effects.update, rollActive) já comunica a invencibilidade nessa janela específica
+    rail.setShipVisible(
+      player.isRollIframeActive() ||
+      !player.isInvincible() ||
+      Math.floor(player.getInvincibleRemainingMs() / INVINCIBILITY_FLICKER_MS) % 2 === 0,
+    )
 
     if (phase === 'goldenArena' || phase === 'bossBuildup') {
       enemyTimer -= dt * 1000
       if (enemyTimer <= 0) {
         if (combat.getEnemyCount() < currentEnemyCap()) combat.spawnEnemy()
-        enemyTimer = randomEnemyInterval() * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+        enemyTimer = randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (phase === 'combat') {
       // pausa maior (8s) num ciclo de chefe, porque além do "vai vir pergunta" tem o aviso de
@@ -1503,7 +1520,10 @@ function mountGame(session) {
     giveCard: () => { if (phase === 'combat') enterCardChoice(enterCombat) },
     triggerFullDodge: () => {
       player.grantInvincibility(1000)
-      if (player.isDeflectActive()) combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
+      if (player.isDeflectActive()) {
+        combat.deflectNearbyProjectiles(rail.getPlayerPosition(), DEFLECT_RADIUS)
+        effects.deflectBurst(rail.getPlayerPosition(), rail.getFrameAt(0).forward)
+      }
       rail.debugForceBank(1, 1000)
     },
     fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),

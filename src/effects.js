@@ -67,6 +67,14 @@ const CHARGE_GLOW_LAYERS = [
   { scaleMin: 0.85, scaleMax: 1.80, opacityMin: 0.32, opacityMax: 0.18 },
   { scaleMin: 1.20, scaleMax: 2.40, opacityMin: 0.18, opacityMax: 0.10 },
 ]
+// pedido do usuário (correção de um item já entregue antes): cada camada deve SURGIR a cada
+// ~1s de carga em vez de todas aparecerem juntas desde o início — com 4 camadas ao longo dos 3s
+// de carga (HOMING_CHARGE_MAX_MS - MIN_MS), cada layer i revela em f = i/4 (0s, 1s, 2s, 3s) e
+// cresce dali até o tamanho máximo, todas convergindo junto em f=1. Também pedido: pulso "vivo"
+// e -30% de opacidade.
+const CHARGE_GLOW_PULSE_RATE = 6 // rad/s
+const CHARGE_GLOW_PULSE_AMOUNT = 0.12
+const CHARGE_GLOW_OPACITY_MULT = 0.7 // -30%
 
 // ============ ENGINE FLAME (Fase 7) ============
 // pedido: "o efeito visual de propulsar de movimento normal deve ser apenas uma animação única
@@ -108,6 +116,25 @@ const RAM_RING_MAX_SCALE = 3.5
 const RAM_AFTERIMAGE_INTERVAL = 0.05
 const RAM_AFTERIMAGE_DURATION = 0.35
 const RAM_AFTERIMAGE_COLOR = 0x4da6ff
+
+// ============ GIRO REBATEDOR (carta roguelike "deflect", item 6) ============
+// pedido do usuário: "invoque argolas azuis quando realiza o movimento junto de um afterimage
+// azul pra indicar o efeito" — burst único (não contínuo, o giro em si é instantâneo) disparado
+// só quando a carta deflect está ativa E o giro completo acontece de verdade.
+const DEFLECT_RING_COLOR = 0x4da6ff
+const DEFLECT_RING_COUNT = 3
+const DEFLECT_RING_STAGGER = 0.06
+const DEFLECT_RING_DURATION = 0.45
+
+// ============ AFTERIMAGE DO ROLAMENTO (item 3) ============
+// pedido do usuário: "não faça mais a nave piscar quando realiza o rolamento e dê a ela um
+// efeito de afterimage" — o flicker de invencibilidade é compartilhado com dano/ram (mesmo
+// invincibleTimer em player.js), então main.js usa um timer PARALELO (rollIframeTimer) só pra
+// saber que a invencibilidade atual é do giro completo, suprime o flicker nessa janela e passa
+// rollActive=true aqui em vez disso.
+const ROLL_AFTERIMAGE_INTERVAL = 0.04
+const ROLL_AFTERIMAGE_DURATION = 0.3
+const ROLL_AFTERIMAGE_COLOR = 0xcfe9ff
 
 // ============ TRAIL DE PROPULSÃO (item 12, restaurado) ============
 // pedido do usuário: de volta o rastro tipo cometa que existia antes da Fase 7 (removido junto
@@ -355,10 +382,13 @@ export function createEffectsSystem(scene, opts = {}) {
   const ramRings = []
   const ramAfterimages = []
   const boostTrails = []
+  const rollAfterimages = []
+  const deflectRings = []
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
   let boostTrailTimer = 0
+  let rollAfterimageTimer = 0
 
   // ============ SHOCKWAVE / RING HELPERS ============
   function makeRingMesh(colorHex, thickness = 0.15) {
@@ -376,14 +406,23 @@ export function createEffectsSystem(scene, opts = {}) {
   // ============ EFEITOS EXISTENTES ============
   function setChargeGlow(active, fraction, position, direction) {
     const f = Math.max(0, Math.min(1, fraction || 0))
-    for (const layer of chargeGlowLayers) {
-      layer.mesh.visible = active
-      if (!active) continue
+    const now = performance.now()
+    const n = chargeGlowLayers.length
+    chargeGlowLayers.forEach((layer, i) => {
+      const threshold = i / n
+      const revealed = active && f >= threshold
+      layer.mesh.visible = revealed
+      if (!revealed) return
       const { scaleMin, scaleMax, opacityMin, opacityMax } = layer.cfg
-      layer.mesh.scale.setScalar(scaleMin + (scaleMax - scaleMin) * f)
-      layer.mat.opacity = opacityMin + (opacityMax - opacityMin) * f
+      // progresso PRÓPRIO da camada — começa em 0 assim que ela é revelada (pequena) e converge
+      // pro tamanho máximo em f=1 junto com as outras, não importa quando cada uma apareceu
+      const localT = threshold >= 1 ? 1 : Math.min(1, (f - threshold) / (1 - threshold))
+      // pulso "vivo", com fase diferente por camada pra não pulsarem todas em uníssono
+      const pulse = 1 + Math.sin(now * 0.001 * CHARGE_GLOW_PULSE_RATE + i * 1.7) * CHARGE_GLOW_PULSE_AMOUNT
+      layer.mesh.scale.setScalar((scaleMin + (scaleMax - scaleMin) * localT) * pulse)
+      layer.mat.opacity = (opacityMin + (opacityMax - opacityMin) * localT) * CHARGE_GLOW_OPACITY_MULT
       layer.mesh.position.copy(position).addScaledVector(direction, CHARGE_GLOW_AHEAD)
-    }
+    })
   }
 
   // opts.rings: só as explosões de INIMIGO sendo destruído (chefe/dourado/comum) pedem as
@@ -510,6 +549,37 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
     scene.add(mesh)
     ramAfterimages.push({ mesh, life: 0 })
+  }
+
+  // afterimage do giro completo (item 3) — mesma silhueta simplificada, cor neutra (não é tema
+  // de nenhuma carta específica, só marca "a nave passou por aqui girando")
+  function rollAfterimage(position, forward) {
+    const geometry = new THREE.ConeGeometry(0.7, 3.6, 4)
+    geometry.rotateX(Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({
+      color: ROLL_AFTERIMAGE_COLOR, transparent: true, opacity: 0.4,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+    scene.add(mesh)
+    rollAfterimages.push({ mesh, life: 0 })
+  }
+
+  // burst único de argolas azuis + 1 afterimage — disparado só quando a carta "giro rebatedor"
+  // de fato deflete projéteis (item 6), pra marcar visualmente que esse giro fez algo a mais
+  function deflectBurst(position, forward) {
+    for (let i = 0; i < DEFLECT_RING_COUNT; i += 1) {
+      const mesh = makeRingMesh(DEFLECT_RING_COLOR, 0.16)
+      mesh.position.copy(position)
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+      mesh.scale.setScalar(0.3)
+      mesh.material.opacity = 0
+      scene.add(mesh)
+      deflectRings.push({ mesh, life: -i * DEFLECT_RING_STAGGER, maxScale: 2.4 + i * 1.0 })
+    }
+    ramAfterimage(position, forward) // mesmo azul (RAM_AFTERIMAGE_COLOR), reaproveitado de propósito
   }
 
   // trail tipo cometa durante o impulso (qualquer propulsão, não só ram) — pedido do usuário,
@@ -722,7 +792,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { skipTrail = false, boostActive = false, ramActive = false } = opts
+    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false } = opts
     const now = performance.now()
     const cam = opts.camera
 
@@ -777,6 +847,15 @@ export function createEffectsSystem(scene, opts = {}) {
         boostTrailTimer = BOOST_TRAIL_INTERVAL
         const exhaust = shipPosition.clone().addScaledVector(shipForward, -2.4)
         boostTrailParticle(exhaust, shipForward)
+      }
+    }
+
+    // AFTERIMAGE DO ROLAMENTO (item 3) — só durante a janela de i-frames do giro completo
+    if (rollActive && shipPosition && shipForward) {
+      rollAfterimageTimer -= dt
+      if (rollAfterimageTimer <= 0) {
+        rollAfterimageTimer = ROLL_AFTERIMAGE_INTERVAL
+        rollAfterimage(shipPosition, shipForward)
       }
     }
 
@@ -953,6 +1032,34 @@ export function createEffectsSystem(scene, opts = {}) {
       }
       a.mesh.material.opacity = 0.4 * (1 - t)
       a.mesh.scale.setScalar(1 - t * 0.3)
+    }
+
+    // ROLL AFTERIMAGES (item 3)
+    for (let i = rollAfterimages.length - 1; i >= 0; i--) {
+      const a = rollAfterimages[i]
+      a.life += dt
+      const t = a.life / ROLL_AFTERIMAGE_DURATION
+      if (t >= 1) {
+        scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose()
+        rollAfterimages.splice(i, 1); continue
+      }
+      a.mesh.material.opacity = 0.4 * (1 - t)
+      a.mesh.scale.setScalar(1 - t * 0.3)
+    }
+
+    // DEFLECT RINGS (giro rebatedor, item 6)
+    for (let i = deflectRings.length - 1; i >= 0; i--) {
+      const r = deflectRings[i]
+      r.life += dt
+      if (r.life < 0) continue
+      const t = r.life / DEFLECT_RING_DURATION
+      if (t >= 1) {
+        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        deflectRings.splice(i, 1); continue
+      }
+      const scale = 0.3 + (r.maxScale - 0.3) * Math.sqrt(t)
+      r.mesh.scale.setScalar(scale)
+      r.mesh.material.opacity = 0.8 * (1 - t)
     }
 
     // BOOST TRAIL (item 12, tipo cometa — só durante o impulso)
@@ -1156,6 +1263,8 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.remove(ramShieldMesh); ramShieldGeometry.dispose(); ramShieldMaterial.dispose()
     for (const r of ramRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
     for (const a of ramAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const a of rollAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const r of deflectRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
     for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const r of grayRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
@@ -1182,7 +1291,8 @@ export function createEffectsSystem(scene, opts = {}) {
     telegraphs.length = 0; glassShards.length = 0
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
     spinWinds.length = 0
-    ramRings.length = 0; ramAfterimages.length = 0; boostTrails.length = 0
+    ramRings.length = 0; ramAfterimages.length = 0; boostTrails.length = 0; rollAfterimages.length = 0
+    deflectRings.length = 0
     for (const layer of chargeGlowLayers) { scene.remove(layer.mesh); layer.geo.dispose(); layer.mat.dispose() }
   }
 
@@ -1190,7 +1300,7 @@ export function createEffectsSystem(scene, opts = {}) {
     update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
-    gridPulse, spawnContrailTick, spinWind,
+    gridPulse, spawnContrailTick, spinWind, deflectBurst,
     dispose,
   }
 }

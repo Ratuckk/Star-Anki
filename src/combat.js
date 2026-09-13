@@ -70,6 +70,9 @@ const BONUS_BOX_Y = 5
 const BONUS_HIT_RADIUS = 1.6
 const BONUS_DEATH_DURATION = 0.2
 const BONUS_KILL_BONUS = 50
+// pedido do usuário: variedade de tamanho no alvo bônus verde
+const BONUS_SCALE_MIN = 0.7
+const BONUS_SCALE_MAX = 1.6
 
 // tiro carregado: enquanto segura o botão, varrer a mira sobre inimigos os marca (lock-on) —
 // ao soltar, o teleguiado mira exatamente nos marcados em vez dos N mais próximos
@@ -109,12 +112,30 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   wingmanGeometry.rotateX(-Math.PI / 2)
   const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
 
-  const bonusGeometry = new THREE.DodecahedronGeometry(1.1)
+  // pedido do usuário: "adicione mais variedades de tamanho... e um shading pra parecer mais um
+  // asteroide" — geometria icosaédrica com os vértices deslocados aleatoriamente ao longo da
+  // própria normal (uma vez só, forma "de pedra" compartilhada por todos os spawns), tamanho
+  // varia por instância via mesh.scale no spawn (ver spawnBonusTarget). emissive bem mais fraco
+  // que antes — menos "gema brilhando", mais rocha lida pela luz da cena (flatShading mantém as
+  // facetas, que já ajudavam a ler como um poliedro irregular).
+  const bonusGeometry = (() => {
+    const geo = new THREE.IcosahedronGeometry(1.1, 1)
+    const pos = geo.attributes.position
+    const v = new THREE.Vector3()
+    for (let i = 0; i < pos.count; i += 1) {
+      v.fromBufferAttribute(pos, i)
+      const n = v.clone().normalize()
+      v.addScaledVector(n, (Math.random() - 0.5) * 0.4)
+      pos.setXYZ(i, v.x, v.y, v.z)
+    }
+    geo.computeVertexNormals()
+    return geo
+  })()
   const bonusMaterial = new THREE.MeshPhongMaterial({
     color: BONUS_COLOR,
     flatShading: true,
     emissive: 0x0a6622,
-    emissiveIntensity: 0.7,
+    emissiveIntensity: 0.25,
   })
 
   const bossOrbGeometry = new THREE.IcosahedronGeometry(1.6, 0)
@@ -145,7 +166,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   function refreshHitboxes() {
     while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
     if (!showHitboxes) return
-    for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS)
+    for (const b of bonusTargets) if (!b.dying) markHitbox(b.mesh.position, BONUS_HIT_RADIUS * (b.scale ?? 1))
     for (const o of bossOrbs) if (!o.dying) markHitbox(o.mesh.position, BOSS_ORB_HIT_RADIUS)
     for (const item of enemies.getHitboxTargets()) markHitbox(item.worldPos, item.radius)
   }
@@ -421,13 +442,13 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
 
       const bonusHit = bonusTargets.length
-        ? bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS + hitBuffer)
+        ? bonusTargets.find((b) => !b.dying && distanceToSegment(b.mesh.position, prevPos, projectile.mesh.position) <= BONUS_HIT_RADIUS * (b.scale ?? 1) + hitBuffer)
         : null
       if (bonusHit) {
         bonusHit.dying = true
         bonusHit.deathT = 0
         bonusKillPoints += BONUS_KILL_BONUS
-        if (effects) effects.explosion(bonusHit.mesh.position, BONUS_COLOR, 0.9)
+        if (effects) effects.explosion(bonusHit.mesh.position, BONUS_COLOR, 0.9 * (bonusHit.scale ?? 1))
         removeProjectile(projectile)
         continue
       }
@@ -447,10 +468,14 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     for (const bonus of [...bonusTargets]) {
       if (bonus.dying) {
         bonus.deathT += dt / BONUS_DEATH_DURATION
-        bonus.mesh.scale.setScalar(Math.max(0, 1 - bonus.deathT))
+        bonus.mesh.scale.setScalar(Math.max(0, 1 - bonus.deathT) * (bonus.scale ?? 1))
         if (bonus.deathT >= 1) removeBonusTarget(bonus)
         continue
       }
+      // pedido do usuário: "shading pra parecer mais um asteroide" — giro lento e constante,
+      // um "tumble" de rocha à deriva em vez de ficar parado no ar
+      bonus.mesh.rotation.x += dt * (bonus.spinX ?? 0.3)
+      bonus.mesh.rotation.y += dt * (bonus.spinY ?? 0.2)
       const relative = bonus.mesh.position.clone().sub(frame.position)
       if (relative.dot(frame.forward) < PASS_BEHIND) removeBonusTarget(bonus)
     }
@@ -578,8 +603,14 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       const position = randomSpawnPositionOnPath(BONUS_SPAWN_DISTANCE_MIN, BONUS_SPAWN_DISTANCE_MAX, BONUS_BOX_X, BONUS_BOX_Y)
       const mesh = new THREE.Mesh(bonusGeometry, bonusMaterial)
       mesh.position.copy(position)
+      // pedido do usuário: variedade de tamanho — 0.7x a 1.6x, hitbox acompanha a escala real
+      const scale = BONUS_SCALE_MIN + Math.random() * (BONUS_SCALE_MAX - BONUS_SCALE_MIN)
+      mesh.scale.setScalar(scale)
+      mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
       scene.add(mesh)
-      bonusTargets.push({ mesh, dying: false, deathT: 0 })
+      const spinX = (Math.random() * 2 - 1) * 0.4
+      const spinY = (Math.random() * 2 - 1) * 0.4
+      bonusTargets.push({ mesh, dying: false, deathT: 0, scale, spinX, spinY })
     },
 
     clearBonusTargets() {
