@@ -1,3 +1,21 @@
+## Visual da nave configurável: 2 presets novos (Bombardeiro/Veloz) — v0.37.0
+
+Pedido do usuário: *"Quero que adicione nas configurações a opção de mudar o visual da nave, crie outros 2 visuais da nave, mas antes quero suas ideias de como seriam."* Antes de implementar, propus 2 conceitos (texto, sem código) e o usuário aprovou ("Gostei") sem pedir ajuste.
+
+**Conceitos aprovados**:
+- **Bombardeiro**: corpo largo/curto (tanque), asa mais retangular/trapezoidal (menos triangular que a delta padrão), **2 barbatanas** nas pontas da asa (bicauda, tipo furtivo) em vez de 1 dorsal central. Cor cinza-chumbo escuro (`0x3a3f45`) com acento âmbar (`0xffb84d`) nas barbatanas.
+- **Veloz**: corpo bem mais fino e alongado (agulha), asa pequena e bem varrida pra trás (pouca área, silhueta de dardo), 1 barbatana **ventral** (embaixo) em vez de dorsal. Cor verde-esmeralda (`0x2bff88`) com acento verde escuro (`0x184d2e`).
+
+**Implementação**:
+- `rail.js`: `buildShip()` (que já montava a nave "Clássica" atual, resultado da Fase 7 visual) virou `buildShip(variant)` lendo de uma tabela `SHIP_PRESETS` (dimensões do corpo/asa, posição e cor de 1-2 barbatanas dorsais/ventrais) — as 3 variantes reaproveitam as mesmas 2 formas (`buildDeltaShape`/`buildFinShape`), só com parâmetros diferentes. Exportei `SHIP_VISUAL_OPTIONS` (lista `{id, label}`) pra Configurações montar os botões sem duplicar os nomes. `createRailController` ganhou um 3º parâmetro opcional `shipVisual`.
+- `settings.js`: novo campo `shipVisual` (default `'default'`).
+- `hud-settings.js`: seção "Visual" ganhou uma linha com 1 botão por preset (`SHIP_VISUAL_OPTIONS`); clicar salva na hora (`setSetting`) e destaca o botão ativo (`.btn-secondary.active`, CSS novo em `index.html`). Como a nave só é montada uma vez no início da partida (mesmo padrão de `startingHealth`/`arenaTurnSensitivity`), a troca vale a partir do **próximo** "Jogar", não muda a nave no meio de uma partida em andamento.
+- `main.js`: `createRailController(camera, scene, getSettings().shipVisual)` no lugar da chamada sem esse argumento.
+
+**Não testado ao vivo** (sem Browser pane nesta sessão de nuvem): `node --check` em todos os `src/*.js` e `selftest.mjs` limpos; revisão manual das dimensões/posições de cada preset (sem visualização real, os valores geométricos exatos podem precisar de ajuste fino depois de ver renderizado — os campos de `SHIP_PRESETS` em `rail.js` foram deixados fáceis de calibrar).
+
+**Versão**: v0.36.0 → v0.37.0.
+
 ## Correções fase 3: timers e cutscenes (aviso de 5s, invocação do chefe, ciclo 110s, ampulheta) — v0.36.0
 
 Continuação da lista de 20 correções ("Fase 3" do plano proposto, usuário só respondeu "Fase 3" pra confirmar).

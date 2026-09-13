@@ -45,7 +45,61 @@ const CAM_FOV_BOOST = 84
 const CAM_FOV_LERP_RATE = 6
 
 const SHIP_NOSE_OFFSET = 1.6
-const SHIP_COLOR = 0xeaf3ff
+
+// visual da nave (Configurações → Visual): presets de dimensões/cor por variante, todos
+// construídos com as mesmas 2 formas (buildDeltaShape/buildFinShape) — fácil de ajustar ou
+// adicionar mais no futuro, só mexendo nesta tabela.
+// - default: a interceptadora original (corpo fino, asa delta dominante, 1 barbatana dorsal).
+// - bombardeiro: corpo largo/curto, asa mais retangular, 2 barbatanas nas pontas da asa (bicauda).
+// - racer: corpo bem alongado/fino, asa pequena bem varrida pra trás, 1 barbatana ventral.
+export const SHIP_VISUAL_DEFAULT = 'default'
+const SHIP_PRESETS = {
+  default: {
+    label: 'Clássica',
+    bodyColor: 0xeaf3ff,
+    accentColor: 0xeaf3ff,
+    bodyRadius: 0.4,
+    bodyLength: 3.4,
+    wingHalfSpan: 2.6,
+    wingFront: 0.9,
+    wingBack: 1.1,
+    wingPosition: [0, -0.05, -0.2],
+    finPosition: [0, 0.2, -1],
+    finCount: 1,
+    finSide: 'dorsal',
+  },
+  bombardeiro: {
+    label: 'Bombardeiro',
+    bodyColor: 0x3a3f45,
+    accentColor: 0xffb84d,
+    bodyRadius: 0.7,
+    bodyLength: 2.6,
+    wingHalfSpan: 3.4,
+    wingFront: 0.4,
+    wingBack: 0.5,
+    wingPosition: [0, -0.05, -0.1],
+    finPosition: [0, 0.35, -0.6],
+    finCount: 2,
+    finSpread: 4.8,
+    finSide: 'dorsal',
+  },
+  racer: {
+    label: 'Veloz',
+    bodyColor: 0x2bff88,
+    accentColor: 0x184d2e,
+    bodyRadius: 0.26,
+    bodyLength: 4.4,
+    wingHalfSpan: 1.3,
+    wingFront: 0.3,
+    wingBack: 1.8,
+    wingPosition: [0, -0.05, -0.6],
+    finPosition: [0, -0.3, -1.3],
+    finCount: 1,
+    finSide: 'ventral',
+  },
+}
+// pra popular o seletor em Configurações sem duplicar os nomes aqui
+export const SHIP_VISUAL_OPTIONS = Object.entries(SHIP_PRESETS).map(([id, p]) => ({ id, label: p.label }))
 
 const ARENA_TURN_RATE = 1.8
 const ARENA_PITCH_LIMIT = 1.2
@@ -133,26 +187,40 @@ function buildFinShape() {
 // 45° que antes apresentava uma face de losango/quadrado pra frente (lia como "caixinha" na
 // cabine); a asa delta cresceu bem mais que o corpo pra dominar a silhueta (triângulo lido de
 // cima, que é o ângulo mais comum de câmera do jogo) e a barbatana ficou mais alta/afiada.
-function buildShip() {
-  const material = new THREE.MeshPhongMaterial({ color: SHIP_COLOR, flatShading: true, side: THREE.DoubleSide })
+// Customização de visual: monta qualquer preset de SHIP_PRESETS a partir das mesmas 2 peças
+// (corpo cônico + asa delta) mais 1 ou 2 barbatanas, dorsais ou ventrais (finSide/finCount).
+function buildShip(variant = SHIP_VISUAL_DEFAULT) {
+  const preset = SHIP_PRESETS[variant] || SHIP_PRESETS[SHIP_VISUAL_DEFAULT]
+  const bodyMaterial = new THREE.MeshPhongMaterial({ color: preset.bodyColor, flatShading: true, side: THREE.DoubleSide })
+  const accentMaterial = preset.accentColor === preset.bodyColor
+    ? bodyMaterial
+    : new THREE.MeshPhongMaterial({ color: preset.accentColor, flatShading: true, side: THREE.DoubleSide })
 
-  const body = new THREE.Mesh(new THREE.ConeGeometry(0.4, 3.4, 4), material)
+  const body = new THREE.Mesh(new THREE.ConeGeometry(preset.bodyRadius, preset.bodyLength, 4), bodyMaterial)
   body.rotation.x = Math.PI / 2
 
-  const wing = new THREE.Mesh(new THREE.ShapeGeometry(buildDeltaShape(2.6, 0.9, 1.1)), material)
+  const wing = new THREE.Mesh(new THREE.ShapeGeometry(buildDeltaShape(preset.wingHalfSpan, preset.wingFront, preset.wingBack)), bodyMaterial)
   wing.rotation.x = -Math.PI / 2
-  wing.position.set(0, -0.05, -0.2)
-
-  const fin = new THREE.Mesh(new THREE.ShapeGeometry(buildFinShape()), material)
-  fin.rotation.y = Math.PI / 2
-  fin.position.set(0, 0.2, -1)
+  wing.position.set(...preset.wingPosition)
 
   const group = new THREE.Group()
-  group.add(body, wing, fin)
+  group.add(body, wing)
+
+  // ventral = barbatana(s) apontando pra BAIXO em vez de pra cima (mesma forma, espelhada em Y)
+  const finFlip = preset.finSide === 'ventral' ? -1 : 1
+  const finXOffsets = preset.finCount === 2 ? [-preset.finSpread / 2, preset.finSpread / 2] : [0]
+  for (const finX of finXOffsets) {
+    const fin = new THREE.Mesh(new THREE.ShapeGeometry(buildFinShape()), accentMaterial)
+    fin.rotation.y = Math.PI / 2
+    fin.scale.y = finFlip
+    fin.position.set(finX, preset.finPosition[1], preset.finPosition[2])
+    group.add(fin)
+  }
+
   return group
 }
 
-export function createRailController(camera, scene) {
+export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEFAULT) {
   const curve = buildCurve()
   const length = curve.getLength()
 
@@ -206,7 +274,7 @@ export function createRailController(camera, scene) {
   let fullSpinT = 1
   let fullSpinDir = 0
 
-  const ship = buildShip()
+  const ship = buildShip(shipVisual)
   ship.position.copy(lastFrame.position)
   scene.add(ship)
 

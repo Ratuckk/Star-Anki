@@ -339,7 +339,9 @@ function mountGame(session) {
   grid.position.set(-27, GROUND_Y, -85)
   scene.add(grid)
 
-  const rail = createRailController(camera, scene)
+  // visual da nave escolhido em Configurações (lido uma vez no início da partida, mesmo padrão
+  // de startingHealth/showEnemyHealthBars — a nave é montada uma única vez aqui)
+  const rail = createRailController(camera, scene, getSettings().shipVisual)
   // Fase 9 (ideia all-range, item 5): sensibilidade de giro configurável em Configurações
   rail.setTurnSensitivity(getSettings().arenaTurnSensitivity)
   const effects = createEffectsSystem(scene, { grid })
