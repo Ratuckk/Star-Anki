@@ -57,7 +57,11 @@ const BOSS_BUILDUP_MS = 90000
 // ============ FASE 5: CAÇADA DE PERGUNTAS DO CHEFE (orbes no mapa) ============
 const BOSS_QUESTION_COUNT = 6 // quantos orbes-pergunta espalhados na arena do chefe
 const BOSS_HUNT_BONUS_MS = 10000 // tempo ganho a cada pergunta acertada durante a caçada
-const BOSS_BASE_HP = 3
+const BOSS_BASE_HP = 33 // era 3 (pedido do usuário: +30 de vida inicial)
+// pedido do usuário: "aumente a quantidade de vida que ele recebe por erro em 20" — troca o
+// antigo `bossHealthMultiplier *= 2` (dobrava a cada erro/orbe sem resposta, virava
+// exponencial rápido demais) por um bônus aditivo simples, mais fácil de calibrar
+const BOSS_HP_PER_ERROR = 20
 const BOSS_DEFEAT_BONUS = 500
 const BOSS_SPREAD_MIN_BASE = 45
 const BOSS_SPREAD_MAX_BASE = 95
@@ -76,6 +80,15 @@ const ENEMY_INTERVAL_FLOOR = 350
 const ENEMY_INTERVAL_STEP = 70
 const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
+
+// pedido do usuário: escalada explícita e quantificada por pergunta errada, em cima do que já
+// existia (intervalo de spawn/enemyCap/enemyAggression, que continuam iguais) — "+1 na geração
+// de inimigos a cada 3 erros, +1 na velocidade dos disparos por erro, +1 no dano deles a cada
+// 2 erros". Os 3 contadores derivam do mesmo wrongAnswerCount, só dividem por thresholds
+// diferentes.
+const ENEMY_SPAWN_BONUS_WRONG_THRESHOLD = 3
+const ENEMY_PROJECTILE_SPEED_PER_WRONG = 1
+const ENEMY_DAMAGE_WRONG_THRESHOLD = 2
 
 // Fase 9 (ideia de baralho, item 1): só desloca o PONTO DE PARTIDA do intervalo de spawn — a
 // escalada por erro (applyDifficulty, ENEMY_INTERVAL_STEP) continua igual depois disso. Baralho
@@ -345,7 +358,7 @@ function mountGame(session) {
   // cambalhota) dispara o freio de emergência — mesma janela de detecção do giro completo
   let lastRepulsionTapAt = -Infinity
 
-  let bossHealthMultiplier = 1
+  let bossHealthBonus = 0
   let bossBuildupTimer = 0
   let bossOrbsRemaining = 0
 
@@ -397,6 +410,9 @@ function mountGame(session) {
   let enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_MIN_BASE + difficultyBiasOffsetMs)
   let enemyIntervalMax = Math.max(enemyIntervalMin + 150, ENEMY_INTERVAL_MAX_BASE + difficultyBiasOffsetMs)
   let enemyAggression = 1
+  let wrongAnswerCount = 0
+  let extraSpawnPerBatch = 0
+  let enemyDamageValue = 1
 
   let enemyCap = 0
   let normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
@@ -467,6 +483,12 @@ function mountGame(session) {
     enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, enemyAggression + ENEMY_AGGRESSION_STEP)
     combat.setEnemyAggressiveness(enemyAggression)
     enemyCap += ENEMY_CAP_STEP_PER_ERROR
+
+    // pedido do usuário: escalada quantificada em cima do que já existia acima
+    wrongAnswerCount += 1
+    extraSpawnPerBatch = Math.floor(wrongAnswerCount / ENEMY_SPAWN_BONUS_WRONG_THRESHOLD)
+    enemyDamageValue = 1 + Math.floor(wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
+    combat.setEnemyProjectileSpeedBonus(wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
   }
 
   function applyBossDifficulty() {
@@ -544,7 +566,7 @@ function mountGame(session) {
   function enterBossBuildup() {
     phase = 'bossBuildup'
     bossBuildupTimer = BOSS_BUILDUP_MS
-    bossHealthMultiplier = 1
+    bossHealthBonus = 0
     bossOrbsRemaining = BOSS_QUESTION_COUNT
     questionResult = null
     rail.enterArena()
@@ -591,7 +613,7 @@ function mountGame(session) {
     if (!correct) {
       applyDifficulty()
       applyBossDifficulty()
-      bossHealthMultiplier *= 2
+      bossHealthBonus += BOSS_HP_PER_ERROR
     } else {
       bossBuildupTimer += BOSS_HUNT_BONUS_MS
     }
@@ -627,11 +649,11 @@ function mountGame(session) {
     phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
   }
 
-  // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, vida dobrada uma vez
-  // por orbe que sobrou sem ser respondido — igual à punição de errar (confirmado com o usuário)
+  // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, +20 de vida por orbe
+  // que sobrou sem ser respondido — igual à punição de errar (confirmado com o usuário)
   function finishBossHunt() {
     hud.hideQuestionModal()
-    for (let i = 0; i < bossOrbsRemaining; i += 1) bossHealthMultiplier *= 2
+    bossHealthBonus += BOSS_HP_PER_ERROR * bossOrbsRemaining
     bossOrbsRemaining = 0
     combat.clearBossOrbs()
     enterBossFight()
@@ -658,7 +680,7 @@ function mountGame(session) {
     hud.setCountdown(null)
     hud.setBossTint(true)
     combat.clearAllCombatants()
-    const bossHp = Math.round(BOSS_BASE_HP * bossHealthMultiplier)
+    const bossHp = BOSS_BASE_HP + bossHealthBonus
     combat.spawnBossEnemy(bossHp)
     hud.setBossFight(true, bossHp, bossHp)
 
@@ -1128,6 +1150,10 @@ function mountGame(session) {
     if (events.bossDefeated && phase === 'bossFight') {
       hud.setBossFight(false)
       hud.setBossTint(false)
+      // pedido do usuário: destrói todo o resto (inimigos extras + projéteis inimigos) na hora
+      // em que o chefe morre, em vez de deixá-los na tela — o próprio chefe (já `dying`) não é
+      // afetado, continua a animação/explosão dele normalmente.
+      combat.clearOtherEnemies()
       deathCutscenePos = (events.bossHitWorldPos || playerPos).clone()
       deathCutsceneOnDone = () => {
         session.score += BOSS_DEFEAT_BONUS
@@ -1151,7 +1177,7 @@ function mountGame(session) {
     if (events.enemyHits > 0 && !player.isInvincible() && !godMode) {
       hitShakeTimer = HIT_SHAKE_DURATION_MS
 
-      const result = player.takeDamage()
+      const result = player.takeDamage(enemyDamageValue)
 
       if (result.absorbedByShield) {
         // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----
@@ -1198,7 +1224,7 @@ function mountGame(session) {
           } else {
             const room = Math.max(0, currentEnemyCap() - combat.getEnemyCount())
             const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
-            const count = Math.min(room, roll)
+            const count = Math.min(room, roll + extraSpawnPerBatch)
             for (let i = 0; i < count; i += 1) combat.spawnEnemy()
           }
         }
@@ -1269,6 +1295,8 @@ function mountGame(session) {
       // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário),
       // e a explosão dele ganha a mesma cutscene em câmera lenta do chefe antes da transição.
       if (events.goldenSpecialHit) {
+        // pedido do usuário: mesmo comportamento do chefe — destrói o resto na hora
+        combat.clearOtherEnemies()
         deathCutscenePos = (events.goldenHitWorldPos || playerPos).clone()
         deathCutsceneOnDone = () => {
           exitGoldenArenaVisuals()
@@ -1392,7 +1420,7 @@ function mountGame(session) {
     gotoBoss: () => { if (phase === 'combat') startArenaCutscene('boss', enterBossBuildup) },
     skipToBossFight: () => {
       if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()
-      else if (phase === 'combat') { bossHealthMultiplier = 1; rail.enterArena(); enterBossFight() }
+      else if (phase === 'combat') { bossHealthBonus = 0; rail.enterArena(); enterBossFight() }
     },
     gotoGolden: () => { if (phase === 'combat') startArenaCutscene('golden', enterGoldenArena) },
     clearCombatants: () => combat.clearAllCombatants(),

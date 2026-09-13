@@ -5,7 +5,7 @@ import { DEFAULT_FIRE_COOLDOWN } from './combat.js'
 // Cada hit consome 1 unidade; depois de um hit, espera SHIELD_REGEN_DELAY_MS e passa a
 // regenerar sozinho a SHIELD_REGEN_RATE por segundo — regenera aos poucos mesmo sem ter sido
 // zerado de vez, não só quando esgota totalmente.
-const SHIELD_MAX = 2
+const SHIELD_MAX = 3 // era 2 (pedido do usuário: +1 de resistência inicial)
 const SHIELD_REGEN_DELAY_MS = 1500
 const SHIELD_REGEN_RATE = 0.4
 const SHIELD_MAX_CAP = 4
@@ -242,21 +242,32 @@ export function createPlayerSystem(session) {
     },
 
     // combate: chamado quando o jogador leva um hit de verdade (main.js já checou
-    // !isInvincible() && !godMode antes de chamar isso). Absorve pelo escudo primeiro; sem
-    // escudo, tira 1 de saúde e aplica a cascata de vida.
-    takeDamage() {
-      // QoL (v0.29.4): Math.max em vez de atribuição direta — antes, um hit RESCREVIA o timer
-      // de invencibilidade em vez de estender. main.js hoje sempre checa !isInvincible() antes,
-      // mas o guard vive no call site, não no método — qualquer chamador futuro (debug, carta
-      // nova) podia encurtar i-frames existentes sem querer.
-      invincibleTimer = Math.max(invincibleTimer, invincibilityDurationMs)
+    // !isInvincible() && !godMode antes de chamar isso). Absorve pelo escudo primeiro; o que
+    // sobrar (escudo vazio, ou quebrou nesse hit e sobrou dano) desce pra vida. `amount` varia
+    // com a dificuldade por erro (ver applyDifficulty em main.js) — era sempre 1 fixo.
+    takeDamage(amount = 1) {
       shieldRegenDelayTimer = shieldRegenDelayMs
-      if (shieldValue >= 1) {
-        shieldValue -= 1
-        return { absorbedByShield: true, shieldBroke: shieldValue < 1, outOfLives: false }
+      let remaining = Math.max(1, amount)
+      const absorbedByShield = shieldValue >= 1
+      if (absorbedByShield) {
+        const absorbed = Math.min(shieldValue, remaining)
+        shieldValue -= absorbed
+        remaining -= absorbed
       }
-      session.health = Math.max(0, session.health - 1)
-      return { absorbedByShield: false, shieldBroke: false, outOfLives: applyHealthLoss() }
+      const shieldBroke = absorbedByShield && shieldValue < 1
+      let outOfLives = false
+      if (remaining > 0) {
+        // pedido do usuário: a invencibilidade momentânea só existe quando o escudo está
+        // desligado de verdade — se ele absorveu o hit inteiro, não sobra dano pra vida e não
+        // faz sentido dar i-frames em cima (isso ficava dobrando a proteção).
+        // QoL (v0.29.4): Math.max em vez de atribuição direta — não reescreve i-frames já em
+        // andamento (só main.js chama isso, e já garante !isInvincible() antes; o guard mora
+        // aqui pra qualquer chamador futuro não conseguir encurtar iframes sem querer).
+        invincibleTimer = Math.max(invincibleTimer, invincibilityDurationMs)
+        session.health = Math.max(0, session.health - remaining)
+        outOfLives = applyHealthLoss()
+      }
+      return { absorbedByShield, shieldBroke, outOfLives }
     },
 
     applyHealthLoss,

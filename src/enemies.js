@@ -158,8 +158,12 @@ const GOLDEN_SPECIAL_HIT_RADIUS = 2.2
 const GOLDEN_SPECIAL_DEATH_DURATION = 0.25
 const GOLDEN_SPECIAL_PULSE_SPEED = 4
 const GOLDEN_SPECIAL_PULSE_AMOUNT = 0.18
-const GOLDEN_SPECIAL_HP = 10
+const GOLDEN_SPECIAL_HP = 20 // era 10 (pedido do usuário: +10 de vida)
 const GOLDEN_CHASE_SPEED = 9
+// pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for atingido por
+// disparos" — cooldown próprio por golden, reiniciado a cada teleporte de verdade (não a cada
+// hit — só teleporta se o cooldown já tiver zerado)
+const GOLDEN_TELEPORT_COOLDOWN_S = 10
 const GOLDEN_FIRE_INTERVAL_MIN = 1200
 const GOLDEN_FIRE_INTERVAL_MAX = 2400
 // v0.29.6: além do tiro, o dourado solta mini-naves amarelas que perseguem o jogador numa
@@ -206,6 +210,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   let nextEnemyId = 1
   let elapsed = 0
   let enemyAggression = 1
+  // pedido do usuário: "+1 na velocidade dos disparos dos inimigos por pergunta errada" — soma
+  // direto na velocidade base do projétil comum (também usado pela rajada do chefe, que
+  // reaproveita fireEnemyProjectile)
+  let enemyProjectileSpeedBonus = 0
 
   // ============ geometrias e materiais ============
   // geometria do inimigo comum: a ponta do cone aponta pro +Z local (eixo do lookAt) — o giro
@@ -357,7 +365,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 
     scene.add(mesh)
-    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED), traveled: 0 })
+    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
   }
 
   function fireBossVolley(enemy, playerPosition) {
@@ -377,6 +385,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       g.mesh.scale.setScalar(pulse)
       g.mesh.rotation.y += dt * 0.6
       g.mesh.rotation.x += dt * 0.3
+      g.teleportCooldownTimer = Math.max(0, g.teleportCooldownTimer - dt)
 
       if (playerPosition) {
         const toPlayer = playerPosition.clone().sub(g.mesh.position)
@@ -881,6 +890,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         maxHp: GOLDEN_SPECIAL_HP,
         fireTimer: randomGoldenFireInterval(),
         minionTimer: GOLDEN_MINION_INTERVAL_MIN + Math.random() * (GOLDEN_MINION_INTERVAL_MAX - GOLDEN_MINION_INTERVAL_MIN),
+        // teleporte ao ser atingido (ver resolveProjectileHit) — guarda o range original de
+        // spawn pra reaproveitar no reposicionamento, e começa pronto (0) pra já poder disparar
+        // no primeiro hit em vez de exigir 10s de luta antes do primeiro teleporte
+        distanceMin, distanceMax, teleportCooldownTimer: 0,
       })
     },
 
@@ -961,6 +974,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             effects.explosion(goldenHit.mesh.position, killColor, 2.8)
             effects.shockwave(goldenHit.mesh.position, GOLDEN_SPECIAL_COLOR, 1.1)
           }
+        } else if (goldenHit.teleportCooldownTimer <= 0) {
+          // pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for
+          // atingido por disparos" — reaproveita o mesmo espalhamento em torno do centro da
+          // arena usado pelo spawn do chefe, com o range original de spawn deste dourado
+          const oldPos = goldenHit.mesh.position.clone()
+          const newPos = randomSpawnAroundArena(goldenHit.distanceMin, goldenHit.distanceMax)
+          goldenHit.mesh.position.copy(newPos)
+          goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
+          if (effects) {
+            effects.shockwave(oldPos, GOLDEN_SPECIAL_COLOR, 0.9)
+            effects.shockwave(newPos, GOLDEN_SPECIAL_COLOR, 0.9)
+          }
         }
         return {
           kind: 'golden',
@@ -1018,6 +1043,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     getAlive: () => enemies.filter((e) => !e.dying),
+    // pedido do usuário: tiro carregado passa a poder travar o dourado também (o chefe já
+    // entra em getAlive() de graça, por viver no mesmo array `enemies`) — golden mora num
+    // array separado, então precisa do getter próprio pro sweepLockOn de combat.js somar os dois
+    getGoldenAlive: () => goldenTargets.filter((g) => !g.dying),
 
     // usado pela carta roguelike "giro rebatedor" (mecânica do jogador, fica em combat.js):
     // remove projéteis inimigos dentro do raio e devolve a posição de cada um removido, pra
@@ -1033,6 +1062,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     setEnemyAggressiveness(multiplier) { enemyAggression = multiplier },
+    setEnemyProjectileSpeedBonus(bonus) { enemyProjectileSpeedBonus = bonus },
 
     clearEnemies() {
       for (const enemy of [...enemies]) removeEnemy(enemy)
@@ -1042,6 +1072,16 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     clearGoldenTargets() {
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
+    },
+
+    // pedido do usuário: "quando um boss/inimigo dourado morre, todos inimigos e projéteis
+    // inimigos em tela devem ser destruídos imediatamente também" — só poupa quem já está
+    // `dying: true` (o próprio chefe/dourado que acabou de morrer, tocando a animação dele)
+    clearOtherEnemies() {
+      for (const enemy of [...enemies]) if (!enemy.dying) removeEnemy(enemy)
+      for (const g of [...goldenTargets]) if (!g.dying) removeGoldenTarget(g)
+      for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
+      for (const l of [...enemyLasers]) removeEnemyLaser(l)
     },
 
     clearAll() {

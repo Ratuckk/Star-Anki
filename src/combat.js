@@ -186,7 +186,19 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     })
   }
 
-  const lockedEnemies = new Set()
+  // pedido do usuário: o tiro carregado passa a poder travar o chefe/dourado (antes só
+  // inimigos comuns), e um alvo GRANDE (chefe/dourado) pode receber várias travas ao mesmo
+  // tempo em vez de só 1 — cada trava vira um tiro teleguiado independente na hora de soltar.
+  // Por isso `lockedEnemies` deixou de ser um Set (não dava pra repetir a mesma entidade) e
+  // virou array de "lock records" ({ entity, offset, seq }) — offset é o ponto (relativo ao
+  // centro do alvo) onde a mira estava no instante da trava, usado só pro marcador verde do
+  // HUD aparecer espalhado pelo corpo do alvo em vez de empilhado no centro.
+  let lockedEnemies = []
+  let nextLockSeq = 1
+
+  function isBigLockTarget(e) {
+    return e.kind === 'boss' || e.kind === 'golden'
+  }
 
   // maxAllowed (main.js): quantos alvos podem estar travados NESTE instante do carregamento —
   // 1 no início, +1 a cada HOMING_LOCK_INTERVAL_MS (pedido: travar um alvo novo por vez, não
@@ -196,21 +208,29 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     const frame = rail.getFrameAt(0)
     // solta quem ficou extremamente perto ou já passou pra trás do jogador antes de disparar —
     // libera a vaga pra um alvo válido poder ser travado no lugar
-    for (const e of [...lockedEnemies]) {
-      if (e.dying) { lockedEnemies.delete(e); continue }
-      const rel = e.mesh.position.clone().sub(origin)
-      if (rel.length() < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) lockedEnemies.delete(e)
-    }
-    if (lockedEnemies.size >= maxAllowed) return
-    for (const e of enemies.getAlive()) {
-      if (lockedEnemies.size >= maxAllowed) break
-      if (lockedEnemies.has(e)) continue
+    lockedEnemies = lockedEnemies.filter((rec) => {
+      if (rec.entity.dying) return false
+      const rel = rec.entity.mesh.position.clone().sub(origin)
+      return rel.length() >= MIN_LOCK_RANGE && rel.dot(frame.forward) >= PASS_BEHIND
+    })
+    if (lockedEnemies.length >= maxAllowed) return
+    const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()]
+    for (const e of candidates) {
+      if (lockedEnemies.length >= maxAllowed) break
+      // alvo comum já travado não trava de novo (não faz sentido gastar 2 tiros nele); alvo
+      // grande pode acumular quantas travas o orçamento (maxAllowed) permitir
+      if (!isBigLockTarget(e) && lockedEnemies.some((rec) => rec.entity === e)) continue
       const rel = e.mesh.position.clone().sub(origin)
       const dist = rel.length()
       if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
       const toTarget = rel.clone().normalize()
       const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
-      if (angle < ENEMY_LOCK_ANGLE) lockedEnemies.add(e)
+      if (angle >= ENEMY_LOCK_ANGLE) continue
+      // ponto na direção da mira mais próximo do centro do alvo — os quadrados verdes aparecem
+      // onde o jogador de fato mirou, não num ponto aleatório. offset = aimPoint - alvo.posição,
+      // com aimPoint = origin + direction*t e t = projeção de rel (alvo - origin) na direção.
+      const offset = direction.clone().multiplyScalar(rel.dot(direction)).sub(rel)
+      lockedEnemies.push({ entity: e, offset, seq: nextLockSeq++ })
     }
   }
 
@@ -447,16 +467,18 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     fireHomingShot(origin, maxTargets) {
       const inRange = (e) => origin.distanceTo(e.mesh.position) <= MAX_LOCK_RANGE
 
-      const locked = [...lockedEnemies].filter((e) => !e.dying && inRange(e))
+      // um alvo grande (chefe/dourado) pode aparecer em vários records — isso é o que faz
+      // fireHomingShot mandar VÁRIOS teleguiados pra cima dele (1 por record), em vez de 1 só
+      const lockedRecs = lockedEnemies.filter((rec) => !rec.entity.dying && inRange(rec.entity))
       let targets
-      if (locked.length > 0) {
-        targets = locked.slice(0, Math.max(0, maxTargets))
+      if (lockedRecs.length > 0) {
+        targets = lockedRecs.slice(0, Math.max(0, maxTargets)).map((rec) => rec.entity)
       } else {
         const alive = enemies.getAlive().filter(inRange)
         alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
         targets = alive.slice(0, Math.max(0, maxTargets))
       }
-      lockedEnemies.clear()
+      lockedEnemies = []
       for (const target of targets) {
         const direction = target.mesh.position.clone().sub(origin).normalize()
         const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
@@ -536,13 +558,14 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
     clearEnemies: () => enemies.clearEnemies(),
     clearGoldenTargets: () => enemies.clearGoldenTargets(),
+    clearOtherEnemies: () => enemies.clearOtherEnemies(),
 
     clearAllCombatants() {
       enemies.clearAll()
       for (const projectile of [...projectiles]) removeProjectile(projectile)
       // QoL (v0.29.4): sem isso, o Set de alvos travados sobrevivia a um clear — os marcadores
       // de lock no HUD ficavam pendurados por alguns frames até o próximo sweepLockOn limpar.
-      lockedEnemies.clear()
+      lockedEnemies = []
     },
 
     spawnBonusTarget() {
@@ -596,15 +619,16 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
     sweepLockOn,
     isAimingAtEnemy,
-    clearLockedEnemies() { lockedEnemies.clear() },
-    getLockedEnemySnapshots: () => [...lockedEnemies]
-      .filter((e) => !e.dying)
-      .map((e) => ({ id: e.id, worldPos: e.mesh.position.clone() })),
+    clearLockedEnemies() { lockedEnemies = [] },
+    getLockedEnemySnapshots: () => lockedEnemies
+      .filter((rec) => !rec.entity.dying)
+      .map((rec) => ({ id: rec.seq, worldPos: rec.entity.mesh.position.clone().add(rec.offset) })),
 
     // continua existindo só pro debug "Tiro infinito" poder zerar o cooldown por fora do stat
     // real do jogador (ver comentário perto de fireCooldownDuration)
     setFireCooldown(seconds) { fireCooldownDuration = seconds },
     setEnemyAggressiveness(multiplier) { enemies.setEnemyAggressiveness(multiplier) },
+    setEnemyProjectileSpeedBonus(bonus) { enemies.setEnemyProjectileSpeedBonus(bonus) },
     setShowHitboxes(v) { showHitboxes = v; refreshHitboxes() },
 
     update(dt, playerPosition, opts = {}) {
@@ -666,7 +690,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       for (const w of [...wingmen]) scene.remove(w.mesh)
       wingmen.length = 0
       // QoL (v0.29.4): idem clearAllCombatants — não deixa Set de lock órfão vazar entre sessões
-      lockedEnemies.clear()
+      lockedEnemies = []
       enemies.dispose()
       projectileGeometry.dispose()
       projectileMaterial.dispose()
