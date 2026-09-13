@@ -29,6 +29,21 @@ const CAMERA_DYNAMIC_LATERAL = 2.4
 const CAMERA_DYNAMIC_VERTICAL = 1.1
 const CAMERA_DYNAMIC_ROLL = 0.1 // radianos (~5.7°) de inclinação máxima da câmera
 
+// Fase 8 (VISUAL): roll de câmera proporcional à curvatura real do trilho — em vez de só o
+// drift senoidal acima (que ignora a forma da pista), amostra o "forward" um pouco à frente e
+// compara com o atual; quanto mais fechada a curva horizontal, mais a câmera inclina, como um
+// caça de verdade fazendo a curva. Suavizado pra não tremer entre amostras.
+const CURVE_SAMPLE_AHEAD = 6
+const CURVE_ROLL_GAIN = 3.2
+const CURVE_ROLL_MAX = THREE.MathUtils.degToRad(14)
+const CURVE_ROLL_SMOOTH_RATE = 4
+
+// Fase 8 (VISUAL): FOV abre durante o boost (propulsor/repulsor) e volta ao normal — reforça a
+// sensação de velocidade junto com as motion lines/distorção que já existem no HUD.
+const CAM_FOV_BASE = 70
+const CAM_FOV_BOOST = 84
+const CAM_FOV_LERP_RATE = 6
+
 const SHIP_NOSE_OFFSET = 1.6
 const SHIP_COLOR = 0xeaf3ff
 
@@ -56,6 +71,32 @@ const FULL_SPIN_DURATION = 0.45
 // normal (ARENA_TURN_RATE) pra não duplicar o controle de vôo já existente, só complementar
 const ARENA_DASH_DISTANCE = 16
 const ARENA_BANK_ASSIST_RATE = 1.1
+
+// Fase 9 (ideias all-range):
+// item 1 — depois de ficar sem NENHUM input de direção por ARENA_AUTOLEVEL_IDLE_S, o pitch
+// acumulado volta suavemente pro nível (o roll já auto-nivela sozinho, porque seu alvo já é
+// sempre 0 quando moveX=0 — só o pitch ficava preso onde o jogador deixou, podendo desorientar).
+const ARENA_AUTOLEVEL_IDLE_S = 1.0
+const ARENA_AUTOLEVEL_RATE = 1.2
+
+// item 3 — guinada extra e fraca em direção ao alvo mais próximo quando ele está bem fora do
+// centro da mira (opts.assistTarget, calculado por main.js). Só ajuda a "trazer" o alvo de
+// volta pra tela — ARENA_TURN_RATE continua sendo o controle principal, isso é só um empurrão.
+const ARENA_ASSIST_MIN_ANGLE = THREE.MathUtils.degToRad(35)
+const ARENA_ASSIST_TURN_RATE = 0.5
+
+// item 4 — "freio de emergência": duplo toque em repulsão (sem Baixo, que já é a cambalhota)
+// trava a velocidade de avanço quase a zero por um instante curto, pra reposicionamento fino
+// perto do chefe/dourado. Cooldown PRÓPRIO — não usa a barra compartilhada de propulsor/
+// repulsor de player.js, pra não mexer na economia de boost já existente.
+const EMERGENCY_BRAKE_DURATION = 0.35
+const EMERGENCY_BRAKE_SPEED_MULT = 0.05
+const EMERGENCY_BRAKE_COOLDOWN = 1.5
+
+// item 6 — cambalhota (Baixo + repulsor) virou uma animação de verdade (flip completo no eixo
+// de pitch enquanto o yaw gira suavemente) em vez do snap instantâneo de 180° de antes, igual
+// ao U-turn do Star Fox 64. Congela o controle manual de yaw/pitch/roll por essa duração.
+const SUMMERSAULT_DURATION = 0.6
 
 function buildCurve() {
   const points = [
@@ -128,6 +169,16 @@ export function createRailController(camera, scene) {
   let speedMultiplier = 1
   let advancing = true
   let camDynamicT = 0 // Fase 6: acumulador do drift senoidal da câmera (modo normal)
+  let curveRollSmoothed = 0 // Fase 8: roll por curvatura, suavizado entre frames
+  let boostActive = false // Fase 8: liga o FOV de velocidade enquanto propulsor/repulsor ativos
+
+  // Fase 9 (ideias all-range)
+  let arenaIdleTimer = 0 // item 1: segundos desde o último input de direção real no all-range
+  let emergencyBrakeTimer = 0 // item 4
+  let emergencyBrakeCooldownTimer = 0 // item 4
+  let summersaultT = 1 // item 6: >=1 = inativo, 0..1 = animação em andamento
+  let summersaultStartYaw = 0 // item 6
+  let turnSensitivity = 1 // item 5: multiplicador configurável em Configurações
   let lastFrame = frameAtArcLength(0)
   let lastPlayerPos = lastFrame.position.clone()
 
@@ -174,6 +225,20 @@ export function createRailController(camera, scene) {
     return { position, forward, right, up }
   }
 
+  // Fase 8 (VISUAL): compara o forward atual com o forward um pouco à frente (só no plano
+  // horizontal, XZ) pra saber o quanto/pra que lado o trilho está curvando ali — usado só pelo
+  // roll de câmera cosmético, não afeta o pathing real da nave.
+  function pathTurnRate(distance) {
+    const forwardNow = frameAtArcLength(distance).forward
+    const forwardAhead = frameAtArcLength(distance + CURVE_SAMPLE_AHEAD).forward
+    const a = forwardNow.x === 0 && forwardNow.z === 0 ? forwardNow : new THREE.Vector3(forwardNow.x, 0, forwardNow.z).normalize()
+    const b = forwardAhead.x === 0 && forwardAhead.z === 0 ? forwardAhead : new THREE.Vector3(forwardAhead.x, 0, forwardAhead.z).normalize()
+    const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1)
+    const angle = Math.acos(dot)
+    const sign = a.z * b.x - a.x * b.z >= 0 ? 1 : -1
+    return angle * sign
+  }
+
   function applyShakeJitter() {
     if (shakeMagnitude <= 0) return
     ship.position.x += (Math.random() * 2 - 1) * shakeMagnitude
@@ -212,11 +277,33 @@ export function createRailController(camera, scene) {
     if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
   }
 
-  // all-range: cambalhota (combo "Baixo + repulsor") — meia-volta rápida de reposicionamento,
-  // igual ao U-turn do Star Fox 64. Só gira o rumo (yaw); pitch/roll não mudam.
+  // all-range: cambalhota (combo "Baixo + repulsor") — meia-volta de reposicionamento, igual
+  // ao U-turn do Star Fox 64. Fase 9 (ideia 6): agora é uma animação de verdade (updateSummersault
+  // abaixo cuida do yaw progressivo + flip visual) em vez de um snap instantâneo de 180°.
   function triggerArenaSummersault() {
-    if (mode !== 'arena') return
-    arenaYaw += Math.PI
+    if (mode !== 'arena' || summersaultT < 1) return
+    summersaultStartYaw = arenaYaw
+    summersaultT = 0
+  }
+
+  // avança a animação da cambalhota e devolve o ângulo de flip visual (0→2π, aplicado como
+  // rotateX extra no mesh) — o yaw de verdade (arenaYaw) já é atualizado aqui dentro também,
+  // com ease-out (rápido no início, suave no fim), pra sensação de impulso natural.
+  function updateSummersault(dt) {
+    if (summersaultT >= 1) return 0
+    summersaultT = Math.min(1, summersaultT + dt / SUMMERSAULT_DURATION)
+    const eased = 1 - Math.pow(1 - summersaultT, 3)
+    arenaYaw = summersaultStartYaw + Math.PI * eased
+    return summersaultT * Math.PI * 2
+  }
+
+  // Fase 9 (ideia all-range 4): freio de emergência — cooldown próprio, independente da barra
+  // compartilhada de propulsor/repulsor. Devolve false se ainda em cooldown (chamador ignora).
+  function triggerEmergencyBrake() {
+    if (mode !== 'arena' || emergencyBrakeCooldownTimer > 0) return false
+    emergencyBrakeTimer = EMERGENCY_BRAKE_DURATION
+    emergencyBrakeCooldownTimer = EMERGENCY_BRAKE_COOLDOWN
+    return true
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -242,18 +329,53 @@ export function createRailController(camera, scene) {
     mode = 'rail'
   }
 
-  function updateArena(dt, input, fullSpinAngle = 0) {
-    // segurar Z/C sozinho (sem o combo de propulsor) já ajuda a guinar pro lado, "facilitando o
-    // movimento" além da inclinação cosmética — mais fraco que o giro normal (input.moveX) pra
-    // só complementar, não substituir o controle de vôo
-    arenaYaw -= (input.moveX * ARENA_TURN_RATE + (input.bank || 0) * ARENA_BANK_ASSIST_RATE) * dt
-    arenaPitch = THREE.MathUtils.clamp(arenaPitch + input.moveY * ARENA_TURN_RATE * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
-    const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
-    arenaRoll += (targetRoll - arenaRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
+  function updateArena(dt, input, fullSpinAngle = 0, opts = {}) {
+    const summersaultFlip = updateSummersault(dt)
+    const inSummersault = summersaultT < 1
+
+    if (emergencyBrakeTimer > 0) emergencyBrakeTimer = Math.max(0, emergencyBrakeTimer - dt)
+    if (emergencyBrakeCooldownTimer > 0) emergencyBrakeCooldownTimer = Math.max(0, emergencyBrakeCooldownTimer - dt)
+
+    if (!inSummersault) {
+      // segurar Z/C sozinho (sem o combo de propulsor) já ajuda a guinar pro lado, "facilitando
+      // o movimento" além da inclinação cosmética — mais fraco que o giro normal (input.moveX)
+      // pra só complementar, não substituir o controle de vôo
+      arenaYaw -= (input.moveX * ARENA_TURN_RATE * turnSensitivity + (input.bank || 0) * ARENA_BANK_ASSIST_RATE * turnSensitivity) * dt
+      arenaPitch = THREE.MathUtils.clamp(arenaPitch + input.moveY * ARENA_TURN_RATE * turnSensitivity * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
+      const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
+      arenaRoll += (targetRoll - arenaRoll) * (1 - Math.exp(-ROLL_SMOOTH_RATE * dt))
+
+      // Fase 9 (ideia 1): auto-nivelamento do pitch depois de ficar parado (sem input de
+      // direção nenhum) por ARENA_AUTOLEVEL_IDLE_S — o roll já volta sozinho (alvo 0 quando
+      // moveX=0), só o pitch persistia onde o jogador deixou.
+      const hasSteerInput = input.moveX !== 0 || input.moveY !== 0 || !!input.bank
+      arenaIdleTimer = hasSteerInput ? 0 : arenaIdleTimer + dt
+      if (arenaIdleTimer > ARENA_AUTOLEVEL_IDLE_S) {
+        arenaPitch += (0 - arenaPitch) * (1 - Math.exp(-ARENA_AUTOLEVEL_RATE * dt))
+      }
+
+      // Fase 9 (ideia 3): guinada extra fraca em direção ao alvo mais próximo quando ele está
+      // bem fora do centro — nunca sobrepõe o controle manual acima, só soma um empurrão leve
+      if (opts.assistTarget) {
+        const forwardNow = forwardFromYawPitch(arenaYaw, arenaPitch)
+        const toTarget = opts.assistTarget.clone().sub(arenaPos).normalize()
+        const angle = Math.acos(THREE.MathUtils.clamp(forwardNow.dot(toTarget), -1, 1))
+        if (angle > ARENA_ASSIST_MIN_ANGLE) {
+          const rightNow = new THREE.Vector3().crossVectors(forwardNow, WORLD_UP).normalize()
+          const upNow = new THREE.Vector3().crossVectors(rightNow, forwardNow).normalize()
+          const yawError = toTarget.dot(rightNow)
+          const pitchError = toTarget.dot(upNow)
+          arenaYaw -= Math.sign(yawError) * ARENA_ASSIST_TURN_RATE * dt
+          arenaPitch = THREE.MathUtils.clamp(arenaPitch + Math.sign(pitchError) * ARENA_ASSIST_TURN_RATE * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
+        }
+      }
+    }
 
     const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
-    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho
-    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * dt)
+    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho;
+    // o freio de emergência (Fase 9, ideia 4) trava isso quase a zero por um instante curto
+    const brakeFactor = emergencyBrakeTimer > 0 ? EMERGENCY_BRAKE_SPEED_MULT : 1
+    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * brakeFactor * dt)
 
     const offset = arenaPos.clone().sub(arenaCenter)
     if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
@@ -267,6 +389,7 @@ export function createRailController(camera, scene) {
     ship.rotateZ(arenaRoll)
     ship.rotateZ(dodgeRoll)
     ship.rotateZ(fullSpinAngle)
+    if (summersaultFlip) ship.rotateX(summersaultFlip)
     applyShakeJitter()
 
     const camTarget = arenaPos.clone()
@@ -281,12 +404,21 @@ export function createRailController(camera, scene) {
     lastPlayerPos = arenaPos.clone()
   }
 
-  function update(dt, input) {
+  function update(dt, input, opts = {}) {
     updateDodgeRoll(dt, input)
     const fullSpinAngle = updateFullSpin(dt)
 
+    // se algo fora daqui (ex: o punch de FOV na entrada da luta do chefe, em main.js) deixou o
+    // FOV bem longe da base e não estamos boostando, não briga com esse efeito — só retoma o
+    // controle quando ele já estiver perto de novo (evita "puxar de volta" no meio do punch)
+    const targetFov = boostActive ? CAM_FOV_BOOST : CAM_FOV_BASE
+    if (boostActive || Math.abs(camera.fov - CAM_FOV_BASE) <= 10) {
+      camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-CAM_FOV_LERP_RATE * dt))
+      camera.updateProjectionMatrix()
+    }
+
     if (mode === 'arena') {
-      updateArena(dt, input, fullSpinAngle)
+      updateArena(dt, input, fullSpinAngle, opts)
       return
     }
 
@@ -351,6 +483,11 @@ export function createRailController(camera, scene) {
     const dynVertical = Math.sin(cyclePhase * 0.7 + 1.3) * CAMERA_DYNAMIC_VERTICAL
     const dynRoll = Math.sin(cyclePhase * 0.5 + 2.1) * CAMERA_DYNAMIC_ROLL
 
+    // Fase 8: roll extra proporcional à curvatura real do trilho ali na frente — some com o
+    // dutch angle senoidal acima em vez de substituí-lo, suavizado pra não tremer entre amostras
+    const targetCurveRoll = THREE.MathUtils.clamp(pathTurnRate(distance) * CURVE_ROLL_GAIN, -CURVE_ROLL_MAX, CURVE_ROLL_MAX)
+    curveRollSmoothed += (targetCurveRoll - curveRollSmoothed) * (1 - Math.exp(-CURVE_ROLL_SMOOTH_RATE * dt))
+
     const camTarget = frame.position.clone()
       .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL + dynLateral)
       .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL + CAM_HEIGHT + dynVertical)
@@ -359,7 +496,7 @@ export function createRailController(camera, scene) {
     camera.position.lerp(camTarget, 1 - Math.exp(-CAM_LAG_RATE * dt))
     // "dutch angle" leve: inclina o UP da câmera em torno do forward antes do lookAt — a nave
     // e a mira não são afetadas, só o enquadramento
-    camera.up.copy(frame.up).applyAxisAngle(frame.forward, dynRoll)
+    camera.up.copy(frame.up).applyAxisAngle(frame.forward, dynRoll + curveRollSmoothed)
     camera.lookAt(camera.position.clone().add(frame.forward))
 
     lastFrame = frame
@@ -387,10 +524,15 @@ export function createRailController(camera, scene) {
     // velocidade real atual do jogador no all-range (já incluindo propulsor/repulsor ativos) —
     // usada pra limitar a velocidade dos inimigos em arena a no máximo metade disso (Fase 4)
     getArenaSpeed: () => ARENA_SPEED * speedMultiplier,
+    // Fase 9 (ideia all-range 2): pitch/roll atuais pro horizonte artificial do HUD
+    getArenaAttitude: () => ({ pitch: arenaPitch, roll: arenaRoll }),
     setSpeedMultiplier: (m) => { speedMultiplier = m },
+    setBoostActive: (v) => { boostActive = !!v },
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
     setShakeIntensity: (m) => { shakeMagnitude = m },
+    // Fase 9 (ideia all-range 5): multiplicador configurável em Configurações (0.5-2.0)
+    setTurnSensitivity: (m) => { turnSensitivity = m },
     // só pra debug: força o bank pra um lado por um tempo fixo, simulando o botão segurado
     // (não dá pra "segurar" de verdade num clique de botão de debug)
     debugForceBank: (direction, durationMs) => {
@@ -400,6 +542,7 @@ export function createRailController(camera, scene) {
     triggerFullSpin,
     triggerArenaLateralDash,
     triggerArenaSummersault,
+    triggerEmergencyBrake,
     enterArena,
     exitArena,
   }

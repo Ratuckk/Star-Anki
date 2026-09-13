@@ -3,6 +3,8 @@ const SETTINGS_KEY = 'star-anki-settings'
 const DEFAULTS = {
   startingHealth: 10,
   showEnemyHealthBars: false,
+  // Fase 9 (ideia all-range 5): multiplicador de sensibilidade de giro no modo all-range
+  arenaTurnSensitivity: 1,
 }
 
 function readAll() {

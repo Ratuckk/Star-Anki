@@ -1,10 +1,10 @@
 import { buildDeck } from './anki.js'
-import { listDecks, addDeck, updateDeck, removeDeck, getDeck } from './decks.js'
+import { listDecks, addDeck, updateDeck, removeDeck, getDeck, buildReviewDeck, REVIEW_DECK_ID } from './decks.js'
 import { showScreen } from './hud-shared.js'
 
 // Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
-// de comportamento.
-export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = false }) {
+// de comportamento (exceto os itens marcados "Fase 9" abaixo).
+export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = false, history = {} }) {
   showScreen('deckManager')
   const root = document.getElementById('deck-manager-screen')
 
@@ -13,6 +13,9 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
   const expandedPreview = new Set()
   const expandedExtras = new Set()
   const selectedForMerge = new Set()
+  // Fase 9 (ideia de baralho, item 2): tags marcadas por baralho pra filtrar a sessão antes de
+  // jogar — Map<deckId, Set<tag>>. Vive só enquanto a tela está aberta (não persiste).
+  const selectedTagsByDeck = new Map()
 
   render()
 
@@ -45,6 +48,10 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
 
     const list = document.createElement('div')
     list.className = 'deck-list'
+    // Fase 9 (ideia de baralho, item 5): baralho de revisão virtual, gerado na hora a partir do
+    // histórico — só aparece quando há erro suficiente registrado (buildReviewDeck decide).
+    const reviewDeck = buildReviewDeck(history)
+    if (reviewDeck) list.appendChild(buildReviewDeckCard(reviewDeck))
     for (const d of decks) list.appendChild(buildDeckCard(d))
     root.appendChild(list)
 
@@ -77,6 +84,60 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
     return bar
   }
 
+  // Fase 9 (ideia de baralho, item 5): card próprio, mais simples que buildDeckCard (sem
+  // editar/excluir/fundir — não é um baralho salvo de verdade) — só "jogar" e a contagem.
+  function buildReviewDeckCard(reviewDeck) {
+    const card = document.createElement('div')
+    card.className = 'deck-card deck-card-review'
+
+    const name = document.createElement('p')
+    name.className = 'deck-card-name'
+    name.textContent = '🎯 Revisão focada'
+    card.appendChild(name)
+
+    const meta = document.createElement('p')
+    meta.className = 'deck-card-meta'
+    meta.textContent = `${reviewDeck.shooterCards.length} pergunta${reviewDeck.shooterCards.length === 1 ? '' : 's'} que você mais errou, de todos os baralhos salvos`
+    card.appendChild(meta)
+
+    const playBtn = document.createElement('button')
+    playBtn.className = 'btn-small'
+    playBtn.textContent = 'Jogar'
+    playBtn.addEventListener('click', () => onPlay(REVIEW_DECK_ID))
+    card.appendChild(playBtn)
+
+    return card
+  }
+
+  // Fase 9 (ideia de baralho, item 2): tags nativas do Anki (já vinham parseadas em card.tags,
+  // sem precisar de sintaxe nova) viram chips clicáveis — marcar 1+ filtra a sessão pra só
+  // aquele(s) assunto(s) ao clicar "Jogar". Sem nenhuma marcada, joga o baralho inteiro (igual
+  // sempre foi).
+  function buildTagFilterRow(deckId, tags) {
+    const wrap = document.createElement('div')
+    wrap.className = 'deck-tag-filter'
+    const label = document.createElement('span')
+    label.className = 'deck-tag-filter-label'
+    label.textContent = 'Assunto:'
+    wrap.appendChild(label)
+    const selected = selectedTagsByDeck.get(deckId) || new Set()
+    for (const tag of tags) {
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = 'deck-tag-chip' + (selected.has(tag) ? ' active' : '')
+      chip.textContent = tag
+      chip.addEventListener('click', () => {
+        const set = selectedTagsByDeck.get(deckId) || new Set()
+        if (set.has(tag)) set.delete(tag)
+        else set.add(tag)
+        selectedTagsByDeck.set(deckId, set)
+        render()
+      })
+      wrap.appendChild(chip)
+    }
+    return wrap
+  }
+
   function buildDeckCard(d) {
     const card = document.createElement('div')
     card.className = 'deck-card' + (d.valid ? '' : ' invalid')
@@ -97,10 +158,14 @@ export function showDeckManager({ onPlay, onPlayMerged, onBack, startInAdd = fal
     btnRow.className = 'btn-row'
 
     if (d.valid) {
+      const tagSet = new Set()
+      for (const c of buildDeck(getDeck(d.id).text).allCards) for (const t of c.tags) tagSet.add(t)
+      if (tagSet.size > 1) card.appendChild(buildTagFilterRow(d.id, [...tagSet].sort()))
+
       const playBtn = document.createElement('button')
       playBtn.className = 'btn-small'
       playBtn.textContent = 'Jogar'
-      playBtn.addEventListener('click', () => onPlay(d.id))
+      playBtn.addEventListener('click', () => onPlay(d.id, [...(selectedTagsByDeck.get(d.id) || [])]))
       btnRow.appendChild(playBtn)
 
       const mergeLabel = document.createElement('label')

@@ -123,6 +123,19 @@
   .deck-merge-bar button.btn-small { margin-top: 0; }
   .deck-merge-bar button.btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* Fase 9 (ideia de baralho 2): filtro de assunto por tags nativas do Anki */
+  .deck-tag-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0; }
+  .deck-tag-filter-label { font-size: 0.85rem; color: #9aa4b2; }
+  .deck-tag-chip {
+    background: #171a21; border: 1px solid #333944; color: #c7ccd4; font-size: 0.82rem; font-weight: 600;
+    padding: 0.3rem 0.6rem; border-radius: 999px; cursor: pointer; margin: 0;
+  }
+  .deck-tag-chip.active { background: #5ce1ff; color: #0b0d12; border-color: #5ce1ff; }
+
+  /* Fase 9 (ideia de baralho 5): baralho de revisão virtual, destacado dos baralhos salvos */
+  .deck-card-review { border-color: #ffd166; background: #241e12; }
+  .deck-card-review .deck-card-name { color: #ffd166; }
+
   .settings-section {
     margin-top: 1.5rem; padding: 1rem 1.1rem; background: #16202b; border: 1px solid #2c4a5c; border-radius: 10px;
   }
@@ -196,6 +209,7 @@
     max-width: 90vw;
   }
   .roguelike-card {
+    position: relative;
     width: 220px;
     text-align: left;
     background: #16202b;
@@ -311,6 +325,14 @@
     border-radius: 50%;
     opacity: 0.55;
     transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s, opacity 0.12s;
+  }
+  /* Fase 8 (VISUAL): mira "acende" quando um inimigo vivo está bem na frente dela
+     (combat.isAimingAtEnemy) — só um hint, não trava nem garante o tiro */
+  .reticle-ring.aiming {
+    border-color: #2bff88;
+    opacity: 0.95;
+    box-shadow: 0 0 9px rgba(43, 255, 136, 0.8);
+    transform: scale(1.22);
   }
   .hud-status {
     position: absolute;

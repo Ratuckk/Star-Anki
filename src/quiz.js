@@ -21,6 +21,19 @@ function shuffle(array) {
   return result
 }
 
+// fila com prioridade de erro: cartas com histórico de erro vêm primeiro (mais erradas
+// primeiro), resto embaralhado atrás. Extraído pra função própria (Fase 9, ideia de baralho
+// "fila prioritária pra erros recentes") porque agora roda de novo a CADA reciclagem da fila
+// infinita, não só na criação da sessão — antes disso, só o primeiro lap priorizava erro; do
+// segundo em diante era shuffle uniforme, perdendo a priorização pro resto da run.
+function buildPriorityQueue(cards, history) {
+  const withErrors = shuffle(cards.filter((c) => (history[c.guid]?.erros ?? 0) > 0))
+  withErrors.sort((a, b) => (history[b.guid]?.erros ?? 0) - (history[a.guid]?.erros ?? 0))
+  const usedGuids = new Set(withErrors.map((c) => c.guid))
+  const rest = shuffle(cards.filter((c) => !usedGuids.has(c.guid)))
+  return [...withErrors, ...rest]
+}
+
 // modo infinito (v0.29.6): não fatia mais em SECTOR_SIZE — a fila começa com o baralho
 // inteiro (erradas primeiro, resto embaralhado) e nextQuestion() recicla (reembaralha e volta
 // pro início) quando esgota. Guarda `allShooterCards` só pra essa reciclagem.
@@ -30,15 +43,8 @@ export function createSession(deck, opts = {}) {
   const startingHealth = opts.startingHealth ?? STARTING_HEALTH
   const startingLives = opts.startingLives ?? STARTING_LIVES
 
-  const withErrors = shuffle(shooterCards.filter((c) => (history[c.guid]?.erros ?? 0) > 0))
-  withErrors.sort((a, b) => history[b.guid].erros - history[a.guid].erros)
-  const usedGuids = new Set(withErrors.map((c) => c.guid))
-  const rest = shuffle(shooterCards.filter((c) => !usedGuids.has(c.guid)))
-
-  const queue = [...withErrors, ...rest]
-
   return {
-    queue,
+    queue: buildPriorityQueue(shooterCards, history),
     pointer: 0,
     health: startingHealth,
     lives: startingLives,
@@ -46,7 +52,21 @@ export function createSession(deck, opts = {}) {
     score: 0,
     log: [],
     allShooterCards: shooterCards,
+    // referência (não cópia) — recordResult muta o mesmo objeto que main.js já mantém, então
+    // isso fica automaticamente atualizado com os erros da própria sessão em andamento
+    history,
   }
+}
+
+// Fase 9 (ideia de baralho, item 1): fração de cartas do baralho com pelo menos 1 erro
+// registrado no histórico — usado por main.js pra suavizar/acentuar o ritmo de spawn inicial
+// (baralho historicamente difícil começa um pouco mais devagar; fácil, um pouco mais rápido).
+// Não conhece nada de inimigos/spawn — só devolve a proporção 0..1.
+export function computeDifficultyBias(shooterCards, history) {
+  if (shooterCards.length === 0) return 0.5
+  let missed = 0
+  for (const c of shooterCards) if ((history[c.guid]?.erros ?? 0) > 0) missed += 1
+  return missed / shooterCards.length
 }
 
 function buildAlternatives(card, allCards) {
@@ -63,9 +83,10 @@ function buildAlternatives(card, allCards) {
 
 export function nextQuestion(session, allCards) {
   if (session.lives <= 0) return null
-  // fila esgotou: reembaralha o baralho inteiro e recomeça — é o que faz o jogo ser infinito
+  // fila esgotou: reconstrói (reembaralha + repriorizar erro) e recomeça — é o que faz o jogo
+  // ser infinito, mantendo a prioridade de erro em toda reciclagem, não só na primeira
   if (session.pointer >= session.queue.length) {
-    session.queue = shuffle(session.allShooterCards)
+    session.queue = buildPriorityQueue(session.allShooterCards, session.history)
     session.pointer = 0
   }
   return buildAlternatives(session.queue[session.pointer], allCards)

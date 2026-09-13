@@ -75,6 +75,11 @@ const BONUS_KILL_BONUS = 50
 // ao soltar, o teleguiado mira exatamente nos marcados em vez dos N mais próximos
 const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
 
+// Fase 8 (VISUAL): ângulo de "tô mirando em algo" pra mira normal (crosshair muda de cor) —
+// mais largo que o ENEMY_LOCK_ANGLE do teleguiado porque aqui é só um hint visual, não trava
+// nada de verdade nem afeta o disparo.
+const AIM_HINT_ANGLE = THREE.MathUtils.degToRad(7)
+
 // distância máxima (unidades de mundo) para um alvo poder ser travado/auto-mirável pelo
 // teleguiado (sweepLockOn e a seleção de alvos em fireHomingShot). Sem isso, dá pra
 // "magnetizar" tiro em inimigo a centenas de unidades de distância. Ajuste pra cima (150+) se
@@ -209,6 +214,20 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     }
   }
 
+  // Fase 8 (VISUAL): hint pra mira normal (não teleguiado) — não trava nem marca nada, só
+  // responde "tem um inimigo vivo bem na frente da mira agora?" pro HUD colorir o crosshair.
+  function isAimingAtEnemy(origin, direction) {
+    const frame = rail.getFrameAt(0)
+    for (const e of enemies.getAlive()) {
+      const rel = e.mesh.position.clone().sub(origin)
+      const dist = rel.length()
+      if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
+      const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(rel.normalize()), -1, 1))
+      if (angle < AIM_HINT_ANGLE) return true
+    }
+    return false
+  }
+
   function removeProjectile(p) {
     scene.remove(p.mesh)
     projectiles.splice(projectiles.indexOf(p), 1)
@@ -283,8 +302,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     let enemyKillPoints = 0
     let bonusKillPoints = 0
     let goldenSpecialHit = false
+    let goldenSpecialHitIsHoming = false
+    let goldenHitWorldPos = null
     let timeReductionMs = null
     let bossDefeated = false
+    let bossDefeatedIsHoming = false
+    let bossHitWorldPos = null
     let bossOrbHit = false
     // log de acertos (posição, dano, se matou) — usado pelo main.js pra faíscas, flash no
     // mesh atingido e números de dano flutuantes no HUD
@@ -358,11 +381,18 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
             meshRef: hit.meshRef,
           })
           if (hit.killed) {
-            if (hit.bossDefeated) bossDefeated = true
-            else enemyKills += 1
+            if (hit.bossDefeated) {
+              bossDefeated = true
+              bossDefeatedIsHoming = !!projectile.isHoming
+              bossHitWorldPos = hit.worldPos
+            } else {
+              enemyKills += 1
+            }
           }
         } else if (hit.goldenSpecialHit) {
           goldenSpecialHit = true
+          goldenSpecialHitIsHoming = !!projectile.isHoming
+          goldenHitWorldPos = hit.worldPos
         }
         if (hit.enemyKillPoints) enemyKillPoints += hit.enemyKillPoints
         if (hit.timeReductionMs != null) timeReductionMs = hit.timeReductionMs
@@ -384,7 +414,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (projectile.traveled > PROJECTILE_MAX_RANGE) removeProjectile(projectile)
     }
 
-    return { enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog }
+    return {
+      enemyKills, enemyKillPoints, bonusKillPoints,
+      goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
+      timeReductionMs, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+    }
   }
 
   function updateBonusTargets(dt) {
@@ -561,6 +595,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     },
 
     sweepLockOn,
+    isAimingAtEnemy,
     clearLockedEnemies() { lockedEnemies.clear() },
     getLockedEnemySnapshots: () => [...lockedEnemies]
       .filter((e) => !e.dying)
@@ -578,7 +613,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       elapsed += dt
       cooldown = Math.max(0, cooldown - dt)
 
-      const { enemyKills, enemyKillPoints, bonusKillPoints, goldenSpecialHit, timeReductionMs, bossDefeated, bossOrbHit, hitsLog } = updateProjectiles(dt, aimDirection)
+      const {
+        enemyKills, enemyKillPoints, bonusKillPoints,
+        goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
+        timeReductionMs, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+      } = updateProjectiles(dt, aimDirection)
       updateBonusTargets(dt)
       updateBossOrbs(dt)
 
@@ -586,6 +625,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       let ramKills = 0
       let ramKillPoints = 0
       let ramBossDefeated = false
+      let ramBossWorldPos = null
       if (enemiesActive) {
         // golden (que só existe durante a fase 'goldenArena', já uma das fases
         // "enemiesActive") também atualiza aqui dentro, via enemies.update()
@@ -594,6 +634,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramKills = enemyResult.ramKills
         ramKillPoints = enemyResult.ramKillPoints
         ramBossDefeated = enemyResult.ramBossDefeated
+        ramBossWorldPos = enemyResult.ramBossWorldPos
         enemyHits += enemies.updateProjectiles(dt, playerPosition)
       }
 
@@ -607,8 +648,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bonusKillPoints,
         enemyHits,
         goldenSpecialHit,
+        goldenSpecialHitIsHoming,
+        goldenHitWorldPos,
         timeReductionMs,
         bossDefeated: bossDefeated || ramBossDefeated,
+        bossDefeatedIsHoming,
+        bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || null,
         bossOrbHit,
         hitsLog,
       }

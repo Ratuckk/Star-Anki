@@ -210,6 +210,34 @@ export function injectHudExtraStyles() {
 }
 .hud-boss-tint.active { opacity: 1; }
 
+/* ============ FLASH DE IMPACTO NO ACERTO (Fase 8, "aberração cromática") ============ */
+/* franja vermelho/ciano vindo de cada BORDA lateral (mesmo padrão do .hud-side-flash já
+   existente, só full-screen e nas 2 cores) — testado ao vivo: uma primeira versão com 2
+   radial-gradient quase sobrepostos (offset de poucos px) cancelava as cores num cinza neutro
+   via screen blend; gradiente linear a partir de cada lado separa de verdade (vermelho na
+   esquerda, ciano na direita, centro limpo onde o jogador está olhando) */
+.hud-hit-chromatic {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 25;
+}
+.hud-hit-chromatic::before, .hud-hit-chromatic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+}
+.hud-hit-chromatic::before { background: linear-gradient(to right, rgba(255, 45, 70, 0.6), transparent 45%); }
+.hud-hit-chromatic::after { background: linear-gradient(to left, rgba(45, 220, 255, 0.6), transparent 45%); }
+@keyframes hud-hit-chromatic-anim {
+  0%   { opacity: 0; }
+  30%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.hud-hit-chromatic.flash { animation: hud-hit-chromatic-anim 110ms ease-out; }
+
 /* ============ FAIXAS LATERAIS DE DANO: escudo (azul + grid) vs vida (vermelho) ============ */
 .hud-side-flash {
   position: absolute;
@@ -335,6 +363,62 @@ export function injectHudExtraStyles() {
   border-radius: 6px;
   padding: 1px 6px;
   pointer-events: none;
+}
+
+/* ============ HORIZONTE ARTIFICIAL (Fase 9, ideia all-range 2) ============ */
+.hud-horizon {
+  position: absolute;
+  right: 16px;
+  bottom: 96px;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(124, 224, 255, 0.5);
+  background: #0b0d12;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
+  z-index: 8;
+  pointer-events: none;
+}
+.hud-horizon-line {
+  position: absolute;
+  left: -20px;
+  right: -20px;
+  top: 50%;
+  height: 200px;
+  margin-top: -100px;
+  background: linear-gradient(to bottom, #4da6ff 0%, #4da6ff 50%, #2a1f14 50%, #2a1f14 100%);
+  transition: transform 60ms linear;
+}
+.hud-horizon::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: #ffd166;
+  z-index: 1;
+}
+
+/* ============ FACHO DE ABSORÇÃO DA CARTA (Fase 9, ideia visual 4) ============ */
+.card-absorb-beam {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(124,224,255,0.9) 45%, rgba(124,224,255,0) 75%);
+  box-shadow: 0 0 20px 6px rgba(124,224,255,0.65);
+  pointer-events: none;
+  z-index: 40;
+  animation: card-absorb-travel 420ms cubic-bezier(0.3,0,0.2,1) forwards;
+}
+@keyframes card-absorb-travel {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(0.1); opacity: 0; }
 }
 `
   document.head.appendChild(style)

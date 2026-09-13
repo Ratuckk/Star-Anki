@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import { buildDeck, exportTagsTsv, parseAnkiExport } from './anki.js'
-import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion } from './quiz.js'
+import { buildDeck, exportTagsTsv, parseAnkiExport, filterDeckByTags } from './anki.js'
+import { createSession, nextQuestion, resolveAnswer, getSummary, createPainelSession, nextPainelCard, resolvePainel, pickBonusCard, buildBonusQuestion, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat.js'
 import { createEnemiesSystem } from './enemies.js'
@@ -9,14 +9,13 @@ import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { showPreGameMenu, showDeckManager, showSettingsScreen, createGameHud, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
 import { loadHistory, saveHistory, recordResult } from './storage.js'
-import { getDeck, buildMergedDeck } from './decks.js'
+import { getDeck, buildMergedDeck, buildReviewDeck, REVIEW_DECK_ID } from './decks.js'
 import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
 
 const CYCLE_MS = 90000
 const WARNING_MS = 10000
-const RECALL_MS = 3500
 const FEEDBACK_MS = 1500
 // v0.29.6: errar não mostra mais o painel de feedback (resposta certa/pontos/combo) — só um
 // texto flutuante vermelho pequeno por 3s, e o jogo segura a fase por esse tempo
@@ -31,6 +30,10 @@ const INVINCIBILITY_FLICKER_MS = 90
 const HIT_SHAKE_DURATION_MS = 300
 const SHIP_SHAKE_MAGNITUDE = 0.3
 const CAMERA_SHAKE_MAGNITUDE = 0.5
+// pedido do usuário: shake de tela maior especificamente quando o tiro CARREGADO (teleguiado)
+// destrói um inimigo comum, dourado ou o chefe — usa a mesma barra de tempo de hitShakeTimer,
+// só com um valor bem acima do shake padrão de kill (120ms)
+const HOMING_KILL_SHAKE_MS = 380
 
 // ============ BACKGROUND POR "NÍVEL" ============
 const LEVEL_BACKGROUNDS = [
@@ -74,6 +77,13 @@ const ENEMY_INTERVAL_STEP = 70
 const ENEMY_AGGRESSION_STEP = 0.15
 const ENEMY_AGGRESSION_CAP = 3.5
 
+// Fase 9 (ideia de baralho, item 1): só desloca o PONTO DE PARTIDA do intervalo de spawn — a
+// escalada por erro (applyDifficulty, ENEMY_INTERVAL_STEP) continua igual depois disso. Baralho
+// com histórico de muito erro (difficultyBias perto de 1) começa um pouco mais devagar — o
+// conteúdo já é difícil, não precisa também punir mais no combate; baralho fácil (bias perto de
+// 0) começa um pouco mais rápido.
+const DIFFICULTY_BIAS_INTERVAL_RANGE_MS = 250
+
 // ============ FASE 4: TETO DE INIMIGOS E TAXA DE SPAWN DO MODO NORMAL ============
 const ENEMY_CAP_NORMAL_BASE = 16
 const ENEMY_CAP_ARENA_BASE = 20
@@ -92,8 +102,6 @@ const REVIEW_ENEMY_INTERVAL_MULT = 0.6
 
 const GOLDEN_INTERVAL_MIN_MS = 45000
 const GOLDEN_INTERVAL_MAX_MS = 100000
-const GOLDEN_ARENA_MS_MIN = 25000
-const GOLDEN_ARENA_MS_MAX = 30000
 const GOLDEN_SPREAD_MIN = 40
 const GOLDEN_SPREAD_MAX = 90
 
@@ -109,6 +117,19 @@ const ARENA_WARNING_STOP_SPAWN_MS = 8000
 const ARENA_CUTSCENE_MS = 2500
 const ARENA_CUTSCENE_PULLBACK = 14
 const ARENA_CUTSCENE_FOV_BUMP = 16
+// Fase 8 (VISUAL): leve varredura lateral por cima do pull-back reto (sai e volta, sincronizada
+// com o mesmo `pull` do zoom) — dá sensação de dolly/orbit de verdade em vez de câmera só
+// recuando em linha reta olhando pro mesmo ponto.
+const ARENA_CUTSCENE_ORBIT = 9
+
+// ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
+// pedido do usuário: câmera lenta segurando na explosão do chefe/dourado ao ser derrotado,
+// em vez de sair da arena instantaneamente por cima da explosão ainda rodando. Nave travada
+// (sem input), tempo desacelerado — a explosão (efeitos + encolhimento do mesh em enemies.js)
+// continua rodando normalmente durante a cutscene, só em câmera lenta.
+const DEATH_CUTSCENE_MS = 1400
+const DEATH_CUTSCENE_TIME_SCALE = 0.22
+const DEATH_CUTSCENE_ZOOM_FOV = 55
 
 // ============ ROGUELIKE (fase 4) ============
 const HOMING_LOCK_INTERVAL_MS = 500
@@ -129,15 +150,31 @@ let history = loadHistory()
 let sessionResults = []
 let painelDone = false
 
-function handlePlayDeck(deckId) {
-  const entry = getDeck(deckId)
-  if (!entry) return
-  const built = buildDeck(entry.text)
-  if (built.warning) return
+// tagFilter (Fase 9, ideia de baralho "tags/categorias"): guids de assunto marcados no
+// gerenciador de baralhos — vazio joga o baralho inteiro, igual sempre foi.
+function handlePlayDeck(deckId, tagFilter = []) {
+  let built
+  let text = null
+  if (deckId === REVIEW_DECK_ID) {
+    // Fase 9 (ideia de baralho "revisão automática"): baralho virtual, recalculado na hora a
+    // partir do histórico — nunca fica obsoleto, e não existe texto original pra exportar tags.
+    built = buildReviewDeck(history)
+    if (!built) return
+  } else {
+    const entry = getDeck(deckId)
+    if (!entry) return
+    text = entry.text
+    built = buildDeck(text)
+    if (built.warning) return
+    if (tagFilter.length > 0) {
+      built = filterDeckByTags(built, tagFilter)
+      if (built.warning) return
+    }
+  }
 
   currentDeckIds = deckId
   deck = built
-  deckTexts = [entry.text]
+  deckTexts = text ? [text] : []
   sessionResults = []
   painelDone = false
   mountGame(createSession(deck, { history, startingHealth: getSettings().startingHealth }))
@@ -159,8 +196,8 @@ function restart() {
   deck = null
   deckTexts = []
   showPreGameMenu({
-    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart }),
-    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, startInAdd: true }),
+    onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, history }),
+    onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, startInAdd: true, history }),
     onSettings: () => showSettingsScreen({ onBack: restart }),
   })
 }
@@ -282,6 +319,8 @@ function mountGame(session) {
   scene.add(grid)
 
   const rail = createRailController(camera, scene)
+  // Fase 9 (ideia all-range, item 5): sensibilidade de giro configurável em Configurações
+  rail.setTurnSensitivity(getSettings().arenaTurnSensitivity)
   const effects = createEffectsSystem(scene, { grid })
   const enemies = createEnemiesSystem(scene, rail, effects)
   const player = createPlayerSystem(session)
@@ -302,6 +341,9 @@ function mountGame(session) {
   let pendingCardChoice = false
   let lastDodgeLeftTapAt = -Infinity
   let lastDodgeRightTapAt = -Infinity
+  // Fase 9 (ideia all-range, item 4): duplo toque em repulsão (sem Baixo, que já é a
+  // cambalhota) dispara o freio de emergência — mesma janela de detecção do giro completo
+  let lastRepulsionTapAt = -Infinity
 
   let bossHealthMultiplier = 1
   let bossBuildupTimer = 0
@@ -312,6 +354,13 @@ function mountGame(session) {
   let arenaCutsceneOnDone = null // callback chamado quando a cutscene termina (enterGoldenArena/enterBossBuildup)
   let arenaCutsceneBaseCameraPos = null // posição da câmera capturada no instante em que a cutscene começa
   let arenaCutsceneBaseForward = null // direção "pra frente" da nave nesse mesmo instante
+  let arenaCutsceneBaseRight = null // Fase 8: lateral da nave nesse instante, pro leve orbit da câmera
+
+  // ============ CUTSCENE DE MORTE (chefe/dourado) — câmera lenta segurando na explosão antes
+  // de sair da arena, em vez da transição instantânea direto pro modo normal ============
+  let deathCutsceneTimer = 0
+  let deathCutscenePos = null // posição (clonada) de onde o inimigo explodiu, câmera foca nela
+  let deathCutsceneOnDone = null // callback com a transição de verdade (bossVictory/goldenAlternatives)
 
   let fireHeldMs = 0
   let reticleOffsetX = 0
@@ -339,11 +388,14 @@ function mountGame(session) {
   let pendingQuestionKind = null
 
   let goldenTimer = randomGoldenInterval()
-  let goldenArenaTimer = 0
   let goldenCard = null
 
-  let enemyIntervalMin = ENEMY_INTERVAL_MIN_BASE
-  let enemyIntervalMax = ENEMY_INTERVAL_MAX_BASE
+  // Fase 9 (ideia de baralho, item 1): desloca só o ponto de partida do intervalo de spawn
+  // pelo histórico de erro do baralho — ver comentário de DIFFICULTY_BIAS_INTERVAL_RANGE_MS
+  const difficultyBias = computeDifficultyBias(deck.shooterCards, history)
+  const difficultyBiasOffsetMs = (difficultyBias - 0.5) * 2 * DIFFICULTY_BIAS_INTERVAL_RANGE_MS
+  let enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_MIN_BASE + difficultyBiasOffsetMs)
+  let enemyIntervalMax = Math.max(enemyIntervalMin + 150, ENEMY_INTERVAL_MAX_BASE + difficultyBiasOffsetMs)
   let enemyAggression = 1
 
   let enemyCap = 0
@@ -368,10 +420,6 @@ function mountGame(session) {
 
   function randomGoldenInterval() {
     return GOLDEN_INTERVAL_MIN_MS + Math.random() * (GOLDEN_INTERVAL_MAX_MS - GOLDEN_INTERVAL_MIN_MS)
-  }
-
-  function randomGoldenArenaMs() {
-    return GOLDEN_ARENA_MS_MIN + Math.random() * (GOLDEN_ARENA_MS_MAX - GOLDEN_ARENA_MS_MIN)
   }
 
 
@@ -456,27 +504,22 @@ function mountGame(session) {
     scene.fog.color.set(bg)
   }
 
-  function enterRecall() {
-    phase = 'recall'
-    phaseTimer = RECALL_MS
-    rail.setAdvancing(false)
-    combat.clearBonusTargets()
-    hud.setCountdown(null)
-    hud.setQuestion(session.queue[session.pointer].question)
-    hud.setAlternatives(null)
-    hud.setFeedback(null)
-  }
-
   // Fase 6: pergunta normal também pausa tudo e usa o modal centralizado (mesmo modelo do
   // chefe, Fase 5) — não é mais "voa e atira nos 4 alvos flutuantes". pendingQuestionKind
   // marca qual settle function usar enquanto phase === 'questionPause' (normal ou dourado
   // compartilham a mesma fase de pausa).
+  // v0.32: pergunta abre na hora que o ciclo termina — era precedida por uma fase 'recall' de
+  // 3.5s (só mostrando o texto da pergunta, sem alternativas, sobra da mecânica antiga de
+  // "voar e atirar") que o usuário reportou como "intervalo estranho depois que o jogo pausa".
   function enterAlternatives() {
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()
       return
     }
+    combat.clearBonusTargets()
+    hud.setCountdown(null)
+    hud.setFeedback(null)
     questionResult = result
     pendingQuestionKind = 'normal'
     phase = 'questionPause'
@@ -603,6 +646,7 @@ function mountGame(session) {
     arenaCutsceneOnDone = onDone
     arenaCutsceneBaseCameraPos = camera.position.clone()
     arenaCutsceneBaseForward = rail.getFrameAt(0).forward.clone()
+    arenaCutsceneBaseRight = rail.getFrameAt(0).right.clone()
     hud.setArenaWarning(null)
     hud.setCountdown(null)
     hud.setArenaCutscene(kind)
@@ -629,7 +673,8 @@ function mountGame(session) {
 
   function enterGoldenArena() {
     phase = 'goldenArena'
-    goldenArenaTimer = randomGoldenArenaMs()
+    // v0.32: duração ilimitada — a luta só acaba quando o dourado é derrotado (pedido do
+    // usuário), sem mais um timeout que forçava a volta ao combate normal.
     rail.enterArena()
     combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX })
     hud.setGoldenActive(true)
@@ -648,17 +693,9 @@ function mountGame(session) {
     hud.setFeedback(null)
   }
 
-  function enterGoldenRecall() {
-    goldenCard = pickBonusCard(deck, session)
-    phase = 'goldenRecall'
-    phaseTimer = RECALL_MS
-    rail.setAdvancing(false)
-    hud.setQuestion(goldenCard.question)
-    hud.setAlternatives(null)
-    hud.setFeedback(null)
-  }
-
+  // v0.32: mesma mudança da pergunta normal — sem a fase 'goldenRecall' de 3.5s antes do modal
   function enterGoldenAlternatives() {
+    goldenCard = pickBonusCard(deck, session)
     const result = buildBonusQuestion(goldenCard, deck.allCards)
     questionResult = result
     pendingQuestionKind = 'golden'
@@ -799,7 +836,9 @@ function mountGame(session) {
       arenaCutsceneTimer -= dt * 1000
       const t = THREE.MathUtils.clamp(1 - Math.max(0, arenaCutsceneTimer) / ARENA_CUTSCENE_MS, 0, 1)
       const pull = Math.sin(Math.min(1, t) * Math.PI)
-      camera.position.copy(arenaCutsceneBaseCameraPos).addScaledVector(arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
+      camera.position.copy(arenaCutsceneBaseCameraPos)
+        .addScaledVector(arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
+        .addScaledVector(arenaCutsceneBaseRight, pull * ARENA_CUTSCENE_ORBIT)
       camera.fov = 70 + pull * ARENA_CUTSCENE_FOV_BUMP
       camera.updateProjectionMatrix()
       camera.lookAt(arenaCutsceneBaseCameraPos.clone().addScaledVector(arenaCutsceneBaseForward, 40))
@@ -815,14 +854,73 @@ function mountGame(session) {
       return
     }
 
+    // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
+    // pedido do usuário: "cutscene em câmera lenta do inimigo dourado/boss sendo destruído e
+    // explodindo" em vez da transição instantânea pro modo normal. Nave travada (sem input),
+    // tempo desacelerado — a explosão e o encolhimento do mesh morrendo (já disparados no
+    // frame do kill, dentro de enemies.js) continuam a tocar por baixo, só mais devagar; a
+    // câmera gira suavemente (tempo real, não desacelerado) até focar na explosão e segura ali.
+    if (phase === 'deathCutscene') {
+      deathCutsceneTimer -= rawDt * 1000
+      const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
+      effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+        camera,
+        shieldValue: player.getShieldValue(),
+        shieldMax: player.getShieldMax(),
+        boostActive: false,
+        skipTrail: true,
+      })
+      const t = THREE.MathUtils.clamp(1 - Math.max(0, deathCutsceneTimer) / DEATH_CUTSCENE_MS, 0, 1)
+      const zoomT = Math.sin(Math.min(1, t) * Math.PI)
+      camera.fov = 70 - zoomT * (70 - DEATH_CUTSCENE_ZOOM_FOV)
+      camera.updateProjectionMatrix()
+      if (deathCutscenePos) {
+        const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+          new THREE.Matrix4().lookAt(camera.position, deathCutscenePos, camera.up),
+        )
+        camera.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * rawDt))
+      }
+      if (deathCutsceneTimer <= 0) {
+        camera.fov = 70
+        camera.updateProjectionMatrix()
+        const done = deathCutsceneOnDone
+        deathCutsceneOnDone = null
+        deathCutscenePos = null
+        done()
+      }
+      renderer.render(scene, camera)
+      return
+    }
+
     hitShakeTimer = Math.max(0, hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
     player.update(dt)
-    rail.update(dt, inputState)
+
+    // Fase 9 (ideia all-range, item 3): guinada extra fraca em direção ao inimigo mais próximo
+    // quando ele está fora do centro da mira — só no all-range, e só um hint, não sobrepõe o
+    // controle manual. Usa a posição do inimigo do FIM do frame anterior (combat/enemies ainda
+    // não rodaram neste frame) — 1 frame de atraso, imperceptível num assist tão fraco.
+    let assistTarget = null
+    if (rail.isArena()) {
+      const prevPos = rail.getPlayerPosition()
+      let nearestDist = Infinity
+      for (const s of combat.getEnemySnapshots()) {
+        const d = prevPos.distanceTo(s.worldPos)
+        if (d < nearestDist) { nearestDist = d; assistTarget = s.worldPos }
+      }
+    }
+    rail.update(dt, inputState, { assistTarget })
     const playerPos = rail.getPlayerPosition()
     const noseFrame = rail.getFrameAt(0)
     const nosePos = rail.getShipNosePosition()
+
+    if (rail.isArena()) {
+      const attitude = rail.getArenaAttitude()
+      hud.setHorizon(attitude.pitch, attitude.roll)
+    } else {
+      hud.setHorizon(null)
+    }
 
     let reticleX = 0
     let reticleY = 0
@@ -846,6 +944,10 @@ function mountGame(session) {
       .addScaledVector(noseFrame.forward, RETICLE_AHEAD)
 
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
+
+    // Fase 8 (VISUAL): mira normal acende quando há um inimigo vivo na frente dela — só hint,
+    // roda sempre (charging ou não), independente do lock-on de verdade do tiro teleguiado
+    hud.setReticleAiming(combat.isAimingAtEnemy(nosePos, fireDirection))
 
     const isCharging = fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
@@ -920,8 +1022,13 @@ function mountGame(session) {
     if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
       if (arenaNow && inputState.moveY === -1) {
         rail.triggerArenaSummersault()
+      } else if (arenaNow && nowMs - lastRepulsionTapAt <= DODGE_TAP_WINDOW_MS) {
+        // 2º toque rápido (sem Baixo) — freio de emergência em vez de outra repulsão normal
+        rail.triggerEmergencyBrake()
+        lastRepulsionTapAt = -Infinity
       } else {
         player.activateRepulsion()
+        lastRepulsionTapAt = nowMs
       }
     }
 
@@ -931,6 +1038,7 @@ function mountGame(session) {
     const boostOn = player.isPropulsionActive()
     hud.setMotionLines(boostOn)
     hud.setBoostDistortion(boostOn)
+    rail.setBoostActive(boostOn)
 
     const ramActive = player.isRamCardActive() && player.isPropulsionActive()
     if (ramActive) player.grantInvincibility(player.getPropulsionActiveTimer())
@@ -945,8 +1053,10 @@ function mountGame(session) {
     // ============ HIT MARKER ============
     if (events.enemyKills > 0 || events.bonusKillPoints > 0 || events.goldenSpecialHit || events.bossDefeated) {
       hud.hitMarker(true)
+      hud.flashHitImpact()
     } else if (events.hitsLog && events.hitsLog.length > 0) {
       hud.hitMarker(false)
+      hud.flashHitImpact()
     }
 
     // ============ FAÍSCAS + FLASH NO MESH + SHAKE DE KILL ============
@@ -960,6 +1070,11 @@ function mountGame(session) {
       hitShakeTimer = Math.max(hitShakeTimer, 120)
       effects.gridPulse()
     }
+    // shake maior — inimigo comum, dourado ou chefe destruído pelo tiro carregado (teleguiado)
+    const chargedKillHappened =
+      (events.hitsLog && events.hitsLog.some((h) => h.killed && h.isHoming)) ||
+      (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
+    if (chargedKillHappened) hitShakeTimer = Math.max(hitShakeTimer, HOMING_KILL_SHAKE_MS)
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
     if (events.hitsLog && events.hitsLog.length > 0) {
@@ -1008,21 +1123,30 @@ function mountGame(session) {
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.timeReductionMs) cycleTimer = Math.max(0, cycleTimer - events.timeReductionMs)
 
+    // pedido do usuário: cutscene em câmera lenta do chefe explodindo antes de sair da arena,
+    // em vez da transição instantânea/awkward direto pro modo normal — a explosão de verdade
+    // (explodeBoss) já foi disparada dentro de enemies.js no mesmo frame; aqui só segura a
+    // câmera nela por um instante em slow-mo antes de aplicar a transição de verdade.
     if (events.bossDefeated && phase === 'bossFight') {
-      session.score += BOSS_DEFEAT_BONUS
       hud.setBossFight(false)
       hud.setBossTint(false)
-      rail.exitArena()
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: '',
-        points: BOSS_DEFEAT_BONUS,
-        comboMultiplier: session.comboMultiplier,
-        health: session.health,
-      })
-      pendingCardChoice = true
-      phase = 'bossVictory'
-      phaseTimer = FEEDBACK_MS
+      deathCutscenePos = (events.bossHitWorldPos || playerPos).clone()
+      deathCutsceneOnDone = () => {
+        session.score += BOSS_DEFEAT_BONUS
+        rail.exitArena()
+        hud.setFeedback({
+          correct: true,
+          correctAnswer: '',
+          points: BOSS_DEFEAT_BONUS,
+          comboMultiplier: session.comboMultiplier,
+          health: session.health,
+        })
+        pendingCardChoice = true
+        phase = 'bossVictory'
+        phaseTimer = FEEDBACK_MS
+      }
+      phase = 'deathCutscene'
+      deathCutsceneTimer = DEATH_CUTSCENE_MS
     }
 
     // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============
@@ -1108,13 +1232,11 @@ function mountGame(session) {
           hud.setCountdown(Math.max(0, Math.ceil(cycleTimer / 1000)), cycleTimer <= WARNING_MS)
           hud.setArenaWarning(goldenWarnActive ? 'golden' : null, goldenWarnActive ? Math.max(1, Math.ceil(goldenTimer / 1000)) : null)
         }
-        if (cycleTimer <= 0) enterRecall()
-      }
-    } else if (phase === 'recall') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) {
-        if (isBossCycle) startArenaCutscene('boss', enterBossBuildup)
-        else enterAlternatives()
+        // v0.32: pergunta abre na hora — sem a fase 'recall' de 3.5s antes do modal
+        if (cycleTimer <= 0) {
+          if (isBossCycle) startArenaCutscene('boss', enterBossBuildup)
+          else enterAlternatives()
+        }
       }
     } else if (phase === 'bossBuildup') {
       bossBuildupTimer -= dt * 1000
@@ -1141,19 +1263,17 @@ function mountGame(session) {
         else enterCombat()
       }
     } else if (phase === 'goldenArena') {
+      // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário),
+      // e a explosão dele ganha a mesma cutscene em câmera lenta do chefe antes da transição.
       if (events.goldenSpecialHit) {
-        exitGoldenArenaVisuals()
-        enterGoldenRecall()
-      } else {
-        goldenArenaTimer -= dt * 1000
-        if (goldenArenaTimer <= 0) {
+        deathCutscenePos = (events.goldenHitWorldPos || playerPos).clone()
+        deathCutsceneOnDone = () => {
           exitGoldenArenaVisuals()
-          resumeCombatFromGolden()
+          enterGoldenAlternatives()
         }
+        phase = 'deathCutscene'
+        deathCutsceneTimer = DEATH_CUTSCENE_MS
       }
-    } else if (phase === 'goldenRecall') {
-      phaseTimer -= dt * 1000
-      if (phaseTimer <= 0) enterGoldenAlternatives()
     } else if (phase === 'resolution') {
       phaseTimer -= dt * 1000
       if (phaseTimer <= 0) {

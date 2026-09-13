@@ -186,6 +186,21 @@ export function generateDistractors(card, allCards, opts = { count: 3 }) {
   return picked
 }
 
+// Fase 9 (ideia de baralho, item 2): filtra um baralho já construído por tags do Anki
+// (`card.tags`, já vem nativo do export — nenhuma sintaxe nova precisou ser inventada). Usado
+// pelo gerenciador de baralhos quando o jogador marca 1+ "assunto" antes de jogar.
+export function filterDeckByTags(built, tags) {
+  const tagSet = new Set(tags)
+  const matches = (c) => c.tags.some((t) => tagSet.has(t))
+  const shooterCards = built.shooterCards.filter(matches)
+  const painelCards = built.painelCards.filter(matches)
+  const allCards = built.allCards.filter(matches)
+  const warning = shooterCards.length < 4
+    ? `Filtro deixou poucas perguntas de combate (${shooterCards.length}, mínimo 4) — remova algum assunto marcado.`
+    : null
+  return { shooterCards, painelCards, allCards, warning }
+}
+
 export function exportTagsTsv(originalText, results) {
   const lines = originalText.split(/\r\n|\r|\n/)
   const headerLines = lines.filter((l) => l.startsWith('#'))

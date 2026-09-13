@@ -3,6 +3,14 @@ import { buildDeck } from './anki.js'
 const DECKS_KEY = 'star-anki-decks-v1'
 const LEGACY_DECK_KEY = 'star-anki-saved-deck'
 
+// Fase 9 (ideia de baralho, item 5): "baralho de revisão" virtual — nunca é salvo em
+// star-anki-decks-v1, é recalculado toda vez a partir do histórico + dos baralhos reais já
+// salvos. REVIEW_DECK_ID identifica ele nos mesmos fluxos (onPlay/handlePlayDeck) que um id de
+// baralho de verdade usa.
+export const REVIEW_DECK_ID = '__review__'
+const REVIEW_MIN_CARDS = 8
+const REVIEW_MAX_CARDS = 40
+
 function readAll() {
   try {
     const raw = localStorage.getItem(DECKS_KEY)
@@ -117,4 +125,23 @@ export function updateDeck(id, { name, text }) {
 
 export function removeDeck(id) {
   writeAll(readAll().filter((d) => d.id !== id))
+}
+
+// Fase 9: junta as perguntas com pelo menos 1 erro registrado, de TODOS os baralhos salvos
+// (dedupe por guid, prioriza a maior contagem de erro), até REVIEW_MAX_CARDS. Devolve null se
+// não há dado suficiente ainda (REVIEW_MIN_CARDS) — quem chama decide se mostra a opção ou não.
+export function buildReviewDeck(history) {
+  const byGuid = new Map()
+  for (const entry of readAll()) {
+    const built = buildDeck(entry.text)
+    if (built.warning) continue
+    for (const card of built.shooterCards) {
+      if (!byGuid.has(card.guid) && (history[card.guid]?.erros ?? 0) > 0) byGuid.set(card.guid, card)
+    }
+  }
+  const cards = [...byGuid.values()]
+    .sort((a, b) => (history[b.guid]?.erros ?? 0) - (history[a.guid]?.erros ?? 0))
+    .slice(0, REVIEW_MAX_CARDS)
+  if (cards.length < REVIEW_MIN_CARDS) return null
+  return { shooterCards: cards, painelCards: [], allCards: cards, warning: null }
 }

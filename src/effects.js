@@ -29,13 +29,15 @@ const STAR_FLATTEN = 0.55
 const STAR_SIZE = 1.0
 
 // ============ EXPLOSION ============
-// v0.29.6: maior e mais espalhafatosa — mais partículas, mais rápidas, maiores, e um flash
-// central (bloomSprite) somado por cima pra dar o "punch" que faltava
-const EXPLOSION_PARTICLES = 26 // era 16
-const EXPLOSION_DURATION = 0.75 // era 0.55
-const EXPLOSION_SPEED_MIN = 14 // era 10
-const EXPLOSION_SPEED_MAX = 28 // era 22
-const EXPLOSION_PARTICLE_SIZE = 0.9 // era 0.7
+// pedido do usuário (definição explícita do efeito): "diversos círculos se expandindo e
+// sumindo rapidamente com redução de opacidade" — substitui a explosão antiga (partículas
+// esféricas voando) por vários anéis billboard nascendo em sequência (pequeno atraso entre
+// eles), cada um crescendo até um raio maior que o anterior enquanto a opacidade cai a zero.
+const EXPLOSION_RING_COUNT = 4
+const EXPLOSION_RING_DURATION = 0.4
+const EXPLOSION_RING_STAGGER = 0.06
+const EXPLOSION_RING_THICKNESS = 0.22
+const EXPLOSION_RING_START_SCALE = 0.15
 
 // ============ MUZZLE FLASH ============
 const MUZZLE_DURATION = 0.07
@@ -324,27 +326,20 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function explosion(position, colorHex, size = 1) {
-    const geometry = new THREE.BufferGeometry()
-    const positions = new Float32Array(EXPLOSION_PARTICLES * 3)
-    const velocities = new Float32Array(EXPLOSION_PARTICLES * 3)
-    for (let i = 0; i < EXPLOSION_PARTICLES; i++) {
-      positions[i*3] = position.x; positions[i*3+1] = position.y; positions[i*3+2] = position.z
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      const speed = (EXPLOSION_SPEED_MIN + Math.random() * (EXPLOSION_SPEED_MAX - EXPLOSION_SPEED_MIN)) * size
-      velocities[i*3] = Math.sin(phi) * Math.cos(theta) * speed
-      velocities[i*3+1] = Math.sin(phi) * Math.sin(theta) * speed
-      velocities[i*3+2] = Math.cos(phi) * speed
+    // "diversos círculos se expandindo e sumindo rapidamente com redução de opacidade" — cada
+    // anel nasce com um pequeno atraso (life negativo, contado no update()) em relação ao
+    // anterior, e cresce até um raio maior que o anterior (i-ésimo anel = mais externo).
+    for (let i = 0; i < EXPLOSION_RING_COUNT; i += 1) {
+      const mesh = makeRingMesh(colorHex, EXPLOSION_RING_THICKNESS)
+      mesh.position.copy(position)
+      mesh.scale.setScalar(EXPLOSION_RING_START_SCALE)
+      mesh.material.opacity = 0
+      scene.add(mesh)
+      bursts.push({
+        mesh, life: -i * EXPLOSION_RING_STAGGER,
+        maxScale: (1.8 + i * 1.15) * size,
+      })
     }
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    const material = new THREE.PointsMaterial({
-      color: colorHex, size: EXPLOSION_PARTICLE_SIZE * size, sizeAttenuation: true,
-      transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    })
-    const points = new THREE.Points(geometry, material)
-    points.frustumCulled = false
-    scene.add(points)
-    bursts.push({ points, velocities, life: 0 })
     // flash central que expande rápido — dá o "punch" que faltava nas explosões menores
     bloomSprite(position, colorHex, size * 0.8)
   }
@@ -594,6 +589,7 @@ export function createEffectsSystem(scene, opts = {}) {
   function update(dt, shipPosition, shipForward, opts = {}) {
     const { skipTrail = false, boostActive = false } = opts
     const now = performance.now()
+    const cam = opts.camera
 
     // ENGINE FLAME (Fase 7) — chama única e persistente em vez de partículas spawnadas por
     // intervalo: só muda tamanho/cor/opacidade conforme o boost, nunca multiplica cópias.
@@ -661,26 +657,22 @@ export function createEffectsSystem(scene, opts = {}) {
       attr.needsUpdate = true
     }
 
-    // EXPLOSION BURSTS
+    // EXPLOSION RINGS — "diversos círculos se expandindo e sumindo rapidamente com redução de
+    // opacidade" (pedido do usuário). life negativo = ainda não nasceu (atraso escalonado entre
+    // os anéis de uma mesma explosão); ao nascer, cresce rápido até maxScale e a opacidade cai.
     for (let i = bursts.length - 1; i >= 0; i--) {
       const b = bursts[i]
       b.life += dt
-      const t = b.life / EXPLOSION_DURATION
+      if (b.life < 0) continue
+      const t = b.life / EXPLOSION_RING_DURATION
       if (t >= 1) {
-        scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose()
+        scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose()
         bursts.splice(i, 1); continue
       }
-      const attr = b.points.geometry.attributes.position
-      const arr = attr.array
-      const drag = Math.max(0, 1 - dt * 2.5)
-      for (let j = 0; j < arr.length; j += 3) {
-        arr[j] += b.velocities[j] * dt
-        arr[j+1] += b.velocities[j+1] * dt
-        arr[j+2] += b.velocities[j+2] * dt
-        b.velocities[j] *= drag; b.velocities[j+1] *= drag; b.velocities[j+2] *= drag
-      }
-      attr.needsUpdate = true
-      b.points.material.opacity = Math.max(0, 1 - t)
+      const scale = EXPLOSION_RING_START_SCALE + (b.maxScale - EXPLOSION_RING_START_SCALE) * Math.sqrt(t)
+      b.mesh.scale.setScalar(scale)
+      b.mesh.material.opacity = 0.85 * (1 - t)
+      if (cam) b.mesh.quaternion.copy(cam.quaternion)
     }
 
     // HIT SPARKS
@@ -774,7 +766,6 @@ export function createEffectsSystem(scene, opts = {}) {
     }
 
     // SHOCKWAVES (billboard)
-    const cam = opts.camera
     for (let i = shockwaves.length - 1; i >= 0; i--) {
       const s = shockwaves[i]
       s.life += dt
@@ -932,7 +923,7 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.remove(dustPoints); dustGeometry.dispose(); dustMaterial.dispose()
     scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); fogWispTexture.dispose()
     scene.remove(engineFlameMesh); engineFlameGeometry.dispose(); engineFlameMaterial.dispose()
-    for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
+    for (const b of bursts) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
     for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }

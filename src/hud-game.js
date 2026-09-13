@@ -45,11 +45,18 @@ export function createGameHud() {
   sideFlash.className = 'hud-side-flash'
   root.appendChild(sideFlash)
 
+  // Fase 8 (VISUAL): flash de "aberração cromática" no impacto de um tiro certeiro — separa
+  // visualmente "acertei" de "fui acertado" (que já usa vermelho no damageVignette/sideFlash)
+  const hitChromatic = document.createElement('div')
+  hitChromatic.className = 'hud-hit-chromatic'
+  root.appendChild(hitChromatic)
+
   // ============ MIRA + HIT MARKER ============
   const reticle = document.createElement('div')
   reticle.className = 'reticle'
   reticle.innerHTML = '<div class="reticle-ring"></div>'
   root.appendChild(reticle)
+  const reticleRing = reticle.querySelector('.reticle-ring')
 
   const hitMarkerEl = document.createElement('div')
   hitMarkerEl.className = 'hit-marker'
@@ -61,6 +68,17 @@ export function createGameHud() {
   const status = document.createElement('div')
   status.className = 'hud-status'
   root.appendChild(status)
+
+  // ============ HORIZONTE ARTIFICIAL (Fase 9, ideia all-range 2) ============
+  // só visível no modo all-range — ajuda a não perder a noção de "pra cima" (main.js chama
+  // setHorizon(null) fora do all-range pra esconder). Linha de céu/chão que gira com o roll e
+  // desloca verticalmente com o pitch, dentro de um recorte circular.
+  const horizon = document.createElement('div')
+  horizon.className = 'hud-horizon'
+  horizon.hidden = true
+  horizon.innerHTML = '<div class="hud-horizon-line"></div>'
+  root.appendChild(horizon)
+  const horizonLine = horizon.querySelector('.hud-horizon-line')
 
   const livesBar = document.createElement('div')
   livesBar.className = 'hud-lives-bar'
@@ -214,6 +232,26 @@ export function createGameHud() {
   // (evita listener órfão se o modal abrir/fechar várias vezes, ou se `hideQuestionModal` for
   // chamado de fora sem ter passado pelo clique)
   let questionModalKeyHandler = null
+  // mesma ideia, pra tela de escolha de carta roguelike (pedido do usuário: selecionar as
+  // cartas pelos números também, igual já funciona na pergunta)
+  let cardChoiceKeyHandler = null
+
+  // Fase 9 (ideia visual 4, bloco 1): "facho de absorção" — uma partícula de luz viajando do
+  // card escolhido até a nave (aproximada pelo centro-baixo da tela) no instante da escolha,
+  // reforçando "esse upgrade entrou em mim" antes do overlay fechar. Puramente DOM/CSS — a
+  // escolha em si já fecha o overlay logo em seguida, então isso só precisa sobreviver ~400ms.
+  function cardAbsorbBeam(rect) {
+    const startX = rect.left + rect.width / 2
+    const startY = rect.top + rect.height / 2
+    const el = document.createElement('div')
+    el.className = 'card-absorb-beam'
+    el.style.left = `${startX}px`
+    el.style.top = `${startY}px`
+    el.style.setProperty('--tx', `${window.innerWidth * 0.5 - startX}px`)
+    el.style.setProperty('--ty', `${window.innerHeight * 0.82 - startY}px`)
+    root.appendChild(el)
+    setTimeout(() => el.remove(), 450)
+  }
 
   const enemyBarPool = new Map()
   const lockMarkerPool = new Map()
@@ -464,6 +502,22 @@ export function createGameHud() {
       reticle.style.top = `${yFrac * 100}%`
     },
 
+    // Fase 8 (VISUAL): mira muda de cor/engrossa quando há um inimigo vivo bem na frente dela
+    // (combat.isAimingAtEnemy) — só hint visual, não afeta o disparo nem o teleguiado.
+    setReticleAiming(active) {
+      reticleRing.classList.toggle('aiming', !!active)
+    },
+
+    // Fase 9 (ideia all-range 2): horizonte artificial — passar null esconde (fora do
+    // all-range). pitch/roll em radianos, vindos de rail.getArenaAttitude().
+    setHorizon(pitch, roll) {
+      if (pitch == null) { horizon.hidden = true; return }
+      horizon.hidden = false
+      const rollDeg = -roll * (180 / Math.PI)
+      const pitchOffsetPx = pitch * 60
+      horizonLine.style.transform = `translateY(${pitchOffsetPx}px) rotate(${rollDeg}deg)`
+    },
+
     hitMarker(killed = false) {
       hitMarkerEl.classList.remove('active', 'kill')
       void hitMarkerEl.offsetWidth
@@ -473,6 +527,12 @@ export function createGameHud() {
       hitMarkerTimeout = setTimeout(() => {
         hitMarkerEl.classList.remove('active', 'kill')
       }, killed ? 240 : 170)
+    },
+
+    flashHitImpact() {
+      hitChromatic.classList.remove('flash')
+      void hitChromatic.offsetWidth
+      hitChromatic.classList.add('flash')
     },
 
     spawnDamageNumber(xFrac, yFrac, value, opts = {}) {
@@ -576,19 +636,48 @@ export function createGameHud() {
       }
     },
 
+    // pedido do usuário: selecionar as cartas de upgrade pelos NÚMEROS também, igual já
+    // funciona no modal de pergunta — reusa os mesmos binds quizSlot1..4 (Digit1..4 por padrão).
     showCardChoice({ cards, onPick }) {
       cardChoiceList.innerHTML = ''
-      for (const card of cards) {
+      const close = () => {
+        cardChoiceOverlay.hidden = true
+        if (cardChoiceKeyHandler) {
+          window.removeEventListener('keydown', cardChoiceKeyHandler)
+          cardChoiceKeyHandler = null
+        }
+      }
+      cards.forEach((card, i) => {
         const el = document.createElement('button')
         el.className = `roguelike-card category-${card.category}`
-        el.innerHTML = `<span class="card-category">${CARD_CATEGORY_LABEL[card.category] ?? card.category}</span><h4>${card.label}</h4><p>${card.description}</p>`
+        el.innerHTML = `<span class="card-category">${CARD_CATEGORY_LABEL[card.category] ?? card.category}</span><h4>${card.label}</h4><p>${card.description}</p><span class="question-modal-hint">${i + 1}</span>`
         el.addEventListener('click', () => {
-          cardChoiceOverlay.hidden = true
+          cardAbsorbBeam(el.getBoundingClientRect())
+          close()
           onPick(card)
         })
         cardChoiceList.appendChild(el)
-      }
+      })
       cardChoiceOverlay.hidden = false
+
+      if (cardChoiceKeyHandler) {
+        window.removeEventListener('keydown', cardChoiceKeyHandler)
+        cardChoiceKeyHandler = null
+      }
+      const bindings = getBindings()
+      cardChoiceKeyHandler = (e) => {
+        for (let i = 0; i < cards.length; i += 1) {
+          const codes = bindings.actions[`quizSlot${i + 1}`] || []
+          if (codes.includes(e.code)) {
+            e.preventDefault()
+            cardAbsorbBeam(cardChoiceList.children[i].getBoundingClientRect())
+            close()
+            onPick(cards[i])
+            return
+          }
+        }
+      }
+      window.addEventListener('keydown', cardChoiceKeyHandler)
     },
 
     debug: {
@@ -609,6 +698,10 @@ export function createGameHud() {
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
+      }
+      if (cardChoiceKeyHandler) {
+        window.removeEventListener('keydown', cardChoiceKeyHandler)
+        cardChoiceKeyHandler = null
       }
       root.innerHTML = ''
     },

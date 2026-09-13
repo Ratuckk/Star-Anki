@@ -63,17 +63,50 @@ const ENEMY_ARENA_SPAWN_MAX = 160
 const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
 // velocidade aleatória + movimento mais suave/radial em arena (Fase 4)
-const ENEMY_ARENA_SPEED_FACTOR_MIN = 0.35
-const ENEMY_ARENA_SPEED_FACTOR_MAX = 1.0
 const ENEMY_TURN_RATE = 1.6
-const ENEMY_ORBIT_CHANCE = 0.3
-const ENEMY_ORBIT_DURATION_MIN = 1.5
-const ENEMY_ORBIT_DURATION_MAX = 3.5
 const ENEMY_ORBIT_RADIUS_MIN = 14
 const ENEMY_ORBIT_RADIUS_MAX = 26
 const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
 
 const ENEMY_FIRE_MIN_DISTANCE = 14
+
+// v0.33.0: perfis de movimento do vermelho comum — mesma classe/hp/tiro, mas cor do mesh (e do
+// telegraph) muda com o padrão de deslocamento sorteado no spawn, pra virar informação de leitura
+// ("esse ali é o que persegue", "esse é o que desvia") em vez de decoração. Roda em arena E em
+// trilho — antes, em trilho, todo vermelho ficava 100% parado só olhando pro jogador.
+const RED_PROFILES = [
+  { id: 'orbit', color: 0xff4d4d }, // padrão: gira em loop (arena: orbita o jogador; trilho: orbita o próprio ponto de spawn)
+  { id: 'advance', color: 0xff7a29 }, // avança reto e rápido
+  { id: 'slow', color: 0x7a2020 }, // avança bem lento, fica mais tempo em tela
+  { id: 'follow', color: 0xff2f8f }, // persegue mantendo distância, evita passar/colidir
+  { id: 'circular', color: 0xc61aff }, // espiral: orbita girando mais rápido e fechando o raio
+  { id: 'evasive', color: 0xffb347 }, // muda de direção lateral aleatoriamente, tentando desviar
+]
+const RED_PROFILE_COLOR = new Map(RED_PROFILES.map((p) => [p.id, p.color]))
+const RED_PROFILE_SPEED_RANGE = {
+  orbit: [0.45, 0.75],
+  advance: [0.85, 1.0],
+  slow: [0.15, 0.3],
+  follow: [0.5, 0.7],
+  circular: [0.5, 0.8],
+  evasive: [0.6, 0.9],
+}
+const RED_ARENA_FOLLOW_STANDOFF = 18
+const RED_CIRCULAR_ANGULAR_SPEED = 2.2
+const RED_CIRCULAR_SHRINK_RATE = 1.2
+const RED_CIRCULAR_MIN_RADIUS = 6
+const RED_EVASIVE_JUKE_INTERVAL_MIN = 0.4
+const RED_EVASIVE_JUKE_INTERVAL_MAX = 0.9
+
+const RED_RAIL_ORBIT_RADIUS = 4.5
+const RED_RAIL_ORBIT_SPEED = 1.4
+const RED_RAIL_ADVANCE_SPEED = 9
+const RED_RAIL_SLOW_SPEED = 2
+const RED_RAIL_FOLLOW_SPEED = 7
+const RED_RAIL_FOLLOW_STANDOFF = 10
+const RED_RAIL_FOLLOW_PASS_BEHIND = PASS_BEHIND * 5 // bem mais tolerante — esse perfil não "passa" fácil
+const RED_RAIL_CIRCULAR_DRIFT_SPEED = 3.2
+const RED_RAIL_EVASIVE_SPEED = 6
 
 // ============ MINI-INIMIGOS (fila/enxame, só modo normal) ============
 const MINI_ENEMY_COLOR = 0xff8080 // vermelho claro (o comum é 0xff4d4d)
@@ -159,7 +192,6 @@ export const TIME_REDUCTION_MAX_MS = 20000
 // roxa (perde tempo), um tanque laranja (5hp) ou o chefe (rajada de 3). Cor = mesma cor do mesh
 // de cada inimigo, pro aviso já ser reconhecível antes do tiro sair.
 const TELEGRAPH_COLOR_BY_KIND = {
-  red: 0xff5a3d,
   time: TIME_ENEMY_COLOR,
   tank: TANK_ENEMY_COLOR,
   boss: BOSS_ENEMY_COLOR,
@@ -180,7 +212,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // é "assado" aqui pra que chamar lookAt(playerPosition) faça a ponta apontar pro jogador
   const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
   enemyGeometry.rotateX(Math.PI / 2)
-  const enemyMaterial = new THREE.MeshPhongMaterial({ color: ENEMY_COLOR, flatShading: true })
+  // um material por perfil de movimento do vermelho comum (mesma geometria, só a cor muda) —
+  // ver RED_PROFILES; substitui o antigo enemyMaterial único
+  const redProfileMaterials = new Map(
+    RED_PROFILES.map((p) => [p.id, new THREE.MeshPhongMaterial({ color: p.color, flatShading: true })]),
+  )
   // material próprio dos mini-inimigos, vermelho mais CLARO — distingue do inimigo comum
   const miniEnemyMaterial = new THREE.MeshPhongMaterial({ color: MINI_ENEMY_COLOR, flatShading: true })
   // QoL: era uma esfera — vira cone (mesma técnica de pré-rotação do enemyGeometry acima),
@@ -384,6 +420,89 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     })
   }
 
+  // gira o "jukeDir" do perfil evasivo pra um novo ângulo lateral aleatório, a cada intervalo —
+  // aproximação de "tentativa de desvio" (sem ler tiro do jogador de fato, só troca de rumo
+  // errático o bastante pra parecer que tá escapando)
+  function rerollJukeDir(enemy, frame) {
+    enemy.jukeTimer = RED_EVASIVE_JUKE_INTERVAL_MIN + Math.random() * (RED_EVASIVE_JUKE_INTERVAL_MAX - RED_EVASIVE_JUKE_INTERVAL_MIN)
+    const angle = Math.random() * Math.PI * 2
+    enemy.jukeDir.set(0, 0, 0)
+      .addScaledVector(frame.right, Math.cos(angle))
+      .addScaledVector(frame.up, Math.sin(angle))
+  }
+
+  // ============ vermelho comum: movimento em ARENA, por perfil (ver RED_PROFILES) ============
+  function updateRedArenaMovement(enemy, dt, playerPosition, frame, speedCap) {
+    const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
+    let desiredDir
+
+    if (enemy.profile === 'orbit' || enemy.profile === 'circular') {
+      const angularSpeed = enemy.profile === 'circular' ? RED_CIRCULAR_ANGULAR_SPEED : ENEMY_ORBIT_ANGULAR_SPEED
+      enemy.orbitAngle += angularSpeed * enemy.orbitDir * dt
+      if (enemy.profile === 'circular') {
+        enemy.orbitRadius = Math.max(RED_CIRCULAR_MIN_RADIUS, enemy.orbitRadius - RED_CIRCULAR_SHRINK_RATE * dt)
+      }
+      const orbitPoint = playerPosition.clone()
+        .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * enemy.orbitRadius)
+        .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * enemy.orbitRadius)
+      desiredDir = orbitPoint.sub(enemy.mesh.position)
+    } else if (enemy.profile === 'follow') {
+      // mantém distância de segurança — se afasta se ficar perto demais, em vez de fechar e
+      // atravessar o jogador como o chase reto faz
+      const toPlayer = playerPosition.clone().sub(enemy.mesh.position)
+      desiredDir = toPlayer.length() > RED_ARENA_FOLLOW_STANDOFF ? toPlayer : toPlayer.multiplyScalar(-1)
+    } else if (enemy.profile === 'evasive') {
+      if ((enemy.jukeTimer -= dt) <= 0) rerollJukeDir(enemy, frame)
+      desiredDir = playerPosition.clone().sub(enemy.mesh.position).normalize().add(enemy.jukeDir)
+    } else {
+      // advance / slow: reto na direção do jogador — a diferença de velocidade já vem do
+      // speedFactor sorteado por perfil no spawn (RED_PROFILE_SPEED_RANGE)
+      desiredDir = playerPosition.clone().sub(enemy.mesh.position)
+    }
+
+    if (desiredDir.lengthSq() > 1e-4) {
+      desiredDir.normalize()
+      if (!enemy.moveDir) enemy.moveDir = desiredDir.clone()
+      enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
+      if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
+      enemy.mesh.position.addScaledVector(enemy.moveDir, chaseSpeed * dt)
+    }
+    // encara o jogador de verdade, não a direção de deslocamento (que diverge durante a órbita)
+    enemy.mesh.lookAt(playerPosition)
+  }
+
+  // ============ vermelho comum: movimento em TRILHO, por perfil (ver RED_PROFILES) ============
+  // antes disso, em trilho, o vermelho comum ficava 100% parado (só girava pra olhar pro
+  // jogador) — cada perfil agora desloca a posição antes do lookAt/checagem de PASS_BEHIND
+  function updateRedRailMovement(enemy, dt, frame) {
+    if (enemy.profile === 'orbit') {
+      enemy.orbitAngle += RED_RAIL_ORBIT_SPEED * enemy.orbitDir * dt
+      enemy.mesh.position.copy(enemy.railSpawnPos)
+        .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * RED_RAIL_ORBIT_RADIUS)
+        .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * RED_RAIL_ORBIT_RADIUS)
+    } else if (enemy.profile === 'circular') {
+      // espiral: mesmo loop do 'orbit', mas o próprio centro vai andando na direção da câmera
+      enemy.orbitAngle += RED_CIRCULAR_ANGULAR_SPEED * enemy.orbitDir * dt
+      enemy.railSpawnPos.addScaledVector(frame.forward, -RED_RAIL_CIRCULAR_DRIFT_SPEED * dt)
+      enemy.mesh.position.copy(enemy.railSpawnPos)
+        .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * RED_RAIL_ORBIT_RADIUS)
+        .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * RED_RAIL_ORBIT_RADIUS)
+    } else if (enemy.profile === 'advance') {
+      enemy.mesh.position.addScaledVector(frame.forward, -RED_RAIL_ADVANCE_SPEED * dt)
+    } else if (enemy.profile === 'slow') {
+      enemy.mesh.position.addScaledVector(frame.forward, -RED_RAIL_SLOW_SPEED * dt)
+    } else if (enemy.profile === 'follow') {
+      // corrige pra se manter perto do "standoff": se está longe na frente, aproxima; se tá
+      // quase colidindo, recua — o objetivo é nunca cruzar de fato, só acompanhar
+      const along = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+      const correction = along > RED_RAIL_FOLLOW_STANDOFF ? -1 : along < RED_RAIL_FOLLOW_STANDOFF * 0.5 ? 1 : 0
+      enemy.mesh.position.addScaledVector(frame.forward, correction * RED_RAIL_FOLLOW_SPEED * dt)
+    } else if (enemy.profile === 'evasive') {
+      if ((enemy.jukeTimer -= dt) <= 0) rerollJukeDir(enemy, frame)
+      enemy.mesh.position.addScaledVector(enemy.jukeDir, RED_RAIL_EVASIVE_SPEED * dt)
+    }
+  }
+
   // ============ IA dos inimigos comuns/mini/tanque/chefe ============
   // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
   // colisão vira dano de verdade (inclusive no CHEFE, que normalmente só morre a tiro) em vez
@@ -395,6 +514,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let ramKills = 0
     let ramKillPoints = 0
     let ramBossDefeated = false
+    let ramBossWorldPos = null
     for (const enemy of [...enemies]) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
@@ -417,6 +537,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             enemy.deathT = 0
             if (enemy.kind === 'boss') {
               ramBossDefeated = true
+              ramBossWorldPos = enemy.mesh.position.clone()
               if (effects) explodeBoss(effects, enemy.mesh.position)
             } else {
               ramKills += 1
@@ -467,31 +588,35 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
 
       if (inArena && enemy.kind !== 'boss') {
-        const speedCap = rail.getArenaSpeed() * 0.5
-        const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
-
-        let desiredDir
-        if (enemy.orbiting && enemy.orbitTimer > 0) {
-          enemy.orbitTimer -= dt
-          enemy.orbitAngle += enemy.orbitDir * ENEMY_ORBIT_ANGULAR_SPEED * dt
-          const orbitPoint = playerPosition.clone()
-            .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * enemy.orbitRadius)
-            .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * enemy.orbitRadius)
-          desiredDir = orbitPoint.sub(enemy.mesh.position)
+        if (enemy.kind === 'red') {
+          updateRedArenaMovement(enemy, dt, playerPosition, frame, rail.getArenaSpeed() * 0.5)
         } else {
-          desiredDir = playerPosition.clone().sub(enemy.mesh.position)
-        }
+          const speedCap = rail.getArenaSpeed() * 0.5
+          const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
 
-        if (desiredDir.lengthSq() > 1e-4) {
-          desiredDir.normalize()
-          if (!enemy.moveDir) enemy.moveDir = desiredDir.clone()
-          enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
-          if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
-          enemy.mesh.position.addScaledVector(enemy.moveDir, chaseSpeed * dt)
+          let desiredDir
+          if (enemy.orbiting && enemy.orbitTimer > 0) {
+            enemy.orbitTimer -= dt
+            enemy.orbitAngle += enemy.orbitDir * ENEMY_ORBIT_ANGULAR_SPEED * dt
+            const orbitPoint = playerPosition.clone()
+              .addScaledVector(frame.right, Math.cos(enemy.orbitAngle) * enemy.orbitRadius)
+              .addScaledVector(frame.up, Math.sin(enemy.orbitAngle) * enemy.orbitRadius)
+            desiredDir = orbitPoint.sub(enemy.mesh.position)
+          } else {
+            desiredDir = playerPosition.clone().sub(enemy.mesh.position)
+          }
+
+          if (desiredDir.lengthSq() > 1e-4) {
+            desiredDir.normalize()
+            if (!enemy.moveDir) enemy.moveDir = desiredDir.clone()
+            enemy.moveDir.lerp(desiredDir, Math.min(1, ENEMY_TURN_RATE * dt))
+            if (enemy.moveDir.lengthSq() > 1e-6) enemy.moveDir.normalize()
+            enemy.mesh.position.addScaledVector(enemy.moveDir, chaseSpeed * dt)
+          }
+          // encara o jogador de verdade, não a direção de deslocamento (que diverge durante a
+          // órbita)
+          enemy.mesh.lookAt(playerPosition)
         }
-        // encara o jogador de verdade, não a direção de deslocamento (que diverge durante a
-        // órbita)
-        enemy.mesh.lookAt(playerPosition)
       } else if (enemy.kind === 'boss') {
         const toPlayer = playerPosition.clone().sub(enemy.mesh.position)
         if (toPlayer.lengthSq() > 1e-4) {
@@ -504,14 +629,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.mesh.rotateX(dt * 0.6)
         enemy.mesh.rotateY(dt * 0.9)
       } else {
-        // modo trilho: inimigo comum/time/tanque sempre com a ponta virada pro jogador
+        // modo trilho: cada perfil do vermelho tem seu próprio deslocamento (ver RED_PROFILES) —
+        // antes ficava 100% parado. Time/tanque continuam só com a ponta virada pro jogador.
+        if (enemy.kind === 'red') updateRedRailMovement(enemy, dt, frame)
         enemy.mesh.lookAt(playerPosition)
         // redutor de tempo: giro constante no próprio eixo por cima do lookAt (mesmo padrão do
         // decaedro do chefe acima) — item antigo do Fase C, "devia girar visualmente"
         if (enemy.kind === 'time') enemy.mesh.rotateY(dt * TIME_ENEMY_SPIN_RATE)
 
         const relative = enemy.mesh.position.clone().sub(frame.position)
-        if (relative.dot(frame.forward) < PASS_BEHIND) {
+        // perfil 'follow' é bem mais tolerante — o ponto dele é justamente não "passar" fácil
+        const passBehind = enemy.kind === 'red' && enemy.profile === 'follow' ? RED_RAIL_FOLLOW_PASS_BEHIND : PASS_BEHIND
+        if (relative.dot(frame.forward) < passBehind) {
           removeEnemy(enemy)
           continue
         }
@@ -519,9 +648,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       // QoL (v0.29.4): telegraph colorido por tipo + deslocado pra fora do mesh do chefe.
       // O chefe tem scale 5 e hitRadius 7 — sem o offset, o telegraph nascia DENTRO do corpo
-      // dele e ficava invisível até o tiro sair. Cor vem de TELEGRAPH_COLOR_BY_KIND.
+      // dele e ficava invisível até o tiro sair. Cor vem de TELEGRAPH_COLOR_BY_KIND (ou, pro
+      // vermelho, do próprio perfil — cada perfil já tem sua cor de mesh em RED_PROFILE_COLOR).
       if (enemy.fireTimer > 0.3 && enemy.fireTimer - dt <= 0.3 && effects) {
-        const color = TELEGRAPH_COLOR_BY_KIND[enemy.kind] ?? 0xff5a3d
+        const color = enemy.kind === 'red'
+          ? (RED_PROFILE_COLOR.get(enemy.profile) ?? ENEMY_COLOR)
+          : (TELEGRAPH_COLOR_BY_KIND[enemy.kind] ?? 0xff5a3d)
         let tPos = enemy.mesh.position
         if (enemy.kind === 'boss') {
           const toPlayerDir = playerPosition.clone().sub(enemy.mesh.position)
@@ -562,7 +694,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       }
     }
-    return { hits, ramKills, ramKillPoints, ramBossDefeated }
+    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos }
   }
 
   function fireBossLaser(enemy, targetPos) {
@@ -644,18 +776,21 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   return {
     spawnEnemy() {
       const position = spawnPositionForEnemy(ENEMY_SPAWN_DISTANCE_MIN, ENEMY_SPAWN_DISTANCE_MAX, ENEMY_BOX_X, ENEMY_BOX_Y)
-      const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial)
+      const profile = RED_PROFILES[Math.floor(Math.random() * RED_PROFILES.length)]
+      const mesh = new THREE.Mesh(enemyGeometry, redProfileMaterials.get(profile.id))
       mesh.position.copy(position)
       scene.add(mesh)
-      const orbiting = Math.random() < ENEMY_ORBIT_CHANCE
+      const [speedMin, speedMax] = RED_PROFILE_SPEED_RANGE[profile.id]
       enemies.push({
         id: nextEnemyId++, mesh, kind: 'red', dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: randomEnemyFireInterval(),
-        speedFactor: ENEMY_ARENA_SPEED_FACTOR_MIN + Math.random() * (ENEMY_ARENA_SPEED_FACTOR_MAX - ENEMY_ARENA_SPEED_FACTOR_MIN),
-        orbiting,
-        orbitTimer: orbiting ? ENEMY_ORBIT_DURATION_MIN + Math.random() * (ENEMY_ORBIT_DURATION_MAX - ENEMY_ORBIT_DURATION_MIN) : 0,
+        profile: profile.id,
+        speedFactor: speedMin + Math.random() * (speedMax - speedMin),
+        railSpawnPos: position.clone(),
         orbitRadius: ENEMY_ORBIT_RADIUS_MIN + Math.random() * (ENEMY_ORBIT_RADIUS_MAX - ENEMY_ORBIT_RADIUS_MIN),
         orbitAngle: Math.random() * Math.PI * 2,
         orbitDir: Math.random() < 0.5 ? 1 : -1,
+        jukeTimer: 0,
+        jukeDir: new THREE.Vector3(),
         moveDir: null,
       })
     },
@@ -922,7 +1057,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       for (const l of [...enemyLasers]) removeEnemyLaser(l)
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
       enemyGeometry.dispose()
-      enemyMaterial.dispose()
+      for (const m of redProfileMaterials.values()) m.dispose()
       miniEnemyMaterial.dispose()
       enemyProjectileGeometry.dispose()
       enemyProjectileMaterial.dispose()

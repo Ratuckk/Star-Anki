@@ -67,6 +67,35 @@ export function showSettingsScreen({ onBack }) {
   visualSection.appendChild(enemyBarRow)
   root.appendChild(visualSection)
 
+  // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
+  const allRangeSection = document.createElement('div')
+  allRangeSection.className = 'settings-section'
+  const allRangeTitle = document.createElement('h3')
+  allRangeTitle.textContent = 'Modo All-Range'
+  allRangeSection.appendChild(allRangeTitle)
+
+  const turnRow = document.createElement('div')
+  turnRow.className = 'settings-row'
+  const turnLabel = document.createElement('label')
+  turnLabel.textContent = 'Sensibilidade de giro'
+  turnRow.appendChild(turnLabel)
+  const turnInput = document.createElement('input')
+  turnInput.type = 'range'
+  turnInput.min = '0.5'
+  turnInput.max = '2'
+  turnInput.step = '0.1'
+  turnInput.value = String(getSettings().arenaTurnSensitivity)
+  const turnValueLabel = document.createElement('span')
+  turnValueLabel.textContent = `${Number(turnInput.value).toFixed(1)}x`
+  turnInput.addEventListener('input', () => {
+    turnValueLabel.textContent = `${Number(turnInput.value).toFixed(1)}x`
+    setSetting('arenaTurnSensitivity', Number(turnInput.value))
+  })
+  turnRow.appendChild(turnInput)
+  turnRow.appendChild(turnValueLabel)
+  allRangeSection.appendChild(turnRow)
+  root.appendChild(allRangeSection)
+
   const controlsSection = document.createElement('div')
   controlsSection.className = 'settings-section'
   const controlsTitle = document.createElement('h3')
