@@ -44,7 +44,8 @@ import {
 } from './ima.js'
 import {
   SUSSURRO_KIND, SUSSURRO_COLOR, SUSSURRO_HIT_RADIUS, SUSSURRO_DEATH_DURATION, SUSSURRO_KILL_BONUS,
-  spawnSussurro, updateSussurro, sussurroShouldSummon, disposeSussurro,
+  spawnSussurro, updateSussurro, sussurroShouldSummon, sussurroShouldDespawn, sussurroPassBehind,
+  disposeSussurro,
 } from './sussurro.js'
 
 export { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS }
@@ -211,63 +212,30 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (enemy.kind === TIME_KIND) return timePassBehind(enemy)
     if (enemy.kind === SENTINELA_KIND) return sentinelaPassBehind(enemy)
     if (enemy.kind === REPLICA_KIND) return replicaPassBehind()
+    if (enemy.kind === SUSSURRO_KIND) return sussurroPassBehind()
     return PASS_BEHIND
   }
-// ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
-// Overhaul Blaster (v0.50.0): quando o inimigo é um Blaster, lê a config de tiro do PERFIL
-// dele (fan / spread / erro / velocidade / offset angular) em vez do genérico. Os outros
-// kinds continuam com o comportamento antigo (1 tiro, erro genérico de 5°).
-function fireEnemyProjectile(enemy, playerPosition) {
-  const isBlaster = enemy.kind === BLASTER_KIND
-  const cfg = isBlaster
-    ? blasterFireConfig(enemy)
-    : { count: 1, spreadDeg: 0, aimErrorDeg: ENEMY_AIM_ERROR_DEG, speedMult: 1.0, aimOffsetDeg: 0 }
 
-  const baseDir = playerPosition.clone().sub(enemy.mesh.position).normalize()
-
-  // offset sistemático (só o perfil `circular` usa hoje) — gira o vetor base antes de aplicar
-  // o fan, deslocando o "centro" do disparo pra fora do eixo pro jogador.
-  if (cfg.aimOffsetDeg) {
-    const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
-    baseDir.applyAxisAngle(axis, THREE.MathUtils.degToRad(cfg.aimOffsetDeg))
-  }
-
-  // eixo lateral do disparo — mesma técnica que o tiro normal do jogador usa (`fire()` em
-  // combat/projectiles.js): perpendicular à direção base, no plano horizontal.
-  const lateralAxis = new THREE.Vector3().crossVectors(baseDir, FORWARD_AXIS)
-  if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
-  lateralAxis.normalize()
-
-  const halfSpreadRad = THREE.MathUtils.degToRad(cfg.spreadDeg) / 2
-
-  for (let i = 0; i < cfg.count; i += 1) {
-    const direction = baseDir.clone()
-
-    // fan: distribui os N tiros em ângulos igualmente espaçados dentro do cone de spread.
-    // count=1 → offset 0 (sai centrado); count=2 → -half / +half; count=3 → -half, 0, +half.
-    if (cfg.count > 1) {
-      const t = i / (cfg.count - 1) // 0..1
-      const angle = -halfSpreadRad + t * (cfg.spreadDeg ? halfSpreadRad * 2 : 0)
-      direction.applyAxisAngle(lateralAxis, angle)
-    }
-
-    // erro aleatório por tiro (independente por projétil, pra fan + erro não empilhar
-    // deslocamento idêntico em todos)
-    if (cfg.aimErrorDeg > 0) {
-      const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * cfg.aimErrorDeg)
-      const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
-      direction.applyAxisAngle(errAxis, errAngle)
-    }
-
-    const speed = ENEMY_PROJECTILE_SPEED * cfg.speedMult + enemyProjectileSpeedBonus
-
+  // ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
+  function fireEnemyProjectile(enemy, playerPosition) {
     const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
     mesh.position.copy(enemy.mesh.position)
+
+    const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
+
+    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * ENEMY_AIM_ERROR_DEG)
+    const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
+    direction.applyAxisAngle(errAxis, errAngle)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+
     scene.add(mesh)
-    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(speed), traveled: 0 })
+    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
   }
-}
+
+  const bossLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
+  const timeLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
+  const projectileCtx = { fireEnemyProjectile }
+  const goldenUpdateCtx = { fireEnemyProjectile, pushProjectile: (p) => enemyProjectiles.push(p), pushLaser: (l) => enemyLasers.push(l) }
 
   // ============ IA principal ============
   // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
@@ -389,15 +357,24 @@ function fireEnemyProjectile(enemy, playerPosition) {
         else if (enemy.kind === REPLICA_KIND) updateReplicaMovement(enemy, dt, rail, frame)
         else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, frame)
         else if (enemy.kind === SUSSURRO_KIND) {
-          updateSussurro(enemy, dt, frame)
+          // Overhaul Sussurro (v0.50.0): ciclo de vida de 8s em 3 fases (HIDDEN/BEACON/FADING),
+          // com telegraph visual e recompensa maior por matar cedo. `updateSussurro` agora
+          // recebe `rail` (usa `getPlayerLateral` se quiser evoluir pra rastreamento) e
+          // `effects` (spawna `chargeCircle` no BEACON + shockwave/explosion no summon).
+          updateSussurro(enemy, dt, frame, rail, effects)
           if (sussurroShouldSummon(enemy)) {
-            const count = 2 + Math.floor(Math.random() * 2)
-            for (let i = 0; i < count; i += 1) {
+            // 3 Blasters sempre (era 2-3 aleatório) — o payoff visual tem que ser grande pra
+            // justificar o investimento de atenção do jogador.
+            for (let i = 0; i < 3; i += 1) {
               const reinforcement = spawnBlaster(scene, rail, nextEnemyId++)
               reinforcement.fireTimer = randomEnemyFireInterval()
               enemies.push(reinforcement)
             }
           }
+          // despawn por fim de ciclo (FADING terminou): o Sussurro "some" sem animação de
+          // morte, já está com opacidade ~0 quando isso dispara. Pass-behind desabilitado
+          // (sussurroPassBehind = -9999), então essa é a ÚNICA saída dele além de morrer.
+          if (sussurroShouldDespawn(enemy)) { removeEnemy(enemy); continue }
         }
         // Réplica/Verme não olham pro jogador (não faz sentido pro conceito de cada um) — os
         // outros continuam com a ponta virada pro jogador, comportamento de sempre.
