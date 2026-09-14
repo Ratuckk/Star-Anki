@@ -6,8 +6,7 @@ import * as THREE from 'three'
 // travas ao mesmo tempo em vez de só 1 — cada trava vira um tiro teleguiado independente na hora
 // de soltar. Por isso `lockedEnemies` é um array de "lock records" ({ entity, offset, seq }), não
 // um Set (não dava pra repetir a mesma entidade) — offset é o ponto (relativo ao centro do alvo)
-// onde a mira estava no instante da trava, usado só pro marcador verde do HUD aparecer espalhado
-// pelo corpo do alvo em vez de empilhado no centro.
+// onde o marcador verde do HUD deve aparecer.
 
 const PASS_BEHIND = -4
 const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
@@ -22,10 +21,9 @@ const MAX_LOCK_RANGE = 90
 const MIN_LOCK_RANGE = 10
 
 // espalhamento dos marcadores quando um alvo GRANDE já travado recebe uma trava ADICIONAL. Sem
-// isso, cada trava extra no mesmo alvo usa o MESMO offset (mesmo direction, mesmo rel → mesmo
-// perpendicular da mira), então todos os N marcadores empilham no mesmo ponto da tela — o
-// jogador acha que só travou 1 vez mesmo com N travas acumuladas no backend. Com esse raio,
-// cada trava extra ganha um offset ALEATÓRIO dentro de um cubo deste tamanho.
+// isso, cada trava extra no mesmo alvo empilharia no mesmo pixel. O raio de espalhamento é
+// CLAMPADO ao raio do alvo (ver BIG_TARGET_FALLBACK_RADIUS) — o marcador espalha pelo corpo do
+// chefe/dourado, nunca pra fora dele.
 const MULTI_LOCK_SPREAD_RADIUS = 5
 // fallback do "raio" do alvo grande quando a entidade não expõe um (o boss tem BOSS_HIT_RADIUS
 // = 7 em boss.js, mas isso não é um campo do objeto — é uma constante de módulo)
@@ -67,21 +65,28 @@ export function createLockOnSystem(rail, enemies) {
         const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
         if (angle >= ENEMY_LOCK_ANGLE) continue
 
-        // offset do marcador:
-        //   - PRIMEIRA trava no alvo: projeção perpendicular da mira (marcador cai exatamente
-        //     onde o jogador mirou)
-        //   - travas ADICIONAIS no mesmo alvo: offset ALEATÓRIO dentro do raio do alvo, pra
-        //     espalhar visualmente os marcadores pelo corpo em vez de empilhar no mesmo pixel
+        // offset do marcador no HUD (relativo ao centro do mesh do alvo):
+        //
+        // BUG corrigido: a versão antiga calculava `direction * (rel·direction) - rel` pra
+        // TODA trava, incluindo a primeira. Isso é o vetor do centro do alvo até o ponto da
+        // LINHA DE MIRA mais próximo dele — magnitude `|rel| * sin(ângulo)`. A 90u de distância
+        // e 6° de desvio (limite do cone), o offset era ~9.4u, contra um raio de inimigo comum
+        // de ~1.8u: o marcador caía 5x fora do corpo, deslocado perpendicularmente à mira (lê
+        // como "à esquerda/direita do inimigo" na tela).
+        //
+        // Correção: alvo comum → offset ZERO, marcador exatamente sobre o centro do mesh.
+        // Alvo grande (chefe/dourado) → offset ALEATÓRIO clampado ao raio do alvo, só pra
+        // espalhar visualmente vários marcadores pelo corpo sem vazar pra fora dele.
         let offset
-        if (alreadyLocked) {
-          const radius = isBigLockTarget(e) ? (e.radius ?? BIG_TARGET_FALLBACK_RADIUS) : MULTI_LOCK_SPREAD_RADIUS
+        if (isBigLockTarget(e)) {
+          const radius = e.radius ?? BIG_TARGET_FALLBACK_RADIUS
           offset = new THREE.Vector3(
             (Math.random() * 2 - 1) * radius,
             (Math.random() * 2 - 1) * radius,
             (Math.random() * 2 - 1) * radius,
           )
         } else {
-          offset = direction.clone().multiplyScalar(rel.dot(direction)).sub(rel)
+          offset = new THREE.Vector3(0, 0, 0)
         }
         lockedEnemies.push({ entity: e, offset, seq: nextLockSeq++ })
       }
@@ -112,6 +117,11 @@ export function createLockOnSystem(rail, enemies) {
 
     clearLockedEnemies() { lockedEnemies = [] },
 
+    // getWorldPosition em vez de mesh.position: se o mesh do inimigo estiver aninhado dentro
+    // de um Group pai (chefe com corpo + anéis + filhos é o caso clássico), `.position` seria
+    // LOCAL e o marcador apareceria no lugar errado. getWorldPosition sempre dá a posição
+    // real. `offset` é somado depois — zero pra alvo comum (marcador exatamente em cima),
+    // clampado ao raio pra alvo grande (espalhado pelo corpo).
     getLockedEnemySnapshots: () => lockedEnemies
       .filter((rec) => !rec.entity.dying)
       .map((rec) => {
