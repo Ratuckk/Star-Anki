@@ -73,11 +73,15 @@ const CHARGE_GLOW_LAYERS = [
   { scaleMin: 0.85, scaleMax: 1.80, opacityMin: 0.32, opacityMax: 0.18 },
   { scaleMin: 1.20, scaleMax: 2.40, opacityMin: 0.18, opacityMax: 0.10 },
 ]
-// pedido do usuário (correção de um item já entregue antes): cada camada deve SURGIR a cada
-// ~1s de carga em vez de todas aparecerem juntas desde o início — com 4 camadas ao longo dos 3s
-// de carga (HOMING_CHARGE_MAX_MS - MIN_MS), cada layer i revela em f = i/4 (0s, 1s, 2s, 3s) e
-// cresce dali até o tamanho máximo, todas convergindo junto em f=1. Também pedido: pulso "vivo"
-// e -30% de opacidade.
+// pedido do usuário (correção de um item já entregue antes): cada camada deve SURGIR em
+// intervalos ao longo da carga em vez de todas aparecerem juntas desde o início — com 4
+// camadas, o threshold de revelação é `i / n` (0, 0.25, 0.5, 0.75), ou seja, ~0s, ~0.75s,
+// ~1.5s e ~2.25s de carga (a janela total de carga é de 3s, ver homingChargeMaxMs −
+// homingChargeMinMs em player.js). Cada camada cresce daí até o tamanho máximo, todas
+// convergindo junto em f=1. Também pedido: pulso "vivo" e -30% de opacidade.
+//
+// (comentário anterior dizia "0s, 1s, 2s, 3s" — mentia em relação ao código: `threshold = i / n`
+// divide a janela em partes IGUAIS entre as camadas, não em passos de 1s.)
 const CHARGE_GLOW_PULSE_RATE = 6 // rad/s
 const CHARGE_GLOW_PULSE_AMOUNT = 0.12
 const CHARGE_GLOW_OPACITY_MULT = 0.7 // -30%
@@ -649,6 +653,14 @@ export function createEffectsSystem(scene, opts = {}) {
   // `.material` próprio — antes disso, esses eram os ÚNICOS inimigos que nunca piscavam ao
   // levar dano, porque a função retornava direto no guard. Agora desce recursivamente e pisca
   // cada filho com material (cada um vira sua própria entrada em activeFlashes).
+  //
+  // v0.51.0 — `materialRef` rastreia QUAL material foi clonado pra essa entrada. Se o mesh
+  // trocar de material por fora (chefe mudando de fase faz `enemy.mesh.material =
+  // bossPhaseMaterials[phase]`), o clone vira órfão: no update, uma entrada com
+  // `materialRef !== mesh.material` é descartada em vez de tentar restaurar cores num material
+  // que já não é o do mesh — restaurar clobberaria o material NOVO (que é COMPARTILHADO entre
+  // instâncias do mesmo tipo). Sem isso, o flash ficava pendurado lendo `__origColor` do
+  // clone antigo, e o mesh novo (recém-trocado) ficava travado em branco até o timeout expirar.
   function flashMesh(mesh, durationSec = FLASH_DURATION) {
     if (!mesh) return
     if (!mesh.material) {
@@ -658,6 +670,12 @@ export function createEffectsSystem(scene, opts = {}) {
       return
     }
     let entry = activeFlashes.find((f) => f.mesh === mesh)
+    if (entry && entry.materialRef !== mesh.material) {
+      // material trocado desde que a entrada foi criada — descarta a antiga e cria nova em
+      // cima do material atual
+      activeFlashes.splice(activeFlashes.indexOf(entry), 1)
+      entry = null
+    }
     if (!entry) {
       if (!mesh.material.__origColorSaved) {
         mesh.material = mesh.material.clone()
@@ -666,7 +684,7 @@ export function createEffectsSystem(scene, opts = {}) {
         mesh.material.__origEmissive = mesh.material.emissive ? mesh.material.emissive.clone() : null
         mesh.material.__origEmissiveIntensity = mesh.material.emissiveIntensity
       }
-      entry = { mesh, untilMs: 0 }
+      entry = { mesh, materialRef: mesh.material, untilMs: 0 }
       activeFlashes.push(entry)
     }
     entry.untilMs = performance.now() + durationSec * 1000
@@ -1232,8 +1250,17 @@ export function createEffectsSystem(scene, opts = {}) {
     }
 
     // ACTIVE FLASHES (mesh branco)
+    //
+    // v0.51.0 — checa `materialRef` antes de tudo: se o mesh trocou de material por fora desde
+    // que a entrada foi criada (chefe mudando de fase é o único caso hoje), descarta sem tentar
+    // restaurar cores. Restaurar clobberaria o material NOVO do mesh, que é COMPARTILHADO por
+    // todas as instâncias do mesmo tipo (ex: todos os bosses futuros na fase 2 usam o MESMO
+    // `bossPhaseMaterials[1]`) — um restore errado aqui tingiria todos eles de branco pra sempre.
     for (let i = activeFlashes.length - 1; i >= 0; i--) {
       const f = activeFlashes[i]
+      if (f.mesh.material !== f.materialRef) {
+        activeFlashes.splice(i, 1); continue
+      }
       if (!f.mesh.material || now > f.untilMs) {
         if (f.mesh.material && f.mesh.material.__origColor) {
           f.mesh.material.color.copy(f.mesh.material.__origColor)
@@ -1264,8 +1291,14 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   // permite que o main.js agende um contrail dos wingmen manualmente
-  function spawnContrailTick(wingmenPositions) {
-    contrailTimer -= 1/60
+  //
+  // v0.51.0 — recebe `dt` do chamador (main.js) em vez de assumir passo fixo de 1/60. Antes
+  // disso, a 30fps o contrail spawnava METADE das partículas esperadas (contrailTimer
+  // decrementava 2× mais devagar que o dt real), e a 144fps spawnava quase o dobro — a taxa
+  // dependia do FPS do jogador. Todos os outros temporizadores do arquivo já respeitavam dt;
+  // este era o único ponto que tinha assumido 60fps hardcoded.
+  function spawnContrailTick(wingmenPositions, dt) {
+    contrailTimer -= dt
     if (contrailTimer <= 0) {
       contrailTimer = CONTRAIL_INTERVAL
       for (const p of wingmenPositions) contrailParticle(p)
