@@ -735,9 +735,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     getArenaAttitude: () => ({ pitch: arenaPitch, roll: arenaRoll }),
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setBoostActive: (v) => { boostActive = !!v },
-  // NOVO: leitura do estado de boost pelo resto do jogo. A Sentinela usa pra reagir ao impulso
-  // do jogador — é o único consumidor hoje, mas o getter fica público porque é um dado
-  // legítimo do "estado de vôo da nave", não específico da Sentinela.
+    // NOVO: leitura do estado de boost pelo resto do jogo. A Sentinela usa pra reagir ao
+    // impulso do jogador — é o único consumidor hoje, mas o getter fica público porque é um
+    // dado legítimo do "estado de vôo da nave", não específico da Sentinela.
     getBoostActive: () => boostActive,
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
