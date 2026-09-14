@@ -75,6 +75,14 @@ const ARENA_PREVIEW_SCALE = { boss: BOSS_HIT_RADIUS * 2 * 2.4, golden: 3.2 }
 const GOLDEN_MINION_TURN_RATE = 2.5
 const GOLDEN_MINION_SPEED = 16
 
+// eixo vertical do MUNDO — reusado no desvio sistemático do aimOffsetDeg (perfil `circular` do
+// blaster) e no fan do chefe. Reutilizar o MESMO eixo em ambos garante que os dois offsets
+// angulares (sistemático por perfil / extra por tiro de fan) caiam no mesmo plano de rotação,
+// sem depender da câmera/frame do jogador. Antes disso o aimOffsetDeg girava em torno de um
+// eixo ALEATÓRIO (`Math.random()` nos 3 componentes), o que anulava qualquer leitura direcional
+// — o comentário do blaster.js prometia "desvio SISTEMÁTICO" e entregava ruído.
+const _worldUp = new THREE.Vector3(0, 1, 0)
+
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
   const enemyProjectiles = []
@@ -221,7 +229,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // Overhaul Blaster (v0.50.0): quando o inimigo é um Blaster, lê a config de tiro do PERFIL
   // dele (fan / spread / erro / velocidade / offset angular) em vez do genérico. Os outros
   // kinds continuam com o comportamento antigo (1 tiro, erro genérico de 5°).
-  function fireEnemyProjectile(enemy, playerPosition) {
+  //
+  // v0.51.0 — 3º parâmetro `extraAngleRad` (opcional, default 0): desvio angular SISTEMÁTICO
+  // somado à direção base, aplicado no mesmo eixo vertical do mundo que o `aimOffsetDeg` usa.
+  // Serve pro fan do chefe (fases 2-3): em vez de mover o mesh do chefe lateralmente antes de
+  // cada tiro pra "fingir" a direção (gambiarra que quebrava qualquer leitura externa da
+  // posição do chefe no mesmo tick — lockon, minimapa, spawn de minion), o offset angular é
+  // passado como argumento e o corpo do chefe nunca se mexe.
+  function fireEnemyProjectile(enemy, playerPosition, extraAngleRad = 0) {
     const isBlaster = enemy.kind === BLASTER_KIND
     const cfg = isBlaster
       ? blasterFireConfig(enemy)
@@ -229,11 +244,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     const baseDir = playerPosition.clone().sub(enemy.mesh.position).normalize()
 
-    // offset sistemático (só o perfil `circular` usa hoje) — gira o vetor base antes de aplicar
-    // o fan, deslocando o "centro" do disparo pra fora do eixo pro jogador.
+    // offset sistemático (só o perfil `circular` do blaster usa hoje) — gira o vetor base em
+    // torno do eixo vertical do MUNDO, deslocando o "centro" do disparo pra fora do eixo pro
+    // jogador de forma reproduzível (dois disparos consecutivos caem do MESMO lado). Antes
+    // disso o eixo era um `Math.random()` em 3 componentes — virava ruído, não desvio.
     if (cfg.aimOffsetDeg) {
-      const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
-      baseDir.applyAxisAngle(axis, THREE.MathUtils.degToRad(cfg.aimOffsetDeg))
+      baseDir.applyAxisAngle(_worldUp, THREE.MathUtils.degToRad(cfg.aimOffsetDeg))
+    }
+    // desvio extra por tiro (fan do chefe) — mesmo eixo, soma em cima. Se ambos forem > 0,
+    // os dois se acumulam no plano horizontal (não é o caso hoje, mas é comportamento
+    // previsível se algum dia um perfil usar os dois).
+    if (extraAngleRad) {
+      baseDir.applyAxisAngle(_worldUp, extraAngleRad)
     }
 
     // eixo lateral do disparo — mesma técnica que o tiro normal do jogador usa (`fire()` em
