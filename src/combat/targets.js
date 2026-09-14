@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { distanceToSegment } from '../enemies/shared.js'
+import { distanceToSegment, randomSpawnPositionOnPath } from '../enemies/shared.js'
 
 // ============ ALVOS NEUTROS — bônus (asteroide) + orbes-pergunta do chefe ============
 
@@ -74,19 +74,6 @@ export function createTargetsSystem(scene, rail, effects) {
   const bossOrbRingGeometry = new THREE.TorusGeometry(2.3, 0.09, 8, 24)
   const bossOrbRingMaterial = new THREE.MeshBasicMaterial({ color: BOSS_ORB_COLOR, transparent: true, opacity: 0.55 })
 
-  function projectAheadOnPath(distanceAhead) {
-    const frame = rail.getFrameAt(distanceAhead)
-    return { position: frame.position.clone(), right: frame.right, up: frame.up }
-  }
-
-  function randomSpawnPositionOnPath(distanceMin, distanceMax, boxX, boxY) {
-    const distanceAhead = distanceMin + Math.random() * (distanceMax - distanceMin)
-    const base = projectAheadOnPath(distanceAhead)
-    const lateralX = (Math.random() * 2 - 1) * boxX
-    const lateralY = (Math.random() * 2 - 1) * boxY
-    return base.position.clone().addScaledVector(base.right, lateralX).addScaledVector(base.up, lateralY)
-  }
-
   function removeBonusTarget(b) {
     scene.remove(b.mesh)
     // geometria é POR SPAWN agora (ver makeBonusGeometry) — precisa disposar aqui, senão vaza
@@ -135,7 +122,11 @@ export function createTargetsSystem(scene, rail, effects) {
 
   return {
     spawnBonusTarget() {
-      const position = randomSpawnPositionOnPath(BONUS_SPAWN_DISTANCE_MIN, BONUS_SPAWN_DISTANCE_MAX, BONUS_BOX_X, BONUS_BOX_Y)
+      // Antes era uma cópia local de randomSpawnPositionOnPath que projetava na centerline
+      // futura do trilho — mesmo bug de curvatura dos inimigos (spawn desviava pra fora do
+      // eixo da câmera em curva). Agora reaproveita a versão corrigida de enemies/shared.js,
+      // que ancora no jogador + forward ATUAL — o asteroide sempre nasce na frente dele.
+      const position = randomSpawnPositionOnPath(rail, BONUS_SPAWN_DISTANCE_MIN, BONUS_SPAWN_DISTANCE_MAX, BONUS_BOX_X, BONUS_BOX_Y)
       const mesh = new THREE.Mesh(makeBonusGeometry(), bonusMaterial)
       mesh.position.copy(position)
       const scale = rollBonusScale()
