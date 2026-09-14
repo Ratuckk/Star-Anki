@@ -3,7 +3,8 @@ import { PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR } 
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
-  spawnBlaster, updateBlasterArenaMovement, updateBlasterRailMovement, blasterPassBehind, blasterColor, disposeBlaster,
+  spawnBlaster, updateBlasterArenaMovement, updateBlasterRailMovement,
+  blasterPassBehind, blasterColor, blasterFireConfig, disposeBlaster,
 } from './blaster.js'
 import { MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm } from './miniSwarm.js'
 import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, disposeTank } from './tank.js'
@@ -217,19 +218,59 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   // ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
+  // Overhaul Blaster (v0.50.0): quando o inimigo é um Blaster, lê a config de tiro do PERFIL
+  // dele (fan / spread / erro / velocidade / offset angular) em vez do genérico. Os outros
+  // kinds continuam com o comportamento antigo (1 tiro, erro genérico de 5°).
   function fireEnemyProjectile(enemy, playerPosition) {
-    const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
-    mesh.position.copy(enemy.mesh.position)
+    const isBlaster = enemy.kind === BLASTER_KIND
+    const cfg = isBlaster
+      ? blasterFireConfig(enemy)
+      : { count: 1, spreadDeg: 0, aimErrorDeg: ENEMY_AIM_ERROR_DEG, speedMult: 1.0, aimOffsetDeg: 0 }
 
-    const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
+    const baseDir = playerPosition.clone().sub(enemy.mesh.position).normalize()
 
-    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * ENEMY_AIM_ERROR_DEG)
-    const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
-    direction.applyAxisAngle(errAxis, errAngle)
-    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+    // offset sistemático (só o perfil `circular` usa hoje) — gira o vetor base antes de aplicar
+    // o fan, deslocando o "centro" do disparo pra fora do eixo pro jogador.
+    if (cfg.aimOffsetDeg) {
+      const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
+      baseDir.applyAxisAngle(axis, THREE.MathUtils.degToRad(cfg.aimOffsetDeg))
+    }
 
-    scene.add(mesh)
-    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
+    // eixo lateral do disparo — mesma técnica que o tiro normal do jogador usa (`fire()` em
+    // combat/projectiles.js): perpendicular à direção base, no plano horizontal.
+    const lateralAxis = new THREE.Vector3().crossVectors(baseDir, FORWARD_AXIS)
+    if (lateralAxis.lengthSq() < 1e-4) lateralAxis.set(1, 0, 0)
+    lateralAxis.normalize()
+
+    const halfSpreadRad = THREE.MathUtils.degToRad(cfg.spreadDeg) / 2
+
+    for (let i = 0; i < cfg.count; i += 1) {
+      const direction = baseDir.clone()
+
+      // fan: distribui os N tiros em ângulos igualmente espaçados dentro do cone de spread.
+      // count=1 → offset 0 (sai centrado); count=2 → -half / +half; count=3 → -half, 0, +half.
+      if (cfg.count > 1) {
+        const t = i / (cfg.count - 1) // 0..1
+        const angle = -halfSpreadRad + t * (cfg.spreadDeg ? halfSpreadRad * 2 : 0)
+        direction.applyAxisAngle(lateralAxis, angle)
+      }
+
+      // erro aleatório por tiro (independente por projétil, pra fan + erro não empilhar
+      // deslocamento idêntico em todos)
+      if (cfg.aimErrorDeg > 0) {
+        const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * cfg.aimErrorDeg)
+        const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
+        direction.applyAxisAngle(errAxis, errAngle)
+      }
+
+      const speed = ENEMY_PROJECTILE_SPEED * cfg.speedMult + enemyProjectileSpeedBonus
+
+      const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
+      mesh.position.copy(enemy.mesh.position)
+      mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+      scene.add(mesh)
+      enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(speed), traveled: 0 })
+    }
   }
 
   const bossLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
@@ -359,8 +400,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         else if (enemy.kind === SUSSURRO_KIND) {
           // Overhaul Sussurro (v0.50.0): ciclo de vida de 8s em 3 fases (HIDDEN/BEACON/FADING),
           // com telegraph visual e recompensa maior por matar cedo. `updateSussurro` agora
-          // recebe `rail` (usa `getPlayerLateral` se quiser evoluir pra rastreamento) e
-          // `effects` (spawna `chargeCircle` no BEACON + shockwave/explosion no summon).
+          // recebe `rail` e `effects` (spawna `chargeCircle` no BEACON + shockwave/explosion
+          // no summon).
           updateSussurro(enemy, dt, frame, rail, effects)
           if (sussurroShouldSummon(enemy)) {
             // 3 Blasters sempre (era 2-3 aleatório) — o payoff visual tem que ser grande pra
