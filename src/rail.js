@@ -17,7 +17,12 @@ const CAM_LAG_RATE = 5
 const CAM_BEHIND = 10
 const CAM_HEIGHT = 3
 
-const CAM_FOLLOW_LATERAL = 0.3
+// v0.51.1 — de 0.3 pra 1.0. Antes a câmera seguia só 30% do movimento lateral da nave, então
+// quando o jogador ia pra direita a nave deslizava pra direita na tela (ficava no canto) e o
+// getAimLineAhead compensava spawnando inimigo na linha da CÂMERA (não da nave) — o que fazia
+// o inimigo parecer vir de lado em vez de vir reto de frente. Agora a câmera acompanha 100%:
+// a nave fica sempre centralizada, e os inimigos nascem direto na frente dela.
+const CAM_FOLLOW_LATERAL = 1.0
 
 // Fase 6: câmera mais dinâmica no modo normal — um drift lento (senoidal, nunca abrupto) de
 // posição lateral/vertical por cima do follow normal, mais um "dutch angle" leve (a câmera
@@ -605,31 +610,16 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     setBoostActive: (v) => { boostActive = !!v },
     getBoostActive: () => boostActive,
 
-    // ============ NOVO: PONTO NA LINHA DE VISÃO DA CÂMERA ============
-    // Devolve o ponto que fica a `distanceAhead` À FRENTE DO JOGADOR, mas na LINHA DE VISÃO
-    // DA CÂMERA — não na posição do jogador.
-    //
-    // Por que isso é diferente: a câmera segue só CAM_FOLLOW_LATERAL (0.3) do movimento lateral
-    // do jogador. Se o jogador está a +30 lateral, a câmera está a +9. A linha de visão da
-    // câmera olha pra frente a partir de +9, então ela "cruza" o plano do jogador deslocada
-    // -0.7 * playerX em relação ao próprio jogador. Um spawn ancorado na posição do jogador
-    // aparece deslocado na tela na direção do movimento; um spawn ancorado AQUI aparece no
-    // centro da tela (que é o que a sensação de "inimigo vem de frente" espera).
-    //
-    // A câmera ainda tem CAM_HEIGHT (acima) e dynLateral/dynVertical (drift senoidal) — o
-    // CAM_HEIGHT não importa (é vertical, o spawn é ancorado no mesmo plano Y do jogador); os
-    // drifts são ignorados de propósito (o spawn não deve tremer junto com a oscilação
-    // cosmética da câmera).
+    // ============ PONTO NA LINHA DE VISÃO DA CÂMERA ============
+    // v0.51.1 — SIMPLIFICADO. Antes devolvia um ponto deslocado lateralmente pra cair na linha
+    // de visão da câmera (que seguia só 30% do movimento lateral do jogador): a intenção era
+    // que o inimigo aparecesse no centro da tela. Mas o efeito colateral era o inimigo nascer
+    // deslocado da nave quando o jogador estava na borda — parecia vir "de lado" em vez de vir
+    // reto de frente. Agora CAM_FOLLOW_LATERAL subiu pra 1.0 (câmera acompanha 100%), então a
+    // linha de visão já é a linha da nave — não precisa mais compensar nada.
+    // Devolve simplesmente: posição do jogador + forward × distância.
     getAimLineAhead(distanceAhead) {
-      const frame = lastFrame
-      // offset lateral: câmera segue 0.3 do jogador, então o jogador está 0.7 "mais longe" que
-      // a câmera no eixo lateral. Pra cair na linha de visão, o ponto alvo retrocede esse 0.7.
-      const aimOffsetX = playerX * (CAM_FOLLOW_LATERAL - 1)
-      const aimOffsetY = playerY * (CAM_FOLLOW_LATERAL - 1)
-      return lastPlayerPos.clone()
-        .addScaledVector(frame.forward, distanceAhead)
-        .addScaledVector(frame.right, aimOffsetX)
-        .addScaledVector(frame.up, aimOffsetY)
+      return lastPlayerPos.clone().addScaledVector(lastFrame.forward, distanceAhead)
     },
 
     setAdvancing: (v) => { advancing = v },
