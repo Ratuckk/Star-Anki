@@ -44,21 +44,29 @@ const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 // lateral ATUAL do jogador, pra o centro do espalhamento acompanhar a nave em vez da centerline
 // do trilho. A fração (0.7) foi escolhida pra: (a) resolver o sintoma (que ficava feio com
 // nave nas laterais), (b) manter variedade — parte dos inimigos ainda nasce no lado oposto.
+//
+// BUG real encontrado depois (inimigos nascendo sempre na extrema direita da câmera/nave): o
+// espalhamento lateral e a compensação estavam sendo aplicados com o right/up do frame LÁ NA
+// FRENTE (distanceAhead, 90-140 unidades) em vez do frame ATUAL. O trilho é um laço fechado de
+// só ~450-500 unidades de volta total e sempre curva no MESMO sentido (não inverte) — 90-140
+// unidades já é uma fatia grande da volta, então o right/up lá na frente vem bem rotacionado
+// em relação ao que a câmera enxerga agora, e como o giro é sempre no mesmo sentido, isso
+// empurrava quase todo inimigo pro mesmo lado da tela, não só ocasionalmente. Corrigido usando
+// o right/up do frame ATUAL (rail.getFrameAt(0), já em cache) pro espalhamento/compensação —
+// só a POSIÇÃO de base continua vindo do ponto lá na frente, pra o inimigo continuar
+// aparecendo mais longe no trilho.
 export function randomSpawnPositionOnPath(rail, distanceMin, distanceMax, boxX, boxY) {
   const distanceAhead = distanceMin + Math.random() * (distanceMax - distanceMin)
-  const frame = rail.getFrameAt(distanceAhead)
+  const aheadPosition = rail.getFrameAt(distanceAhead).position
+  const frameNow = rail.getFrameAt(0)
   const lateralX = (Math.random() * 2 - 1) * boxX
   const lateralY = (Math.random() * 2 - 1) * boxY
-  // rail.getPlayerLateral() devolve o offset CRU da nave em relação à centerline, medido no
-  // frame atual — é uma aproximação aplicar o mesmo valor no frame futuro (distanceAhead tem
-  // right/up próprios, que giram com a curva), mas em curvas do trilho atual essa diferença é
-  // pequena o bastante pra não importar.
   const lateral = rail.getPlayerLateral ? rail.getPlayerLateral() : null
   const compensateX = lateral ? lateral.x * SPAWN_PLAYER_LATERAL_COMPENSATION : 0
   const compensateY = lateral ? lateral.y * SPAWN_PLAYER_LATERAL_COMPENSATION : 0
-  return frame.position.clone()
-    .addScaledVector(frame.right, lateralX + compensateX)
-    .addScaledVector(frame.up, lateralY + compensateY)
+  return aheadPosition.clone()
+    .addScaledVector(frameNow.right, lateralX + compensateX)
+    .addScaledVector(frameNow.up, lateralY + compensateY)
 }
 
 // spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
