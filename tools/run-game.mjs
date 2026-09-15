@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Roda o Star Anki num servidor estático local e abre o navegador padrão. Enquanto a janela do
-// jogo estiver aberta, ela manda um "ping" periódico pro servidor (ver o <script> guardado por
-// ?launcher=1 no index.html); se o ping parar de chegar (janela/aba fechada), o servidor se
-// encerra sozinho. Fechar este processo (Ctrl+C, fechar o terminal) também mata o servidor,
-// já que ele roda no mesmo processo — cobre os dois lados de "fechar o jogo fecha o servidor".
+// Roda o Star Anki num servidor estático local e abre como aplicativo dedicado no Windows
+// (ou no navegador padrão em outros SOs). Enquanto a janela do jogo estiver aberta, ela manda
+// um "ping" periódico pro servidor (ver o <script> guardado por ?launcher=1 no index.html);
+// se o ping parar de chegar (janela fechada), o servidor se encerra sozinho.
 import { createServer } from 'node:http'
+import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,6 +24,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.ico': 'image/x-icon',
 }
 
 let lastPing = null
@@ -52,9 +53,6 @@ const server = createServer(async (req, res) => {
     const info = await stat(filePath)
     if (info.isDirectory()) throw new Error('is a directory')
     const data = await readFile(filePath)
-    // sem isso o navegador guarda os .js em cache heurístico (sem Cache-Control nem ETag, só
-    // por Last-Modified) e pode continuar servindo uma versão de dias atrás mesmo depois de
-    // editar o arquivo e reiniciar o servidor — foi exatamente o que causou "a v0.22 não tá"
     res.writeHead(200, {
       'Content-Type': MIME[extname(filePath)] || 'application/octet-stream',
       'Cache-Control': 'no-store',
@@ -75,15 +73,45 @@ function shutdown(reason) {
 }
 
 function openBrowser(url) {
-  const cmd = process.platform === 'win32'
-    ? `start "" "${url}"`
-    : process.platform === 'darwin'
-      ? `open "${url}"`
-      : `xdg-open "${url}"`
+  if (process.platform === 'win32') {
+    const candidates = [
+      (process.env['ProgramFiles(x86)'] || '') + '\\Microsoft\\Edge\\Application\\msedge.exe',
+      (process.env['ProgramFiles'] || '') + '\\Microsoft\\Edge\\Application\\msedge.exe',
+      (process.env['LocalAppData'] || '') + '\\Microsoft\\Edge\\Application\\msedge.exe',
+      (process.env['ProgramFiles'] || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+      (process.env['ProgramFiles(x86)'] || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+      (process.env['LocalAppData'] || '') + '\\Google\\Chrome\\Application\\chrome.exe',
+    ]
+    const foundBrowser = candidates.find((p) => p && existsSync(p))
+    const profileDir = join(process.env['LOCALAPPDATA'] || process.env['USERPROFILE'] || '.', 'Star-Anki', 'User Data')
+
+    const cmd = foundBrowser
+      ? `start "" "${foundBrowser}" --app="${url}" --window-size=1280,720 --user-data-dir="${profileDir}"`
+      : `start "" "${url}"`
+
+    exec(cmd, (err) => {
+      if (err) console.log(`[star-anki] não consegui abrir automaticamente — abra manualmente: ${url}`)
+    })
+    return
+  }
+
+  const cmd = process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`
   exec(cmd, (err) => {
     if (err) console.log(`[star-anki] não consegui abrir o navegador automaticamente — abra manualmente: ${url}`)
   })
 }
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    const url = `http://${HOST}:${PORT}/?launcher=1`
+    console.log(`[star-anki] servidor já ativo na porta ${PORT}. Abrindo janela...`)
+    openBrowser(url)
+    setTimeout(() => process.exit(0), 1000).unref()
+  } else {
+    console.error('[star-anki] erro no servidor:', err)
+    process.exit(1)
+  }
+})
 
 server.listen(PORT, HOST, () => {
   const url = `http://${HOST}:${PORT}/?launcher=1`

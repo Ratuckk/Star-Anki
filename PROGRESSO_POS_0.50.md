@@ -295,5 +295,43 @@ Entrega do aplicativo desktop nativo leve e overhaul visual e interativo complet
 
 **Versão**: v0.53.0 → **v0.53.1**
 
+---
+
+## Correções Críticas: Despawn de Inimigos, Tela Inicial Minimalista & Launcher Local — v0.53.2
+
+Correções de jogabilidade, revisão de UI e infraestrutura do launcher desktop solicitadas pelo usuário:
+
+### 1. Correção do Bug de Despawn de Inimigos no Ar
+- **Causa Raiz Identificada**: A introdução de `tagRailEnemy` e da fórmula arbitrária de distância no trilho (`despawnDistance = currentDist + ahead + 20`) fazia com que os inimigos fossem eliminados sumariamente após 3.6 a 5.0 segundos (tempo em que a nave percorre ~100 unidades a 22 u/s). Como consequência, enxames (`miniSwarm`, patrulha de 2.5 a 4.0s), sentinelas (ciclo de mira de 4 a 7s), obstáculos estáticos (`detrito`, `ima`) e tanques sumiam no ar bem na frente do jogador sem sequer engajá-lo.
+- **Resolução**:
+  - Removido completamente o helper `tagRailEnemy` e a verificação `railDist >= enemy.despawnDistance`.
+  - Restaurada a verificação geométrica e física de ultrapassagem (`relative.dot(frame.forward) < passBehindFor(enemy)`). O inimigo ou obstáculo só é removido quando a nave realmente passa por ele.
+  - No `miniSwarm.js`: durante a patrulha, nunca sofre despawn por distância; no mergulho, só despawna após ultrapassar o jogador (`relative.dot(frame.forward) < MINI_SWARM_DIVE_PASS_BEHIND`) ou por limite de segurança de tempo (`diveElapsed > MINI_SWARM_DIVE_MAX_S`).
+  - No `blaster.js`: adicionada taxa de aproximação natural e suave (`enemy.depth -= RAIL_SLOW_SPEED * dt`) para os perfis `orbit` e `evasive`, garantindo que se aproximem do jogador e passem limpos caso não sejam abatidos antes.
+
+### 2. Tela Inicial Minimalista, Limpa e Sem Artifícios
+- **Simplificação Completa**: Removidos mais de 250 linhas de efeitos pesados e artificiais (LEDs falsos de status, gradientes de texto multicoloridos, glows e emojis excessivos).
+- **Design Elegante e Coeso**:
+  - Cabeçalho limpo com `Star Anki` e badge discreto de versão `v0.53.2`.
+  - Card minimalista do baralho ativo (`pregame-deck-card`) exibindo nome e contagem de perguntas no trilho e no painel de revisão.
+  - Botão de ação primária `Jogar` com estilo padrão ciano do jogo, acompanhado por botões secundários para `Gerenciar baralhos` e `Configurações`.
+  - Rodapé discreto com dicas de teclas (`WASD`, `Espaço`, `Z/C`, `Shift`) e indicador de gamepad sem poluição visual.
+
+### 3. Launcher Desktop Local em Tempo Real (No-Cache)
+- **Causa Raiz**: O launcher anterior e o atalho apontavam para a URL do GitHub Pages (`https://ratuckk.github.io/Star-Anki/`), que refletia a branch remota desatualizada em vez dos arquivos locais do usuário.
+- **Resolução**:
+  - `tools/run-game.mjs`: atualizado para detectar executáveis do Edge ou Chrome no Windows e lançar em `--app="http://127.0.0.1:8420/?launcher=1"` apontando para o servidor estático local com `Cache-Control: no-store` (atualizações imediatas do código local). Caso a porta 8420 já esteja ativa, foca a janela sem crashar (`EADDRINUSE`).
+  - `Star Anki.bat`: inicia diretamente `node tools/run-game.mjs`.
+  - `tools/run-desktop.vbs`: criado launcher silencioso que inicia o servidor e abre a janela do aplicativo sem manter console preto na tela.
+  - `tools/install-desktop.ps1`: atalhos da Área de Trabalho e do Menu Iniciar atualizados para executar a versão local através do `run-desktop.vbs` com o ícone nativo `star-anki.ico`.
+
+### Testes e Verificação
+- `node --check` passou em todos os arquivos modificados.
+- `node src/selftest.mjs` passou com 100% de sucesso.
+- `tools/install-desktop.ps1` executado e atalho de desktop atualizado com sucesso.
+
+**Versão**: v0.53.1 → **v0.53.2**
+
+
 
 

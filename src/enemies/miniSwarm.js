@@ -92,14 +92,9 @@ export function spawnMiniSwarm(scene, rail, nextId) {
     mesh.position.copy(position)
     mesh.scale.setScalar(MINI_ENEMY_SCALE)
     scene.add(mesh)
-    const currentRailDist = rail?.getDistance ? rail.getDistance() : 0
-    const ahead = base.distanceAhead || BLASTER_SPAWN_DISTANCE_MAX
     group.push({
       id: nextId(), mesh, kind: MINI_SWARM_KIND, dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: Infinity,
       variant,
-      spawnDistance: currentRailDist,
-      spawnAhead: ahead,
-      despawnDistance: currentRailDist + ahead + 25,
       swarmState: 'patrol',
       formationOffset,
       patrolBase: base.clone(),
@@ -109,7 +104,6 @@ export function spawnMiniSwarm(scene, rail, nextId) {
       diveDir: null,
       diveCorePos: null,
       diveElapsed: 0,
-      diveTotalDistance: 0,
       diveAnglePhase: Math.random() * Math.PI * 2,
     })
   }
@@ -121,12 +115,7 @@ export function spawnMiniSwarm(scene, rail, nextId) {
 // hélice (spiral), conforme a variante sorteada no spawn. Nunca atira. Remove sozinho (não usa
 // o pass-behind genérico do loop principal porque tem seu próprio teto de tempo de mergulho).
 export function updateMiniSwarm(enemy, dt, ctx) {
-  const { playerPosition, frame, elapsed, removeEnemy, rail } = ctx
-  const railDist = rail?.getDistance ? rail.getDistance() : 0
-  if (enemy.despawnDistance && railDist >= enemy.despawnDistance) {
-    removeEnemy(enemy)
-    return
-  }
+  const { playerPosition, frame, elapsed, removeEnemy } = ctx
   if (enemy.swarmState === 'patrol') {
     enemy.patrolTimer -= dt
     const wobble = Math.sin(elapsed * 2 + enemy.patrolPhase) * MINI_SWARM_PATROL_AMPLITUDE
@@ -157,7 +146,6 @@ export function updateMiniSwarm(enemy, dt, ctx) {
       const toTarget = diveTarget.clone().sub(enemy.mesh.position)
       enemy.diveDir = toTarget.lengthSq() > 1e-4 ? toTarget.normalize() : frame.forward.clone().negate()
       enemy.diveCorePos = enemy.mesh.position.clone()
-      enemy.diveTotalDistance = toTarget.length()
     }
     return
   }
@@ -184,9 +172,8 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   // MINI_SWARM_DIVE_BEHIND_GRACE_S depois de cruzar (dá tempo do golpe final), só congela de
   // verdade passado isso.
   if (enemy.behindTimer == null) enemy.behindTimer = 0
-  const crossedPlayer = enemy.diveTotalDistance ? (enemy.diveElapsed * MINI_SWARM_DIVE_SPEED > enemy.diveTotalDistance) : false
   const behindDot = enemy.diveCorePos.clone().sub(frame.position).dot(frame.forward)
-  if (crossedPlayer || behindDot < 0) enemy.behindTimer += dt
+  if (behindDot < 0) enemy.behindTimer += dt
   const toPlayer = playerPosition.clone().sub(enemy.diveCorePos)
   const distToPlayer = toPlayer.length()
   if (enemy.behindTimer < MINI_SWARM_DIVE_BEHIND_GRACE_S && distToPlayer > 1e-4) {
@@ -214,10 +201,8 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   const facing = enemy.mesh.position.clone().sub(prevPos)
   if (facing.lengthSq() > 1e-6) enemy.mesh.lookAt(enemy.mesh.position.clone().add(facing))
 
-  // P1: despawn por distância de mergulho percorrida ou progresso no trilho (sem depender de relative.dot)
-  const divedPast = enemy.diveTotalDistance ? (enemy.diveElapsed * MINI_SWARM_DIVE_SPEED > enemy.diveTotalDistance + 14) : false
-  const railPassed = enemy.despawnDistance ? (railDist >= enemy.despawnDistance) : false
-  if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || divedPast || railPassed) {
+  const relative = enemy.mesh.position.clone().sub(frame.position)
+  if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || relative.dot(frame.forward) < MINI_SWARM_DIVE_PASS_BEHIND) {
     removeEnemy(enemy)
   }
 }

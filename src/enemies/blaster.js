@@ -168,6 +168,7 @@ export function updateBlasterArenaMovement(enemy, dt, playerPosition, frame, spe
 export function updateBlasterRailMovement(enemy, dt, rail) {
   if (enemy.profile === 'orbit') {
     enemy.orbitAngle += RAIL_ORBIT_SPEED * enemy.orbitDir * dt
+    enemy.depth -= RAIL_SLOW_SPEED * dt
     enemy.screenX = enemy.orbitCenterX + Math.cos(enemy.orbitAngle) * RAIL_ORBIT_RADIUS
     enemy.screenY = enemy.orbitCenterY + Math.sin(enemy.orbitAngle) * RAIL_ORBIT_RADIUS
   } else if (enemy.profile === 'circular') {
@@ -188,6 +189,7 @@ export function updateBlasterRailMovement(enemy, dt, rail) {
       enemy.jukeTimer = EVASIVE_JUKE_INTERVAL_MIN + Math.random() * (EVASIVE_JUKE_INTERVAL_MAX - EVASIVE_JUKE_INTERVAL_MIN)
       enemy.jukeAngle = Math.random() * Math.PI * 2
     }
+    enemy.depth -= RAIL_SLOW_SPEED * dt
     enemy.screenX += Math.cos(enemy.jukeAngle) * RAIL_EVASIVE_SPEED * dt
     enemy.screenY += Math.sin(enemy.jukeAngle) * RAIL_EVASIVE_SPEED * dt
   }
