@@ -245,6 +245,7 @@ export function createGameLoop(deps) {
       enemiesActive,
       aimDirection: fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
+      allowBossOrbHit: state.phase === 'bossBuildup',
     })
 
     // ============ HIT MARKER ============

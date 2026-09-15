@@ -96,3 +96,70 @@ foram tocados nesta sessão de qualquer forma (o bug ali é anterior, não intro
 **Versão**: v0.50.0 → v0.51.9 (várias bumps intermediárias nesta mesma sessão, pedido explícito
 do usuário pra sempre subir a versão a cada mudança, facilitando confirmar qual build está
 rodando).
+
+## Resolução do jogo não abrir no GitHub, fix de cartas e correções de combate — v0.52.0
+
+Sessão de estabilização pós-overhaul do `main.js`. O overhaul de modularização (`mount-game.js`,
+`game-loop.js`, `cutscenes.js`, `flow-boss.js`, `flow-question.js`, `flow-progression.js`,
+`main-constants.js`) havia sido concluído, mas o deploy no GitHub Pages apresentava travamento no
+carregamento e bugs no fluxo de jogo.
+
+### O que foi investigado e corrigido
+
+1. **Problema do jogo não abrir no GitHub Pages (cache poisoning / Service Worker)**:
+   - **Causa**: Durante etapas parciais do overhaul, o navegador executou versões intermediárias
+     que continham erros de importação (`Uncaught SyntaxError: The requested module './flow-boss.js'
+     does not provide an export named 'createBossFlow'`). Como o `service-worker.js` mantinha
+     `CACHE_NAME = 'star-anki-shell-v1'` estático e realizava `fetch(req)` com a política de cache
+     padrão do navegador, respostas intermediárias ou cacheadas com `max-age=600` do CDN do
+     GitHub Pages foram salvas no CacheStorage. Além disso, `service-worker.js` não verificava
+     `res.ok`, gravando erros (404/500) direto no cache. Como o arquivo do Service Worker não
+     mudou, novos deploys não acionavam `controllerchange`.
+   - **Correção**:
+     - `CACHE_NAME` elevado para `'star-anki-shell-v2'`.
+     - `fetch(req, { cache: 'no-cache' })` aplicado a requisições de mesma origem, forçando a
+       revalidação com o GitHub Pages e ignorando respostas defasadas do cache de disco.
+     - Proteção `if (res.ok)` adicionada antes de qualquer `cache.put()`.
+     - Ao ativar (`activate`), o Service Worker remove qualquer cache diferente de `v2` e assume
+       o controle com `self.clients.claim()`. O listener `controllerchange` no `index.html`
+       recarrega a aba automaticamente com os arquivos atualizados.
+
+2. **Bug da carta "Carga acelerada" (`faster-charge`) nunca sorteada**:
+   - **Causa**: Em `src/player.js`, `HOMING_CHARGE_MIN_FLOOR_MS` estava definido como `1000`, igual
+     ao valor inicial `HOMING_CHARGE_MIN_MS = 1000`. A checagem `if (homingChargeMinMs <=
+     HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')` excluía a carta logo na largada do
+     jogo. Além disso, ao ser comprada ela subtraía 300ms com `Math.max(HOMING_CHARGE_MIN_FLOOR_MS, ...)`,
+     sendo impedida de surtir efeito pelo piso em 1000.
+   - **Correção**: `HOMING_CHARGE_MIN_FLOOR_MS` alterado para `400ms`. A carta agora aparece
+     normalmente no sorteio até o teto de 2 upgrades.
+   - **Exclusões completas no `buildCardExcludeSet`**: Adicionados caps e filtros de exclusão para
+     `longer-invincibility` (teto `INVINCIBILITY_CAP_MS`), `faster-shield-recharge` (teto
+     `SHIELD_REGEN_DELAY_FLOOR_MS`), `faster-fire` (piso `FIRE_COOLDOWN_FLOOR`) e `longer-dodge-iframe`
+     (novo cap `FULL_SPIN_IFRAME_MS_CAP = 1800ms`), evitando que cartas em stack máximo continuem
+     poluindo o pool de sorteio.
+
+3. **Vazamento de `setTimeout` do FOV no início da luta do chefe**:
+   - **Causa**: Em `src/flow-boss.js` (`enterBossFight`), o timer de 500ms para restaurar o FOV
+     da câmera para 70 rodava solto sem referência. Se o jogador resetasse o jogo ou o setor
+     acabasse nesse intervalo, o callback alterava a câmera de uma cena desmontada.
+   - **Correção**: Id guardado em `state.bossFovTimeout` e limpo defensivamente tanto em
+     `enterBossFight` quanto no `teardown()` de `src/mount-game.js`.
+
+4. **Bug da pergunta pré-chefe "pulada" (orbe destruído sem modal)**:
+   - **Causa**: Disparos de laser em voo continuavam colidindo com os orbes em
+     `targets.resolveBossOrbHit()` mesmo quando a fase do jogo já havia mudado para resolução da
+     pergunta ou cutscene (`state.phase !== 'bossBuildup'`), destruindo o orbe sem que o
+     `game-loop.js` chamasse `bossFlow.triggerBossQuestion()`. Além disso, se dois lasers
+     acertassem orbes no mesmo tick, apenas um evento booleano era gerado e o segundo orbe era
+     perdido.
+   - **Correção**: Passado `allowBossOrbHit: state.phase === 'bossBuildup'` de `game-loop.js` para
+     `combat.update()` e `projectiles.update()`. Orbes só são destruídos e pontuados enquanto o
+     jogador estiver ativamente na fase de caçada, e apenas um acerto por frame é processado.
+
+5. **Testes e Verificação**:
+   - `node src/selftest.mjs` executado com sucesso (todos os testes de parsing de Anki e sessão).
+   - Validador sintático e de consistência de imports/exports em todos os 50 arquivos JS
+     executado sem nenhuma divergência.
+
+**Versão**: v0.51.15 → **v0.52.0**
+

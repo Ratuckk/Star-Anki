@@ -141,7 +141,9 @@ export function createBossFlow(deps) {
     hud.damageFlash()
     camera.fov = 88
     camera.updateProjectionMatrix()
-    setTimeout(() => {
+    if (state.bossFovTimeout) clearTimeout(state.bossFovTimeout)
+    state.bossFovTimeout = setTimeout(() => {
+      state.bossFovTimeout = null
       camera.fov = 70
       camera.updateProjectionMatrix()
     }, 500)

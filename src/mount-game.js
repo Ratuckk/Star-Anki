@@ -128,6 +128,7 @@ export function mountGame(session, deck, menu) {
     bossBuildupTimer: 0,
     bossOrbsRemaining: 0,
     bossDifficulty: 0,
+    bossFovTimeout: null,
 
     // ============ dourado ============
     goldenTimer: 0, // valor real logo abaixo (progression.randomGoldenInterval)
@@ -258,6 +259,10 @@ export function mountGame(session, deck, menu) {
     // gameLoop.stop() cobre state.stopped = true + cancelAnimationFrame(state.rafId) — antes
     // essas duas linhas ficavam aqui; agora o game-loop.js é dono do ciclo de vida do RAF.
     gameLoop.stop()
+    if (state.bossFovTimeout) {
+      clearTimeout(state.bossFovTimeout)
+      state.bossFovTimeout = null
+    }
     window.removeEventListener('resize', onResize)
     input.dispose()
     effects.dispose()

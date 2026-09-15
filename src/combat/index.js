@@ -148,7 +148,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyKills, enemyKillPoints, bonusKillPoints,
         goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
         timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
-      } = projectiles.update(dt, aimDirection)
+      } = projectiles.update(dt, aimDirection, { allowBossOrbHit: opts.allowBossOrbHit !== false })
       targets.update(dt)
 
       let enemyHits = 0

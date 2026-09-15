@@ -113,7 +113,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     })
   }
 
-  function update(dt, aimDirection) {
+  function update(dt, aimDirection, opts = {}) {
+    const allowBossOrbHit = opts.allowBossOrbHit !== false
     let enemyKills = 0
     let enemyKillPoints = 0
     let bonusKillPoints = 0
@@ -195,7 +196,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       }
 
       const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER
-      const orbHit = targets.resolveBossOrbHit(prevPos, projectile.mesh.position, hitBuffer)
+      const orbHit = allowBossOrbHit && !bossOrbHit ? targets.resolveBossOrbHit(prevPos, projectile.mesh.position, hitBuffer) : null
       if (orbHit) {
         bossOrbHit = true
         removeProjectile(projectile)

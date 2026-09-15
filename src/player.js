@@ -28,7 +28,7 @@ const PROJECTILE_COUNT_START = 1
 // em main.js)
 const HOMING_CHARGE_MIN_MS = 1000
 const HOMING_CHARGE_MAX_MS = 4000
-const HOMING_CHARGE_MIN_FLOOR_MS = 1000
+const HOMING_CHARGE_MIN_FLOOR_MS = 400
 const HOMING_MAX_TARGETS_BASE = 4
 const HOMING_MAX_TARGETS_CAP = 8
 // carta "Ricochete": quantas vezes um tiro carregado pula pro próximo inimigo mais próximo após
@@ -39,6 +39,7 @@ const RICOCHET_CAP = 5
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
 const FULL_SPIN_COOLDOWN_MS = 3000
 const FULL_SPIN_IFRAME_MS_BASE = 900
+const FULL_SPIN_IFRAME_MS_CAP = 1800
 
 // ============ PROPULSOR / REPULSOR (A/S) ============
 // 1 barra COMPARTILHADA entre os dois: ao usar qualquer um, a barra zera e recarrega devagar;
@@ -216,7 +217,7 @@ export function createPlayerSystem(session) {
           ricochetCount = Math.min(RICOCHET_CAP, ricochetCount + 1)
           break
         case 'longer-dodge-iframe':
-          fullSpinIframeMs += 150
+          fullSpinIframeMs = Math.min(FULL_SPIN_IFRAME_MS_CAP, fullSpinIframeMs + 150)
           break
         case 'propulsion-ram':
           ramCardActive = true
@@ -238,6 +239,10 @@ export function createPlayerSystem(session) {
       if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
       if (ricochetCount >= RICOCHET_CAP) exclude.add('ricochet')
       if (ramCardActive) exclude.add('propulsion-ram')
+      if (invincibilityDurationMs >= INVINCIBILITY_CAP_MS) exclude.add('longer-invincibility')
+      if (shieldRegenDelayMs <= SHIELD_REGEN_DELAY_FLOOR_MS) exclude.add('faster-shield-recharge')
+      if (fireCooldown <= FIRE_COOLDOWN_FLOOR) exclude.add('faster-fire')
+      if (fullSpinIframeMs >= FULL_SPIN_IFRAME_MS_CAP) exclude.add('longer-dodge-iframe')
       return exclude
     },
 
