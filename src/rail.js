@@ -586,27 +586,20 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     setBoostActive: (v) => { boostActive = !!v },
     getBoostActive: () => boostActive,
 
-    // ============ PONTO NA LINHA DE VISÃO DA CÂMERA ============
-    // v0.51.2 (fix definitivo do "spawn à direita"): as duas tentativas anteriores reconstruíam
-    // a posição teórica `frame.position + right * playerX * CAM_FOLLOW_LATERAL + forward * d`,
-    // IGNORANDO que a posição real da câmera é `lerp`ada e recebe o drift senoidal
-    // (dynLateral/dynVertical, ±2.4 / ±1.1). Com o drift empurrando a câmera pra um lado, o
-    // ponto reconstruído deixava de estar no centro real da tela e o spawn "derivava" na
-    // direção contrária — era exatamente o "tudo na direita" reportado.
+    // ============ SPAWN "À FRENTE DO JOGADOR" ============
+    // v0.51.3 (fix do "spawn na direita"): as versões anteriores calculavam o ponto no CENTRO
+    // da tela (reconstruindo câmera/lateral/drift). Só que a câmera segue apenas 30% do
+    // movimento lateral do jogador, então quando a nave está à esquerda, o centro da tela fica
+    // À DIREITA da nave — o inimigo nascia na direção contrária à posição do jogador. É
+    // exatamente o "só spawna na direita" reportado.
     //
-    // A correção usa a posição REAL da câmera. Como ela sempre olha na direção `frame.forward`
-    // (via `camera.lookAt(camera.position + frame.forward)`), a linha visual do centro da tela
-    // é simplesmente `camera.position + frame.forward * t` para qualquer t > 0. Escolhendo
-    // t = `distanceAhead + CAM_BEHIND`, o ponto fica a `distanceAhead` do plano do jogador
-    // (o plano perpendicular ao forward passando por frame.position) E no centro EXATO da
-    // tela — sem depender de reconstruir o offset lateral, o drift, o lag do lerp ou o que for.
-    //
-    // Mesmo em modo arena (onde spawn usa randomSpawnAroundArena, não esta função) o método
-    // continua correto: `lastFrame` e `camera` estão ambos sincronizados com o frame atual.
+    // Agora a função devolve simplesmente o PONTO À FRENTE DA NAVE, na mesma linha lateral:
+    //   lastPlayerPos + forward * distanceAhead
+    // Assim o inimigo nasce na direção que a nave aponta, sempre alinhado com ela do ponto de
+    // vista do jogador — que é o que a sensação de "vem de frente" espera. A câmera pode
+    // continuar seguindo só 30% do lateral: o spawn acompanha a NAVE, não a câmera.
     getAimLineAhead(distanceAhead) {
-      const frame = lastFrame
-      const camPos = camera.position.clone()
-      return camPos.addScaledVector(frame.forward, CAM_BEHIND + distanceAhead)
+      return lastPlayerPos.clone().addScaledVector(lastFrame.forward, distanceAhead)
     },
 
     setAdvancing: (v) => { advancing = v },
