@@ -3,6 +3,59 @@
 Continuação do [PROGRESSO.md](PROGRESSO.md) (histórico até v0.33.x, agora congelado). A partir desta
 entrega, toda documentação nova entra neste arquivo.
 
+## App instalável (PWA) com atualização automática — v0.50.0
+
+Pedido do usuário: *"faz um aplicativo do jogo que se atualiza automaticamente"*. Como o projeto
+não tem build/bundler (ES modules nativos, servido estático), a solução é um PWA (manifest +
+service worker) em cima do que já existe, sem mudar a arquitetura de arquivos.
+
+1. **`manifest.webmanifest` (novo)** — nome/ícones/`display: standalone`/cores (mesma paleta do
+   jogo, `#0b0d12`/`#5ce1ff`). Sem `orientation` travada no manifest de propósito: as telas de
+   menu/baralhos/configurações funcionam em retrato (v0.49.0), só a PARTIDA em si exige paisagem
+   — isso já é imposto pelo `rotate-overlay` do `mobile.js`, travar no manifest também bloquearia
+   o menu à toa.
+2. **`icons/` (novo)** — 5 PNGs gerados (nave delta na mesma paleta do jogo: fundo `#0b0d12`,
+   nave `#5ce1ff`): `icon-192`/`icon-512` (`purpose: any`), `icon-512-maskable` (margem de
+   segurança maior, ~32% de padding, pro recorte adaptativo do Android), `apple-touch-icon`
+   (iOS) e `favicon-32`.
+3. **`service-worker.js` (novo)** — estratégia pensada pro fato do projeto ter dezenas de
+   arquivos em `src/**/*.js` que mudam a toda entrega: em vez de uma lista fixa pra pré-cachear
+   (ficaria desatualizada toda vez que um inimigo/tela novo entra), o cache é só fallback
+   OFFLINE. Arquivos do próprio jogo (mesma origem): **network-first** — toda busca tenta a rede
+   primeiro, só cai pro cache se a rede falhar; é isso que faz o app se atualizar sozinho a cada
+   deploy novo, sem precisar bumpar nenhuma versão aqui. CDN do Three.js (`three@0.169.0`, versão
+   fixa no import map): **cache-first** — essa URL nunca muda de conteúdo pra essa versão
+   (convenção do jsdelivr), não tem por que rebaixar de novo toda vez.
+4. **`index.html`** — `<link rel="manifest">`, `theme-color`, ícone/apple-touch-icon, e o
+   registro do service worker: checa atualização (`reg.update()`) ao carregar, toda vez que a
+   aba volta a ficar visível, e a cada 5min enquanto aberta. Quando uma versão nova ASSUME o
+   controle (`controllerchange`), a página recarrega sozinha pra aplicar — com uma guarda
+   (`hadController`) pra não recarregar à toa no primeiro registro de todos (não existe "versão
+   anterior" nesse caso, o primeiro load já busca tudo fresco da rede).
+
+**Testado**: `node --check` limpo em `service-worker.js`, JSON do manifest validado
+(`json.load`), `selftest.mjs` passou. **Testado ao vivo**: servidor estático próprio (porta
+livre) + Chromium headless via Playwright (instalado à parte num diretório de teste, fora do
+projeto) — confirmado `serviceWorker.getRegistration()` retornando `activeState: "activated"`,
+`<link rel="manifest">` resolvendo pro caminho certo, e os 4 arquivos novos (`index.html`,
+`manifest.webmanifest`, `service-worker.js`, `icons/icon-192.png`) servindo HTTP 200. Único erro
+de console observado (`ERR_TUNNEL_CONNECTION_FAILED` no CDN do Three.js) é uma limitação da
+política de rede do AMBIENTE DE TESTE (proxy de saída bloqueando `cdn.jsdelivr.net` nesta sandbox
+específica, confirmado isolado com `curl` direto pro CDN retornando 403 do proxy) — não é erro
+do código novo, e não deve reproduzir no host real de produção.
+
+**Verificação de bug antigo, sem mudança de código** (mesma sessão, a pedido do usuário): rodei
+um teste sintético em Node importando os módulos reais (`rail.js`/`enemies/shared.js`, `three`
+instalado à parte) pra confirmar se o bug "inimigos nascem na extrema direita" (resolvido pela
+correção v3/`getAimLineAhead` já mesclada de outra sessão) segue corrigido — simulei a nave
+centrada, empurrada 100% pra direita, 100% pra esquerda, e percorrendo a volta inteira do trilho
+(todas as curvas), projetando 300 spawns por cenário na câmera. Resultado: centrado quando a nave
+está centrada (média ~0.004 de -1..1), puxado moderadamente (não "extremo") pro lado onde a nave
+está nos dois sentidos (~0.17-0.19), sem viés fixo de lado mesmo COM curva do trilho. Confirma a
+correção.
+
+**Versão**: v0.49.0 → v0.50.0.
+
 ## Versão mobile funcional, jogável com controle físico — v0.49.0
 
 Pedido do usuário: *"Faça uma versão mobile funcional (pelo site) que também seja jogável com um joystick/gamepad/controle"*. Escopo confirmado antes de começar (`AskUserQuestion`, pra não construir a coisa errada num trabalho grande): **sem** controles por toque pra jogar de verdade — a partida continua exclusiva de controle físico (Bluetooth/USB, via `Gamepad API`, que já funciona tanto no Android Chrome quanto no iOS Safari 13+ sem nenhum código extra desta entrega — é só o suporte genérico entregue na v0.48.0 fazendo efeito); toque só precisa funcionar até a tela de Configurações (onde o jogador mapeia os botões do controle). Orientação: só paisagem, com aviso bloqueando se estiver na vertical.
