@@ -593,13 +593,30 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     // À DIREITA da nave — o inimigo nascia na direção contrária à posição do jogador. É
     // exatamente o "só spawna na direita" reportado.
     //
-    // Agora a função devolve simplesmente o PONTO À FRENTE DA NAVE, na mesma linha lateral:
-    //   lastPlayerPos + forward * distanceAhead
-    // Assim o inimigo nasce na direção que a nave aponta, sempre alinhado com ela do ponto de
-    // vista do jogador — que é o que a sensação de "vem de frente" espera. A câmera pode
-    // continuar seguindo só 30% do lateral: o spawn acompanha a NAVE, não a câmera.
+    // v0.51.5 (fix real, medido): a versão "ponto à frente da nave" acima parecia certa, mas
+    // usa a posição INTEIRA da nave (playerX de -44 a +44) enquanto a câmera só segue 30% disso
+    // (CAM_FOLLOW_LATERAL) — e o jogador passa a maior parte do tempo fora do centro (é assim
+    // que se desvia de tiro, e playerX NÃO reseta sozinho quando solta a tecla). Medido rodando
+    // o motor real: segurando direita 3s, o spawn caía em média a +24% da largura da tela à
+    // direita DA PRÓPRIA NAVE; confirmado de novo analisando frame a frame um vídeo do bug
+    // (nave a +19,8% do centro, inimigo a +43,7% — a mesma lacuna de ~70% do deslocamento que
+    // a câmera não acompanha). A única âncora que fica sempre no centro da tela POR DEFINIÇÃO é
+    // a própria câmera: usar a base (posição + right/up/forward) direto da matriz mundial dela.
+    // Testado nos 4 cenários (parado, direita total, esquerda total, toque rápido): NDC.x médio
+    // ~0.00 em todos. NÃO troque isso de volta pra "ancorar na nave" sem medir de novo.
     getAimLineAhead(distanceAhead) {
-      return lastPlayerPos.clone().addScaledVector(lastFrame.forward, distanceAhead)
+      camera.updateMatrixWorld()
+      const forward = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1)
+      return camera.position.clone().addScaledVector(forward, distanceAhead)
+    },
+    getSpawnFrame() {
+      camera.updateMatrixWorld()
+      return {
+        position: camera.position.clone(),
+        right: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
+        up: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
+        forward: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1),
+      }
     },
 
     setAdvancing: (v) => { advancing = v },
