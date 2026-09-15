@@ -23,13 +23,20 @@ export function distanceToSegment(point, segStart, segEnd) {
 const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
 // ============ SPAWN NO TRILHO ============
-// v0.51.5: spawn ancorado na CÂMERA (rail.getAimLineAhead/getSpawnFrame), não na nave — medido
-// e comprovado que ancorar na nave deixa o spawn no mesmo lado da tela em que o jogador já
-// está (ele passa a maior parte do tempo fora do centro, desviando de tiro), o que lia como
-// "inimigo sempre nasce à direita/esquerda". Ver histórico completo em rail.js.
+// v0.50.x: terceira iteração do mesmo problema.
+//   v1: spawn na centerline do trilho, à frente (projetando o ponto futuro da curva) →
+//       inimigo nascia à esquerda da tela quando o jogador estava à direita, porque a câmera
+//       segue só 30% do lateral (CAM_FOLLOW_LATERAL = 0.3).
+//   v2: spawn ancorado na POSIÇÃO DO JOGADOR + forward atual → resolvia o problema em curva,
+//       mas o jogador TAMBÉM não está no centro da tela (ele desloca junto com o movimento
+//       lateral), então o spawn aparecia deslocado pra direita quando o jogador ia pra direita.
+//   v3 (atual): spawn ancorado na LINHA DE VISÃO DA CÂMERA. `rail.getAimLineAhead(d)` devolve
+//       o ponto onde o eixo ótico da câmera cruza o plano a `d` unidades do jogador. Esse
+//       ponto aparece no CENTRO da tela por definição, que é a leitura de "inimigo vem de
+//       frente".
 export function randomSpawnPositionOnPath(rail, distanceMin, distanceMax, boxX, boxY) {
   const distanceAhead = distanceMin + Math.random() * (distanceMax - distanceMin)
-  const frame = rail.getSpawnFrame()
+  const frame = rail.getFrameAt(0)
   const base = rail.getAimLineAhead(distanceAhead)
   const lateralX = (Math.random() * 2 - 1) * boxX
   const lateralY = (Math.random() * 2 - 1) * boxY
