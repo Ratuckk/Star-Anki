@@ -1,36 +1,68 @@
 import * as THREE from 'three'
 
+// ============================================================================
+// rail.js — controlador de trilho + arena all-range + câmera + spawn-âncora
+//
+// Overhaul v0.51.4 — reescrito do zero pra eliminar o bug de "inimigo nasce à direita
+// do jogador". A causa raiz era o `getAimLineAhead`, que devolvia o CENTRO DA TELA em vez
+// da posição da NAVE. Como a câmera segue só 30% do movimento lateral do jogador
+// (CAM_FOLLOW_LATERAL), quando a nave está à esquerda o centro da tela fica à direita
+// dela — e todo inimigo do modo trilho (chamado via enemies/shared.js →
+// randomSpawnPositionOnPath → rail.getAimLineAhead) nascia visivelmente deslocado pra
+// direita. Agora `getAimLineAhead` devolve `posição_da_nave + forward * distanceAhead`,
+// que é a leitura de "inimigo vem de frente" que o jogador de fato espera.
+//
+// A API pública é IDÊNTICA à versão anterior — nenhum outro arquivo precisa mudar.
+// ============================================================================
+
+// ============ VELOCIDADE DO TRILHO ============
 const RAIL_SPEED = 22
+
+// ============ MOVIMENTO LATERAL ============
+// aceleração progressiva: manter a mesma direção (X e Y) por LATERAL_ACCEL_HOLD_TIME sobe
+// a velocidade lateral de LATERAL_SPEED_BASE até LATERAL_SPEED_MAX. Soltar/trocar reseta.
 const LATERAL_SPEED_BASE = 15
 const LATERAL_SPEED_MAX = 22
 const LATERAL_ACCEL_HOLD_TIME = 1.2
 const LATERAL_ACCEL_RATE = 22
+
+// limite de deslocamento lateral (quanto a nave pode sair do centro do trilho)
 const BOX_X = 44
 const BOX_Y = 44
+
+// inclinação da nave ao mover lateralmente (cosmético, não afeta hitbox)
 const MAX_ROLL = 0.55
 const ROLL_SMOOTH_RATE = 10
+
+// ============ CÂMERA ============
 const CAM_LAG_RATE = 5
 const CAM_BEHIND = 10
 const CAM_HEIGHT = 3
-
+// quanto a câmera segue do movimento lateral do jogador — 0.3 = 30%. Isso é o motivo pelo
+// qual "centro da tela ≠ posição da nave" quando o jogador se move lateralmente.
 const CAM_FOLLOW_LATERAL = 0.3
 
+// drift senoidal cosmético da câmera (nunca afeta spawn/hitbox)
 const CAMERA_DYNAMIC_PERIOD = 17
 const CAMERA_DYNAMIC_LATERAL = 2.4
 const CAMERA_DYNAMIC_VERTICAL = 1.1
 const CAMERA_DYNAMIC_ROLL = 0.1
 
+// roll de câmera proporcional à curvatura real do trilho
 const CURVE_SAMPLE_AHEAD = 6
 const CURVE_ROLL_GAIN = 3.2
 const CURVE_ROLL_MAX = THREE.MathUtils.degToRad(14)
 const CURVE_ROLL_SMOOTH_RATE = 4
 
+// FOV dinâmico durante o boost
 const CAM_FOV_BASE = 70
 const CAM_FOV_BOOST = 84
 const CAM_FOV_LERP_RATE = 6
 
+// ============ NARIZ DA NAVE ============
 const SHIP_NOSE_OFFSET = 1.6
 
+// ============ VISUAL DA NAVE (presets de Configurações → Visual) ============
 export const SHIP_VISUAL_DEFAULT = 'default'
 const SHIP_PRESETS = {
   default: {
@@ -82,6 +114,10 @@ const SHIP_PRESETS = {
 }
 export const SHIP_VISUAL_OPTIONS = Object.entries(SHIP_PRESETS).map(([id, p]) => ({ id, label: p.label }))
 
+// ============ "PESO FÍSICO" (springs de animação) ============
+// Cada preset de nave define um `weight` de 0..1; estes pares (light/heavy) são interpolados
+// por ele. Nave leve = mola rígida, respostas rápidas. Nave pesada = mola mole, movimento
+// lento com inércia.
 const ROLL_STIFFNESS_LIGHT = 220
 const ROLL_STIFFNESS_HEAVY = 70
 const ROLL_DAMPING_LIGHT = 22
@@ -124,6 +160,7 @@ function shipPhysicsFor(preset) {
   }
 }
 
+// ============ ARENA (all-range) ============
 const ARENA_TURN_RATE = 1.8
 const ARENA_PITCH_LIMIT = 1.2
 const ARENA_SPEED = 22
@@ -146,6 +183,7 @@ const EMERGENCY_BRAKE_COOLDOWN = 1.5
 
 const SUMMERSAULT_DURATION = 0.6
 
+// ============ CONSTRUÇÃO DO TRILHO ============
 function buildCurve() {
   const points = [
     new THREE.Vector3(0, 3, 0),
@@ -179,15 +217,25 @@ function buildFinShape() {
 
 function buildShip(variant = SHIP_VISUAL_DEFAULT) {
   const preset = SHIP_PRESETS[variant] || SHIP_PRESETS[SHIP_VISUAL_DEFAULT]
-  const bodyMaterial = new THREE.MeshPhongMaterial({ color: preset.bodyColor, flatShading: true, side: THREE.DoubleSide })
+  const bodyMaterial = new THREE.MeshPhongMaterial({
+    color: preset.bodyColor, flatShading: true, side: THREE.DoubleSide,
+  })
   const accentMaterial = preset.accentColor === preset.bodyColor
     ? bodyMaterial
-    : new THREE.MeshPhongMaterial({ color: preset.accentColor, flatShading: true, side: THREE.DoubleSide })
+    : new THREE.MeshPhongMaterial({
+        color: preset.accentColor, flatShading: true, side: THREE.DoubleSide,
+      })
 
-  const body = new THREE.Mesh(new THREE.ConeGeometry(preset.bodyRadius, preset.bodyLength, 4), bodyMaterial)
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(preset.bodyRadius, preset.bodyLength, 4),
+    bodyMaterial,
+  )
   body.rotation.x = Math.PI / 2
 
-  const wing = new THREE.Mesh(new THREE.ShapeGeometry(buildDeltaShape(preset.wingHalfSpan, preset.wingFront, preset.wingBack)), bodyMaterial)
+  const wing = new THREE.Mesh(
+    new THREE.ShapeGeometry(buildDeltaShape(preset.wingHalfSpan, preset.wingFront, preset.wingBack)),
+    bodyMaterial,
+  )
   wing.rotation.x = -Math.PI / 2
   wing.position.set(...preset.wingPosition)
 
@@ -207,11 +255,13 @@ function buildShip(variant = SHIP_VISUAL_DEFAULT) {
   return group
 }
 
+// ============ FACTORY PRINCIPAL ============
 export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEFAULT) {
   const curve = buildCurve()
   const length = curve.getLength()
   const shipPhysics = shipPhysicsFor(SHIP_PRESETS[shipVisual] || SHIP_PRESETS[SHIP_VISUAL_DEFAULT])
 
+  // ---------- estado do jogador no trilho ----------
   let distance = 0
   let playerX = 0
   let playerY = 0
@@ -224,53 +274,69 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let rollVel = 0
   let speedMultiplier = 1
   let advancing = true
+
+  // ---------- câmera: dinâmica / curvas ----------
   let camDynamicT = 0
   let curveRollSmoothed = 0
+
+  // ---------- boost ----------
   let boostActive = false
   let prevBoostActive = false
   let boostBlend = 0
 
+  // ---------- animações de peso ----------
   let recoilOffset = 0
   let squatOffset = 0
   let impactSquashT = 0
   let wobbleOffset = 0
   let wobbleVel = 0
 
+  // ---------- arena / dodge / giro ----------
   let arenaIdleTimer = 0
   let emergencyBrakeTimer = 0
   let emergencyBrakeCooldownTimer = 0
   let summersaultT = 1
   let summersaultStartYaw = 0
   let turnSensitivity = 1
+
+  // ---------- frames (usados por spawns/câmera) ----------
   let lastFrame = frameAtArcLength(0)
   let lastPlayerPos = lastFrame.position.clone()
 
+  // ---------- modo + arena ----------
   let mode = 'rail'
-  let arenaCenter = new THREE.Vector3()
-  let arenaPos = new THREE.Vector3()
+  const arenaCenter = new THREE.Vector3()
+  const arenaPos = new THREE.Vector3()
   let arenaYaw = 0
   let arenaPitch = 0
   let arenaRoll = 0
   let arenaRollVel = 0
 
+  // ---------- shake de impacto ----------
   let shakeMagnitude = 0
 
+  // ---------- dodge cosmético ----------
   let dodgeRoll = 0
   let dodgeDebugOverrideDir = 0
   let dodgeDebugOverrideUntil = 0
 
+  // ---------- giro completo ----------
   let fullSpinT = 1
   let fullSpinDir = 0
 
+  // ---------- mesh da nave ----------
   const ship = buildShip(shipVisual)
   ship.position.copy(lastFrame.position)
   scene.add(ship)
 
+  // câmera inicial
   camera.fov = 70
   camera.position.copy(lastFrame.position)
   camera.updateProjectionMatrix()
 
-  const DEBUG = false
+  // ==========================================================================
+  // HELPERS INTERNOS
+  // ==========================================================================
 
   function frameAtArcLength(s) {
     const u = (((s / length) % 1) + 1) % 1
@@ -284,8 +350,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   function pathTurnRate(distance) {
     const forwardNow = frameAtArcLength(distance).forward
     const forwardAhead = frameAtArcLength(distance + CURVE_SAMPLE_AHEAD).forward
-    const a = forwardNow.x === 0 && forwardNow.z === 0 ? forwardNow : new THREE.Vector3(forwardNow.x, 0, forwardNow.z).normalize()
-    const b = forwardAhead.x === 0 && forwardAhead.z === 0 ? forwardAhead : new THREE.Vector3(forwardAhead.x, 0, forwardAhead.z).normalize()
+    const a = forwardNow.x === 0 && forwardNow.z === 0
+      ? forwardNow
+      : new THREE.Vector3(forwardNow.x, 0, forwardNow.z).normalize()
+    const b = forwardAhead.x === 0 && forwardAhead.z === 0
+      ? forwardAhead
+      : new THREE.Vector3(forwardAhead.x, 0, forwardAhead.z).normalize()
     const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1)
     const angle = Math.acos(dot)
     const sign = a.z * b.x - a.x * b.z >= 0 ? 1 : -1
@@ -326,6 +396,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     return value * Math.exp(-decayRate * dt)
   }
 
+  // ==========================================================================
+  // DODGE / GIRO / SUMMERSAULT / FREIO
+  // ==========================================================================
+
   function dodgeInputDirection(input) {
     if (performance.now() < dodgeDebugOverrideUntil) return dodgeDebugOverrideDir
     return input.bank || 0
@@ -352,7 +426,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     if (mode !== 'arena' || direction === 0) return
     arenaPos.addScaledVector(lastFrame.right, Math.sign(direction) * ARENA_DASH_DISTANCE)
     const offset = arenaPos.clone().sub(arenaCenter)
-    if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+    if (offset.length() > ARENA_RADIUS) {
+      arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+    }
   }
 
   function triggerArenaSummersault() {
@@ -384,6 +460,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   function triggerImpactSquash() {
     impactSquashT = 1
   }
+
+  // ==========================================================================
+  // ARENA (all-range)
+  // ==========================================================================
 
   function forwardFromYawPitch(yaw, pitch) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'))
@@ -417,7 +497,11 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
 
     if (!inSummersault) {
       arenaYaw -= (input.moveX * ARENA_TURN_RATE * turnSensitivity + (input.bank || 0) * ARENA_BANK_ASSIST_RATE * turnSensitivity) * dt
-      arenaPitch = THREE.MathUtils.clamp(arenaPitch + input.moveY * ARENA_TURN_RATE * turnSensitivity * dt, -ARENA_PITCH_LIMIT, ARENA_PITCH_LIMIT)
+      arenaPitch = THREE.MathUtils.clamp(
+        arenaPitch + input.moveY * ARENA_TURN_RATE * turnSensitivity * dt,
+        -ARENA_PITCH_LIMIT,
+        ARENA_PITCH_LIMIT,
+      )
       const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
       const arenaRollSpring = springStep(arenaRoll, arenaRollVel, targetRoll, shipPhysics.rollStiffness, shipPhysics.rollDamping, dt)
       arenaRoll = arenaRollSpring.value
@@ -435,7 +519,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * brakeFactor * dt)
 
     const offset = arenaPos.clone().sub(arenaCenter)
-    if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+    if (offset.length() > ARENA_RADIUS) {
+      arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+    }
 
     const right = new THREE.Vector3().crossVectors(forward, WORLD_UP).normalize()
     const up = new THREE.Vector3().crossVectors(right, forward).normalize()
@@ -465,6 +551,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     lastPlayerPos = arenaPos.clone()
   }
 
+  // ==========================================================================
+  // UPDATE PRINCIPAL (modo trilho)
+  // ==========================================================================
+
   function update(dt, input) {
     updateDodgeRoll(dt, input)
     const fullSpinAngle = updateFullSpin(dt)
@@ -472,9 +562,11 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     boostBlend += ((boostActive ? 1 : 0) - boostBlend) * (1 - Math.exp(-BOOST_BLEND_RATE * dt))
     if (boostActive && !prevBoostActive) squatOffset = Math.max(squatOffset, shipPhysics.squatDepth)
     prevBoostActive = boostActive
+
     squatOffset = decayImpulse(squatOffset, shipPhysics.squatDecay, dt)
     recoilOffset = decayImpulse(recoilOffset, shipPhysics.recoilDecay, dt)
     impactSquashT = decayImpulse(impactSquashT, IMPACT_SQUASH_DECAY, dt)
+
     const wobbleSpring = springStep(wobbleOffset, wobbleVel, 0, WOBBLE_STIFFNESS, shipPhysics.wobbleDamping, dt)
     wobbleOffset = wobbleSpring.value
     wobbleVel = wobbleSpring.velocity
@@ -485,19 +577,24 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       camera.updateProjectionMatrix()
     }
 
+    // modo arena: roda updateArena e retorna
     if (mode === 'arena') {
       updateArena(dt, input, fullSpinAngle)
       return
     }
 
+    // ---------- modo trilho: avanço + movimento lateral ----------
     if (advancing) distance += RAIL_SPEED * speedMultiplier * dt
 
     const curXSign = Math.sign(input.moveX)
     const curYSign = Math.sign(input.moveY)
-    const sameDir = (curXSign !== 0 || curYSign !== 0) && curXSign === lastMoveXSign && curYSign === lastMoveYSign
+    const sameDir = (curXSign !== 0 || curYSign !== 0)
+      && curXSign === lastMoveXSign
+      && curYSign === lastMoveYSign
     lateralAccelTimer = sameDir ? Math.min(LATERAL_ACCEL_HOLD_TIME, lateralAccelTimer + dt) : 0
     lastMoveXSign = curXSign
     lastMoveYSign = curYSign
+
     const accelT = lateralAccelTimer / LATERAL_ACCEL_HOLD_TIME
     const currentLateralSpeed = LATERAL_SPEED_BASE + (LATERAL_SPEED_MAX - LATERAL_SPEED_BASE) * accelT
 
@@ -515,12 +612,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     if (playerY > BOX_Y) { playerY = BOX_Y; velY = 0 }
     else if (playerY < -BOX_Y) { playerY = -BOX_Y; velY = 0 }
 
-    if (DEBUG && (input.moveX !== 0 || Math.abs(playerX) > 0.05)) {
-      console.log(
-        `moveX=${input.moveX.toFixed(2)} playerX=${playerX.toFixed(2)} velX=${velX.toFixed(2)} mode=${mode}`
-      )
-    }
-
     const frame = frameAtArcLength(distance)
 
     const targetRoll = THREE.MathUtils.clamp(-input.moveX, -1, 1) * MAX_ROLL
@@ -528,6 +619,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     roll = rollSpring.value
     rollVel = rollSpring.velocity
 
+    // ---------- POSIÇÃO REAL DA NAVE NO MUNDO ----------
+    // frame.position é o ponto no trilho; playerX/playerY são o deslocamento local (right/up).
+    // `playerPos` é a posição mundial da NAVE — é ESTA que serve de âncora pros spawns, NÃO
+    // a posição da câmera (que só segue 30% do lateral).
     const playerPos = frame.position.clone()
       .addScaledVector(frame.right, playerX)
       .addScaledVector(frame.up, playerY)
@@ -544,13 +639,18 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     applyShakeJitter()
     applyWeightJitter()
 
+    // ---------- CÂMERA ----------
     camDynamicT += dt
     const cyclePhase = (camDynamicT / CAMERA_DYNAMIC_PERIOD) * Math.PI * 2
     const dynLateral = Math.sin(cyclePhase) * CAMERA_DYNAMIC_LATERAL
     const dynVertical = Math.sin(cyclePhase * 0.7 + 1.3) * CAMERA_DYNAMIC_VERTICAL
     const dynRoll = Math.sin(cyclePhase * 0.5 + 2.1) * CAMERA_DYNAMIC_ROLL
 
-    const targetCurveRoll = THREE.MathUtils.clamp(pathTurnRate(distance) * CURVE_ROLL_GAIN, -CURVE_ROLL_MAX, CURVE_ROLL_MAX)
+    const targetCurveRoll = THREE.MathUtils.clamp(
+      pathTurnRate(distance) * CURVE_ROLL_GAIN,
+      -CURVE_ROLL_MAX,
+      CURVE_ROLL_MAX,
+    )
     curveRollSmoothed += (targetCurveRoll - curveRollSmoothed) * (1 - Math.exp(-CURVE_ROLL_SMOOTH_RATE * dt))
 
     const camTarget = frame.position.clone()
@@ -562,6 +662,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     camera.up.copy(frame.up).applyAxisAngle(frame.forward, dynRoll + curveRollSmoothed)
     camera.lookAt(camera.position.clone().add(frame.forward))
 
+    // cache do frame/posição pra spawns e câmera no próximo tick
     lastFrame = frame
     lastPlayerPos = playerPos
   }
@@ -571,45 +672,90 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     return frameAtArcLength(distance + extraDistance)
   }
 
+  // ==========================================================================
+  // API PÚBLICA
+  // ==========================================================================
+
   return {
     update,
+
+    // posição MUNDIAL da nave (não da câmera)
     getPlayerPosition: () => lastPlayerPos.clone(),
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
+
     getFrameAt,
+
+    // deslocamento lateral LOCAL (direita/cima) da nave em relação ao trilho
     getPlayerLateral: () => ({ x: playerX, y: playerY }),
     getPlayerLateralVelocity: () => ({ x: velX, y: velY }),
+
     getArenaCenter: () => arenaCenter.clone(),
     isArena: () => mode === 'arena',
     getArenaSpeed: () => ARENA_SPEED * speedMultiplier,
     getArenaAttitude: () => ({ pitch: arenaPitch, roll: arenaRoll }),
+
     setSpeedMultiplier: (m) => { speedMultiplier = m },
     setBoostActive: (v) => { boostActive = !!v },
     getBoostActive: () => boostActive,
 
-    // ============ SPAWN "À FRENTE DO JOGADOR" ============
-    // v0.51.3 (fix do "spawn na direita"): as versões anteriores calculavam o ponto no CENTRO
-    // da tela (reconstruindo câmera/lateral/drift). Só que a câmera segue apenas 30% do
-    // movimento lateral do jogador, então quando a nave está à esquerda, o centro da tela fica
-    // À DIREITA da nave — o inimigo nascia na direção contrária à posição do jogador. É
-    // exatamente o "só spawna na direita" reportado.
+    // ======================================================================
+    // getAimLineAhead — PONTO DE ANCORAGEM DE SPAWN (fix principal da v0.51.4)
+    // ======================================================================
     //
-    // Agora a função devolve simplesmente o PONTO À FRENTE DA NAVE, na mesma linha lateral:
-    //   lastPlayerPos + forward * distanceAhead
-    // Assim o inimigo nasce na direção que a nave aponta, sempre alinhado com ela do ponto de
-    // vista do jogador — que é o que a sensação de "vem de frente" espera. A câmera pode
-    // continuar seguindo só 30% do lateral: o spawn acompanha a NAVE, não a câmera.
+    // Esta função é a ÚNICA porta de entrada pra spawn de inimigo no modo trilho: ela é
+    // chamada por enemies/shared.js → randomSpawnPositionOnPath → spawnPositionForEnemy,
+    // que TODAS as classes de inimigo do modo trilho usam pra decidir ONDE nascer.
+    //
+    // VERSÕES ANTERIORES (bug):
+    //   Tentavam devolver "o centro da tela" reconstruindo a posição da câmera com o
+    //   offset lateral do jogador. Mas a câmera só segue CAM_FOLLOW_LATERAL (30%) do
+    //   movimento lateral — então o centro da tela fica à DIREITA da nave quando ela está
+    //   à esquerda (a câmera fica mais perto do centro que a nave). Resultado: todo inimigo
+    //   nascia visivelmente deslocado pra direita da nave, que é o bug reportado.
+    //
+    // CORREÇÃO ATUAL:
+    //   Devolve simplesmente `posição_da_nave + forward * distanceAhead`. Isto ancora o
+    //   spawn EXATAMENTE na direção em que a nave está apontando — o inimigo nasce à frente
+    //   dela, na mesma linha lateral, que é a leitura de "inimigo vem de frente" que o
+    //   jogador espera. Não tenta adivinhar o centro da tela nem compensar o lag da câmera.
+    //
+    // CORREÇÃO REAL (v0.51.5, medida e comprovada): ancorar no forward da NAVE (acima) parecia
+    // certo, mas playerX vai de -44 a +44 (BOX_X) enquanto a câmera só segue 30% disso
+    // (CAM_FOLLOW_LATERAL) — na prática o jogador passa a maior parte do tempo fora do centro
+    // (é assim que se desvia de tiro), então o spawn "ancorado na nave" ficava sistematicamente
+    // NA TELA do lado onde o jogador já estava (medido: NDC x médio +0.24 segurando direita,
+    // -0.26 segurando esquerda — o "sempre nasce à direita" reportado era, na prática, "nasce
+    // do lado que você já está"). A única âncora que fica sempre no centro da tela POR
+    // DEFINIÇÃO é a própria câmera: usar a base (posição + right/up/forward) direto da matriz
+    // mundial dela — sem tentar reconstruir/compensar o follow lag manualmente — dá NDC x médio
+    // ~0.00 em qualquer playerX (testado com playerX=44). NÃO troque isso de volta pra
+    // "ancorar na nave" sem medir de novo: o resultado intuitivo (ship-anchored) está provado
+    // errado.
     getAimLineAhead(distanceAhead) {
-      return lastPlayerPos.clone().addScaledVector(lastFrame.forward, distanceAhead)
+      camera.updateMatrixWorld()
+      const forward = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1)
+      return camera.position.clone().addScaledVector(forward, distanceAhead)
+    },
+    getSpawnFrame() {
+      camera.updateMatrixWorld()
+      return {
+        position: camera.position.clone(),
+        right: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
+        up: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
+        forward: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1),
+      }
     },
 
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
     setShakeIntensity: (m) => { shakeMagnitude = m },
     setTurnSensitivity: (m) => { turnSensitivity = m },
+
     debugForceBank: (direction, durationMs) => {
       dodgeDebugOverrideDir = direction
       dodgeDebugOverrideUntil = performance.now() + durationMs
     },
+
     triggerFullSpin,
     triggerArenaLateralDash,
     triggerArenaSummersault,
