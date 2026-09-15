@@ -9,6 +9,14 @@ import { injectHudExtraStyles } from './hud-styles.js'
 // compartilham o mesmo `root`/pools de elementos, então não faz sentido dividir mais que isso
 // (dividir a closure em vários arquivos ia exigir passar estado por parâmetro ou virar classe,
 // mais risco de regressão do que ganho).
+//
+// v0.51.0 (fix de vazamento): todos os setTimeout que agendam remoção de DOM passam por
+// `scheduleTimeout()` e são limpos em bloco pelo `unmount()`. Antes, cada setTimeout vivia por
+// conta própria — um HUD remontado num novo jogo antes do próximo timeout vencer via os
+// callbacks dispararem em nós órfãos (sem crash, mas vazava entre sessões). Além disso,
+// `playFocusCollapse` virou cancelável: se o modal fosse fechado durante os ~350ms da animação
+// de convergência (chefe morrendo no mesmo frame do trigger, debug forçando outcome), o
+// setTimeout do collapse reabria o modal sozinho depois do overlay já escondido.
 export function createGameHud() {
   injectHudExtraStyles()
 
@@ -58,6 +66,40 @@ export function createGameHud() {
   reticle.appendChild(hitMarkerEl)
 
   let hitMarkerTimeout = null
+
+  // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
+  // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
+  // beam, focus collapse, error float. `unmount()` limpa em bloco. `focusCollapse` precisa de
+  // referência direta (não só estar no Set) porque o `hideQuestionModal` tem que abortar a
+  // animação caso o jogador saia do estado antes dela terminar — por isso os dois `let`
+  // dedicados abaixo, além da entrada no Set.
+  const pendingTimeouts = new Set()
+  let focusCollapseTimeout = null
+  let focusCollapseContainer = null
+
+  function scheduleTimeout(fn, ms) {
+    const id = setTimeout(() => {
+      pendingTimeouts.delete(id)
+      fn()
+    }, ms)
+    pendingTimeouts.add(id)
+    return id
+  }
+
+  function cancelTimeout(id) {
+    if (id == null) return
+    clearTimeout(id)
+    pendingTimeouts.delete(id)
+  }
+
+  function cancelFocusCollapse() {
+    cancelTimeout(focusCollapseTimeout)
+    focusCollapseTimeout = null
+    if (focusCollapseContainer) {
+      focusCollapseContainer.remove()
+      focusCollapseContainer = null
+    }
+  }
 
   const status = document.createElement('div')
   status.className = 'hud-status'
@@ -283,7 +325,7 @@ export function createGameHud() {
     el.style.setProperty('--tx', `${window.innerWidth * 0.5 - startX}px`)
     el.style.setProperty('--ty', `${window.innerHeight * 0.82 - startY}px`)
     root.appendChild(el)
-    setTimeout(() => el.remove(), 450)
+    scheduleTimeout(() => el.remove(), 450)
   }
 
   // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro da tela"): em
@@ -291,6 +333,11 @@ export function createGameHud() {
   // perto das bordas e converge pro centro exato da tela (onde o modal vai aparecer) antes dele
   // ser revelado de verdade. Puramente DOM/CSS, mesmo padrão do cardAbsorbBeam acima — preciso
   // disso rodar independente do loop 3D porque o jogo já está em pausa total nesse instante.
+  //
+  // v0.51.0: guarda referência do container/timeout nos dois `let` de fora pra que
+  // `cancelFocusCollapse()` (chamado por hideQuestionModal/unmount) consiga abortar tanto a
+  // animação visual quanto o callback de reveal — sem isso, fechar o modal durante os ~350ms
+  // da convergência reabria ele do nada (o onComplete disparava mesmo com o overlay escondido).
   const FOCUS_COLLAPSE_PARTICLES = 10
   const FOCUS_COLLAPSE_MS = 350 // animação CSS (280ms) + folga pro maior animationDelay aleatório (até 60ms)
   function playFocusCollapse(onComplete) {
@@ -309,7 +356,10 @@ export function createGameHud() {
       container.appendChild(p)
     }
     root.appendChild(container)
-    setTimeout(() => {
+    focusCollapseContainer = container
+    focusCollapseTimeout = scheduleTimeout(() => {
+      focusCollapseTimeout = null
+      focusCollapseContainer = null
       container.remove()
       onComplete()
     }, FOCUS_COLLAPSE_MS)
@@ -322,7 +372,7 @@ export function createGameHud() {
     const el = document.createElement('div')
     el.className = 'question-modal-burst'
     root.appendChild(el)
-    setTimeout(() => el.remove(), 520)
+    scheduleTimeout(() => el.remove(), 520)
   }
 
   // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
@@ -552,6 +602,11 @@ export function createGameHud() {
     },
 
     hideQuestionModal() {
+      // v0.51.0: aborta a animação de convergência se ela estiver rodando. Sem isso, fechar o
+      // modal durante os ~350ms do playFocusCollapse deixava o setTimeout do callback disparar
+      // depois do overlay já escondido — o modal reabria "do nada" quando o jogador saía do
+      // estado por outra via (morte do chefe no mesmo frame, debug forçando outcome).
+      cancelFocusCollapse()
       questionModalOverlay.hidden = true
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
@@ -632,8 +687,9 @@ export function createGameHud() {
       void hitMarkerEl.offsetWidth
       hitMarkerEl.classList.add('active')
       if (killed) hitMarkerEl.classList.add('kill')
-      if (hitMarkerTimeout) clearTimeout(hitMarkerTimeout)
-      hitMarkerTimeout = setTimeout(() => {
+      if (hitMarkerTimeout) cancelTimeout(hitMarkerTimeout)
+      hitMarkerTimeout = scheduleTimeout(() => {
+        hitMarkerTimeout = null
         hitMarkerEl.classList.remove('active', 'kill')
       }, killed ? 240 : 170)
     },
@@ -650,7 +706,7 @@ export function createGameHud() {
       el.style.left = `${Math.max(0, Math.min(1, xFrac)) * 100}%`
       el.style.top = `${Math.max(0, Math.min(1, yFrac)) * 100}%`
       root.appendChild(el)
-      setTimeout(() => el.remove(), 950)
+      scheduleTimeout(() => el.remove(), 950)
     },
 
     // v0.29.6: errar pergunta não mostra mais o painel de feedback (resposta certa/pontos) —
@@ -661,7 +717,7 @@ export function createGameHud() {
       el.className = 'hud-error-float'
       el.textContent = text
       root.appendChild(el)
-      setTimeout(() => el.remove(), 3000)
+      scheduleTimeout(() => el.remove(), 3000)
     },
 
     setEnemyHealthBars(list) {
@@ -805,6 +861,16 @@ export function createGameHud() {
     },
 
     unmount() {
+      // v0.51.0: cancela TUDO que estava agendado (damage numbers, hit marker, absorb beam,
+      // focus collapse, error float) e aborta o collapse se ele ainda estiver em voo. Sem
+      // isso, um HUD remontado num novo jogo antes do próximo timeout vencer disparava
+      // callbacks em nós já desanexados do DOM — não quebrava nada, mas era exatamente o
+      // tipo de vazamento silencioso que aparece como bug intermitente depois de N partidas.
+      cancelFocusCollapse()
+      for (const id of pendingTimeouts) clearTimeout(id)
+      pendingTimeouts.clear()
+      hitMarkerTimeout = null
+
       // se o HUD for desmontado com o modal aberto (fim de setor, teardown), remove o listener
       // global de keydown e o watcher de controle pra não vazar entre sessões
       if (questionModalKeyHandler) {

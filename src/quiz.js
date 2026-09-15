@@ -129,12 +129,19 @@ export function resolveAnswer(session, outcome) {
   })
 
   // modo infinito (v0.29.6): não existe mais "fim de setor" por acabar as perguntas — só
-  // zerar as vidas termina o jogo (main.js decide isso via applyHealthLoss/outOfLives)
+  // zerar as vidas termina o jogo (main.js decide isso via applyHealthLoss/outOfLives).
+  //
+  // v0.51.0 — campo `sectorOver` removido do retorno. Ele era sempre `false` desde a v0.29.6
+  // (perder a última vida virou o ÚNICO fim de setor, e isso é decidido por `applyHealthLoss()`
+  // em main.js, não aqui). Os dois call sites em main.js (`settleQuestion`,
+  // `settleBossBuildupQuestion`) faziam `resolution.sectorOver || outOfLives`, o que
+  // silenciosamente degradava pra `undefined || outOfLives === outOfLives` — sem bug visível,
+  // mas o código mentia sobre a existência desse campo. Removido pra o retorno refletir a única
+  // coisa que ele de fato carrega agora.
   return {
     points,
     comboMultiplier: session.comboMultiplier,
     healthRemaining: session.health,
-    sectorOver: false,
     comboBroken: type !== 'correct',
   }
 }

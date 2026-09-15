@@ -1,32 +1,15 @@
 import * as THREE from 'three'
 
 // ============ helpers sem estado, reaproveitados por quase toda classe de inimigo ============
-// Extraído do antigo enemies.js monolítico (v0.34.0) na separação por classe/arquivo — mesmo
-// comportamento, só virou módulo próprio pra cada arquivo de classe poder importar sem duplicar.
 
 export const PASS_BEHIND = -4
-// a geometria de todo cone deste projeto nasce apontando pro +Z local — usado pra virar o cone
-// na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 export const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
-// mesma cor do teleguiado em combat.js (HOMING_EXPLOSION_COLOR) — mantém consistência visual da
-// explosão/impacto quando quem acerta o inimigo é o tiro carregado
 export const HOMING_EXPLOSION_COLOR = 0x2bff88
-
-// pedido do usuário: inimigos surgiam muito à esquerda da câmera quando a nave estava à direita
-// — o spawn era sempre em torno da CENTERLINE do trilho, não de onde a nave realmente está. A
-// câmera só segue 30% do movimento lateral do jogador, então o inimigo nascia no offset 0 e
-// aparecia deslocado no lado oposto ao que o jogador estava. Compensa uma FRAÇÃO do desvio
-// lateral do jogador (0.7 — não 1.0 completo, senão todo inimigo nasce colado na nave e perde
-// a variedade de "tem inimigo vindo pela esquerda também"). Ajustável entre 0.5 (mais variedade)
-// e 0.9 (mais centrado na nave).
-const SPAWN_PLAYER_LATERAL_COMPENSATION = 0.7
 
 const _dtsSeg = new THREE.Vector3()
 const _dtsSub = new THREE.Vector3()
 const _dtsClose = new THREE.Vector3()
 
-// v0.29.4 (QoL): temporários de módulo — chamada por projétil × alvo × frame (centenas de vezes
-// num pico de enxame), então cada .clone() era pressão de GC pura. Mesma fórmula, zero alocação.
 export function distanceToSegment(point, segStart, segEnd) {
   _dtsSeg.subVectors(segEnd, segStart)
   const lenSq = _dtsSeg.lengthSq()
@@ -39,41 +22,29 @@ export function distanceToSegment(point, segStart, segEnd) {
 
 const ARENA_SPAWN_ELEVATION_MAX = THREE.MathUtils.degToRad(50)
 
-// spawn "no trilho": um pouco à frente da nave, com espalhamento lateral (boxX/boxY) — e,
-// desde o bug-fix do "nasce à esquerda da câmera", também DESLOCADO por uma fração do offset
-// lateral ATUAL do jogador, pra o centro do espalhamento acompanhar a nave em vez da centerline
-// do trilho. A fração (0.7) foi escolhida pra: (a) resolver o sintoma (que ficava feio com
-// nave nas laterais), (b) manter variedade — parte dos inimigos ainda nasce no lado oposto.
-//
-// BUG real encontrado depois (inimigos nascendo sempre na extrema direita da câmera/nave): o
-// espalhamento lateral e a compensação estavam sendo aplicados com o right/up do frame LÁ NA
-// FRENTE (distanceAhead, 90-140 unidades) em vez do frame ATUAL. O trilho é um laço fechado de
-// só ~450-500 unidades de volta total e sempre curva no MESMO sentido (não inverte) — 90-140
-// unidades já é uma fatia grande da volta, então o right/up lá na frente vem bem rotacionado
-// em relação ao que a câmera enxerga agora, e como o giro é sempre no mesmo sentido, isso
-// empurrava quase todo inimigo pro mesmo lado da tela, não só ocasionalmente. Corrigido usando
-// o right/up do frame ATUAL (rail.getFrameAt(0), já em cache) pro espalhamento/compensação —
-// só a POSIÇÃO de base continua vindo do ponto lá na frente, pra o inimigo continuar
-// aparecendo mais longe no trilho.
+// ============ SPAWN NO TRILHO ============
+// v0.50.x: terceira iteração do mesmo problema.
+//   v1: spawn na centerline do trilho, à frente (projetando o ponto futuro da curva) →
+//       inimigo nascia à esquerda da tela quando o jogador estava à direita, porque a câmera
+//       segue só 30% do lateral (CAM_FOLLOW_LATERAL = 0.3).
+//   v2: spawn ancorado na POSIÇÃO DO JOGADOR + forward atual → resolvia o problema em curva,
+//       mas o jogador TAMBÉM não está no centro da tela (ele desloca junto com o movimento
+//       lateral), então o spawn aparecia deslocado pra direita quando o jogador ia pra direita.
+//   v3 (atual): spawn ancorado na LINHA DE VISÃO DA CÂMERA. `rail.getAimLineAhead(d)` devolve
+//       o ponto onde o eixo ótico da câmera cruza o plano a `d` unidades do jogador. Esse
+//       ponto aparece no CENTRO da tela por definição, que é a leitura de "inimigo vem de
+//       frente".
 export function randomSpawnPositionOnPath(rail, distanceMin, distanceMax, boxX, boxY) {
   const distanceAhead = distanceMin + Math.random() * (distanceMax - distanceMin)
-  const aheadPosition = rail.getFrameAt(distanceAhead).position
-  const frameNow = rail.getFrameAt(0)
+  const frame = rail.getFrameAt(0)
+  const base = rail.getAimLineAhead(distanceAhead)
   const lateralX = (Math.random() * 2 - 1) * boxX
   const lateralY = (Math.random() * 2 - 1) * boxY
-  const lateral = rail.getPlayerLateral ? rail.getPlayerLateral() : null
-  const compensateX = lateral ? lateral.x * SPAWN_PLAYER_LATERAL_COMPENSATION : 0
-  const compensateY = lateral ? lateral.y * SPAWN_PLAYER_LATERAL_COMPENSATION : 0
-  return aheadPosition.clone()
-    .addScaledVector(frameNow.right, lateralX + compensateX)
-    .addScaledVector(frameNow.up, lateralY + compensateY)
+  return base
+    .addScaledVector(frame.right, lateralX)
+    .addScaledVector(frame.up, lateralY)
 }
 
-// spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
-// arena (não do jogador!) — espalha os inimigos pelo mapa em vez de colar do lado da nave.
-// Não usa o mesmo truque do randomSpawnPositionOnPath: em arena a distância lateral do jogador
-// ao centro é limitada pelo raio (ARENA_RADIUS = 190) e o inimigo vem de qualquer direção do
-// hemisfério, então não existe o "sempre nasce no lado oposto" que motivou o fix de trilho.
 export function randomSpawnAroundArena(rail, distanceMin, distanceMax) {
   const center = rail.getArenaCenter()
   const azimuth = Math.random() * Math.PI * 2

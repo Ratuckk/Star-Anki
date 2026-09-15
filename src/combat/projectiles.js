@@ -181,6 +181,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       })
       if (hit) {
         removeProjectile(projectile)
+        // v0.51.0 — `hit.blocked` = fragata-escudo defendeu este tiro (veio do lado coberto pela
+        // blindagem giratória). O projétil some mesmo (ele bateu na placa — enemies/index.js já
+        // dispara a faísca âmbar na cor da blindagem), mas NÃO entra no `hitsLog`. Sem esse
+        // guard, o tiro bloqueado gerava número de dano flutuante em cima da fragata, contradi-
+        // zendo a própria regra de "blindagem que não deixa passar". Também pula os campos de
+        // kill/points, que já vinham zerados do lado de lá (defensivo, se um dia alguém esquecer
+        // de mantê-los zerados).
+        if (hit.blocked) continue
         if (hit.kind !== 'golden') {
           hitsLog.push({
             worldPos: hit.worldPos, damage: projectile.damage ?? 1, killed: hit.killed,

@@ -3,7 +3,17 @@ import { PASS_BEHIND, spawnPositionForEnemy } from './shared.js'
 
 // ============ BLASTER — vermelho comum atirador ============
 // v0.34.0: nome formal da classe (antes só existia como kind:'red', sem identidade própria).
-// As 6 variações de cor/movimento entregues na v0.33.0 continuam intactas, só migraram pra cá.
+//
+// v0.50.0 OVERHAUL: os 6 perfis de movimento (entregues na v0.33.1) agora também definem o
+// TIRO. Cada perfil tem `fire` com (count / spread / velocidade / erro de mira / offset
+// angular), lido pela função de tiro em `enemies/index.js`.
+//
+// v0.51.0 (limpeza): cada perfil passou a carregar seu `speedRange` NO PRÓPRIO OBJETO em vez
+// de morar num mapa paralelo (`BLASTER_PROFILE_SPEED_RANGE`) indexado por id. O mapa antigo
+// não tinha fallback — um perfil novo em BLASTER_PROFILES sem entrada correspondente virava
+// NaN silencioso no speedFactor e o inimigo congelava sem erro visível. Também elimina a
+// duplicação de cor (antes vivia tanto no array quanto em BLASTER_PROFILE_COLOR).
+
 export const BLASTER_KIND = 'blaster'
 export const BLASTER_HIT_RADIUS = 1.8
 export const BLASTER_DEATH_DURATION = 0.2
@@ -18,26 +28,51 @@ const ENEMY_ORBIT_RADIUS_MIN = 14
 const ENEMY_ORBIT_RADIUS_MAX = 26
 const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
 
-// perfis de movimento — mesma classe/hp/tiro, cor do mesh (e do telegraph) muda com o padrão de
-// deslocamento sorteado no spawn, pra virar informação de leitura em vez de decoração. Roda em
-// arena E em trilho.
+// ============ PERFIS ============
+// Cada perfil: cor do mesh (e do telegraph, via `blasterColor`) + identidade de movimento
+// (updateBlasterArenaMovement / updateBlasterRailMovement) + identidade de TIRO (`fire`) +
+// `speedRange` [min, max] usado no spawn pra sortear o speedFactor individual.
+//
+// `fire` campos:
+//   count         — quantos projéteis disparam no mesmo instante (fan)
+//   spreadDeg     — separação angular entre os projéteis do fan, em graus (0 = todos na mesma direção)
+//   aimErrorDeg   — raio (máx) de erro aleatório em cima da direção "certa" (0 = mira perfeita)
+//   speedMult     — multiplicador da velocidade base do projétil inimigo (1.0 = padrão)
+//   aimOffsetDeg  — desvio SISTEMÁTICO do centro do fan em relação à direção do jogador
+//                   (positivo = sentido horário). Usado pra dar "flavor" direcional a um perfil.
 export const BLASTER_PROFILES = [
-  { id: 'orbit', color: 0xff4d4d }, // padrão: gira em loop (arena: orbita o jogador; trilho: orbita o próprio ponto de spawn)
-  { id: 'advance', color: 0xff7a29 }, // avança reto e rápido
-  { id: 'slow', color: 0x7a2020 }, // avança bem lento, fica mais tempo em tela
-  { id: 'follow', color: 0xff2f8f }, // persegue mantendo distância, evita passar/colidir
-  { id: 'circular', color: 0xc61aff }, // espiral: orbita girando mais rápido e fechando o raio
-  { id: 'evasive', color: 0xffb347 }, // muda de direção lateral aleatoriamente, tentando desviar
+  {
+    id: 'orbit', color: 0xff4d4d, speedRange: [0.45, 0.75],
+    fire: { count: 2, spreadDeg: 12, aimErrorDeg: 5, speedMult: 1.0, aimOffsetDeg: 0 },
+  },
+  {
+    id: 'advance', color: 0xff7a29, speedRange: [0.85, 1.0],
+    fire: { count: 1, spreadDeg: 0, aimErrorDeg: 12, speedMult: 1.6, aimOffsetDeg: 0 },
+  },
+  {
+    id: 'slow', color: 0x7a2020, speedRange: [0.15, 0.3],
+    fire: { count: 1, spreadDeg: 0, aimErrorDeg: 5, speedMult: 1.0, aimOffsetDeg: 0 },
+  },
+  {
+    id: 'follow', color: 0xff2f8f, speedRange: [0.5, 0.7],
+    fire: { count: 1, spreadDeg: 0, aimErrorDeg: 0, speedMult: 1.0, aimOffsetDeg: 0 },
+  },
+  {
+    id: 'circular', color: 0xc61aff, speedRange: [0.5, 0.8],
+    fire: { count: 1, spreadDeg: 0, aimErrorDeg: 5, speedMult: 1.0, aimOffsetDeg: 20 },
+  },
+  {
+    id: 'evasive', color: 0xffb347, speedRange: [0.6, 0.9],
+    fire: { count: 1, spreadDeg: 0, aimErrorDeg: 40, speedMult: 1.0, aimOffsetDeg: 0 },
+  },
 ]
-export const BLASTER_PROFILE_COLOR = new Map(BLASTER_PROFILES.map((p) => [p.id, p.color]))
-const BLASTER_PROFILE_SPEED_RANGE = {
-  orbit: [0.45, 0.75],
-  advance: [0.85, 1.0],
-  slow: [0.15, 0.3],
-  follow: [0.5, 0.7],
-  circular: [0.5, 0.8],
-  evasive: [0.6, 0.9],
-}
+
+// mapa de fire por id — leitura O(1) na hora do disparo (sem find por nome)
+export const BLASTER_PROFILE_FIRE = new Map(BLASTER_PROFILES.map((p) => [p.id, p.fire]))
+// fallback universal caso algum perfil futuro esqueça de declarar `speedRange` — evita NaN no
+// speedFactor (que congelava o inimigo silenciosamente)
+const DEFAULT_SPEED_RANGE = [0.5, 0.7]
+
 const ARENA_FOLLOW_STANDOFF = 18
 const CIRCULAR_ANGULAR_SPEED = 2.2
 const CIRCULAR_SHRINK_RATE = 1.2
@@ -77,7 +112,8 @@ export function spawnBlaster(scene, rail, id) {
   const mesh = new THREE.Mesh(enemyGeometry, profileMaterials.get(profile.id))
   mesh.position.copy(position)
   scene.add(mesh)
-  const [speedMin, speedMax] = BLASTER_PROFILE_SPEED_RANGE[profile.id]
+  // lê o speedRange direto do perfil (com fallback defensivo)
+  const [speedMin, speedMax] = profile.speedRange ?? DEFAULT_SPEED_RANGE
   return {
     id, mesh, kind: BLASTER_KIND, dying: false, deathT: 0, hp: 2, maxHp: 2, fireTimer: null,
     profile: profile.id,
@@ -157,7 +193,12 @@ export function blasterPassBehind(enemy) {
 }
 
 export function blasterColor(enemy) {
-  return BLASTER_PROFILE_COLOR.get(enemy.profile) ?? BLASTER_PROFILES[0].color
+  const profile = BLASTER_PROFILES.find((p) => p.id === enemy.profile)
+  return profile?.color ?? BLASTER_PROFILES[0].color
+}
+
+export function blasterFireConfig(enemy) {
+  return BLASTER_PROFILE_FIRE.get(enemy.profile) ?? BLASTER_PROFILE_FIRE.get('orbit')
 }
 
 export function disposeBlaster() {

@@ -159,28 +159,12 @@ export function createPlayerSystem(session) {
       return Math.max(0, Math.min(1, 1 - session.health / threshold))
     },
 
-    // QoL (v0.29.4): snapshot de tudo que as cartas mutam — pra debug panel/HUD mostrarem os
-    // valores reais sem espalhar `player.config.X` em N lugares. Não substitui o `config`
-    // (que combat.js lê por getter pra evitar cópia desatualizada); só dá um ponto único de
-    // leitura pra debug/telemetria.
-    getStats() {
-      return {
-        projectileCount,
-        fireCooldown,
-        homingMaxTargets,
-        homingChargeMinMs,
-        homingChargeMaxMs,
-        shieldMax,
-        shieldValue,
-        shieldRegenDelayMs,
-        shieldRegenRate,
-        invincibilityDurationMs,
-        fullSpinIframeMs,
-        wingmanCount,
-        hasDeflect: deflectCardActive,
-        hasRam: ramCardActive,
-      }
-    },
+    // v0.51.0 — `getStats()` REMOVIDO. Era um snapshot de todos os stats mutáveis por carta,
+    // com comentário justificando "ponto único de leitura pra debug/telemetria" — mas nenhum
+    // call site (debug, HUD, teste) realmente chamava. Pior: o snapshot tinha lista fixa de
+    // campos, então cada stat novo ficava divergindo silenciosamente (quem confiasse nele pra
+    // debug via um objeto desatualizado). Se um dia voltar a precisar, é reconstruir a partir
+    // dos `let`/`getters` acima — não vale manter a versão desatualizada.
 
     // QoL (v0.29.4): guard contra card inválido + retorno boolean. Antes quebrava com
     // `Cannot read property 'id' of undefined` se card fosse null, e não devolvia nada —

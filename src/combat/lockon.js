@@ -1,35 +1,49 @@
 import * as THREE from 'three'
 
 // ============ LOCK-ON do tiro carregado ============
-// Extraído de combat.js (v0.38.0, split por sistema). O tiro carregado passa a poder travar o
-// chefe/dourado (antes só inimigos comuns), e um alvo GRANDE (chefe/dourado) pode receber várias
-// travas ao mesmo tempo em vez de só 1 — cada trava vira um tiro teleguiado independente na hora
-// de soltar. Por isso `lockedEnemies` é um array de "lock records" ({ entity, offset, seq }), não
-// um Set (não dava pra repetir a mesma entidade) — offset é o ponto (relativo ao centro do alvo)
-// onde a mira estava no instante da trava, usado só pro marcador verde do HUD aparecer espalhado
-// pelo corpo do alvo em vez de empilhado no centro.
+// Overhaul em cima do split de combat.js (v0.38.0). O sistema anterior guardava um `offset`
+// vetorial em cada record de trava, calculado no instante da aquisição — o que causava 4
+// classes de bug (marcador fora do alvo comum, clump visual no multi-lock, flicker no limite
+// do cone, acoplamento com position de mesh frágil). Reescrito em 3 camadas separadas:
+//
+//   1) IDENTIDADE (o que trava) — entity + seq, estável
+//   2) ÂNCORA (onde o alvo está) — getWorldPosition() a cada frame, nunca guardada
+//   3) LAYOUT (onde o marcador aparece) — função pura de (N travas no alvo, índice), sem
+//      estado. 1 trava → âncora exata; N travas → anel determinístico em volta.
+//
+// A API pública é idêntica (sweepLockOn / isAimingAtEnemy / takeLockedTargets /
+// clearLockedEnemies / getLockedEnemySnapshots) — main.js, combat/projectiles.js e
+// combat/index.js não mudam nenhuma linha.
 
-const PASS_BEHIND = -4
-const ENEMY_LOCK_ANGLE = THREE.MathUtils.degToRad(6)
-// Fase 8 (VISUAL): ângulo de "tô mirando em algo" pra mira normal (crosshair muda de cor) — mais
-// largo que o ENEMY_LOCK_ANGLE do teleguiado porque aqui é só um hint visual, não trava nada.
+// histerese: alvo entra no lock pelo cone estreito, mas SÓ SAI pelo cone largo. Sem isso, um
+// alvo parado exatamente em cima do limite do cone de aquisição liga/desliga o marcador a
+// cada frame (o pequeno jitter da mira já cruza a fronteira).
+const LOCK_ACQUIRE_ANGLE = THREE.MathUtils.degToRad(6)
+const LOCK_RELEASE_ANGLE = THREE.MathUtils.degToRad(9)
+
+// Fase 8 (VISUAL): ângulo de "tô mirando em algo" pra mira normal (crosshair muda de cor) —
+// mais largo que o cone de aquisição porque aqui é só um hint visual, não trava nada.
 const AIM_HINT_ANGLE = THREE.MathUtils.degToRad(7)
+
 // distância máxima pra um alvo poder ser travado/auto-mirável. Sem isso, dá pra "magnetizar"
 // tiro em inimigo a centenas de unidades de distância.
 const MAX_LOCK_RANGE = 90
 // não deixa travar/mantém travado um inimigo mais perto que isso — evita travar algo que já vai
 // passar pelo jogador no próximo frame
 const MIN_LOCK_RANGE = 10
+const PASS_BEHIND = -4
 
-// espalhamento dos marcadores quando um alvo GRANDE já travado recebe uma trava ADICIONAL. Sem
-// isso, cada trava extra no mesmo alvo usa o MESMO offset (mesmo direction, mesmo rel → mesmo
-// perpendicular da mira), então todos os N marcadores empilham no mesmo ponto da tela — o
-// jogador acha que só travou 1 vez mesmo com N travas acumuladas no backend. Com esse raio,
-// cada trava extra ganha um offset ALEATÓRIO dentro de um cubo deste tamanho.
-const MULTI_LOCK_SPREAD_RADIUS = 5
-// fallback do "raio" do alvo grande quando a entidade não expõe um (o boss tem BOSS_HIT_RADIUS
-// = 7 em boss.js, mas isso não é um campo do objeto — é uma constante de módulo)
-const BIG_TARGET_FALLBACK_RADIUS = 6
+// ============ LAYOUT DE MULTI-LOCK ============
+// raio do anel de marcadores quando há >1 trava no MESMO alvo grande. Não é o raio de colisão:
+// é o raio VISUAL onde os quadradinhos ficam distribuídos. Escolhido pra ficar perceptivelmente
+// dentro do corpo do chefe (raio de colisão 7) sem colar uns nos outros.
+const BIG_TARGET_RING_RADIUS = 4
+// raio de fallback quando a entidade não expõe um `radius` — chefe/dourado hoje não expõem,
+// então usamos os hit radius deles como referência (BOSS_HIT_RADIUS=7, GOLDEN_HIT_RADIUS=2.2).
+// Hardcoded aqui pra não criar dependência de lockon.js → enemies/*.js (uma seta que não
+// existiria em nenhum outro lugar do projeto). Se algum dia a entidade passar a expor
+// `radius`, o `?? ` já cobre.
+const BIG_TARGET_FALLBACK_RADIUS = 5
 
 function isBigLockTarget(e) {
   return e.kind === 'boss' || e.kind === 'golden'
@@ -37,8 +51,13 @@ function isBigLockTarget(e) {
 
 // temporário de módulo — evita alocar Vector3 novo a cada snapshot por frame
 const _tmpWorldPos = new THREE.Vector3()
+const _tmpOffset = new THREE.Vector3()
 
 export function createLockOnSystem(rail, enemies) {
+  // records: { entity, seq }. Nem offset, nem posição, nem "estado de travado" — todas essas
+  // coisas são derivadas (âncora a cada frame, layout a cada snapshot). Se a trava existe no
+  // array, ela está ativa; se não existe, não está. Não há estado intermediário pra ficar
+  // dessincronizado.
   let lockedEnemies = []
   let nextLockSeq = 1
 
@@ -47,43 +66,39 @@ export function createLockOnSystem(rail, enemies) {
     // 1 no início, +1 a cada intervalo (travar um alvo novo por vez, não todos de uma vez).
     sweepLockOn(origin, direction, maxAllowed = Infinity) {
       const frame = rail.getFrameAt(0)
+
+      // 1) MANUTENÇÃO — remove records inválidos. Critério de REMOÇÃO usa o cone largo
+      // (histerese): um alvo que já estava travado só solta se a mira ficar MUITO fora.
       lockedEnemies = lockedEnemies.filter((rec) => {
         if (rec.entity.dying) return false
         const rel = rec.entity.mesh.position.clone().sub(origin)
-        return rel.length() >= MIN_LOCK_RANGE && rel.dot(frame.forward) >= PASS_BEHIND
+        const dist = rel.length()
+        if (dist < MIN_LOCK_RANGE) return false
+        if (rel.dot(frame.forward) < PASS_BEHIND) return false
+        const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(rel.normalize()), -1, 1))
+        return angle < LOCK_RELEASE_ANGLE
       })
+
+      // 2) AQUISIÇÃO — tenta adicionar novos até bater o orçamento. Critério de ENTRADA usa o
+      // cone estreito.
       if (lockedEnemies.length >= maxAllowed) return
       const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()]
       for (const e of candidates) {
         if (lockedEnemies.length >= maxAllowed) break
         const alreadyLocked = lockedEnemies.some((rec) => rec.entity === e)
         // alvo comum já travado não trava de novo; alvo grande pode acumular quantas travas o
-        // orçamento (maxAllowed) permitir
+        // orçamento (maxAllowed) permitir (o layout em anel cuida de espalhar visualmente)
         if (!isBigLockTarget(e) && alreadyLocked) continue
+
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
-        if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
+        if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE) continue
+        if (rel.dot(frame.forward) < PASS_BEHIND) continue
         const toTarget = rel.clone().normalize()
         const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
-        if (angle >= ENEMY_LOCK_ANGLE) continue
+        if (angle >= LOCK_ACQUIRE_ANGLE) continue
 
-        // offset do marcador:
-        //   - PRIMEIRA trava no alvo: projeção perpendicular da mira (marcador cai exatamente
-        //     onde o jogador mirou)
-        //   - travas ADICIONAIS no mesmo alvo: offset ALEATÓRIO dentro do raio do alvo, pra
-        //     espalhar visualmente os marcadores pelo corpo em vez de empilhar no mesmo pixel
-        let offset
-        if (alreadyLocked) {
-          const radius = isBigLockTarget(e) ? (e.radius ?? BIG_TARGET_FALLBACK_RADIUS) : MULTI_LOCK_SPREAD_RADIUS
-          offset = new THREE.Vector3(
-            (Math.random() * 2 - 1) * radius,
-            (Math.random() * 2 - 1) * radius,
-            (Math.random() * 2 - 1) * radius,
-          )
-        } else {
-          offset = direction.clone().multiplyScalar(rel.dot(direction)).sub(rel)
-        }
-        lockedEnemies.push({ entity: e, offset, seq: nextLockSeq++ })
+        lockedEnemies.push({ entity: e, seq: nextLockSeq++ })
       }
     },
 
@@ -102,21 +117,73 @@ export function createLockOnSystem(rail, enemies) {
     },
 
     // consumido pelo tiro carregado ao soltar: devolve os alvos travados vivos e dentro de
-    // `inRange`, e sempre limpa as travas em seguida (mesmo se vazio) — mesmo comportamento de
-    // antes, o "carregamento" sempre reseta ao disparar.
+    // `inRange`, e sempre limpa as travas em seguida (mesmo se vazio) — o "carregamento"
+    // sempre reseta ao disparar. Importante: se o alvo grande recebeu N travas, devolve a
+    // MESMA entity N vezes — o chamador (fireHomingShot) já sabe lidar com isso (cada trava =
+    // 1 tiro teleguiado independente).
     takeLockedTargets(inRange) {
-      const targets = lockedEnemies.filter((rec) => !rec.entity.dying && inRange(rec.entity)).map((rec) => rec.entity)
+      const targets = lockedEnemies
+        .filter((rec) => !rec.entity.dying && inRange(rec.entity))
+        .map((rec) => rec.entity)
       lockedEnemies = []
       return targets
     },
 
     clearLockedEnemies() { lockedEnemies = [] },
 
-    getLockedEnemySnapshots: () => lockedEnemies
-      .filter((rec) => !rec.entity.dying)
-      .map((rec) => {
-        rec.entity.mesh.getWorldPosition(_tmpWorldPos)
-        return { id: rec.seq, worldPos: _tmpWorldPos.clone().add(rec.offset) }
-      }),
+    // ============ SNAPSHOTS — âncora + layout, sem estado ============
+    // O HUD chama isso a cada frame pra posicionar os marcadores. Duas etapas:
+    //
+    //   a) ÂNCORA: getWorldPosition() em vez de mesh.position. Se o mesh do alvo estiver
+    //      aninhado dentro de um Group pai (chefe com corpo + anéis + filhos é o caso clássico),
+    //      `.position` seria LOCAL e o marcador apareceria no lugar errado.
+    //
+    //   b) LAYOUT: agrupa records por entidade. 1 trava no alvo → marcador exatamente na
+    //      âncora (bug do "marcador deslocado pra esquerda/direita" original era justamente
+    //      NÃO fazer isso — o offset perpendicular à mira ficava salvo no record). N travas
+    //      no MESMO alvo → anel determinístico, com ângulo `i * 2π/N` ordenado por `seq`.
+    //      Reflow a cada chamada: se uma trava some, as outras reequilibram o anel sem estado
+    //      guardado. Nada de clump aleatório.
+    getLockedEnemySnapshots: () => {
+      const alive = lockedEnemies.filter((rec) => !rec.entity.dying)
+
+      // agrupa por entidade mantendo a ordem de aquisição (seq) dentro de cada grupo — a
+      // ordenação por seq garante que o anel se mantenha estável quando uma trava é solta
+      const byEntity = new Map()
+      for (const rec of alive) {
+        let group = byEntity.get(rec.entity)
+        if (!group) { group = []; byEntity.set(rec.entity, group) }
+        group.push(rec)
+      }
+
+      const result = []
+      for (const [entity, group] of byEntity) {
+        group.sort((a, b) => a.seq - b.seq)
+        entity.mesh.getWorldPosition(_tmpWorldPos)
+
+        // trava única (o caso 99% das vezes — inimigo comum): marcador exatamente na âncora.
+        // Sem offset, sem espalhamento, sem ruído.
+        if (group.length === 1) {
+          result.push({ id: group[0].seq, worldPos: _tmpWorldPos.clone() })
+          continue
+        }
+
+        // multi-lock no mesmo alvo (só chefe/dourado chegam aqui): distribui em anel no plano
+        // horizontal (XZ, mundo). Não é o plano perpendicular à visão (precisaria da câmera,
+        // que o HUD tem mas o lockon não) — o plano XZ lê bem porque os alvos grandes são
+        // vistos quase sempre de frente/longe, e um anel "deitado" ao redor deles parece
+        // natural.
+        const radius = Math.min(
+          BIG_TARGET_RING_RADIUS,
+          entity.radius ?? BIG_TARGET_FALLBACK_RADIUS,
+        )
+        for (let i = 0; i < group.length; i += 1) {
+          const angle = (i / group.length) * Math.PI * 2
+          _tmpOffset.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+          result.push({ id: group[i].seq, worldPos: _tmpWorldPos.clone().add(_tmpOffset) })
+        }
+      }
+      return result
+    },
   }
 }

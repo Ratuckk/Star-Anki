@@ -13,6 +13,7 @@ import { getBindings, isActionPressed } from './keybindings.js'
 import { pickRandomCards } from './roguelike.js'
 import { createGameMenu } from './game-menu.js'
 import { createDebugActions } from './debug-actions.js'
+import { initMobileSupport, requestGameOrientation, releaseGameOrientation } from './mobile.js'
 
 const CYCLE_MS = 110000 // era 90000 (pedido do usuário: 110s, compensado pelo avanço por kill abaixo)
 // pedido do usuário: "avance este timer em 2 para cada inimigo derrotado durante ele" — todo
@@ -194,6 +195,9 @@ const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 // precisa de uma cópia própria.
 function mountGame(session, deck, menu) {
   const hud = createGameHud()
+  // suporte mobile: tela cheia + travar em paisagem, best-effort (ver mobile.js) — o aviso de
+  // "gire o celular" continua cobrindo o caso onde nenhum dos dois é suportado pelo navegador
+  requestGameOrientation()
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x0b0d12)
@@ -535,8 +539,12 @@ function mountGame(session, deck, menu) {
       hud.showErrorFloat('Errou!')
     }
 
+    // v0.51.0 — `resolution.sectorOver` removido: desde o modo infinito (v0.29.6) o único fim
+    // de setor é zerar vidas, e desde o ajuste de "errar não tira vida" ele é SEMPRE false.
+    // `applyHealthLoss()` continua sendo o único caminho real (health chegou a 0 vindo de dano
+    // de inimigo).
     const outOfLives = applyHealthLoss()
-    if (resolution.sectorOver || outOfLives) {
+    if (outOfLives) {
       pendingSectorOver = true
       pendingCardChoice = false
       phase = 'resolution'
@@ -674,8 +682,9 @@ function mountGame(session, deck, menu) {
       hud.showErrorFloat('Errou!')
     }
 
+    // v0.51.0 — `resolution.sectorOver` removido (ver comentário em settleBossBuildupQuestion).
     const outOfLives = applyHealthLoss()
-    pendingSectorOver = resolution.sectorOver || outOfLives
+    pendingSectorOver = outOfLives
     pendingCardChoice = correct
     phase = 'resolution'
     phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
@@ -726,6 +735,7 @@ function mountGame(session, deck, menu) {
     combat.dispose()
     renderer.dispose()
     hud.unmount()
+    releaseGameOrientation()
   }
 
   function tick(now) {
@@ -1042,7 +1052,7 @@ function mountGame(session, deck, menu) {
       }
     }
     // pedido do usuário: número roxo pequeno + ícone de ampulheta acima do redutor de tempo
-    // destruído, mostrando exatamente quanto tempo aquele kill reduziu do ciclo
+    // destruído, mostrando exatamente quanto tempo aquele kill específico reduziu do ciclo
     if (events.timeReductionMs && events.timeReductionWorldPos) {
       const ndcT = events.timeReductionWorldPos.project(camera)
       const xFracT = THREE.MathUtils.clamp((ndcT.x + 1) / 2, 0, 1)
@@ -1079,7 +1089,8 @@ function mountGame(session, deck, menu) {
       ramActive,
       rollActive: player.isRollIframeActive(),
     })
-    effects.spawnContrailTick(combat.getWingmanPositions())
+    // v0.51.0 — passa `dt` (era passo fixo de 1/60 lá dentro; ver comentário em effects.js).
+    effects.spawnContrailTick(combat.getWingmanPositions(), dt)
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
@@ -1377,5 +1388,6 @@ function mountGame(session, deck, menu) {
   rafId = requestAnimationFrame(tick)
 }
 
+initMobileSupport()
 const { restart } = createGameMenu(mountGame)
 restart()
