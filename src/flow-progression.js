@@ -1,24 +1,7 @@
 // flow-progression.js
 //
-// Etapa 6 do overhaul de organização do main.js. Extrai o "cluster de progressão": tudo que
-// muta a dificuldade da partida (por erro ou por contexto) e todos os randomizadores de
-// intervalo que dependem desses valores. Zero mudança de comportamento.
-//
-// Motivo de ser um arquivo próprio (e não continuar em main.js como as ~11 function
-// declarations hoisted que existiam até a etapa 5): esses helpers eram consumidos tanto pelo
-// main.js (tick, enterCombat) quanto pelos dois flows (flow-boss, flow-question) — antes como
-// "hoisting elegante", que é frágil (só funciona porque function declarations são içadas; a
-// menor mudança de ordem quebra silenciosamente) e o comentário do main.js tinha uma nota de
-// desculpa sobre isso desde a etapa 4. Agora o main.js importa o objeto pronto e injeta as
-// deps nomeadas nos flows — a dependência fica explícita.
-//
-// Estado que este módulo lê/muta (via referência compartilhada, todas as chaves já existiam
-// em `state` desde a etapa 2): enemyIntervalMin, enemyIntervalMax, enemyAggression,
-// wrongAnswerCount, extraSpawnPerBatch, enemyDamageValue, enemyCap, consecutiveCorrect,
-// speedMultiplier, bossDifficulty.
-//
-// Padrão (mesmo dos outros flows): recebe `state` + deps por referência, devolve funções. Não
-// guarda estado próprio.
+// Cluster de progressão: escalada por erro (dificuldade) e randomizadores de intervalo.
+// Zero mudança de comportamento.
 
 import {
   SPEED_STEP, BOOST_EVERY_CORRECT,
@@ -38,11 +21,6 @@ import {
 
 export function createProgressionFlow(deps) {
   const { state, rail, combat } = deps
-
-  // ============ RANDOMIZADORES DE INTERVALO ============
-  // (todos os que dependem de alguma mutação de estado — os puramente constantes ficaram
-  // puros só por hábito de leitura, mas moram aqui pelo mesmo motivo: são "o próximo spawn
-  // depois desse aqui", acoplados ao ritmo que applyDifficulty muta)
 
   function randomDetritoInterval() {
     return DETRITO_SPAWN_INTERVAL_MIN_MS + Math.random() * (DETRITO_SPAWN_INTERVAL_MAX_MS - DETRITO_SPAWN_INTERVAL_MIN_MS)
@@ -64,9 +42,6 @@ export function createProgressionFlow(deps) {
     return GOLDEN_INTERVAL_MIN_MS + Math.random() * (GOLDEN_INTERVAL_MAX_MS - GOLDEN_INTERVAL_MIN_MS)
   }
 
-  // ============ PROGRESSÃO POR RESPOSTA ============
-  // Acerto consecutivo sobe a velocidade de avanço a cada BOOST_EVERY_CORRECT acertos; erro
-  // reseta a velocidade E o contador — independente da escalada de dificuldade abaixo.
   function applySpeedProgression(type) {
     if (type === 'correct') {
       state.consecutiveCorrect += 1
@@ -81,10 +56,6 @@ export function createProgressionFlow(deps) {
     }
   }
 
-  // pedido do usuário: escalada explícita e quantificada por pergunta errada (comentário
-  // completo em main-constants.js) — 3 contadores derivam do mesmo wrongAnswerCount, divididos
-  // por thresholds diferentes. Os 3 efeitos originais (intervalo de spawn/enemyCap/agressão)
-  // continuam acontecendo junto, sem mudança.
   function applyDifficulty() {
     state.enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, state.enemyIntervalMin - ENEMY_INTERVAL_STEP)
     state.enemyIntervalMax = Math.max(state.enemyIntervalMin + 150, state.enemyIntervalMax - ENEMY_INTERVAL_STEP)
@@ -92,23 +63,15 @@ export function createProgressionFlow(deps) {
     combat.setEnemyAggressiveness(state.enemyAggression)
     state.enemyCap += ENEMY_CAP_STEP_PER_ERROR
 
-    // pedido do usuário: escalada quantificada em cima do que já existia acima
     state.wrongAnswerCount += 1
     state.extraSpawnPerBatch = Math.floor(state.wrongAnswerCount / ENEMY_SPAWN_BONUS_WRONG_THRESHOLD)
     state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
     combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
   }
 
-  // separado de applyDifficulty porque a caçada do chefe tem a própria progressão (a dificuldade
-  // "geral" continua sendo aplicada por erro, mas o chefe em si escala em paralelo — spread e
-  // reforço extra). Cap próprio, BOSS_DIFFICULTY_CAP.
   function applyBossDifficulty() {
     state.bossDifficulty = Math.min(BOSS_DIFFICULTY_CAP, state.bossDifficulty + 1)
   }
-
-  // ============ CONSULTAS DE ESCALADA ============
-  // Chamadas pelo tick e por enterCombat/enterBossBuildup (via deps dos flows) pra ler o
-  // estado atual da progressão. Nunca mutam nada.
 
   function currentEnemyCap() {
     return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + state.enemyCap
@@ -126,17 +89,14 @@ export function createProgressionFlow(deps) {
   }
 
   return {
-    // randomizadores
     randomDetritoInterval,
     randomImaInterval,
     randomEnemyInterval,
     randomBonusInterval,
     randomGoldenInterval,
-    // progressão
     applyDifficulty,
     applyBossDifficulty,
     applySpeedProgression,
-    // consultas
     currentEnemyCap,
     currentBossSpread,
     currentBossExtraEnemies,
