@@ -14,6 +14,7 @@ import { pickRandomCards } from './roguelike.js'
 import { createGameMenu } from './game-menu.js'
 import { createDebugActions } from './debug-actions.js'
 import { initMobileSupport, requestGameOrientation, releaseGameOrientation } from './mobile.js'
+import { createCutscenesSystem } from './cutscenes.js'
 import {
   CYCLE_MS, ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS, FEEDBACK_MS, WRONG_FEEDBACK_MS,
   SPEED_STEP, BOOST_EVERY_CORRECT, GROUND_Y,
@@ -40,9 +41,8 @@ import {
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
   IMA_SPAWN_INTERVAL_MIN_MS, IMA_SPAWN_INTERVAL_MAX_MS,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS, ARENA_CUTSCENE_MS,
-  ARENA_CUTSCENE_PULLBACK, ARENA_CUTSCENE_FOV_BUMP, ARENA_CUTSCENE_ORBIT,
   BOSS_SUMMON_CUTSCENE_MS,
-  DEATH_CUTSCENE_MS, DEATH_CUTSCENE_TIME_SCALE, DEATH_CUTSCENE_ZOOM_FOV,
+  DEATH_CUTSCENE_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
 } from './main-constants.js'
@@ -200,6 +200,12 @@ function mountGame(session, deck, menu) {
   state.detritoTimer = randomDetritoInterval()
   state.imaTimer = randomImaInterval()
   state.bonusTimer = randomBonusInterval()
+
+  // cutscenes (etapa 3 do overhaul de organização): arenaCutscene/deathCutscene extraídas pra
+  // cutscenes.js — o tick() só pergunta "alguma cutscene tratou este frame?", e cada uma recebe
+  // a fatia de dt que já recebia antes (dt escalado por slowMo pra arena, rawDt sem escala pra
+  // morte). Ver comentário no topo de cutscenes.js.
+  const cutscenes = createCutscenesSystem({ state, camera, renderer, scene, effects, hud, rail, player })
 
   function currentEnemyCap() {
     return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + state.enemyCap
@@ -654,69 +660,12 @@ function mountGame(session, deck, menu) {
       return
     }
 
-    // ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE (dourado/chefe) ============
-    // nave travada, só a câmera se move sozinha (puxa pra trás + abre o FOV e volta), igual
-    // confirmado com o usuário — ao terminar, chama arenaCutsceneOnDone (enterGoldenArena ou
-    // enterBossBuildup), que aí sim muda de fase e liga o modo all-range de verdade.
-    if (state.phase === 'arenaCutscene') {
-      state.arenaCutsceneTimer -= dt * 1000
-      const t = THREE.MathUtils.clamp(1 - Math.max(0, state.arenaCutsceneTimer) / state.arenaCutsceneDurationMs, 0, 1)
-      const pull = Math.sin(Math.min(1, t) * Math.PI)
-      camera.position.copy(state.arenaCutsceneBaseCameraPos)
-        .addScaledVector(state.arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
-        .addScaledVector(state.arenaCutsceneBaseRight, pull * ARENA_CUTSCENE_ORBIT)
-      camera.fov = 70 + pull * ARENA_CUTSCENE_FOV_BUMP
-      camera.updateProjectionMatrix()
-      camera.lookAt(state.arenaCutsceneBaseCameraPos.clone().addScaledVector(state.arenaCutsceneBaseForward, 40))
-      if (state.arenaCutsceneTimer <= 0) {
-        camera.fov = 70
-        camera.updateProjectionMatrix()
-        hud.setArenaCutscene(null)
-        const done = state.arenaCutsceneOnDone
-        state.arenaCutsceneOnDone = null
-        done()
-      }
-      renderer.render(scene, camera)
-      return
-    }
-
-    // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
-    // pedido do usuário: "cutscene em câmera lenta do inimigo dourado/boss sendo destruído e
-    // explodindo" em vez da transição instantânea pro modo normal. Nave travada (sem input),
-    // tempo desacelerado — a explosão e o encolhimento do mesh morrendo (já disparados no
-    // frame do kill, dentro de enemies.js) continuam a tocar por baixo, só mais devagar; a
-    // câmera gira suavemente (tempo real, não desacelerado) até focar na explosão e segura ali.
-    if (state.phase === 'deathCutscene') {
-      state.deathCutsceneTimer -= rawDt * 1000
-      const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
-      effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
-        camera,
-        shieldValue: player.getShieldValue(),
-        shieldMax: player.getShieldMax(),
-        boostActive: false,
-        skipTrail: true,
-      })
-      const t = THREE.MathUtils.clamp(1 - Math.max(0, state.deathCutsceneTimer) / DEATH_CUTSCENE_MS, 0, 1)
-      const zoomT = Math.sin(Math.min(1, t) * Math.PI)
-      camera.fov = 70 - zoomT * (70 - DEATH_CUTSCENE_ZOOM_FOV)
-      camera.updateProjectionMatrix()
-      if (state.deathCutscenePos) {
-        const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
-          new THREE.Matrix4().lookAt(camera.position, state.deathCutscenePos, camera.up),
-        )
-        camera.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * rawDt))
-      }
-      if (state.deathCutsceneTimer <= 0) {
-        camera.fov = 70
-        camera.updateProjectionMatrix()
-        const done = state.deathCutsceneOnDone
-        state.deathCutsceneOnDone = null
-        state.deathCutscenePos = null
-        done()
-      }
-      renderer.render(scene, camera)
-      return
-    }
+    // cutscenes (etapa 3 do overhaul): arenaCutscene e deathCutscene extraídas pra
+    // cutscenes.js — cada uma devolve true se tratou o frame (early-return do tick), e cada
+    // uma recebe a fatia de dt que já recebia antes (dt escalado por slowMo pra arena, rawDt
+    // sem escala pra morte). Ver comentário no topo de cutscenes.js.
+    if (cutscenes.updateArenaCutscene(dt)) return
+    if (cutscenes.updateDeathCutscene(rawDt)) return
 
     state.hitShakeTimer = Math.max(0, state.hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(state.hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (state.hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
