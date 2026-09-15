@@ -196,4 +196,32 @@ Implementação dos 4 itens de gameplay do backlog listados em `Info mudancas.md
 
 **Versão**: v0.52.0 → **v0.52.1**
 
+## Posicionamento e Câmera: Despawn por Progresso no Trilho [P1] e Câmera com Viés de Mira (SF64) [P2] — v0.52.2
+
+Implementação dos itens de prioridade P1 e P2 da Seção 1 do `BACKLOG.md`, inspirados na arquitetura e código-fonte decompilado de Star Fox 64 (*HarbourMasters/Starship*):
+
+### 1. [P1] Cull/Despawn por Progresso no Trilho (Robustez e Eliminação de Bugs por Curva)
+- **Causa Raiz Resolvida**: As checagens de despawn anteriores usavam o produto escalar `relative.dot(frame.forward) < passBehind`. Como o frame do trilho gira conforme a pista curva, curvas acentuadas faziam com que inimigos que já tinham ficado para trás parecessem estar na frente novamente, ou que inimigos à frente fossem prematuramente considerados "atrás" (causa de anomalias no mini-swarm atacando pelas costas).
+- **Mecanismo Novo**:
+  - `rail.getDistance()` exposto na API pública de `src/rail.js`.
+  - Ao spawnar qualquer inimigo no trilho, são atribuídos `enemy.spawnDistance = rail.getDistance()` e `enemy.despawnDistance = spawnDistance + spawnAhead + cullMargin` (com `cullMargin` de 20 a 35 unidades, garantindo que o inimigo já passou completamente da câmera, posicionada a 10 unidades atrás da nave).
+  - Em `src/enemies/index.js`, tanto obstáculos estáticos (`detrito`, `ima`) quanto inimigos em geral no trilho são removidos quando `railDist >= enemy.despawnDistance` (com Blaster mantendo também sua checagem de profundidade de câmera `depth < passBehind`).
+  - Em `src/enemies/miniSwarm.js`:
+    - Durante a patrulha, caso o jogador avance em alta velocidade além de `despawnDistance`, o enxame é removido imediatamente sem esperar pelo mergulho.
+    - Durante o mergulho (`dive`), a passagem pela nave é detectada diretamente pela distância percorrida no vetor escalar de mergulho (`distDived > enemy.diveTotalDistance + 14`) ou por `railDist >= enemy.despawnDistance`. A checagem `relative.dot(frame.forward) < MINI_SWARM_DIVE_PASS_BEHIND` foi completamente removida.
+
+### 2. [P2] Câmera Mirando Levemente para a Nave (Star Fox 64 Camera_UpdateArwingOnRails)
+- **Comportamento Anterior**: A câmera transladava lateralmente (`CAM_FOLLOW_LATERAL = 0.3`), mas seu `lookAt` sempre apontava para `camera.position + frame.forward` estático na curva, deixando a nave deslocada e colada na borda da tela ao manobrar.
+- **Implementação**:
+  - Adicionadas constantes `CAM_LOOK_AHEAD = 35`, `CAM_LOOK_BIAS_LATERAL = 0.15` e `CAM_LOOK_BIAS_VERTICAL = 0.08`.
+  - No `rail.js`, o `camera.lookAt` agora mira em:
+    `camLookTarget = camera.position + frame.forward * CAM_LOOK_AHEAD + frame.right * (playerX * 0.15) + frame.up * (playerY * 0.08)`.
+  - A nave e a retícula de tiro mantêm-se naturalmente mais bem enquadradas no centro da tela ao esterçar, com a retícula 2D no HUD perfeitamente alinhada com a trajetória dos disparos via `camera.project(reticleWorldPos)`.
+
+### Testes e Verificação
+- `node src/selftest.mjs` executado com sucesso total (quiz e parsing do Anki).
+- Validação de sintaxe via `node --check` em todos os arquivos JS de `src/` e no `service-worker.js`.
+
+**Versão**: v0.52.1 → **v0.52.2**
+
 

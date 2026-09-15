@@ -18,6 +18,10 @@ const CAM_BEHIND = 10
 const CAM_HEIGHT = 3
 
 const CAM_FOLLOW_LATERAL = 0.3
+// P2 (SF64 Camera_UpdateArwingOnRails): mira da câmera também acompanha o deslocamento da nave
+const CAM_LOOK_AHEAD = 35
+const CAM_LOOK_BIAS_LATERAL = 0.15
+const CAM_LOOK_BIAS_VERTICAL = 0.08
 
 // Fase 6: câmera mais dinâmica no modo normal — um drift lento (senoidal, nunca abrupto) de
 // posição lateral/vertical por cima do follow normal, mais um "dutch angle" leve (a câmera
@@ -704,7 +708,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     // "dutch angle" leve: inclina o UP da câmera em torno do forward antes do lookAt — a nave
     // e a mira não são afetadas, só o enquadramento
     camera.up.copy(frame.up).applyAxisAngle(frame.forward, dynRoll + curveRollSmoothed)
-    camera.lookAt(camera.position.clone().add(frame.forward))
+    // P2: viés no lookAt proporcional à posição do jogador (SF64)
+    const camLookTarget = camera.position.clone()
+      .addScaledVector(frame.forward, CAM_LOOK_AHEAD)
+      .addScaledVector(frame.right, playerX * CAM_LOOK_BIAS_LATERAL)
+      .addScaledVector(frame.up, playerY * CAM_LOOK_BIAS_VERTICAL)
+    camera.lookAt(camLookTarget)
 
     lastFrame = frame
     lastPlayerPos = playerPos
@@ -734,6 +743,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
 
   return {
     update,
+    getDistance: () => distance,
     getPlayerPosition: () => lastPlayerPos.clone(),
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
     getFrameAt,

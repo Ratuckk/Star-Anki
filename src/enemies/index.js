@@ -215,6 +215,17 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return PASS_BEHIND
   }
 
+  // P1: helper de ciclo de vida por progresso no trilho (sem depender de relative.dot com frame rotativo)
+  function tagRailEnemy(enemy, defaultAhead = 100, cullMargin = 20) {
+    if (!enemy || rail.isArena()) return enemy
+    const currentDist = rail.getDistance()
+    const ahead = enemy.spawnAhead ?? enemy.depth ?? defaultAhead
+    enemy.spawnDistance = currentDist
+    enemy.spawnAhead = ahead
+    enemy.despawnDistance = currentDist + ahead + cullMargin
+    return enemy
+  }
+
   // ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
   function fireEnemyProjectile(enemy, playerPosition) {
     const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
@@ -308,7 +319,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
       // remove sozinha (não usa o pass-behind genérico abaixo)
       if (enemy.kind === MINI_SWARM_KIND) {
-        updateMiniSwarm(enemy, dt, { playerPosition, frame, elapsed, removeEnemy })
+        updateMiniSwarm(enemy, dt, { playerPosition, frame, elapsed, removeEnemy, rail })
         continue
       }
 
@@ -323,8 +334,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (isDetrito) updateDetritoSpin(enemy, dt)
         else updateImaSpin(enemy, dt)
         if (!inArena) {
-          const relative = enemy.mesh.position.clone().sub(frame.position)
-          if (relative.dot(frame.forward) < PASS_BEHIND) { removeEnemy(enemy); continue }
+          const railDist = rail.getDistance()
+          if (enemy.despawnDistance != null && railDist >= enemy.despawnDistance) {
+            removeEnemy(enemy)
+            continue
+          }
         }
       } else if (inArena) {
         // pedido do usuário: inimigos comuns muito lentos em arena — *0.5 limitava a metade da
@@ -368,6 +382,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             const count = 2 + Math.floor(Math.random() * 2)
             for (let i = 0; i < count; i += 1) {
               const reinforcement = spawnBlaster(scene, rail, nextEnemyId++)
+              tagRailEnemy(reinforcement, reinforcement.depth || 80)
               reinforcement.fireTimer = randomEnemyFireInterval()
               enemies.push(reinforcement)
             }
@@ -378,9 +393,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND) enemy.mesh.lookAt(playerPosition)
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
 
-        const relative = enemy.mesh.position.clone().sub(frame.position)
-        const passBehind = passBehindFor(enemy)
-        if (relative.dot(frame.forward) < passBehind) { removeEnemy(enemy); continue }
+        // P1: despawn no trilho por profundidade da câmera (Blaster) ou por progresso no trilho (todos)
+        const railDist = rail.getDistance()
+        const depthPass = (enemy.depth != null && enemy.depth < passBehindFor(enemy))
+        const railPass = (enemy.despawnDistance != null && railDist >= enemy.despawnDistance)
+        if (depthPass || railPass) { removeEnemy(enemy); continue }
       }
 
       // telegraph colorido por classe + deslocado pra fora do mesh do chefe (senão nasce
@@ -491,6 +508,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   return {
     spawnEnemy() {
       const enemy = spawnBlaster(scene, rail, nextEnemyId++)
+      tagRailEnemy(enemy, enemy.depth || 80)
       enemy.fireTimer = randomEnemyFireInterval()
       enemies.push(enemy)
     },
@@ -502,54 +520,77 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     spawnTimeEnemy() {
       const enemy = spawnTimeEnemy(scene, rail, nextEnemyId++)
+      tagRailEnemy(enemy, 90)
       enemy.fireTimer = randomEnemyFireInterval()
       enemies.push(enemy)
     },
 
     spawnTimeEnemyMega() {
       const enemy = spawnTimeEnemyMega(scene, rail, nextEnemyId++)
+      tagRailEnemy(enemy, 90, 35)
       enemy.fireTimer = randomEnemyFireInterval()
       enemies.push(enemy)
     },
 
     spawnTankEnemy(hp = TANK_DEFAULT_HP) {
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, hp)
+      tagRailEnemy(enemy, 100)
       enemy.fireTimer = randomEnemyFireInterval()
       enemies.push(enemy)
     },
 
     spawnDetrito() {
-      enemies.push(spawnDetrito(scene, rail, nextEnemyId++))
+      const enemy = spawnDetrito(scene, rail, nextEnemyId++)
+      tagRailEnemy(enemy, 90)
+      enemies.push(enemy)
     },
 
     spawnSentinela() {
       const enemy = spawnSentinela(scene, rail, nextEnemyId++)
-      if (enemy) enemies.push(enemy)
+      if (enemy) {
+        tagRailEnemy(enemy, 110)
+        enemies.push(enemy)
+      }
     },
 
     spawnReplica() {
       const enemy = spawnReplica(scene, rail, nextEnemyId++)
-      if (enemy) enemies.push(enemy)
+      if (enemy) {
+        tagRailEnemy(enemy, 100)
+        enemies.push(enemy)
+      }
     },
 
     spawnFragata() {
       const enemy = spawnFragata(scene, rail, nextEnemyId++)
-      if (enemy) enemies.push(enemy)
+      if (enemy) {
+        tagRailEnemy(enemy, 100)
+        enemies.push(enemy)
+      }
     },
 
     spawnVerme() {
       const segments = spawnVerme(scene, rail, () => nextEnemyId++)
-      for (const e of segments) enemies.push(e)
+      for (const e of segments) {
+        tagRailEnemy(e, e.depth || 90)
+        enemies.push(e)
+      }
     },
 
     spawnImaSwarm() {
       const group = spawnImaSwarm(scene, rail, () => nextEnemyId++)
-      for (const e of group) enemies.push(e)
+      for (const e of group) {
+        tagRailEnemy(e, 80)
+        enemies.push(e)
+      }
     },
 
     spawnSussurro() {
       const enemy = spawnSussurro(scene, rail, nextEnemyId++)
-      if (enemy) enemies.push(enemy)
+      if (enemy) {
+        tagRailEnemy(enemy, enemy.depth || 100)
+        enemies.push(enemy)
+      }
     },
 
     // Fase de ideias de inimigos: fonte do campo magnético do Enxame-Ímã, consumida direto por

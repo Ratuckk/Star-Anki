@@ -36,7 +36,9 @@ export function randomSpawnPositionOnPath(rail, distanceMin, distanceMax, boxX, 
   const frame = rail.getFrameAt(distanceAhead)
   const lateralX = (Math.random() * 2 - 1) * boxX
   const lateralY = (Math.random() * 2 - 1) * boxY
-  return frame.position.clone().addScaledVector(frame.right, lateralX).addScaledVector(frame.up, lateralY)
+  const pos = frame.position.clone().addScaledVector(frame.right, lateralX).addScaledVector(frame.up, lateralY)
+  pos.distanceAhead = distanceAhead
+  return pos
 }
 
 // spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
