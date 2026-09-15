@@ -1,10 +1,6 @@
 import * as THREE from 'three'
 
 const RAIL_SPEED = 22
-// v0.29.6: nave mais calma por padrão, mas ganha uma pequena aceleração ao manter a MESMA
-// direção (X e Y) por LATERAL_ACCEL_HOLD_TIME segundos — sobe de LATERAL_SPEED_BASE até
-// LATERAL_SPEED_MAX (que é a velocidade lateral de antes desta mudança). Soltar ou trocar de
-// direção reseta o ganho na hora.
 const LATERAL_SPEED_BASE = 15
 const LATERAL_SPEED_MAX = 22
 const LATERAL_ACCEL_HOLD_TIME = 1.2
@@ -19,36 +15,22 @@ const CAM_HEIGHT = 3
 
 const CAM_FOLLOW_LATERAL = 0.3
 
-// Fase 6: câmera mais dinâmica no modo normal — um drift lento (senoidal, nunca abrupto) de
-// posição lateral/vertical por cima do follow normal, mais um "dutch angle" leve (a câmera
-// mesma se inclina, não o mundo) — dá a sensação de ângulos mais diagonais em certos trechos
-// sem nunca atrapalhar a leitura do jogo (mira/hitbox não dependem da câmera, só do estado
-// real da nave, que fica intocado). Puramente cosmético.
-const CAMERA_DYNAMIC_PERIOD = 17 // segundos por ciclo completo do drift
+const CAMERA_DYNAMIC_PERIOD = 17
 const CAMERA_DYNAMIC_LATERAL = 2.4
 const CAMERA_DYNAMIC_VERTICAL = 1.1
-const CAMERA_DYNAMIC_ROLL = 0.1 // radianos (~5.7°) de inclinação máxima da câmera
+const CAMERA_DYNAMIC_ROLL = 0.1
 
-// Fase 8 (VISUAL): roll de câmera proporcional à curvatura real do trilho — em vez de só o
-// drift senoidal acima (que ignora a forma da pista), amostra o "forward" um pouco à frente e
-// compara com o atual; quanto mais fechada a curva horizontal, mais a câmera inclina, como um
-// caça de verdade fazendo a curva. Suavizado pra não tremer entre amostras.
 const CURVE_SAMPLE_AHEAD = 6
 const CURVE_ROLL_GAIN = 3.2
 const CURVE_ROLL_MAX = THREE.MathUtils.degToRad(14)
 const CURVE_ROLL_SMOOTH_RATE = 4
 
-// Fase 8 (VISUAL): FOV abre durante o boost (propulsor/repulsor) e volta ao normal — reforça a
-// sensação de velocidade junto com as motion lines/distorção que já existem no HUD.
 const CAM_FOV_BASE = 70
 const CAM_FOV_BOOST = 84
 const CAM_FOV_LERP_RATE = 6
 
 const SHIP_NOSE_OFFSET = 1.6
 
-// visual da nave (Configurações → Visual): presets de dimensões/cor por variante, todos
-// construídos com as mesmas 2 formas (buildDeltaShape/buildFinShape) — fácil de ajustar ou
-// adicionar mais no futuro, só mexendo nesta tabela.
 export const SHIP_VISUAL_DEFAULT = 'default'
 const SHIP_PRESETS = {
   default: {
@@ -100,7 +82,6 @@ const SHIP_PRESETS = {
 }
 export const SHIP_VISUAL_OPTIONS = Object.entries(SHIP_PRESETS).map(([id, p]) => ({ id, label: p.label }))
 
-// ============ ANIMAÇÕES DE "PESO FÍSICO" ============
 const ROLL_STIFFNESS_LIGHT = 220
 const ROLL_STIFFNESS_HEAVY = 70
 const ROLL_DAMPING_LIGHT = 22
@@ -606,38 +587,26 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     getBoostActive: () => boostActive,
 
     // ============ PONTO NA LINHA DE VISÃO DA CÂMERA ============
-    // Devolve o ponto que fica a `distanceAhead` À FRENTE DO JOGADOR, mas na LINHA DE VISÃO
-    // DA CÂMERA — não na posição do jogador.
+    // v0.51.2 (fix definitivo do "spawn à direita"): as duas tentativas anteriores reconstruíam
+    // a posição teórica `frame.position + right * playerX * CAM_FOLLOW_LATERAL + forward * d`,
+    // IGNORANDO que a posição real da câmera é `lerp`ada e recebe o drift senoidal
+    // (dynLateral/dynVertical, ±2.4 / ±1.1). Com o drift empurrando a câmera pra um lado, o
+    // ponto reconstruído deixava de estar no centro real da tela e o spawn "derivava" na
+    // direção contrária — era exatamente o "tudo na direita" reportado.
     //
-    // Por que isso é diferente: a câmera segue só CAM_FOLLOW_LATERAL (0.3) do movimento lateral
-    // do jogador. Se o jogador está a +30 lateral, a câmera está a +9. A linha de visão da
-    // câmera olha pra frente a partir de +9, então ela "cruza" o plano do jogador deslocada
-    // -0.7 * playerX em relação ao próprio jogador. Um spawn ancorado na posição do jogador
-    // aparece deslocado na tela na direção do movimento; um spawn ancorado AQUI aparece no
-    // centro da tela (que é o que a sensação de "inimigo vem de frente" espera).
+    // A correção usa a posição REAL da câmera. Como ela sempre olha na direção `frame.forward`
+    // (via `camera.lookAt(camera.position + frame.forward)`), a linha visual do centro da tela
+    // é simplesmente `camera.position + frame.forward * t` para qualquer t > 0. Escolhendo
+    // t = `distanceAhead + CAM_BEHIND`, o ponto fica a `distanceAhead` do plano do jogador
+    // (o plano perpendicular ao forward passando por frame.position) E no centro EXATO da
+    // tela — sem depender de reconstruir o offset lateral, o drift, o lag do lerp ou o que for.
     //
-    // v0.51.1 (fix do "spawn pra direita"): antes esta função partia de `lastPlayerPos` (que
-    // já contém `right * playerX + up * playerY`) e somava `aimOffsetX = playerX *
-    // (CAM_FOLLOW_LATERAL - 1)`. Matematicamente o resultado batia, MAS dependia de
-    // `lastPlayerPos` estar sincronizado com `playerX`/`playerY` no instante da chamada —
-    // dependência de ORDEM de update entre main.js e rail.update(), que quebrava quando o
-    // spawn era chamado no mesmo frame antes de `update()` rodar (o `playerX` novo ainda não
-    // tinha sido refletido em `lastPlayerPos`). Agora a fórmula é fechada a partir de
-    // `frame.position` (fonte primária do trilho, sempre correta) + os valores ATUAIS de
-    // `playerX`/`playerY` (não o cache `lastPlayerPos`).
-    //
-    // A câmera ainda tem CAM_HEIGHT (acima) e dynLateral/dynVertical (drift senoidal) — o
-    // CAM_HEIGHT não importa (é vertical, o spawn é ancorado no mesmo plano Y do jogador); os
-    // drifts são ignorados de propósito (o spawn não deve tremer junto com a oscilação
-    // cosmética da câmera).
+    // Mesmo em modo arena (onde spawn usa randomSpawnAroundArena, não esta função) o método
+    // continua correto: `lastFrame` e `camera` estão ambos sincronizados com o frame atual.
     getAimLineAhead(distanceAhead) {
       const frame = lastFrame
-      // ponto do trilho puro + offset lateral/vertical seguindo a MESMA fração que a câmera
-      // usa (CAM_FOLLOW_LATERAL) + avanço `distanceAhead` no forward
-      return frame.position.clone()
-        .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL)
-        .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL)
-        .addScaledVector(frame.forward, distanceAhead)
+      const camPos = camera.position.clone()
+      return camPos.addScaledVector(frame.forward, CAM_BEHIND + distanceAhead)
     },
 
     setAdvancing: (v) => { advancing = v },
