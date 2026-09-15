@@ -73,7 +73,8 @@ export function createGameLoop(deps) {
       return
     }
 
-    // cutscenes (etapa 3): arenaCutscene e deathCutscene extraídas pra cutscenes.js
+    // cutscenes: launchCutscene, arenaCutscene e deathCutscene
+    if (cutscenes.updateLaunchCutscene(rawDt, inputState)) return
     if (cutscenes.updateArenaCutscene(dt)) return
     if (cutscenes.updateDeathCutscene(rawDt)) return
 

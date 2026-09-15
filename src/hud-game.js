@@ -187,6 +187,39 @@ export function createGameHud() {
   arenaCutsceneOverlay.hidden = true
   root.appendChild(arenaCutsceneOverlay)
 
+  // ============ ELEMENTOS DE CUTSCENE CINEMÁTICA ============
+  const letterboxTop = document.createElement('div')
+  letterboxTop.className = 'hud-letterbox hud-letterbox-top'
+  root.appendChild(letterboxTop)
+
+  const letterboxBottom = document.createElement('div')
+  letterboxBottom.className = 'hud-letterbox hud-letterbox-bottom'
+  root.appendChild(letterboxBottom)
+
+  const bossWarningCard = document.createElement('div')
+  bossWarningCard.className = 'hud-boss-warning-card'
+  bossWarningCard.hidden = true
+  root.appendChild(bossWarningCard)
+
+  const goldenWarningCard = document.createElement('div')
+  goldenWarningCard.className = 'hud-golden-warning-card'
+  goldenWarningCard.hidden = true
+  root.appendChild(goldenWarningCard)
+
+  const launchBanner = document.createElement('div')
+  launchBanner.className = 'hud-launch-banner'
+  launchBanner.hidden = true
+  root.appendChild(launchBanner)
+
+  const whiteoutOverlay = document.createElement('div')
+  whiteoutOverlay.className = 'hud-whiteout-overlay'
+  root.appendChild(whiteoutOverlay)
+
+  const missionCompleteBanner = document.createElement('div')
+  missionCompleteBanner.className = 'hud-mission-complete'
+  missionCompleteBanner.hidden = true
+  root.appendChild(missionCompleteBanner)
+
   // ============ MODAL DE PERGUNTA (chefe: pausa total ao acertar um orbe) ============
   const questionModalOverlay = document.createElement('div')
   questionModalOverlay.className = 'question-modal-overlay'
@@ -583,6 +616,74 @@ export function createGameHud() {
         ? 'O chefe está sendo invocado...'
         : 'Transicionando para o modo All-Range...'
       arenaCutsceneOverlay.hidden = !kind
+    },
+
+    setLetterbox(active) {
+      if (active) {
+        letterboxTop.classList.add('active')
+        letterboxBottom.classList.add('active')
+      } else {
+        letterboxTop.classList.remove('active')
+        letterboxBottom.classList.remove('active')
+      }
+    },
+
+    showBossWarningCard({ name = 'NÚCLEO RUBRO // RED CORE', subtitle = 'FORTALEZA DEFENSIVA', warning = 'ALERTA MÁXIMO // AMEAÇA DETECTADA' } = {}) {
+      bossWarningCard.innerHTML = `
+        <div class="hud-boss-warning-header">⚠️ ${warning}</div>
+        <div class="hud-boss-warning-name">${name}</div>
+        <div class="hud-boss-warning-sub">${subtitle} // ALL-RANGE MODE ENGAGED</div>
+      `
+      bossWarningCard.hidden = false
+    },
+
+    hideBossWarningCard() {
+      bossWarningCard.hidden = true
+    },
+
+    showGoldenWarningCard({ title = 'ANOMALIA DOURADA DETECTADA', subtitle = 'ALVO DE ALTO VALOR // ALL-RANGE MODE' } = {}) {
+      goldenWarningCard.innerHTML = `
+        <div class="hud-boss-warning-header" style="color:#ffd700;">✨ ${title}</div>
+        <div class="hud-boss-warning-name" style="color:#fff2a8;">SINAL NÃO IDENTIFICADO</div>
+        <div class="hud-boss-warning-sub" style="color:#ffe066;">${subtitle}</div>
+      `
+      goldenWarningCard.hidden = false
+    },
+
+    hideGoldenWarningCard() {
+      goldenWarningCard.hidden = true
+    },
+
+    showLaunchBanner({ sector = 'SECTOR 01', text = 'MISSÃO INICIADA: BOA SORTE', skipText = '[ESPAÇO] PULAR DECOLAGEM' } = {}) {
+      launchBanner.innerHTML = `
+        <div class="hud-launch-sector">${sector}</div>
+        <div class="hud-launch-sub">${text}</div>
+        <div class="hud-launch-skip">${skipText}</div>
+      `
+      launchBanner.hidden = false
+    },
+
+    hideLaunchBanner() {
+      launchBanner.hidden = true
+    },
+
+    triggerWhiteout() {
+      whiteoutOverlay.classList.add('flash')
+      setTimeout(() => {
+        whiteoutOverlay.classList.remove('flash')
+      }, 50)
+    },
+
+    showMissionComplete({ title = 'MISSION ACCOMPLISHED', subtitle = 'SETOR CONCLUÍDO COM SUCESSO' } = {}) {
+      missionCompleteBanner.innerHTML = `
+        <div class="hud-mission-complete-title">${title}</div>
+        <div class="hud-mission-complete-sub">${subtitle}</div>
+      `
+      missionCompleteBanner.hidden = false
+    },
+
+    hideMissionComplete() {
+      missionCompleteBanner.hidden = true
     },
 
     // pausa total: pergunta+alternativas centralizadas, visual de card (Fase 5/6) — usado

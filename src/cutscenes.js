@@ -1,15 +1,15 @@
 // cutscenes.js
 //
-// Etapa 3 do overhaul de organização do main.js. Extrai os dois blocos de cutscene que viviam
-// no topo do tick() (early-return, auto-contidos) — `arenaCutscene` (transição pro all-range
-// antes do chefe/dourado) e `deathCutscene` (câmera lenta segurando na explosão do chefe/
-// dourado). Zero mudança de comportamento.
-//
-// Padrão: cada função recebe apenas `dt` e devolve boolean — "eu tratei este frame". Quem chama
-// (main.js) decide o que fazer com o retorno (early-return do tick). Todo o estado compartilhado
-// (state.arenaCutsceneTimer, state.deathCutsceneOnDone, etc.) mora no objeto `state` que o
-// main.js já tem — este módulo não tem estado próprio, é uma função pura de leitura/escrita
-// sobre a referência que recebeu.
+// Overhaul Cinemático (v0.53.0-dev, branch feature/cutscenes-overhaul):
+// Sistema unificado de cutscenes arcade estilo Star Fox 64:
+//   1. Decolagem / Início de Missão (updateLaunchCutscene): câmera baixa nos motores, ignição,
+//      aceleração com speedlines e banner de setor, pulável com [Espaço].
+//   2. Apresentação do Chefe / Anomalia Dourada (updateArenaCutscene): faixas de cinema (letterbox),
+//      pulsos de fenda espacial, Arcade Warning Card ("RED CORE // FORTALEZA DEFENSIVA"), arco de
+//      câmera dramático e transição suave pro All-Range.
+//   3. Morte do Chefe & Vitória (updateDeathCutscene): detonações secundárias em cadeia pela carcaça,
+//      clarão branco terminal (whiteout), transição para o voo rasante da vitória e banner
+//      MISSION ACCOMPLISHED antes das recompensas.
 
 import * as THREE from 'three'
 import {
@@ -17,86 +17,336 @@ import {
   ARENA_CUTSCENE_FOV_BUMP,
   ARENA_CUTSCENE_ORBIT,
   DEATH_CUTSCENE_MS,
+  BOSS_DEATH_CUTSCENE_MS,
   DEATH_CUTSCENE_TIME_SCALE,
   DEATH_CUTSCENE_ZOOM_FOV,
+  LAUNCH_CUTSCENE_MS,
 } from './main-constants.js'
 
 export function createCutscenesSystem(deps) {
   const { state, camera, renderer, scene, effects, hud, rail, player } = deps
 
-  // ============ CUTSCENE DE TRANSIÇÃO PARA ALL-RANGE (dourado/chefe) ============
-  // nave travada, só a câmera se move sozinha (puxa pra trás + abre o FOV e volta), igual
-  // confirmado com o usuário — ao terminar, chama state.arenaCutsceneOnDone (enterGoldenArena
-  // ou enterBossBuildup), que aí sim muda de fase e liga o modo all-range de verdade.
-  //
-  // Usa `dt` (já escalado por slowMo de debug) — preserva comportamento original.
+  // ============ CUTSCENE 1: DECOLAGEM / INÍCIO DE MISSÃO ============
+  function startLaunchCutscene(onDone, bannerOptions = {}) {
+    state.phase = 'launchCutscene'
+    state.launchCutsceneTimer = LAUNCH_CUTSCENE_MS
+    state.launchCutsceneDurationMs = LAUNCH_CUTSCENE_MS
+    state.launchCutsceneOnDone = onDone
+    state.launchIgnited = false
+    hud.setLetterbox(true)
+    hud.showLaunchBanner({
+      sector: bannerOptions.sector || 'SETOR 01',
+      text: bannerOptions.text || 'MISSÃO INICIADA // BOA SORTE',
+      skipText: bannerOptions.skipText || '[ESPAÇO / TIRO] PULAR DECOLAGEM',
+    })
+  }
+
+  function updateLaunchCutscene(dt, inputState = {}) {
+    if (state.phase !== 'launchCutscene') return false
+
+    const duration = state.launchCutsceneDurationMs || LAUNCH_CUTSCENE_MS
+    const elapsed = duration - state.launchCutsceneTimer
+
+    // Skip por input (Espaço ou Disparo) após breve período para evitar clique acidental do menu
+    const wantsSkip = inputState.firing || (inputState.pressed && (
+      inputState.pressed.has('Space') || inputState.pressed.has('KeyZ') || inputState.pressed.has('Enter')
+    ))
+    if (wantsSkip && elapsed > 250) {
+      state.launchCutsceneTimer = 0
+    }
+
+    state.launchCutsceneTimer -= dt * 1000
+    const t = THREE.MathUtils.clamp(1 - Math.max(0, state.launchCutsceneTimer) / duration, 0, 1)
+
+    const playerPos = rail.getPlayerPosition()
+    const frame = rail.getFrameAt(0)
+
+    // Posição A: baixa e lateral olhando os propulsores
+    const startCamPos = playerPos.clone()
+      .addScaledVector(frame.forward, -7.5)
+      .addScaledVector(frame.right, -4.5)
+      .addScaledVector(frame.up, 1.2)
+
+    // Posição B: câmera de perseguição de combate padrão
+    const endCamPos = playerPos.clone()
+      .addScaledVector(frame.forward, -10)
+      .addScaledVector(frame.up, 3)
+
+    // Ignição dos motores em t = 0.22
+    if (t >= 0.22 && !state.launchIgnited) {
+      state.launchIgnited = true
+      if (effects) {
+        effects.propulsionBurst(playerPos, frame.forward)
+        effects.shockwave(playerPos, 0x3ea6ff, 1.5)
+        effects.muzzleFlash(playerPos, frame.forward)
+      }
+    }
+
+    if (t < 0.22) {
+      camera.position.copy(startCamPos)
+      camera.fov = 68
+      camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 2.5))
+    } else {
+      const progress = THREE.MathUtils.smoothstep(t, 0.22, 1.0)
+      camera.position.lerpVectors(startCamPos, endCamPos, progress)
+      camera.fov = 70 + Math.sin(progress * Math.PI) * 14
+      camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 15 + progress * 25))
+    }
+    camera.updateProjectionMatrix()
+
+    if (effects) {
+      effects.update(dt, playerPos, frame.forward, {
+        camera,
+        shieldValue: player.getShieldValue(),
+        shieldMax: player.getShieldMax(),
+        boostActive: t >= 0.22,
+      })
+    }
+
+    if (state.launchCutsceneTimer <= 0) {
+      hud.hideLaunchBanner()
+      hud.setLetterbox(false)
+      camera.fov = 70
+      camera.updateProjectionMatrix()
+      const done = state.launchCutsceneOnDone
+      state.launchCutsceneOnDone = null
+      if (done) done()
+    }
+
+    renderer.render(scene, camera)
+    return true
+  }
+
+  // ============ CUTSCENE 2: APRESENTAÇÃO DO CHEFE / ANOMALIA DOURADA ============
   function updateArenaCutscene(dt) {
     if (state.phase !== 'arenaCutscene') return false
 
     state.arenaCutsceneTimer -= dt * 1000
-    const t = THREE.MathUtils.clamp(1 - Math.max(0, state.arenaCutsceneTimer) / state.arenaCutsceneDurationMs, 0, 1)
-    const pull = Math.sin(Math.min(1, t) * Math.PI)
-    camera.position.copy(state.arenaCutsceneBaseCameraPos)
-      .addScaledVector(state.arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK)
-      .addScaledVector(state.arenaCutsceneBaseRight, pull * ARENA_CUTSCENE_ORBIT)
-    camera.fov = 70 + pull * ARENA_CUTSCENE_FOV_BUMP
-    camera.updateProjectionMatrix()
-    camera.lookAt(state.arenaCutsceneBaseCameraPos.clone().addScaledVector(state.arenaCutsceneBaseForward, 40))
+    const duration = state.arenaCutsceneDurationMs || 3000
+    const t = THREE.MathUtils.clamp(1 - Math.max(0, state.arenaCutsceneTimer) / duration, 0, 1)
+
+    const isBoss = state.arenaCutsceneKind === 'bossSummon'
+    const isGolden = state.arenaCutsceneKind === 'golden' || state.arenaCutsceneKind === 'goldenArena'
+
+    // Início da cutscene: ativa letterbox e warning card
+    if (!state.arenaCutsceneUiInitialized) {
+      state.arenaCutsceneUiInitialized = true
+      hud.setLetterbox(true)
+      if (isBoss) {
+        hud.showBossWarningCard({
+          name: 'NÚCLEO RUBRO // RED CORE',
+          subtitle: 'FORTALEZA DEFENSIVA',
+          warning: 'ALERTA MÁXIMO // AMEAÇA DETECTADA',
+        })
+      } else if (isGolden) {
+        hud.showGoldenWarningCard({
+          title: 'ANOMALIA TEMPORAL DETECTADA',
+          subtitle: 'ALVO DE ALTO VALOR // ALL-RANGE MODE',
+        })
+      }
+    }
+
+    // Fenda espacial / ondas de choque durante a aparição (primeiros 65% do tempo)
+    if (isBoss && t < 0.65) {
+      state.bossRiftPulseTimer = (state.bossRiftPulseTimer || 0) - dt
+      if (state.bossRiftPulseTimer <= 0) {
+        state.bossRiftPulseTimer = 0.55
+        const riftPos = state.arenaCutsceneBaseCameraPos.clone()
+          .addScaledVector(state.arenaCutsceneBaseForward, 50)
+        if (effects) {
+          effects.shockwave(riftPos, 0xff2d4d, 2.4)
+          effects.hitSpark(riftPos, 0xffffff)
+        }
+      }
+    } else if (isGolden && t < 0.65) {
+      state.bossRiftPulseTimer = (state.bossRiftPulseTimer || 0) - dt
+      if (state.bossRiftPulseTimer <= 0) {
+        state.bossRiftPulseTimer = 0.6
+        const riftPos = state.arenaCutsceneBaseCameraPos.clone()
+          .addScaledVector(state.arenaCutsceneBaseForward, 45)
+        if (effects) {
+          effects.shockwave(riftPos, 0xffd700, 2.0)
+          effects.hitSpark(riftPos, 0xffea70)
+        }
+      }
+    }
+
+    // Movimentação dramática de câmera
+    if (t < 0.68) {
+      const pull = Math.sin(t * (Math.PI / 0.68))
+      camera.position.copy(state.arenaCutsceneBaseCameraPos)
+        .addScaledVector(state.arenaCutsceneBaseForward, -pull * ARENA_CUTSCENE_PULLBACK * 1.25)
+        .addScaledVector(state.arenaCutsceneBaseRight, Math.sin(t * Math.PI * 1.5) * ARENA_CUTSCENE_ORBIT * 1.4)
+        .addScaledVector(new THREE.Vector3(0, 1, 0), pull * 4.5)
+      camera.fov = 70 + pull * (ARENA_CUTSCENE_FOV_BUMP + 4)
+      camera.updateProjectionMatrix()
+      camera.lookAt(state.arenaCutsceneBaseCameraPos.clone().addScaledVector(state.arenaCutsceneBaseForward, 42))
+    } else {
+      // Retomada suave para trás da nave
+      const recoverT = (t - 0.68) / 0.32
+      camera.position.lerp(state.arenaCutsceneBaseCameraPos, recoverT)
+      camera.fov = 70 + (1 - recoverT) * 8
+      camera.updateProjectionMatrix()
+      camera.lookAt(state.arenaCutsceneBaseCameraPos.clone().addScaledVector(state.arenaCutsceneBaseForward, 40))
+    }
+
+    // Retirada dos cards e letterbox antes do frame final
+    if (t >= 0.65) {
+      hud.hideBossWarningCard()
+      hud.hideGoldenWarningCard()
+    }
+    if (t >= 0.92) {
+      hud.setLetterbox(false)
+    }
+
     if (state.arenaCutsceneTimer <= 0) {
       camera.fov = 70
       camera.updateProjectionMatrix()
       hud.setArenaCutscene(null)
+      hud.hideBossWarningCard()
+      hud.hideGoldenWarningCard()
+      hud.setLetterbox(false)
+      state.arenaCutsceneUiInitialized = false
       const done = state.arenaCutsceneOnDone
       state.arenaCutsceneOnDone = null
-      done()
+      if (done) done()
     }
+
     renderer.render(scene, camera)
     return true
   }
 
-  // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
-  // pedido do usuário: "cutscene em câmera lenta do inimigo dourado/boss sendo destruído e
-  // explodindo" em vez da transição instantânea pro modo normal. Nave travada (sem input),
-  // tempo desacelerado — a explosão e o encolhimento do mesh morrendo (já disparados no frame
-  // do kill, dentro de enemies.js) continuam a tocar por baixo, só mais devagar; a câmera gira
-  // suavemente (tempo real, não desacelerado) até focar na explosão e segura ali.
-  //
-  // Usa `rawDt` (NÃO escalado por slowMo) — preserva comportamento original (é uma cutscene em
-  // câmera lenta por conta própria, via DEATH_CUTSCENE_TIME_SCALE; se usasse `dt`, um slowMo
-  // de debug em cima dela ia desacelerar duas vezes e travar o jogador num limbo visual).
+  // ============ CUTSCENE 3: MORTE DO CHEFE / ANOMALIA & VITÓRIA ============
   function updateDeathCutscene(rawDt) {
     if (state.phase !== 'deathCutscene') return false
 
     state.deathCutsceneTimer -= rawDt * 1000
-    const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
-    effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
-      camera,
-      shieldValue: player.getShieldValue(),
-      shieldMax: player.getShieldMax(),
-      boostActive: false,
-      skipTrail: true,
-    })
-    const t = THREE.MathUtils.clamp(1 - Math.max(0, state.deathCutsceneTimer) / DEATH_CUTSCENE_MS, 0, 1)
-    const zoomT = Math.sin(Math.min(1, t) * Math.PI)
-    camera.fov = 70 - zoomT * (70 - DEATH_CUTSCENE_ZOOM_FOV)
-    camera.updateProjectionMatrix()
-    if (state.deathCutscenePos) {
-      const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().lookAt(camera.position, state.deathCutscenePos, camera.up),
-      )
-      camera.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * rawDt))
+    const duration = state.deathCutsceneDurationMs || (state.deathCutsceneKind === 'boss' ? BOSS_DEATH_CUTSCENE_MS : DEATH_CUTSCENE_MS)
+    const t = THREE.MathUtils.clamp(1 - Math.max(0, state.deathCutsceneTimer) / duration, 0, 1)
+
+    const isBoss = state.deathCutsceneKind === 'boss'
+
+    if (isBoss) {
+      // ---- MORTE DO CHEFE: DETONAÇÕES SECUNDÁRIAS + WHITEOUT + FLYBY ----
+      const phase1T = 0.36 // 0 a 36% do tempo: destabilização em câmera lenta
+      if (t < phase1T) {
+        const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
+        if (effects) {
+          effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+            camera,
+            shieldValue: player.getShieldValue(),
+            shieldMax: player.getShieldMax(),
+            boostActive: false,
+            skipTrail: true,
+          })
+        }
+
+        // Detonações secundárias pela carcaça do chefe
+        state.secondaryExplosionTimer = (state.secondaryExplosionTimer || 0) - rawDt
+        if (state.secondaryExplosionTimer <= 0 && state.deathCutscenePos) {
+          state.secondaryExplosionTimer = 0.16
+          const offset = new THREE.Vector3(
+            (Math.random() - 0.5) * 7.5,
+            (Math.random() - 0.5) * 7.5,
+            (Math.random() - 0.5) * 7.5,
+          )
+          if (effects) {
+            effects.explosion(state.deathCutscenePos.clone().add(offset), 0xff6622, 1.8, { rings: true })
+            effects.hitSpark(state.deathCutscenePos.clone().add(offset), 0xffffff)
+          }
+        }
+
+        // Zoom dramático no chefe morrendo
+        const zoomT = Math.sin((t / phase1T) * Math.PI)
+        camera.fov = 70 - zoomT * (70 - DEATH_CUTSCENE_ZOOM_FOV)
+        camera.updateProjectionMatrix()
+        if (state.deathCutscenePos) {
+          const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+            new THREE.Matrix4().lookAt(camera.position, state.deathCutscenePos, camera.up),
+          )
+          camera.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * rawDt))
+        }
+      } else {
+        // Fase 2 & 3: Whiteout terminal + Voo rasante comemorativo
+        if (!state.deathWhiteoutTriggered) {
+          state.deathWhiteoutTriggered = true
+          hud.triggerWhiteout()
+          hud.setLetterbox(true)
+          hud.showMissionComplete({
+            title: 'MISSION ACCOMPLISHED',
+            subtitle: 'SETOR CONCLUÍDO // CHEFE DESTRUÍDO',
+          })
+          if (effects && state.deathCutscenePos) {
+            effects.explosion(state.deathCutscenePos, 0xff2d4d, 5.5, { rings: true, isBoss: true })
+            effects.shockwave(state.deathCutscenePos, 0xffffff, 2.8)
+            effects.shockwave(state.deathCutscenePos, 0xff2d4d, 3.6)
+          }
+        }
+
+        // Câmera posicionada após a zona de fumaça, olhando pra trás
+        if (state.deathCutscenePos) {
+          const forward = rail.getFrameAt(0).forward
+          const flybyCam = state.deathCutscenePos.clone()
+            .addScaledVector(forward, 20)
+            .addScaledVector(new THREE.Vector3(0, 1, 0), 2.2)
+          camera.position.lerp(flybyCam, 0.08)
+          camera.lookAt(state.deathCutscenePos)
+        }
+
+        if (effects) {
+          effects.update(rawDt * 0.75, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+            camera,
+            shieldValue: player.getShieldValue(),
+            shieldMax: player.getShieldMax(),
+            boostActive: true,
+            skipTrail: false,
+          })
+        }
+      }
+    } else {
+      // ---- MORTE DO DOURADO / INIMIGO COMUM ----
+      const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
+      if (effects) {
+        effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+          camera,
+          shieldValue: player.getShieldValue(),
+          shieldMax: player.getShieldMax(),
+          boostActive: false,
+          skipTrail: true,
+        })
+      }
+      const zoomT = Math.sin(Math.min(1, t) * Math.PI)
+      camera.fov = 70 - zoomT * (70 - DEATH_CUTSCENE_ZOOM_FOV)
+      camera.updateProjectionMatrix()
+      if (state.deathCutscenePos) {
+        const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+          new THREE.Matrix4().lookAt(camera.position, state.deathCutscenePos, camera.up),
+        )
+        camera.quaternion.slerp(targetQuat, 1 - Math.exp(-6 * rawDt))
+      }
     }
+
     if (state.deathCutsceneTimer <= 0) {
+      hud.hideMissionComplete()
+      hud.setLetterbox(false)
       camera.fov = 70
       camera.updateProjectionMatrix()
+      state.deathWhiteoutTriggered = false
+      state.secondaryExplosionTimer = 0
       const done = state.deathCutsceneOnDone
       state.deathCutsceneOnDone = null
       state.deathCutscenePos = null
-      done()
+      if (done) done()
     }
+
     renderer.render(scene, camera)
     return true
   }
 
-  return { updateArenaCutscene, updateDeathCutscene }
+  return {
+    startLaunchCutscene,
+    updateLaunchCutscene,
+    updateArenaCutscene,
+    updateDeathCutscene,
+  }
 }

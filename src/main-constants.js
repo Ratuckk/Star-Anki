@@ -159,12 +159,16 @@ export const ARENA_CUTSCENE_ORBIT = 9
 // longa (pelo menos uns 5s "pro jogador respirar") antes de `enterBossFight` de verdade.
 export const BOSS_SUMMON_CUTSCENE_MS = 5200
 
+// ============ CUTSCENE DE DECOLAGEM / INÍCIO DE MISSÃO ============
+export const LAUNCH_CUTSCENE_MS = 2200
+
 // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
 // pedido do usuário: câmera lenta segurando na explosão do chefe/dourado ao ser derrotado,
 // em vez de sair da arena instantaneamente por cima da explosão ainda rodando. Nave travada
 // (sem input), tempo desacelerado — a explosão (efeitos + encolhimento do mesh em enemies.js)
 // continua rodando normalmente durante a cutscene, só em câmera lenta.
 export const DEATH_CUTSCENE_MS = 1400
+export const BOSS_DEATH_CUTSCENE_MS = 3400
 export const DEATH_CUTSCENE_TIME_SCALE = 0.22
 export const DEATH_CUTSCENE_ZOOM_FOV = 55
 

@@ -224,4 +224,39 @@ Implementação dos itens de prioridade P1 e P2 da Seção 1 do `BACKLOG.md`, in
 
 **Versão**: v0.52.1 → **v0.52.2**
 
+## Overhaul Cinemático de Cutscenes: Decolagem, Apresentação de Chefe (Letterbox & Warning Card) e Vitória Heroica — v0.53.0
+
+Implementação do sistema cinemático arcade inspirado em Star Fox 64, trazendo apresentação visual impactante para abertura de missões, confrontos contra chefes/dourado e desfecho vitorioso da partida:
+
+### 1. Cutscene de Decolagem / Início de Missão (`updateLaunchCutscene`)
+- Ao iniciar a partida, a câmera parte de uma perspectiva baixa e lateral com foco nos motores da nave.
+- Aos 22% do tempo (`t = 0.22`), os propulsores entram em ignição com explosão de partículas (`effects.propulsionBurst`), onda de choque e muzzle flash.
+- A câmera acelera suavemente (`smoothstep`) em direção à traseira da nave, com distorção dinâmica de FOV (efeito lente/túnel de velocidade) e alinhamento milimétrico com a câmera normal de combate.
+- **Letterbox cinemático e banner visual**: barras pretas arcade no topo/rodapé e banner com design HUD sci-fi identificando o setor e deck atual.
+- **Skip responsivo**: permissão para pular a qualquer instante com Barra de Espaço, Tecla de Tiro (Z) ou Enter após breve carência anti-clique acidental.
+
+### 2. Apresentação Dramática do Chefe e Anomalia Dourada (`updateArenaCutscene`)
+- **Letterbox e Warning Card**:
+  - Para o Chefe: card vermelho pulsante *"NÚCLEO RUBRO // RED CORE"*, *"FORTALEZA DEFENSIVA"*, *"ALERTA MÁXIMO // AMEAÇA DETECTADA"*, com listras diagonais de perigo (`stripes`) animadas.
+  - Para o Dourado: card dourado cibernético *"ANOMALIA TEMPORAL DETECTADA"*, *"ALVO DE ALTO VALOR // ALL-RANGE MODE"*.
+- **Ondas de Choque e Fenda Espacial**: durante os primeiros 65% da apresentação, o portal do chefe emite pulsos de distorção no espaço (`effects.shockwave` e fagulhas).
+- **Órbita Cinemática da Câmera**: arco de câmera que recua e orbita lateralmente antes de retornar suavemente para a traseira da nave, sincronizado com o encerramento do aviso.
+
+### 3. Morte do Chefe e Sequência de Vitória Heroica (`updateDeathCutscene`)
+- **Detonações Secundárias em Cadeia**: durante a fase de desestabilização (36% iniciais), explosões menores com anéis de choque e faíscas estouram aleatoriamente pela carcaça do chefe em câmera lenta.
+- **Flash Terminal de Whiteout**: clarão branco em tela cheia (`triggerWhiteout`) com queda exponencial de opacidade no instante da explosão colossal final.
+- **Voo Rasante de Vitória (Victory Flyby)**: a câmera se posiciona à frente da nave olhando para trás enquanto a nave cruza a fumaça da explosão e o banner comemorativo *"MISSION ACCOMPLISHED // SETOR CONCLUÍDO"* surge na tela com letterbox.
+
+### 4. Arquitetura Modular e Isolamento
+- Todo o gerenciamento de sequências cinemáticas agora reside em `src/cutscenes.js`.
+- Elementos visuais estilizados adicionados em `src/hud-styles.js` e métodos de controle expostos na interface `hud` em `src/hud-game.js`.
+- Integração limpa no `game-loop.js` e inicialização no `mount-game.js`, mantendo zero quebra e compatibilidade total.
+
+### Testes e Verificação
+- `node src/selftest.mjs` executado com sucesso total.
+- `check_all.mjs` e `check_imports.mjs`: validação de sintaxe e resolução de imports em todos os 51 arquivos JS/ESM com 100% de integridade.
+
+**Versão**: v0.52.2 → **v0.53.0**
+
+
 

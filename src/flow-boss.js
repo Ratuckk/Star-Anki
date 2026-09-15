@@ -10,7 +10,7 @@ import {
   BOSS_QUESTION_COUNT, BOSS_DEFEAT_BONUS, BOSS_SUMMON_CUTSCENE_MS,
   ARENA_CUTSCENE_MS, FEEDBACK_MS, WRONG_FEEDBACK_MS,
   GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX,
-  DEATH_CUTSCENE_MS,
+  DEATH_CUTSCENE_MS, BOSS_DEATH_CUTSCENE_MS,
 } from './main-constants.js'
 import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
@@ -27,6 +27,7 @@ export function createBossFlow(deps) {
 
   function startArenaCutscene(kind, onDone, durationMs = ARENA_CUTSCENE_MS) {
     state.phase = 'arenaCutscene'
+    state.arenaCutsceneKind = kind
     state.arenaCutsceneTimer = durationMs
     state.arenaCutsceneDurationMs = durationMs
     state.arenaCutsceneOnDone = onDone
@@ -217,6 +218,7 @@ export function createBossFlow(deps) {
     hud.setBossFight(false)
     hud.setBossTint(false)
     combat.clearOtherEnemies()
+    state.deathCutsceneKind = 'boss'
     state.deathCutscenePos = hitWorldPos.clone()
     state.deathCutsceneOnDone = () => {
       session.score += BOSS_DEFEAT_BONUS
@@ -233,11 +235,13 @@ export function createBossFlow(deps) {
       state.phaseTimer = FEEDBACK_MS
     }
     state.phase = 'deathCutscene'
-    state.deathCutsceneTimer = DEATH_CUTSCENE_MS
+    state.deathCutsceneTimer = BOSS_DEATH_CUTSCENE_MS
+    state.deathCutsceneDurationMs = BOSS_DEATH_CUTSCENE_MS
   }
 
   function handleGoldenDefeated(hitWorldPos) {
     combat.clearOtherEnemies()
+    state.deathCutsceneKind = 'golden'
     state.deathCutscenePos = hitWorldPos.clone()
     state.deathCutsceneOnDone = () => {
       exitGoldenArenaVisuals()
@@ -245,6 +249,7 @@ export function createBossFlow(deps) {
     }
     state.phase = 'deathCutscene'
     state.deathCutsceneTimer = DEATH_CUTSCENE_MS
+    state.deathCutsceneDurationMs = DEATH_CUTSCENE_MS
   }
 
   return {

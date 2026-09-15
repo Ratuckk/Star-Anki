@@ -134,7 +134,12 @@ export function mountGame(session, deck, menu) {
     goldenTimer: 0, // valor real logo abaixo (progression.randomGoldenInterval)
     goldenCard: null,
 
-    // ============ cutscene de arena (dourado/chefe se aproximando) ============
+    // ============ cutscenes (decolagem / arena / morte) ============
+    launchCutsceneTimer: 0,
+    launchCutsceneDurationMs: 0,
+    launchCutsceneOnDone: null,
+    launchIgnited: false,
+
     arenaCutsceneTimer: 0,
     arenaCutsceneDurationMs: 0, // setado por startArenaCutscene (flow-boss.js) antes de rodar
     arenaCutsceneOnDone: null,
@@ -142,11 +147,16 @@ export function mountGame(session, deck, menu) {
     arenaCutsceneBaseForward: null,
     arenaCutsceneBaseRight: null,
     arenaPreviewShown: false,
+    arenaCutsceneKind: null,
+    arenaCutsceneUiInitialized: false,
 
-    // ============ cutscene de morte (chefe/dourado explodindo) ============
     deathCutsceneTimer: 0,
+    deathCutsceneDurationMs: 0,
     deathCutscenePos: null,
+    deathCutsceneKind: null,
     deathCutsceneOnDone: null,
+    deathWhiteoutTriggered: false,
+    secondaryExplosionTimer: 0,
 
     // ============ input / timing / feedback visual ============
     fireHeldMs: 0,
@@ -316,5 +326,16 @@ export function mountGame(session, deck, menu) {
   hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
   hud.setLives(session.lives, player.getMaxLives())
   hud.setShield(player.getShieldValue(), player.getShieldMax())
+
+  const sectorNum = (session.pointer || 0) + 1
+  const deckTitle = deck?.title || deck?.name || 'ESPACIAL'
+  cutscenes.startLaunchCutscene(() => {
+    state.phase = 'combat'
+  }, {
+    sector: `SETOR ${String(sectorNum).padStart(2, '0')} // ${deckTitle.toUpperCase()}`,
+    text: 'DECOLAGEM AUTORIZADA // BOA SORTE',
+    skipText: '[ESPAÇO / TIRO] PULAR DECOLAGEM',
+  })
+
   gameLoop.start()
 }
