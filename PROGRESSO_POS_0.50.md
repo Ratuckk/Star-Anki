@@ -258,5 +258,42 @@ Implementação do sistema cinemático arcade inspirado em Star Fox 64, trazendo
 
 **Versão**: v0.52.2 → **v0.53.0**
 
+## Aplicativo Desktop com Auto-Atualização e Overhaul da Tela Inicial — v0.53.1
+
+Entrega do aplicativo desktop nativo leve e overhaul visual e interativo completo da tela inicial (`hud-pregame.js` e `index.html`):
+
+### 1. Aplicativo de Desktop Nativo Leve com Auto-Atualização
+- **Zero Overhead & Zero Dependências**: Em vez de inflar o projeto com centenas de megabytes de dependências do Electron, o aplicativo utiliza o motor de renderização acelerado por hardware nativo do Windows em modo de aplicação isolada (`--app=https://ratuckk.github.io/Star-Anki/`), com janela dedicada, sem barra de endereços, sem abas de navegador e com seu próprio perfil de dados em `%LOCALAPPDATA%\Star-Anki\User Data`.
+- **Ícone Nativo do Windows (.ico)**:
+  - Gerado `icons/star-anki.ico` multi-resolução (32x32, 192x192, 512x512) via `tools/generate-ico.mjs` a partir dos ativos visuais oficiais.
+- **Instalador de 1 Clique (`Instalar Star Anki Desktop.bat` e `tools/install-desktop.ps1`)**:
+  - Script que localiza o executável do navegador do sistema e cria os atalhos com ícone oficial diretamente na Área de Trabalho do Windows (`Área de Trabalho\Star Anki.lnk`) e no Menu Iniciar.
+- **Launcher Direto (`Star Anki.bat`)**:
+  - Permite abrir a janela do jogo diretamente a partir da raiz do repositório em modo aplicativo exclusivo.
+- **Auto-Atualização Contínua & Modo Offline**:
+  - Conectado diretamente à URL de produção (`https://ratuckk.github.io/Star-Anki/`). A cada novo commit publicado no GitHub, o **Service Worker v2** detecta e instala a atualização automaticamente em segundo plano. Caso o jogador esteja sem internet, todo o jogo roda offline a partir do CacheStorage.
+
+### 2. Overhaul Visual Completo da Tela Inicial (`hud-pregame.js` & `index.html`)
+- **Estética Arcade Espacial e Sci-Fi Moderna**:
+  - Tipografia imponente com gradientes metálicos espaciais em `STAR ANKI` (`#ffffff` → `#7ee7ff` → `#18a0fb`), drop shadow de neon azul e subtítulo com tracking largo `ARCADEMIC SPACE RAIL SHOOTER`.
+  - Badge de telemetria `SISTEMA OPERACIONAL // v0.53.1` com LED pulsante verde.
+- **Card Hero de Decolagem / Missão**:
+  - Card central com efeito de glassmorphism (`backdrop-filter: blur(16px)`), gradientes escuros profundos e glow radial ciano.
+  - Exibe o status dinâmico do baralho: badge de quantidade de baralhos prontos, título do baralho ativo e contagem de cartas de combate vs painel.
+  - Botão épico **"INICIAR MISSÃO"** com gradiente ciano brilhante, animações de elevação, sombra volumétrica e ícone dinâmico.
+- **Cards de Acesso Rápido**:
+  - Tiles modernos com ícones estilizados para "Gerenciador de Baralhos" (com status da coleção) e "Hangar & Configurações" (indicando a nave ativa configurada no hangar).
+- **Dock de Controles & Detector de Gamepad em Tempo Real**:
+  - Barra inferior em glassmorphism resumindo os comandos principais do teclado (`WASD`, `ESPAÇO`, `Z/C`, `SHIFT`).
+  - **Live Gamepad Indicator**: Chip de controle que monitora a conexão de gamepads via `navigator.getGamepads()` e listeners de eventos, acendendo LED verde neon e exibindo o modelo do controle conectado.
+
+### Testes e Verificação
+- `node src/selftest.mjs` executado com sucesso total (quiz e parsing do Anki).
+- `node tools/generate-ico.mjs` executado: ícone `.ico` gerado com sucesso.
+- `tools/install-desktop.ps1` executado: atalho criado na Área de Trabalho do usuário com sucesso.
+- Validação de sintaxe via `node --check` em todos os arquivos JS tocados.
+
+**Versão**: v0.53.0 → **v0.53.1**
+
 
 
