@@ -129,6 +129,13 @@ export function createGameLoop(deps) {
       if (!isCharging && combat.tryFire(nosePos, fireDirection)) rail.triggerRecoil()
       state.fireHeldMs += dt * 1000
       if (isCharging) {
+        const atMax = state.fireHeldMs >= player.config.homingChargeMaxMs
+        if (atMax && !state.chargeMaxSignaled) {
+          state.chargeMaxSignaled = true
+          if (effects && effects.maxChargeReady) {
+            effects.maxChargeReady(nosePos, fireDirection)
+          }
+        }
         const chargeFrac = Math.min(1, (state.fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
         effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
 
@@ -144,8 +151,10 @@ export function createGameLoop(deps) {
         hud.setLockedEnemyMarkers(lockedBars)
       } else {
         effects.setChargeGlow(false)
+        state.chargeMaxSignaled = false
       }
     } else {
+      state.chargeMaxSignaled = false
       if (isCharging) {
         const isMaxCharge = state.fireHeldMs >= player.config.homingChargeMaxMs
         combat.fireHomingShot(nosePos, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)

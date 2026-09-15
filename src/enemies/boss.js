@@ -120,6 +120,26 @@ const bossPhaseMaterials = BOSS_PHASES.map((phase) => new THREE.MeshPhongMateria
   color: phase.color, emissive: phase.emissive, emissiveIntensity: phase.emissiveIntensity, flatShading: true,
 }))
 
+// ============ ESCUDO REFLETOR DO CHEFE ============
+// pedido do usuário: a cada 7s ergue escudo azul que reflete tiros por 3s; cooldown de 7s só
+// recomeça depois dos 3s terminarem.
+const BOSS_SHIELD_DURATION_S = 3.0
+const BOSS_SHIELD_COOLDOWN_S = 7.0
+export const BOSS_SHIELD_COLOR = 0x3ea6ff
+const BOSS_SHIELD_EMISSIVE = 0x0055aa
+
+export const bossShieldGeometry = new THREE.SphereGeometry(1.35, 18, 14)
+export const bossShieldMaterial = new THREE.MeshPhongMaterial({
+  color: BOSS_SHIELD_COLOR,
+  emissive: BOSS_SHIELD_EMISSIVE,
+  emissiveIntensity: 0.9,
+  transparent: true,
+  opacity: 0.45,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+})
+
 function randomLaserInterval(phaseCfg) {
   return phaseCfg.laserIntervalMin + Math.random() * (phaseCfg.laserIntervalMax - phaseCfg.laserIntervalMin)
 }
@@ -129,12 +149,22 @@ export function spawnBossEnemy(scene, rail, id, hp) {
   const mesh = new THREE.Mesh(bossEnemyGeometry, bossPhaseMaterials[0])
   mesh.position.copy(position)
   mesh.scale.setScalar(BOSS_SCALE)
+
+  const shieldMesh = new THREE.Mesh(bossShieldGeometry, bossShieldMaterial)
+  shieldMesh.visible = false
+  mesh.add(shieldMesh)
+
   scene.add(mesh)
   return {
     id, mesh, kind: BOSS_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1,
     laserCooldown: randomLaserInterval(BOSS_PHASES[0]),
     laserTelegraphTimer: 0,
     laserTargetPos: null,
+    shieldMesh,
+    isShieldActive: false,
+    shieldTimer: 0,
+    shieldCooldown: BOSS_SHIELD_COOLDOWN_S,
+    shieldActivationFxPending: false,
     // ============ estado de fase ============
     phase: 0,                        // 0-indexed; 0 = fase 1
     phaseConfig: BOSS_PHASES[0],
@@ -227,6 +257,32 @@ export function updateBossMovement(enemy, dt, playerPosition) {
     const pulseAmp = enemy.phase === 1 ? 0.03 : 0.06
     enemy.mesh.scale.setScalar(BOSS_SCALE * (1 + Math.sin(enemy.rotationClock * 5) * pulseAmp))
   }
+
+  // ============ ESCUDO REFLETOR AZUL (3s ativo, 7s cooldown após desativar) ============
+  if (enemy.isShieldActive) {
+    enemy.shieldTimer -= dt
+    enemy.shieldMesh.visible = true
+    enemy.shieldMesh.rotation.y += dt * 1.5
+    enemy.shieldMesh.rotation.z += dt * 0.8
+    const sPulse = 1 + Math.sin(enemy.rotationClock * 8) * 0.05
+    enemy.shieldMesh.scale.setScalar(sPulse)
+    if (enemy.shieldTimer <= 0) {
+      enemy.isShieldActive = false
+      enemy.shieldMesh.visible = false
+      enemy.shieldCooldown = BOSS_SHIELD_COOLDOWN_S
+    }
+  } else {
+    enemy.shieldMesh.visible = false
+    if (!enemy.dying && !enemy.transitioning) {
+      enemy.shieldCooldown -= dt
+      if (enemy.shieldCooldown <= 0) {
+        enemy.isShieldActive = true
+        enemy.shieldTimer = BOSS_SHIELD_DURATION_S
+        enemy.shieldMesh.visible = true
+        enemy.shieldActivationFxPending = true
+      }
+    }
+  }
 }
 
 // ============ VOLUME DE TIRO ============
@@ -292,6 +348,15 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
     }
   }
 
+  // ============ FX DE ATIVAÇÃO DO ESCUDO REFLETOR ============
+  if (enemy.shieldActivationFxPending) {
+    enemy.shieldActivationFxPending = false
+    if (effects) {
+      effects.shockwave(enemy.mesh.position.clone(), BOSS_SHIELD_COLOR, 1.6)
+      effects.bloomSprite(enemy.mesh.position.clone(), BOSS_SHIELD_COLOR, 1.8)
+    }
+  }
+
   // ============ BURST EM ANDAMENTO ============
   if (enemy.laserBurstRemaining > 0) {
     enemy.laserBurstTimer -= dt
@@ -351,4 +416,6 @@ export function disposeBoss() {
   bossEnemyGeometry.dispose()
   bossEnemyMaterial.dispose()
   for (const m of bossPhaseMaterials) m.dispose()
+  bossShieldGeometry.dispose()
+  bossShieldMaterial.dispose()
 }

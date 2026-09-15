@@ -347,7 +347,11 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)
       if (effects) {
         effects.muzzleFlash(origin, firstDir)
-        effects.smokeRing(origin, firstDir)
+        if (isMaxCharge && effects.maxChargeRings) {
+          effects.maxChargeRings(origin, firstDir)
+        } else {
+          effects.smokeRing(origin, firstDir)
+        }
       }
       return targetList.length
     },

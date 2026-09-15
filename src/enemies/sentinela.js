@@ -44,9 +44,8 @@ export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera
 const GATE_OUTER_HALF = 14
 const GATE_INNER_HALF = 11
 const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
-// standoff (ENGAGE_STANDOFF) subiu bastante — a moldura precisa viajar mais longe até o
-// jogador, então a velocidade sobe junto (senão o tempo de voo ficaria absurdo).
-const GATE_SPEED = 100
+// Ajuste backlog: moldura viaja mais devagar (80 em vez de 100) pra dar mais tempo de leitura
+const GATE_SPEED = 80
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
@@ -55,14 +54,9 @@ const GATE_COLOR = 0x3fa9f5
 // mesmo tamanho até o resolve final. GATE_MIN_INNER_HALF > 0 evita o buraco colapsar pra uma
 // escala zero exata (glitch visual de matriz degenerada no Three.js).
 //
-// BUG corrigido: o período do ciclo era uma constante fixa (0.75s) desacoplada do tempo de
-// voo real (que depende da distância até o jogador no instante do disparo) — o número de
-// pulsos abrir/fechar até a chegada era imprevisível (podia ser 1 ou podia ser 6, dependendo
-// só de onde o jogador estava quando a moldura foi disparada). Agora o período é calculado NA
-// HORA do disparo em função do tempo de voo (`targetDistance / GATE_SPEED`), dividido por um
-// número fixo de ciclos — sempre ~3 pulsos completos até a chegada, não importa a distância.
+// Velocidade do ciclo ~20% mais lenta e sincronizada com tempo de voo real
 const GATE_CYCLES_PER_FLIGHT = 3
-const GATE_MIN_CYCLE_PERIOD = 0.3 // segurança: nunca deixa o período ficar tão curto que pisque
+const GATE_MIN_CYCLE_PERIOD = 0.35 // segurança: nunca deixa o período ficar tão curto que pisque
 const GATE_MIN_INNER_HALF = 0.01
 
 // Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
@@ -70,17 +64,19 @@ const GATE_MIN_INNER_HALF = 0.01
 // sempre, invisível pela névoa mas ainda no array de inimigos. Despawna por distância à frente.
 const SENTINELA_LEAVE_DESPAWN_AHEAD = 220
 
-const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.7)
+// Modelo 3D mais curto (Z=0.4 em vez de 0.7)
+const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.4)
 const material = new THREE.MeshPhongMaterial({ color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true })
 
 // moldura tipo "quadro de janela": as 4 barras preenchem de verdade a faixa entre o buraco
 // interno e a borda externa (não só um aro fino na borda) — o visual precisa bater com a área
-// que resolveGateHit trata como perigosa, senão o jogador toma dano num espaço que parecia vazio
+// que resolveGateHit trata como perigosa, senão o jogador toma dano num espaço que parecia vazio.
+// Opacidade reduzida pra 35% (0.35) — mais discreta na tela
 const GATE_BAND = GATE_OUTER_HALF - GATE_INNER_HALF
 const GATE_BAND_CENTER = (GATE_OUTER_HALF + GATE_INNER_HALF) / 2
 const gateTopBottomGeometry = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BAND, GATE_BAR_THICKNESS)
 const gateSideGeometry = new THREE.BoxGeometry(GATE_BAND, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
-const gateMaterial = new THREE.MeshBasicMaterial({ color: GATE_COLOR, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+const gateMaterial = new THREE.MeshBasicMaterial({ color: GATE_COLOR, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
 
 export function spawnSentinela(scene, rail, id) {
   if (rail.isArena()) return null
@@ -156,12 +152,12 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   group.add(top, bottom, left, right)
   group.position.copy(originPos)
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
+  group.scale.set(0.7, 0.7, 1)
   scene.add(group)
 
-  // período do ciclo sincronizado com o tempo de voo de VERDADE — ver comentário em
-  // GATE_CYCLES_PER_FLIGHT acima
+  // período do ciclo sincronizado com o tempo de voo de VERDADE — ciclo 20% mais lento
   const flightTime = targetDistance / GATE_SPEED
-  const cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, flightTime / GATE_CYCLES_PER_FLIGHT)
+  const cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, (flightTime / GATE_CYCLES_PER_FLIGHT) * 1.25)
 
   const gate = {
     mesh: group,
@@ -212,27 +208,31 @@ function applyGateVisual(gate) {
 }
 
 // pedido do usuário: a moldura abre e fecha de verdade enquanto viaja até o jogador (cosseno —
-// começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) — chamado a cada
-// frame pelo orquestrador em `updateEnemyGates`, antes de mover a moldura. `gate.cyclePeriod`
-// é calculado por moldura (não uma constante global) — ver GATE_CYCLES_PER_FLIGHT.
+// começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) e cresce em escala
+// ao longo da trajetória até o jogador.
 export function updateGateAnimation(gate, dt) {
   gate.phase += dt
   const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / gate.cyclePeriod)
   gate.innerHalf = GATE_INNER_HALF * t
+
+  // cresce em escala ao longo da trajetória (de 0.7x até 1.25x na chegada)
+  const flightProgress = THREE.MathUtils.clamp(gate.traveled / Math.max(1, gate.targetDistance), 0, 1)
+  const growthScale = THREE.MathUtils.lerp(0.7, 1.25, flightProgress)
+  gate.mesh.scale.set(growthScale, growthScale, 1)
+
   applyGateVisual(gate)
 }
 
 // chamado quando a moldura chega na distância travada — projeta a posição ATUAL do jogador (que
 // pode ter se movido pra desviar, é o ponto da mecânica) nos eixos locais da moldura (fixados no
 // disparo). Dentro do buraco ou além da borda externa = seguro; na faixa entre os dois = dano.
-// como `gate.innerHalf` é atualizado a cada frame por `updateGateAnimation`, o resultado depende
-// também de EM QUE FASE do ciclo aberto/fechado a moldura estava no instante exato da chegada —
-// fechada (innerHalf ≈ 0) machuca em qualquer posição dentro do quadro, aberta é só a borda fina.
+// como a moldura cresceu, a distância é normalizada pela escala atual do mesh.
 export function resolveGateHit(gate, playerPosition) {
   const rel = playerPosition.clone().sub(gate.mesh.position)
   const localX = rel.dot(gate.right)
   const localY = rel.dot(gate.up)
-  const dist = Math.max(Math.abs(localX), Math.abs(localY))
+  const currentScale = gate.mesh.scale.x || 1
+  const dist = Math.max(Math.abs(localX), Math.abs(localY)) / currentScale
   const hit = dist > gate.innerHalf && dist <= gate.outerHalf
   return { hit }
 }

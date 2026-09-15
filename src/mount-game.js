@@ -150,6 +150,7 @@ export function mountGame(session, deck, menu) {
 
     // ============ input / timing / feedback visual ============
     fireHeldMs: 0,
+    chargeMaxSignaled: false,
     reticleOffsetX: 0,
     reticleOffsetY: 0,
     lastDodgeLeftTapAt: -Infinity,

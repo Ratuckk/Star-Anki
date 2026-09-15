@@ -18,6 +18,11 @@ const GOLDEN_CHASE_SPEED = 9
 // pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for atingido por
 // disparos" — cooldown próprio, reiniciado a cada teleporte de verdade (não a cada hit)
 const GOLDEN_TELEPORT_COOLDOWN_S = 10
+// pedido do usuário: "Dourado com dash lateral longo quando o jogador chega perto, 1x a cada 3s"
+const GOLDEN_DASH_TRIGGER_DIST = 28
+const GOLDEN_DASH_COOLDOWN_S = 3.0
+const GOLDEN_DASH_DURATION_S = 0.35
+const GOLDEN_DASH_SPEED = 62
 const GOLDEN_FIRE_INTERVAL_MIN = 1200
 const GOLDEN_FIRE_INTERVAL_MAX = 2400
 // solta mini-naves amarelas perseguidoras — reaproveita o array de projéteis inimigos
@@ -131,6 +136,9 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         laserTelegraphTimer: 0,
         laserTargetPos: null,
         distanceMin, distanceMax, teleportCooldownTimer: 0,
+        dashCooldownTimer: 0,
+        dashTimer: 0,
+        dashDir: new THREE.Vector3(),
         ramHitActive: false,
       })
     },
@@ -185,10 +193,34 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         g.mesh.rotation.y += dt * 0.6
         g.mesh.rotation.x += dt * 0.3
         g.teleportCooldownTimer = Math.max(0, g.teleportCooldownTimer - dt)
+        g.dashCooldownTimer = Math.max(0, g.dashCooldownTimer - dt)
 
         if (!playerPosition) continue
         const toPlayer = playerPosition.clone().sub(g.mesh.position)
-        if (toPlayer.lengthSq() > 1e-4) g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)
+        const distToPlayer = toPlayer.length()
+
+        // dash lateral evasivo: quando o jogador se aproxima (<28u), arranca lateralmente a cada 3s
+        if (g.dashTimer > 0) {
+          g.dashTimer -= dt
+          g.mesh.position.addScaledVector(g.dashDir, GOLDEN_DASH_SPEED * dt)
+          g.mesh.rotation.z += dt * 8
+        } else {
+          if (distToPlayer <= GOLDEN_DASH_TRIGGER_DIST && g.dashCooldownTimer <= 0 && distToPlayer > 1e-4) {
+            g.dashCooldownTimer = GOLDEN_DASH_COOLDOWN_S
+            g.dashTimer = GOLDEN_DASH_DURATION_S
+            const dirNorm = toPlayer.clone().normalize()
+            const up = new THREE.Vector3(0, 1, 0)
+            let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
+            if (lateral.lengthSq() < 0.01) lateral.set(1, 0, 0)
+            if (Math.random() < 0.5) lateral.negate()
+            g.dashDir.copy(lateral)
+            if (effects) {
+              effects.shockwave(g.mesh.position, GOLDEN_COLOR, 0.7)
+            }
+          } else if (distToPlayer > 1e-4) {
+            g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)
+          }
+        }
 
         if (g.fireTimer > 0.3 && g.fireTimer - dt <= 0.3 && effects) effects.telegraph(g.mesh.position, GOLDEN_COLOR)
         g.fireTimer -= dt

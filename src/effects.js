@@ -249,6 +249,13 @@ const SPIN_WIND_MAX_SCALE = 4.5
 const SPIN_WIND_COLOR = 0xb4e4ff
 const SPIN_WIND_SPIN_RATE = 8 // rad/s, sentido igual ao giro (direction)
 
+// ============ TIRO CARREGADO MÁXIMO (item 9) ============
+// pedido do usuário: marco visual ao atingir 100% de carga + argolas ovais curtas disparadas junto
+const MAX_CHARGE_RING_COLOR = 0x2b8fff
+const MAX_CHARGE_RING_DURATION = 0.38
+const MAX_CHARGE_RING_SPEED = 58
+const MAX_CHARGE_RING_COUNT = 3
+
 // sistema de efeitos visuais: starfield + poeira ambiente + efeitos transientes.
 // Todos os transientes são criados sob demanda e descartados quando a vida útil acaba.
 // opts.grid (opcional) = referência ao GridHelper da cena, usada pelo gridPulse.
@@ -398,6 +405,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const boostTrails = []
   const rollAfterimages = []
   const deflectRings = []
+  const maxChargeRingsList = []
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
@@ -528,6 +536,40 @@ export function createEffectsSystem(scene, opts = {}) {
     // v0.29.6: a argola viaja pra frente (mesma direção do disparo) em vez de ficar parada
     // na origem — combina melhor com o tiro carregado saindo voando
     smokeRings.push({ mesh, life: 0, velocity: direction.clone().normalize().multiplyScalar(22) })
+  }
+
+  // marco visual ao atingir 100% de carga (item 9)
+  function maxChargeReady(position, direction) {
+    const cuePos = position.clone().addScaledVector(direction, 2.0)
+    bloomSprite(cuePos, 0x2b8fff, 2.2)
+    shockwave(cuePos, 0x2b8fff, 1.0)
+    hitSpark(cuePos, 0xffffff)
+  }
+
+  // argolas ovais curtas disparadas junto com o tiro carregado máximo (item 9)
+  function maxChargeRings(position, direction) {
+    const normDir = direction.clone().normalize()
+    const forwardAxis = new THREE.Vector3(0, 0, 1)
+    const quat = new THREE.Quaternion().setFromUnitVectors(forwardAxis, normDir)
+
+    for (let i = 0; i < MAX_CHARGE_RING_COUNT; i += 1) {
+      const geometry = new THREE.TorusGeometry(0.9, 0.16, 8, 24)
+      const material = new THREE.MeshBasicMaterial({
+        color: MAX_CHARGE_RING_COLOR, transparent: true, opacity: 0.85,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      })
+      const mesh = new THREE.Mesh(geometry, material)
+      const offsetPos = position.clone().addScaledVector(normDir, 0.8 + i * 1.4)
+      mesh.position.copy(offsetPos)
+      mesh.quaternion.copy(quat)
+      mesh.scale.set(1.5, 0.85, 1.0)
+      scene.add(mesh)
+      maxChargeRingsList.push({
+        mesh, life: -i * 0.03,
+        velocity: normDir.clone().multiplyScalar(MAX_CHARGE_RING_SPEED),
+        baseScaleX: 1.5, baseScaleY: 0.85,
+      })
+    }
   }
 
   // giro completo (Z/C, 2 toques): anel de vento no plano do roll (perpendicular ao forward
@@ -1029,6 +1071,22 @@ export function createEffectsSystem(scene, opts = {}) {
       s.mesh.material.opacity = 0.6 * (1 - t)
     }
 
+    // MAX CHARGE OVAL RINGS (item 9)
+    for (let i = maxChargeRingsList.length - 1; i >= 0; i--) {
+      const r = maxChargeRingsList[i]
+      r.life += dt
+      if (r.life < 0) continue
+      const t = r.life / MAX_CHARGE_RING_DURATION
+      if (t >= 1) {
+        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        maxChargeRingsList.splice(i, 1); continue
+      }
+      r.mesh.position.addScaledVector(r.velocity, dt)
+      const grow = 1 + t * 2.0
+      r.mesh.scale.set(r.baseScaleX * grow, r.baseScaleY * grow, grow)
+      r.mesh.material.opacity = 0.85 * (1 - t)
+    }
+
     // SPIN WINDS (giro completo)
     for (let i = spinWinds.length - 1; i >= 0; i--) {
       const w = spinWinds[i]
@@ -1321,6 +1379,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const a of ramAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const a of rollAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const r of deflectRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
+    for (const r of maxChargeRingsList) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
     for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const r of grayRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
@@ -1357,6 +1416,7 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
+    maxChargeReady, maxChargeRings,
     dispose,
   }
 }

@@ -163,3 +163,37 @@ carregamento e bugs no fluxo de jogo.
 
 **Versão**: v0.51.15 → **v0.52.0**
 
+## Ajustes de gameplay do backlog: Sentinela, Dash do Dourado, Escudo Refletor do Chefe e Feedback de Tiro Carregado Máximo — v0.52.1
+
+Implementação dos 4 itens de gameplay do backlog listados em `Info mudancas.md`:
+
+### 1. Sentinela mais lenta, maior e mais discreta (Item 4 do backlog)
+- **Velocidade do ciclo 20% mais lenta**: o período do ciclo senoidal da moldura passa a ser escalado por 1.25 em relação ao tempo de voo (`cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, (flightTime / GATE_CYCLES_PER_FLIGHT) * 1.25)`), tornando a abertura e fechamento mais suaves.
+- **Velocidade de voo reduzida**: `GATE_SPEED` reduzido de 100 para 80 u/s, aumentando o tempo de leitura e reação do jogador.
+- **Crescimento de escala ao longo da trajetória**: a moldura agora escala dinamicamente de 0.7x no disparo até 1.25x na chegada (`updateGateAnimation`), e `resolveGateHit` normaliza a distância radial pela escala atual do mesh (`dist / currentScale`).
+- **Modelo 3D mais curto**: espessura Z do corpo da Sentinela reduzida de 0.7 para 0.4 (`THREE.BoxGeometry(2.4, 2.4, 0.4)`).
+- **Opacidade reduzida**: opacidade do material da moldura reduzida para 35% (`opacity: 0.35`), deixando o obstáculo visualmente mais leve na tela.
+
+### 2. Dourado com Dash Lateral Longo (Item 3 do backlog)
+- Quando o jogador se aproxima a menos de 28 unidades (`GOLDEN_DASH_TRIGGER_DIST = 28`), o Dourado engatilha uma arrancada lateral perpendicular à linha de visão (`lateral = cross(dirToPlayer, UP)` com lado aleatório esquerdo/direito).
+- Velocidade de 62 u/s durante 0.35s (cobrindo ~22 unidades lateralmente), com efeito sonoro/visual de onda de choque (`effects.shockwave`).
+- Cooldown estrito de 3.0s (`GOLDEN_DASH_COOLDOWN_S = 3.0`) entre dashes.
+
+### 3. Chefe Vermelho com Escudo Refletor Azul (Item 5 do backlog)
+- A cada 7 segundos, o chefe ergue uma esfera de escudo azul semi-transparente (`bossShieldMesh`, raio 1.35x com additive blending) que dura 3 segundos.
+- O cooldown de 7 segundos **só começa a contar após os 3 segundos de escudo terminarem**.
+- Enquanto o escudo está ativo:
+  - O chefe fica completamente imune a dano de projéteis normais, teleguiados, explosões em área (`applyAreaDamage`) e atropelamento com impulso aríete.
+  - Qualquer tiro do jogador que atinja o escudo é defletido de volta (`resolveProjectileHit` com `reflected: true`), gerando faíscas azuis e disparando um projétil inimigo azul de volta na direção contrária, capaz de causar dano ao jogador.
+
+### 4. Feedback Visual de Tiro Carregado no Máximo (Item 9 do backlog)
+- **Marco visual ao atingir 100% de carga**: quando o tiro carregado atinge a carga máxima (`state.fireHeldMs >= player.config.homingChargeMaxMs`), `effects.maxChargeReady()` dispara instantaneamente um bloom azul de punch, onda de choque e faíscas brancas na ponta de mira da nave, avisando o jogador que a carga máxima foi atingida.
+- **Argolas ovais curtas disparadas junto**: ao soltar o disparo com carga máxima, `effects.maxChargeRings()` dispara uma sequência de 3 argolas ovais azuis curtas (`TorusGeometry` escalado ovalmente em 1.5x por 0.85x) que viajam em alta velocidade junto com o tiro carregado.
+
+### Testes e Verificação
+- `node src/selftest.mjs` OK.
+- `check_syntax.mjs` e `check_imports.mjs` executados em todos os 50 arquivos JS com sucesso total.
+
+**Versão**: v0.52.0 → **v0.52.1**
+
+

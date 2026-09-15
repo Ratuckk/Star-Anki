@@ -13,7 +13,7 @@ import {
 } from './timeEnemy.js'
 import {
   BOSS_KIND, BOSS_COLOR, BOSS_HIT_RADIUS, BOSS_DEATH_DURATION, BOSS_LASER_HIT_RADIUS,
-  bossEnemyGeometry, bossEnemyMaterial,
+  bossEnemyGeometry, bossEnemyMaterial, BOSS_SHIELD_COLOR,
   spawnBossEnemy, updateBossMovement, randomBossFireInterval, fireBossVolley, updateBossLaser, explodeBoss, disposeBoss,
 } from './boss.js'
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
@@ -92,6 +92,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const enemyProjectileGeometry = new THREE.ConeGeometry(0.35, 1.4, 6)
   enemyProjectileGeometry.rotateX(Math.PI / 2)
   const enemyProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a3d })
+  const reflectedProjectileMaterial = new THREE.MeshBasicMaterial({ color: BOSS_SHIELD_COLOR })
 
   function clearArenaPreview() {
     if (!arenaPreviewMesh) return
@@ -269,6 +270,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           // durar a sobreposição; o flag reseta assim que sai do raio.
           if (!enemy.ramHitActive) {
             enemy.ramHitActive = true
+            if (enemy.kind === BOSS_KIND && enemy.isShieldActive) {
+              if (effects) {
+                effects.hitSpark(enemy.mesh.position, BOSS_SHIELD_COLOR)
+                effects.shockwave(enemy.mesh.position, BOSS_SHIELD_COLOR, 0.8)
+              }
+              continue
+            }
             enemy.hp -= ramDamage
             if (enemy.hp <= 0) {
               enemy.dying = true
@@ -595,6 +603,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       for (const e of enemies) {
         if (e.dying) continue
         if (e.mesh.position.distanceTo(center) > radius) continue
+        if (e.kind === BOSS_KIND && e.isShieldActive) continue
         e.hp -= damage
         const killed = e.hp <= 0
         hitsLog.push({ worldPos: e.mesh.position.clone(), damage, killed, isHoming: true, meshRef: e.mesh })
@@ -604,6 +613,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           if (e.kind === BOSS_KIND) {
             bossDefeated = true
             bossHitWorldPos = e.mesh.position.clone()
+            e.isShieldActive = false
+            if (e.shieldMesh) e.shieldMesh.visible = false
             if (effects) explodeBoss(effects, e.mesh.position, true)
           } else {
             enemyKillPoints += killPointsFor(e.kind)
@@ -627,6 +638,31 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
+        // Chefe: escudo refletor azul — a cada 7s ergue escudo por 3s que reflete tiros
+        if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {
+          if (effects) {
+            effects.hitSpark(prevPos, BOSS_SHIELD_COLOR)
+            effects.shockwave(prevPos, BOSS_SHIELD_COLOR, 0.6)
+          }
+          const bounceDir = prevPos.clone().sub(currPos).normalize()
+          if (bounceDir.lengthSq() < 1e-4) bounceDir.copy(FORWARD_AXIS).negate()
+          const refMesh = new THREE.Mesh(enemyProjectileGeometry, reflectedProjectileMaterial)
+          refMesh.position.copy(prevPos)
+          refMesh.quaternion.setFromUnitVectors(FORWARD_AXIS, bounceDir)
+          scene.add(refMesh)
+          enemyProjectiles.push({
+            mesh: refMesh,
+            velocity: bounceDir.multiplyScalar(ENEMY_PROJECTILE_SPEED * 1.5 + enemyProjectileSpeedBonus),
+            traveled: 0,
+            hitRadius: ENEMY_PROJECTILE_HIT_RADIUS,
+            maxRange: ENEMY_PROJECTILE_MAX_RANGE,
+            shieldDamage: 1,
+          })
+          return {
+            kind: enemyHit.kind, killed: false, blocked: true, reflected: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+            enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: false,
+          }
+        }
         // Fragata-Escudo: bloqueia dano vindo do lado que a blindagem cobre AGORA — o projétil
         // ainda "bate" (spark âmbar), mas não desconta hp nem conta como acerto de verdade.
         if (enemyHit.kind === FRAGATA_KIND && isFragataShielded(enemyHit, prevPos)) {
@@ -651,6 +687,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           enemyHit.deathT = 0
           if (enemyHit.kind === BOSS_KIND) {
             bossDefeated = true
+            enemyHit.isShieldActive = false
+            if (enemyHit.shieldMesh) enemyHit.shieldMesh.visible = false
             if (effects) explodeBoss(effects, enemyHit.mesh.position, isHoming)
           } else {
             enemyKillPoints = killPointsFor(enemyHit.kind)
@@ -756,6 +794,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       clearArenaPreview()
       enemyProjectileGeometry.dispose()
       enemyProjectileMaterial.dispose()
+      reflectedProjectileMaterial.dispose()
       disposeBlaster()
       disposeMiniSwarm()
       disposeTank()
