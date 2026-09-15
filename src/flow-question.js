@@ -1,18 +1,6 @@
 // flow-question.js
 //
-// Etapa 5 do overhaul de organização do main.js. Extrai o fluxo da pergunta NORMAL (não-chefe,
-// não-dourado) + cartas roguelike: enterAlternatives (abre o modal de pergunta), settleQuestion
-// (resolve acerto/erro e encadeia pra resolução/carta), enterCardChoice (modal de 3 cartas),
-// applyRoguelikeCard (aplica uma carta escolhida) e buildCardExcludeSet (filtra cartas já no
-// cap). Zero mudança de comportamento.
-//
-// forceAnswerOutcome NÃO mora aqui de propósito — é o único ponto que roteia pros dois fluxos
-// (bossFlow pra chefe/dourado, questionFlow pro normal), então fica no main.js, onde os dois
-// lados são visíveis juntos. Aqui só o que é estritamente "pergunta normal + carta roguelike".
-//
-// Padrão (mesmo de cutscenes.js e flow-boss.js): recebe `state` por referência e mexe direto
-// nele, mais os deps de jogo (hud/combat/player) e os helpers de progressão que ainda vivem no
-// main.js (applyDifficulty/applySpeedProgression — vão pra flow-progression.js na etapa 6).
+// Fluxo da pergunta NORMAL + cartas roguelike. Zero mudança de comportamento.
 
 import { nextQuestion, resolveAnswer } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
@@ -23,9 +11,7 @@ export function createQuestionFlow(deps) {
   const {
     state, session, deck, menu,
     hud, combat, player,
-    // helpers ainda em main.js (etapa 6 vai extrair pra flow-progression.js):
     applyDifficulty, applySpeedProgression,
-    // callbacks que voltam pro main.js:
     applyHealthLoss, endSector,
   } = deps
 
@@ -53,13 +39,6 @@ export function createQuestionFlow(deps) {
     })
   }
 
-  // Fase 6: pergunta normal também pausa tudo e usa o modal centralizado (mesmo modelo do
-  // chefe, Fase 5) — não é mais "voa e atira nos 4 alvos flutuantes". pendingQuestionKind
-  // marca qual settle function usar enquanto phase === 'questionPause' (normal ou dourado
-  // compartilham a mesma fase de pausa).
-  // v0.32: pergunta abre na hora que o ciclo termina — era precedida por uma fase 'recall' de
-  // 3.5s (só mostrando o texto da pergunta, sem alternativas, sobra da mecânica antiga de
-  // "voar e atirar") que o usuário reportou como "intervalo estranho depois que o jogo pausa".
   function enterAlternatives() {
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
@@ -99,7 +78,6 @@ export function createQuestionFlow(deps) {
     menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
     hud.setBossActive(false)
-    // v0.29.6: painel de feedback só pra acerto — erro vira um texto flutuante rápido
     if (correct) {
       hud.setFeedback({
         correct: true,
@@ -113,7 +91,6 @@ export function createQuestionFlow(deps) {
       hud.showErrorFloat('Errou!')
     }
 
-    // v0.51.0 — `resolution.sectorOver` removido (ver comentário em flow-boss.js).
     const outOfLives = applyHealthLoss()
     state.pendingSectorOver = outOfLives
     state.pendingCardChoice = correct
