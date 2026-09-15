@@ -15,27 +15,24 @@ import { initMobileSupport, requestGameOrientation, releaseGameOrientation } fro
 import { createCutscenesSystem } from './cutscenes.js'
 import { createBossFlow } from './flow-boss.js'
 import { createQuestionFlow } from './flow-question.js'
+import { createProgressionFlow } from './flow-progression.js'
 import {
   CYCLE_MS, ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
-  SPEED_STEP, BOOST_EVERY_CORRECT, GROUND_Y,
+  GROUND_Y,
   INVINCIBILITY_FLICKER_MS,
   HIT_SHAKE_DURATION_MS, SHIP_SHAKE_MAGNITUDE, CAMERA_SHAKE_MAGNITUDE, HOMING_KILL_SHAKE_MS,
   LEVEL_BACKGROUNDS,
   RETICLE_AHEAD, RETICLE_OVERSHOOT_FACTOR, RETICLE_SETTLE_RATE,
   BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT,
-  ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_STEP,
-  ENEMY_AGGRESSION_STEP, ENEMY_AGGRESSION_CAP,
-  ENEMY_SPAWN_BONUS_WRONG_THRESHOLD, ENEMY_PROJECTILE_SPEED_PER_WRONG, ENEMY_DAMAGE_WRONG_THRESHOLD,
+  ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR,
   DIFFICULTY_BIAS_INTERVAL_RANGE_MS,
-  ENEMY_CAP_NORMAL_BASE, ENEMY_CAP_ARENA_BASE, ENEMY_CAP_STEP_PER_ERROR, ARENA_ENEMY_INTERVAL_MULT,
+  ARENA_ENEMY_INTERVAL_MULT,
   NORMAL_SPAWN_INTERVAL_MS, NORMAL_SPAWN_MIN_COUNT, NORMAL_SPAWN_MAX_COUNT,
   NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS, MINI_SWARM_CHANCE,
-  BONUS_INTERVAL_MIN, BONUS_INTERVAL_MAX, REVIEW_ENEMY_INTERVAL_MULT,
-  GOLDEN_INTERVAL_MIN_MS, GOLDEN_INTERVAL_MAX_MS, GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX,
+  REVIEW_ENEMY_INTERVAL_MULT,
+  GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX,
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
-  DETRITO_SPAWN_INTERVAL_MIN_MS, DETRITO_SPAWN_INTERVAL_MAX_MS,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
-  IMA_SPAWN_INTERVAL_MIN_MS, IMA_SPAWN_INTERVAL_MAX_MS,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
@@ -100,7 +97,7 @@ function mountGame(session, deck, menu) {
 
   // ============ ESTADO MUTÁVEL DA PARTIDA (etapa 2 do overhaul de organização) ============
   // Ver comentário detalhado na entrega da etapa 2 — resumo: era ~40 `let` soltos, agora um
-  // objeto único compartilhado por referência com os flows extraídos (cutscenes, boss, etc.).
+  // objeto único compartilhado por referência com os flows extraídos.
   const state = {
     // ============ loop / debug ============
     debugVisible: false,
@@ -131,7 +128,7 @@ function mountGame(session, deck, menu) {
     bossDifficulty: 0,
 
     // ============ dourado ============
-    goldenTimer: 0, // valor real logo abaixo (randomGoldenInterval)
+    goldenTimer: 0, // valor real logo abaixo (progression.randomGoldenInterval)
     goldenCard: null,
 
     // ============ cutscene de arena (dourado/chefe se aproximando) ============
@@ -170,30 +167,43 @@ function mountGame(session, deck, menu) {
 
     // ============ timers de spawn ============
     normalSpawnTimer: NORMAL_SPAWN_INTERVAL_MS,
-    detritoTimer: 0, // valor real logo abaixo (randomDetritoInterval)
-    imaTimer: 0, // valor real logo abaixo (randomImaInterval)
-    bonusTimer: 0, // valor real logo abaixo (randomBonusInterval)
+    detritoTimer: 0, // valor real logo abaixo (progression.randomDetritoInterval)
+    imaTimer: 0, // valor real logo abaixo (progression.randomImaInterval)
+    bonusTimer: 0, // valor real logo abaixo (progression.randomBonusInterval)
   }
 
-  // inicialização "pós-declaração" dos timers que dependem de funções locais
-  state.goldenTimer = randomGoldenInterval()
-  state.detritoTimer = randomDetritoInterval()
-  state.imaTimer = randomImaInterval()
-  state.bonusTimer = randomBonusInterval()
+  // ============ PROGRESSÃO (etapa 6 do overhaul) ============
+  // Extraído pra flow-progression.js: applyDifficulty/applyBossDifficulty/applySpeedProgression,
+  // currentEnemyCap/currentBossSpread/currentBossExtraEnemies e os 5 randomizadores de
+  // intervalo. Antes eram function declarations hoisted aqui (a "gambiarra" citada no
+  // comentário da etapa 4) — os flows recebiam os helpers por deps nomeadas e funcionava só
+  // porque declarations são içadas; agora o objeto é explícito e a ordem de criação é linear.
+  const progression = createProgressionFlow({ state, rail, combat })
+
+  // inicialização "pós-declaração" dos timers que dependem de funções de progressão (antes
+  // era `randomGoldenInterval()` etc., que dependia de hoisting; agora chama explicitamente
+  // o objeto já criado — mesma inicialização, sem hoisting implícito).
+  state.goldenTimer = progression.randomGoldenInterval()
+  state.detritoTimer = progression.randomDetritoInterval()
+  state.imaTimer = progression.randomImaInterval()
+  state.bonusTimer = progression.randomBonusInterval()
 
   // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
   const cutscenes = createCutscenesSystem({ state, camera, renderer, scene, effects, hud, rail, player })
 
   // fluxo do chefe/dourado (etapa 4): caçada de orbes, invocação, luta, vitória + arena dourada
   // e sua pergunta-bônus + a cutscene de transição compartilhada — tudo extraído pra
-  // flow-boss.js. Helpers que ainda vivem aqui (applyDifficulty, currentBossSpread, etc.) vão
-  // como deps até a etapa 6 (flow-progression.js).
+  // flow-boss.js. Helpers de progressão agora vêm de `progression.*` (era a nota de "gambiarra"
+  // do comentário da etapa 4; desde a etapa 6 a dependência é explícita).
   const bossFlow = createBossFlow({
     state, session, deck, menu,
     camera, hud, combat, rail,
-    applyDifficulty, applyBossDifficulty, applySpeedProgression,
-    currentBossSpread, currentBossExtraEnemies,
-    randomGoldenInterval,
+    applyDifficulty: progression.applyDifficulty,
+    applyBossDifficulty: progression.applyBossDifficulty,
+    applySpeedProgression: progression.applySpeedProgression,
+    currentBossSpread: progression.currentBossSpread,
+    currentBossExtraEnemies: progression.currentBossExtraEnemies,
+    randomGoldenInterval: progression.randomGoldenInterval,
     applyHealthLoss, endSector,
   })
 
@@ -203,80 +213,14 @@ function mountGame(session, deck, menu) {
   const questionFlow = createQuestionFlow({
     state, session, deck, menu,
     hud, combat, player,
-    applyDifficulty, applySpeedProgression,
+    applyDifficulty: progression.applyDifficulty,
+    applySpeedProgression: progression.applySpeedProgression,
     applyHealthLoss, endSector,
   })
-
-  function currentEnemyCap() {
-    return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + state.enemyCap
-  }
-
-  function randomDetritoInterval() {
-    return DETRITO_SPAWN_INTERVAL_MIN_MS + Math.random() * (DETRITO_SPAWN_INTERVAL_MAX_MS - DETRITO_SPAWN_INTERVAL_MIN_MS)
-  }
-
-  function randomImaInterval() {
-    return IMA_SPAWN_INTERVAL_MIN_MS + Math.random() * (IMA_SPAWN_INTERVAL_MAX_MS - IMA_SPAWN_INTERVAL_MIN_MS)
-  }
-
-  function randomEnemyInterval() {
-    return state.enemyIntervalMin + Math.random() * (state.enemyIntervalMax - state.enemyIntervalMin)
-  }
 
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
     return Math.max(1, Math.min(player.config.homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
-  }
-
-  function randomBonusInterval() {
-    return BONUS_INTERVAL_MIN + Math.random() * (BONUS_INTERVAL_MAX - BONUS_INTERVAL_MIN)
-  }
-
-  function randomGoldenInterval() {
-    return GOLDEN_INTERVAL_MIN_MS + Math.random() * (GOLDEN_INTERVAL_MAX_MS - GOLDEN_INTERVAL_MIN_MS)
-  }
-
-  function applySpeedProgression(type) {
-    if (type === 'correct') {
-      state.consecutiveCorrect += 1
-      if (state.consecutiveCorrect % BOOST_EVERY_CORRECT === 0) {
-        state.speedMultiplier *= 1 + SPEED_STEP
-        rail.setSpeedMultiplier(state.speedMultiplier)
-      }
-    } else {
-      state.consecutiveCorrect = 0
-      state.speedMultiplier = 1
-      rail.setSpeedMultiplier(1)
-    }
-  }
-
-  function applyDifficulty() {
-    state.enemyIntervalMin = Math.max(ENEMY_INTERVAL_FLOOR, state.enemyIntervalMin - ENEMY_INTERVAL_STEP)
-    state.enemyIntervalMax = Math.max(state.enemyIntervalMin + 150, state.enemyIntervalMax - ENEMY_INTERVAL_STEP)
-    state.enemyAggression = Math.min(ENEMY_AGGRESSION_CAP, state.enemyAggression + ENEMY_AGGRESSION_STEP)
-    combat.setEnemyAggressiveness(state.enemyAggression)
-    state.enemyCap += ENEMY_CAP_STEP_PER_ERROR
-
-    // pedido do usuário: escalada quantificada em cima do que já existia acima
-    state.wrongAnswerCount += 1
-    state.extraSpawnPerBatch = Math.floor(state.wrongAnswerCount / ENEMY_SPAWN_BONUS_WRONG_THRESHOLD)
-    state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
-    combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
-  }
-
-  function applyBossDifficulty() {
-    state.bossDifficulty = Math.min(BOSS_DIFFICULTY_CAP, state.bossDifficulty + 1)
-  }
-
-  function currentBossSpread() {
-    return {
-      distanceMin: Math.min(BOSS_SPREAD_MIN_CAP, BOSS_SPREAD_MIN_BASE + state.bossDifficulty * BOSS_SPREAD_STEP),
-      distanceMax: Math.min(BOSS_SPREAD_MAX_CAP, BOSS_SPREAD_MAX_BASE + state.bossDifficulty * BOSS_SPREAD_STEP),
-    }
-  }
-
-  function currentBossExtraEnemies() {
-    return Math.min(BOSS_EXTRA_ENEMIES_CAP, BOSS_EXTRA_ENEMIES_BASE + state.bossDifficulty * BOSS_EXTRA_ENEMIES_STEP)
   }
 
   function enterCombat() {
@@ -284,9 +228,9 @@ function mountGame(session, deck, menu) {
     state.isBossCycle = (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
     state.isReviewQuestion = (session.history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
     state.cycleTimer = state.isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
-    state.enemyTimer = randomEnemyInterval() * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+    state.enemyTimer = progression.randomEnemyInterval() * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
     state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
-    state.bonusTimer = randomBonusInterval()
+    state.bonusTimer = progression.randomBonusInterval()
     rail.setAdvancing(true)
     hud.setQuestion(null)
     hud.setAlternatives(null)
@@ -511,12 +455,12 @@ function mountGame(session, deck, menu) {
       state.detritoTimer -= dt * 1000
       if (state.detritoTimer <= 0) {
         combat.spawnDetrito()
-        state.detritoTimer = randomDetritoInterval()
+        state.detritoTimer = progression.randomDetritoInterval()
       }
       state.imaTimer -= dt * 1000
       if (state.imaTimer <= 0) {
         combat.spawnImaSwarm()
-        state.imaTimer = randomImaInterval()
+        state.imaTimer = progression.randomImaInterval()
       }
     }
 
@@ -606,8 +550,8 @@ function mountGame(session, deck, menu) {
     if (events.enemyKills > 0) state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
 
     // cutscene em câmera lenta do chefe explodindo antes de sair da arena — handler extraído
-    // pra flow-boss.js (handleBossDefeated). A guarda de fase continua AQUI (era um `if` de
-    // topo de tick no original, antes dos branches de fase), preservando a estrutura original.
+    // pra flow-boss.js. A guarda de fase continua AQUI (era um `if` de topo de tick no
+    // original, antes dos branches de fase), preservando a estrutura original.
     if (events.bossDefeated && state.phase === 'bossFight') {
       bossFlow.handleBossDefeated(events.bossHitWorldPos || playerPos)
     }
@@ -645,11 +589,11 @@ function mountGame(session, deck, menu) {
     if (state.phase === 'goldenArena' || state.phase === 'bossBuildup') {
       state.enemyTimer -= dt * 1000
       if (state.enemyTimer <= 0) {
-        if (combat.getEnemyCount() < currentEnemyCap()) {
+        if (combat.getEnemyCount() < progression.currentEnemyCap()) {
           if (Math.random() < FRAGATA_SPAWN_CHANCE) combat.spawnFragata()
           else combat.spawnEnemy()
         }
-        state.enemyTimer = randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
+        state.enemyTimer = progression.randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (state.phase === 'combat') {
       const spawnPauseThreshold = state.isBossCycle ? ARENA_WARNING_STOP_SPAWN_MS : NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS
@@ -671,7 +615,7 @@ function mountGame(session, deck, menu) {
           } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
             combat.spawnSussurro()
           } else {
-            const room = Math.max(0, currentEnemyCap() - combat.getEnemyCount())
+            const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
             const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
             const count = Math.min(room, roll + state.extraSpawnPerBatch)
             for (let i = 0; i < count; i += 1) combat.spawnEnemy()
@@ -685,7 +629,7 @@ function mountGame(session, deck, menu) {
         state.bonusTimer -= dt * 1000
         if (state.bonusTimer <= 0) {
           combat.spawnBonusTarget()
-          state.bonusTimer = randomBonusInterval()
+          state.bonusTimer = progression.randomBonusInterval()
         }
 
         state.goldenTimer -= dt * 1000
