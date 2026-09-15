@@ -11,13 +11,21 @@ const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 const PROJECTILE_SPEED = 60
-const PROJECTILE_MAX_RANGE = 260
+// pedido do usuário: tiro normal (não-carregado) some sozinho depois de 8s de voo — o teto de
+// ALCANCE abaixo subiu junto (60u/s * 8s = 480) só pra não cortar o tiro ANTES do tempo em voo
+// reto; o timer (ver PLAYER_PROJECTILE_LIFETIME) é o que efetivamente decide na prática.
+const PROJECTILE_MAX_RANGE = 500
+const PLAYER_PROJECTILE_LIFETIME = 8
 const PROJECTILE_LATERAL_SPACING = 1.6
 const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
 const HOMING_PROJECTILE_DAMAGE = 4 // pedido do usuário: era 3
 // pedido do usuário: segurar o tiro carregado até o limite (carga máxima) aumenta o dano de 4
 // pra 6 — recompensa esperar o círculo de carga encher de verdade, não só passar do mínimo.
 const HOMING_PROJECTILE_DAMAGE_MAX_CHARGE = 6
+// pedido do usuário: carga máxima também estoura uma explosão em área no impacto — circular,
+// sem direção, além do dano direto no alvo travado.
+const MAX_CHARGE_SPLASH_RADIUS = 3
+const MAX_CHARGE_SPLASH_DAMAGE = 6
 const HOMING_AFTERIMAGE_INTERVAL = 0.035 // segundos entre cada cópia fantasma do rastro
 
 // tiro normal do jogador: 1 disparo central com 2 de dano (era 2 tiros de 1 dano lado a lado)
@@ -46,6 +54,15 @@ const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
 const homingProjectileGeometry = new THREE.ConeGeometry(0.528, 3.36, 6)
 homingProjectileGeometry.rotateX(Math.PI / 2)
 const homingProjectileMaterial = new THREE.MeshBasicMaterial({ color: 0x2bff88 })
+// pedido do usuário: tiro de carga MÁXIMA sai azul (mesmo tom do brilho de carga nesse estado,
+// ver CHARGE_GLOW_MAX_COLOR em effects.js) — a cor vira o aviso visual de "este tiro causa
+// explosão em área" (ver MAX_CHARGE_SPLASH_RADIUS/DAMAGE abaixo). Escala aplicada por instância
+// (MAX_CHARGE_VISUAL_SCALE), não na geometria compartilhada.
+const homingMaxChargeMaterial = new THREE.MeshBasicMaterial({ color: 0x2b8fff })
+const MAX_CHARGE_VISUAL_SCALE = 1.2
+// carta "Ricochete": distância do empurrão aplicado ao redirecionar pro próximo alvo — maior
+// que qualquer hitRadius do jogo, garante que o próximo frame não recaia no alvo recém-atingido
+const RICOCHET_NUDGE_DISTANCE = 3
 
 export function createProjectileSystem(scene, effects, player, enemies, targets, lockon) {
   const projectiles = []
@@ -75,7 +92,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       mesh.position.copy(origin).addScaledVector(lateralAxis, lateralOffset)
       mesh.scale.setScalar(visualScale)
       scene.add(mesh)
-      projectiles.push({ mesh, velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0, damage: PLAYER_PROJECTILE_DAMAGE })
+      projectiles.push({
+        mesh, velocity: shotDirection.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0,
+        damage: PLAYER_PROJECTILE_DAMAGE, life: PLAYER_PROJECTILE_LIFETIME,
+      })
     }
 
     if (effects) effects.muzzleFlash(origin, shotDirection)
@@ -87,7 +107,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
     mesh.position.copy(origin)
     scene.add(mesh)
-    projectiles.push({ mesh, velocity: direction.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0, damage })
+    projectiles.push({
+      mesh, velocity: direction.clone().multiplyScalar(PROJECTILE_SPEED), traveled: 0,
+      damage, life: PLAYER_PROJECTILE_LIFETIME,
+    })
   }
 
   function update(dt, aimDirection) {
@@ -150,6 +173,11 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // >>> FIM DO BLOCO NOVO <<<
       // ============================================================
 
+      if (projectile.life != null) {
+        projectile.life -= dt
+        if (projectile.life <= 0) { removeProjectile(projectile); continue }
+      }
+
       const prevPos = projectile.mesh.position.clone()
       const step = projectile.velocity.clone().multiplyScalar(dt)
       projectile.mesh.position.add(step)
@@ -180,15 +208,34 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         hitBuffer,
       })
       if (hit) {
-        removeProjectile(projectile)
+        // v0.51.14 — `removeProjectile` não roda mais aqui na hora: carta "Ricochete" pode
+        // redirecionar este mesmo projétil pro próximo alvo mais próximo em vez de removê-lo
+        // (ver decisão de bounce no fim deste bloco). Cada saída abaixo decide por conta própria.
+        //
         // v0.51.0 — `hit.blocked` = fragata-escudo defendeu este tiro (veio do lado coberto pela
         // blindagem giratória). O projétil some mesmo (ele bateu na placa — enemies/index.js já
-        // dispara a faísca âmbar na cor da blindagem), mas NÃO entra no `hitsLog`. Sem esse
-        // guard, o tiro bloqueado gerava número de dano flutuante em cima da fragata, contradi-
-        // zendo a própria regra de "blindagem que não deixa passar". Também pula os campos de
-        // kill/points, que já vinham zerados do lado de lá (defensivo, se um dia alguém esquecer
-        // de mantê-los zerados).
-        if (hit.blocked) continue
+        // dispara a faísca âmbar na cor da blindagem), mas NÃO entra no `hitsLog`, e NÃO pula
+        // pro próximo alvo (bateu num escudo, não "atingiu" ninguém de verdade). Sem esse guard,
+        // o tiro bloqueado gerava número de dano flutuante em cima da fragata, contradizendo a
+        // própria regra de "blindagem que não deixa passar". Também pula os campos de kill/
+        // points, que já vinham zerados do lado de lá (defensivo).
+        if (hit.blocked) { removeProjectile(projectile); continue }
+        // pedido do usuário: tiro carregado no MÁXIMO também estoura uma explosão em área no
+        // ponto de impacto (raio fixo, circular) — ALÉM do dano direto já aplicado acima pelo
+        // resolveProjectileHit. O alvo já atingido está marcado `dying`, então applyAreaDamage
+        // (que pula inimigos `dying`) não dobra o dano nele.
+        if (projectile.isMaxCharge) {
+          const splash = enemies.applyAreaDamage(hit.worldPos, MAX_CHARGE_SPLASH_RADIUS, MAX_CHARGE_SPLASH_DAMAGE)
+          if (effects) effects.explosion(hit.worldPos, 0x2bff88, MAX_CHARGE_SPLASH_RADIUS, { rings: true })
+          enemyKills += splash.enemyKills
+          enemyKillPoints += splash.enemyKillPoints
+          hitsLog.push(...splash.hitsLog)
+          if (splash.bossDefeated) {
+            bossDefeated = true
+            bossDefeatedIsHoming = true
+            bossHitWorldPos = splash.bossHitWorldPos
+          }
+        }
         if (hit.kind !== 'golden') {
           hitsLog.push({
             worldPos: hit.worldPos, damage: projectile.damage ?? 1, killed: hit.killed,
@@ -210,6 +257,35 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         }
         if (hit.enemyKillPoints) enemyKillPoints += hit.enemyKillPoints
         if (hit.timeReductionMs != null) { timeReductionMs = hit.timeReductionMs; timeReductionWorldPos = hit.worldPos }
+
+        // carta "Ricochete": em vez de remover, redireciona pro inimigo vivo mais próximo
+        // (excluindo o que acabou de ser atingido) — mesmo projétil, mesmo dano, um pulo a
+        // menos no orçamento. Sem alvo por perto ou sem pulo sobrando, remove normalmente.
+        let bounced = false
+        if (projectile.isHoming && projectile.bouncesLeft > 0) {
+          let nextTarget = null
+          let nextDist = Infinity
+          for (const candidate of enemies.getAlive()) {
+            if (candidate.mesh === hit.meshRef) continue
+            const d = projectile.mesh.position.distanceTo(candidate.mesh.position)
+            if (d < nextDist) { nextDist = d; nextTarget = candidate }
+          }
+          if (nextTarget) {
+            // empurrão pra fora do raio de acerto do alvo que acabou de ser atingido — sem
+            // isso, o segmento (prevPos→currPos) do PRÓXIMO frame ainda começa colado nele
+            // (é onde o hit resolveu) e `resolveProjectileHit` batia de novo no MESMO alvo
+            // repetidas vezes seguidas em vez de viajar até o próximo (medido: 3 hits seguidos
+            // no mesmo inimigo, todos na mesma posição exata).
+            const toNext = nextTarget.mesh.position.clone().sub(projectile.mesh.position)
+            if (toNext.lengthSq() > 1e-6) {
+              projectile.mesh.position.addScaledVector(toNext.normalize(), RICOCHET_NUDGE_DISTANCE)
+            }
+            projectile.homingTarget = nextTarget
+            projectile.bouncesLeft -= 1
+            bounced = true
+          }
+        }
+        if (!bounced) removeProjectile(projectile)
         continue
       }
 
@@ -257,12 +333,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       const damage = isMaxCharge ? HOMING_PROJECTILE_DAMAGE_MAX_CHARGE : HOMING_PROJECTILE_DAMAGE
       for (const target of targetList) {
         const direction = target.mesh.position.clone().sub(origin).normalize()
-        const mesh = new THREE.Mesh(homingProjectileGeometry, homingProjectileMaterial)
+        const mesh = new THREE.Mesh(homingProjectileGeometry, isMaxCharge ? homingMaxChargeMaterial : homingProjectileMaterial)
         mesh.position.copy(origin)
+        if (isMaxCharge) mesh.scale.setScalar(MAX_CHARGE_VISUAL_SCALE)
         scene.add(mesh)
         projectiles.push({
           mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0,
-          homingTarget: target, damage, isHoming: true, afterimageTimer: 0,
+          homingTarget: target, damage, isHoming: true, afterimageTimer: 0, isMaxCharge,
+          bouncesLeft: player.config.ricochetCount ?? 0,
         })
       }
       const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)
@@ -307,6 +385,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       projectileMaterial.dispose()
       homingProjectileGeometry.dispose()
       homingProjectileMaterial.dispose()
+      homingMaxChargeMaterial.dispose()
     },
   }
 }

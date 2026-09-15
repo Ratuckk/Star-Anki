@@ -18,8 +18,10 @@ export const DETRITO_DEATH_DURATION = 0.2
 export const DETRITO_HP = 9
 export const DETRITO_KILL_BONUS = BLASTER_KILL_BONUS / 2 // bônus menor, não é alvo de combate de verdade
 
-const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 250
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido de 90-250 (o teto
+// especialmente exagerado) pra ficar mais perto da faixa dos outros inimigos comuns.
+const SPAWN_DISTANCE_MIN = 60
+const SPAWN_DISTANCE_MAX = 130
 const BOX_X = 7
 const BOX_Y = 5
 const SPIN_RATE_MIN = 0.15

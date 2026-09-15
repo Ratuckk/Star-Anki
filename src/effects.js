@@ -67,6 +67,10 @@ const CHARGE_GLOW_AHEAD = 2.2
 // próprio tamanho/opacidade min-max, interpolados pela fração de carga. SÃO a referência visual
 // de quanto falta carregar agora (a barra de carga no HUD foi removida).
 const CHARGE_GLOW_COLOR = 0xaaff33
+// pedido do usuário: o brilho de carga fica AZUL ao atingir 100% — mesmo azul do tiro disparado
+// nessa condição (ver homingMaxChargeMaterial em combat/projectiles.js), pra virar um aviso
+// visual único e consistente de "esse tiro vai causar dano em área".
+const CHARGE_GLOW_MAX_COLOR = 0x2b8fff
 const CHARGE_GLOW_LAYERS = [
   { scaleMin: 0.30, scaleMax: 0.85, opacityMin: 0.85, opacityMax: 0.40 },
   { scaleMin: 0.55, scaleMax: 1.30, opacityMin: 0.55, opacityMax: 0.28 },
@@ -416,6 +420,7 @@ export function createEffectsSystem(scene, opts = {}) {
   // ============ EFEITOS EXISTENTES ============
   function setChargeGlow(active, fraction, position, direction) {
     const f = Math.max(0, Math.min(1, fraction || 0))
+    const atMaxCharge = f >= 1
     const now = performance.now()
     const n = chargeGlowLayers.length
     chargeGlowLayers.forEach((layer, i) => {
@@ -423,6 +428,7 @@ export function createEffectsSystem(scene, opts = {}) {
       const revealed = active && f >= threshold
       layer.mesh.visible = revealed
       if (!revealed) return
+      layer.mat.color.setHex(atMaxCharge ? CHARGE_GLOW_MAX_COLOR : CHARGE_GLOW_COLOR)
       const { scaleMin, scaleMax, opacityMin, opacityMax } = layer.cfg
       // progresso PRÓPRIO da camada — começa em 0 assim que ela é revelada (pequena) e converge
       // pro tamanho máximo em f=1 junto com as outras, não importa quando cada uma apareceu

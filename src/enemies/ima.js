@@ -24,8 +24,9 @@ export const IMA_FIELD_STRENGTH = 180
 const GROUP_MIN = 3
 const GROUP_MAX = 5
 const SPREAD = 3.5
-const SPAWN_DISTANCE_MIN = 80
-const SPAWN_DISTANCE_MAX = 130
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo
+const SPAWN_DISTANCE_MIN = 55
+const SPAWN_DISTANCE_MAX = 90
 const BOX_X = 6
 const BOX_Y = 5
 

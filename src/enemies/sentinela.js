@@ -1,260 +1,145 @@
 import * as THREE from 'three'
 import { PASS_BEHIND, randomSpawnPositionOnPath } from './shared.js'
 
-// ============ SENTINELA — inimigo quadrado, só modo trilho ============
-// Overhaul (v0.50.0): máquina de estados explícita com 4 modos (approaching → engaging →
-// retreating → leaving), núcleo visualmente distinto do casco, e reação ao impulso do jogador
-// (recua durante o boost, volta LENTAMENTE ao standoff depois). As geometrias e os tempos de
-// disparo continuam os mesmos da entrega anterior — o que muda é a ESTRUTURA de comportamento.
-
+// ============ SENTINELA — inimigo quadrado inédito, só modo trilho ============
+// v0.34.0: pedido do usuário — persegue o jogador mantendo distância (nunca passa por ele),
+// dispara 4 "molduras" quadradas (borda causa dano, centro vazado é seguro pra atravessar) e
+// depois vai embora. Só existe em trilho (guard no spawn, igual ao mini-swarm).
 export const SENTINELA_KIND = 'sentinela'
 export const SENTINELA_COLOR = 0x3fa9f5
-export const SENTINELA_CORE_COLOR = 0x00d4ff
 export const SENTINELA_HIT_RADIUS = 2.0
 export const SENTINELA_DEATH_DURATION = 0.25
 export const SENTINELA_HP = 10
-
-// ============ MODOS (máquina de estados) ============
-// Cada modo tem comportamento e assinatura visual próprios. O jogador lê o que está
-// acontecendo pela combinação "distância + brilho do núcleo", sem precisar de HUD extra.
-//
-//   APPROACHING  — voando de longe pro standoff, sem atirar, sem rastrear o jogador
-//   ENGAGING     — no standoff, mantendo posição, disparando as 4 molduras
-//   RETREATING   — jogador usou impulso: recuando devagar (a feature pedida)
-//   LEAVING      — esgotou os 4 disparos: acelerando pra frente até sair de cena
-export const SENTINELA_MODE_APPROACHING = 'approaching'
-export const SENTINELA_MODE_ENGAGING = 'engaging'
-export const SENTINELA_MODE_RETREATING = 'retreating'
-export const SENTINELA_MODE_LEAVING = 'leaving'
-
 const SPAWN_DISTANCE_MIN = 90
 const SPAWN_DISTANCE_MAX = 130
 const BOX_X = 6
 const BOX_Y = 4
 
-// ============ POSICIONAMENTO ============
-// Standoff em 180 (mantido). A novidade é separar os tetos de velocidade por CONTEXTO:
-//   APPROACH_SPEED    — velocidade de voo enquanto ainda está chegando (modo APPROACHING)
-//   ENGAGE_SPEED_MAX  — teto da correção normal do standoff (tentar manter 180u)
-//   RETREAT_SPEED     — teto DURANTE o impulso do jogador (recuo lento, de propósito:
-//                       é o que dá ao jogador a janela de aproximação que ele pediu)
-//   LEAVE_SPEED       — modo LEAVING (aceleração pra fora de cena, inalterado)
-const ENGAGE_STANDOFF = 180
-const ENGAGE_SPEED_GAIN = 0.3
-const ENGAGE_SPEED_MAX = 26
-const RETREAT_SPEED = 6
-const APPROACH_SPEED = 24
-const LEAVE_SPEED = 24
-
-// janela em que a Sentinela permanece em RETREATING depois que o impulso do jogador acaba.
-// Sem isso, o retorno ao standoff começaria no mesmo frame em que o impulso acabou — e o
-// efeito visual de "recuo" (que é o que o jogador percebe) sumiria instantaneamente.
-const RETREAT_LINGER_S = 1.2
-
-// histerese da transição APPROACHING → ENGAGING: evita piscar entre os dois modos quando a
-// distância fica oscilando em cima do threshold.
-const APPROACH_ARRIVAL_TOLERANCE = 15
-
-const LATERAL_TRACK_RATE = 7
+// pedido do usuário: standoff bem maior (fica mais longe do jogador) — 55 era perto demais.
+// Com o alvo tão mais distante, a correção discreta antiga (+1/0/-1 * ENGAGE_SPEED=8) nunca
+// alcançava: a nave anda a 22u/s e 8 é mais lento até que ISSO, sem contar que virava um
+// liga/desliga brusco (jitter) perto do standoff. Trocado por um modelo proporcional —
+// corrige mais forte quanto maior a diferença, sem overshoot brusco — com teto ACIMA da
+// velocidade da nave, senão ela nunca alcançaria de qualquer jeito.
+const ENGAGE_STANDOFF = 180 // distância-alvo à frente da câmera, mantida enquanto ataca
+const ENGAGE_SPEED_GAIN = 0.3 // proporcional: quanto maior a diferença pro standoff, mais forte corrige
+const ENGAGE_SPEED_MAX = 26 // teto — precisa ser MAIOR que a velocidade da nave (22) pra conseguir alcançar
+const LATERAL_TRACK_RATE = 7 // "1/tempo" de resposta lateral — alto o bastante pra travar no jogador
+const LEAVE_SPEED = 24 // bem mais rápido que o avanço do Blaster — "vai embora" de vez
 export const SENTINELA_SHOTS_TOTAL = 4
-export const SENTINELA_FIRE_INTERVAL = 1.8
+export const SENTINELA_FIRE_INTERVAL = 1.8 // intervalo entre os 4 disparos
 
-// ============ MOLDURA ============
-// Tamanhos da entrega anterior (outer 14, inner 11, banda 3). Os parâmetros do ciclo
-// (GATE_CYCLES_PER_FLIGHT, GATE_MIN_CYCLE_PERIOD) continuam garantindo ~3 pulsos por voo.
+// estados de verdade (com transição), diferente de "perfil" (escolhido no spawn, fixo pra
+// sempre — ver BLASTER_PROFILES em blaster.js). Mesmo padrão de campo que miniSwarm.js usa
+// (`swarmState`), só que genérico (`state`) — dá pra reaproveitar em outras classes futuras.
+export const SENTINELA_STATE_ENGAGING = 'engaging' // persegue mantendo distância, dispara
+export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera pra trás e some
+
+// ============ TAMANHO DA MOLDURA ============
+// pedido do usuário: "quero que estes quadrados sejam maiores, como enquadramentos ao invés de
+// quadrados grandões... que abrem e fecham no meio" — outer=14 (moldura 28x28), inner=11
+// (buraco 22x22 — 78% do lado), banda de apenas 3 (fina, lê como BORDA). A moldura é
+// literalmente um enquadramento: o jogador vê o buraco desde longe, entende "preciso passar
+// por ali" — o abrir/fechar de verdade é outra mecânica, ver `updateGateAnimation` abaixo.
 const GATE_OUTER_HALF = 14
 const GATE_INNER_HALF = 11
-const GATE_BAR_THICKNESS = 0.7
+const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
+// standoff (ENGAGE_STANDOFF) subiu bastante — a moldura precisa viajar mais longe até o
+// jogador, então a velocidade sobe junto (senão o tempo de voo ficaria absurdo).
 const GATE_SPEED = 100
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
+// pedido do usuário: a moldura tem que abrir e fechar de verdade (buraco encolhendo até virar
+// bloco sólido, sem passagem segura, e voltando a abrir), não ficar com o buraco sempre do
+// mesmo tamanho até o resolve final. GATE_MIN_INNER_HALF > 0 evita o buraco colapsar pra uma
+// escala zero exata (glitch visual de matriz degenerada no Three.js).
+//
+// BUG corrigido: o período do ciclo era uma constante fixa (0.75s) desacoplada do tempo de
+// voo real (que depende da distância até o jogador no instante do disparo) — o número de
+// pulsos abrir/fechar até a chegada era imprevisível (podia ser 1 ou podia ser 6, dependendo
+// só de onde o jogador estava quando a moldura foi disparada). Agora o período é calculado NA
+// HORA do disparo em função do tempo de voo (`targetDistance / GATE_SPEED`), dividido por um
+// número fixo de ciclos — sempre ~3 pulsos completos até a chegada, não importa a distância.
 const GATE_CYCLES_PER_FLIGHT = 3
-const GATE_MIN_CYCLE_PERIOD = 0.3
+const GATE_MIN_CYCLE_PERIOD = 0.3 // segurança: nunca deixa o período ficar tão curto que pisque
 const GATE_MIN_INNER_HALF = 0.01
 
+// Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
+// `pass-behind` normal (que despawna quem ficou ATRÁS) nunca dispara — ela ficava viva pra
+// sempre, invisível pela névoa mas ainda no array de inimigos. Despawna por distância à frente.
 const SENTINELA_LEAVE_DESPAWN_AHEAD = 220
 
-// ============ VISUAL ============
-const SHELL_GEOMETRY_SIZE = 2.4
-const SHELL_DEPTH = 0.7
-const CORE_RADIUS = 0.55
-const CORE_PULSE_SPEED = 4.5
-const CORE_PULSE_AMOUNT = 0.18
-const CORE_ENGAGE_INTENSITY = 1.0
-const CORE_IDLE_INTENSITY = 0.15
-const CORE_TELEGRAPH_INTENSITY = 2.2
+const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.7)
+const material = new THREE.MeshPhongMaterial({ color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true })
 
-const shellGeometry = new THREE.BoxGeometry(SHELL_GEOMETRY_SIZE, SHELL_GEOMETRY_SIZE, SHELL_DEPTH)
-const shellMaterial = new THREE.MeshPhongMaterial({
-  color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true,
-})
-const coreGeometry = new THREE.SphereGeometry(CORE_RADIUS, 12, 10)
-const coreMaterial = new THREE.MeshBasicMaterial({
-  color: SENTINELA_CORE_COLOR, transparent: true, opacity: 0.95,
-})
-
-// geometrias das molduras (inalteradas)
+// moldura tipo "quadro de janela": as 4 barras preenchem de verdade a faixa entre o buraco
+// interno e a borda externa (não só um aro fino na borda) — o visual precisa bater com a área
+// que resolveGateHit trata como perigosa, senão o jogador toma dano num espaço que parecia vazio
 const GATE_BAND = GATE_OUTER_HALF - GATE_INNER_HALF
 const GATE_BAND_CENTER = (GATE_OUTER_HALF + GATE_INNER_HALF) / 2
 const gateTopBottomGeometry = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BAND, GATE_BAR_THICKNESS)
 const gateSideGeometry = new THREE.BoxGeometry(GATE_BAND, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
-const gateMaterial = new THREE.MeshBasicMaterial({
-  color: GATE_COLOR, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-})
+const gateMaterial = new THREE.MeshBasicMaterial({ color: GATE_COLOR, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
 
-// ============ SPAWN ============
 export function spawnSentinela(scene, rail, id) {
   if (rail.isArena()) return null
   const position = randomSpawnPositionOnPath(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
-
-  // Grupo: casca + núcleo. O grupo nunca rotaciona (o modelo não tem frente/trás — é uma
-  // sentinela estática). A hitbox continua sendo um ponto (mesh.position) com raio fixo,
-  // igual a todos os inimigos do jogo — separar em dois meshes aqui é puramente visual.
-  const group = new THREE.Group()
-  group.add(new THREE.Mesh(shellGeometry, shellMaterial))
-  // núcleo ligeiramente à frente da face frontal do casco (SHELL_DEPTH/2 = 0.35; -0.15 pra
-  // não coplanar com o casco)
-  const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial.clone())
-  coreMesh.position.z = SHELL_DEPTH * 0.5 + 0.15
-  group.add(coreMesh)
-  group.position.copy(position)
-  scene.add(group)
-
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.position.copy(position)
+  scene.add(mesh)
   return {
-    id,
-    mesh: group,
-    coreMesh,
-    kind: SENTINELA_KIND, dying: false, deathT: 0,
-    hp: SENTINELA_HP, maxHp: SENTINELA_HP,
-    fireTimer: SENTINELA_FIRE_INTERVAL,
+    id, mesh, kind: SENTINELA_KIND, dying: false, deathT: 0, hp: SENTINELA_HP, maxHp: SENTINELA_HP, fireTimer: SENTINELA_FIRE_INTERVAL,
     shotsFired: 0,
-    mode: SENTINELA_MODE_APPROACHING,
-    // acumulador de tempo em RETREATING — a transição de volta pra ENGAGING depende dele
-    // (ver RETREAT_LINGER_S)
-    retreatTimer: 0,
-    // relógio próprio do pulso do núcleo — dessincroniza várias Sentinelas na tela
-    coreClock: Math.random() * 10,
+    state: SENTINELA_STATE_ENGAGING,
   }
 }
 
-// ============ MOVIMENTO ============
-// Assinatura igual à da entrega anterior: (enemy, dt, frame, rail). Rail expõe
-// `getBoostActive()` (getter novo, uma linha em rail.js) pra Sentinela saber se o jogador
-// está em impulso.
+// engajando: corrige a posição pra ficar num "standoff" fixo à frente da câmera (mesmo princípio
+// do perfil 'follow' do Blaster) — nunca cruza o jogador. Ao esgotar os 4 disparos, transiciona
+// pra "indo embora": acelera pra frente (sentido do avanço do jogador) até sair de cena.
+// pedido do usuário: enquanto ataca, ela precisa travar na MESMA lateral do jogador (não só na
+// mesma distância à frente) — senão o jogador simplesmente desvia de lado e passa reto por ela
+// sem nunca precisar acertar as molduras. `rail.getPlayerLateral()` dá o offset lateral cru do
+// jogador em relação ao trilho; persegue esse valor com resposta rápida (não instantânea, pra
+// não "teleportar") em vez de deixar a lateral livre.
 export function updateSentinelaMovement(enemy, dt, frame, rail) {
-  enemy.coreClock += dt
-
-  const along = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
-
-  // ============ MODO LEAVING ============
-  // Sai pela porta da frente: aceleração constante, sem rastrear nada. O despawn é decidido
-  // por sentinelaShouldDespawn (mesma lógica da entrega anterior).
-  if (enemy.mode === SENTINELA_MODE_LEAVING) {
+  if (enemy.state === SENTINELA_STATE_LEAVING) {
     enemy.mesh.position.addScaledVector(frame.forward, LEAVE_SPEED * dt)
-    updateSentinelaVisual(enemy)
     return
   }
-
-  const playerBoosting = rail.getBoostActive ? rail.getBoostActive() : false
-
-  // ============ TRANSIÇÕES ============
-  // ENTRADA em RETREATING: sempre que o jogador ativa o impulso, em qualquer modo anterior
-  // (APPROACHING ou ENGAGING). Cobre o caso do impulso durante a chegada.
-  if (playerBoosting && enemy.mode !== SENTINELA_MODE_RETREATING) {
-    enemy.mode = SENTINELA_MODE_RETREATING
-    enemy.retreatTimer = 0
-  }
-
-  // SAÍDA de RETREATING: o impulso do jogador já acabou E já passou RETREAT_LINGER_S.
-  if (enemy.mode === SENTINELA_MODE_RETREATING) {
-    if (!playerBoosting) enemy.retreatTimer += dt
-    if (enemy.retreatTimer >= RETREAT_LINGER_S) {
-      enemy.mode = SENTINELA_MODE_ENGAGING
-      enemy.retreatTimer = 0
-    }
-  }
-
-  // SAÍDA de APPROACHING: chegou perto o bastante do standoff. `Math.abs` porque também pode
-  // vir de trás (raro, depois de uma curva muito fechada) — a intenção "estou no standoff"
-  // vale pros dois lados.
-  if (enemy.mode === SENTINELA_MODE_APPROACHING && Math.abs(along - ENGAGE_STANDOFF) <= APPROACH_ARRIVAL_TOLERANCE) {
-    enemy.mode = SENTINELA_MODE_ENGAGING
-  }
-
-  // ============ VELOCIDADE POR MODO ============
-  let forwardSpeed
-  if (enemy.mode === SENTINELA_MODE_APPROACHING) {
-    // Voa reto pro standoff — sem "liga/desliga" do proporcional. Mais simples de ler, e a
-    // silhueta de "vindo em direção ao jogador" fica bem distinta do ENGAGING (parada).
-    forwardSpeed = along < ENGAGE_STANDOFF ? APPROACH_SPEED : -APPROACH_SPEED
-  } else if (enemy.mode === SENTINELA_MODE_RETREATING) {
-    // Recuo LENTO pra frente (aumentando a distância do jogador que está avançando).
-    // Enquanto o jogador impulsiona a ~41.8 u/s e a Sentinela recua a 6 u/s, o gap encurta
-    // ~35u durante um boost inteiro (900ms). É esta a feature pedida.
-    forwardSpeed = RETREAT_SPEED
-  } else {
-    // ENGAGING — fórmula proporcional da entrega anterior.
-    forwardSpeed = THREE.MathUtils.clamp(
-      (ENGAGE_STANDOFF - along) * ENGAGE_SPEED_GAIN,
-      -ENGAGE_SPEED_MAX,
-      ENGAGE_SPEED_MAX,
-    )
-  }
+  const along = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+  const forwardSpeed = THREE.MathUtils.clamp((ENGAGE_STANDOFF - along) * ENGAGE_SPEED_GAIN, -ENGAGE_SPEED_MAX, ENGAGE_SPEED_MAX)
   enemy.mesh.position.addScaledVector(frame.forward, forwardSpeed * dt)
 
-  // ============ TRAVAMENTO LATERAL ============
-  // Só em ENGAGING: em APPROACHING ela ainda está chegando; em RETREATING ela recua pra
-  // frente e a lateral não é o foco. Travar o jogador aqui criaria o efeito estranho de "ela
-  // segue o jogador enquanto recua", que não casa com a leitura de "recuando".
-  if (enemy.mode === SENTINELA_MODE_ENGAGING) {
-    const lateral = rail.getPlayerLateral()
-    const relative = enemy.mesh.position.clone().sub(frame.position)
-    const currentX = relative.dot(frame.right)
-    const currentY = relative.dot(frame.up)
-    const ease = Math.min(1, LATERAL_TRACK_RATE * dt)
-    enemy.mesh.position.addScaledVector(frame.right, (lateral.x - currentX) * ease)
-    enemy.mesh.position.addScaledVector(frame.up, (lateral.y - currentY) * ease)
-  }
-
-  updateSentinelaVisual(enemy)
+  const lateral = rail.getPlayerLateral()
+  const relative = enemy.mesh.position.clone().sub(frame.position)
+  const currentX = relative.dot(frame.right)
+  const currentY = relative.dot(frame.up)
+  const ease = Math.min(1, LATERAL_TRACK_RATE * dt)
+  enemy.mesh.position.addScaledVector(frame.right, (lateral.x - currentX) * ease)
+  enemy.mesh.position.addScaledVector(frame.up, (lateral.y - currentY) * ease)
 }
 
-// ============ VISUAL ============
-// Pulso do núcleo + telegraph. Chamada por updateSentinelaMovement (todos os modos) e pelo
-// early-return de LEAVING — assim o núcleo nunca fica "congelado" mesmo indo embora.
-function updateSentinelaVisual(enemy) {
-  if (!enemy.coreMesh) return
-  const pulse = 1 + Math.sin(enemy.coreClock * CORE_PULSE_SPEED) * CORE_PULSE_AMOUNT
-
-  let intensity
-  if (enemy.mode === SENTINELA_MODE_ENGAGING) intensity = CORE_ENGAGE_INTENSITY
-  else if (enemy.mode === SENTINELA_MODE_LEAVING) intensity = CORE_ENGAGE_INTENSITY * 0.6
-  else intensity = CORE_IDLE_INTENSITY
-
-  // telegraph: o `fireTimer` é decrementado em enemies/index.js (não aqui). Se estamos nos
-  // últimos 0.3s, o núcleo pisca — mesma convenção de tempo que os outros inimigos usam pra
-  // telegraph, só que com uma animação própria em vez de esfera estática.
-  if (enemy.fireTimer > 0 && enemy.fireTimer <= 0.3) {
-    intensity = CORE_TELEGRAPH_INTENSITY * (0.5 + 0.5 * Math.sin(enemy.coreClock * 25))
-  }
-
-  enemy.coreMesh.material.opacity = Math.min(1, intensity)
-  enemy.coreMesh.scale.setScalar(pulse)
+export function sentinelaPassBehind(enemy) {
+  return enemy.state === SENTINELA_STATE_LEAVING ? PASS_BEHIND : PASS_BEHIND * 8
 }
 
-// ============ DISPARO ============
-// Assinatura igual à da entrega anterior: (scene, enemy, playerPosition, ctx). Muda só:
-//   1) origem das molduras é o NÚCLEO (world position), não o centro do casco — a moldura
-//      sai do "canhão" visível, não do meio do corpo
-//   2) se disparar com o jogador impulsionando, entra em RETREATING igual — a regra de
-//      movimento e a de disparo são consistentes
-//   3) pós-4º-disparo, força LEAVING (mesma intenção da entrega anterior)
+// true quando a Sentinela em LEAVING já foi longe demais à frente da nave pra continuar
+// existindo — ver comentário em SENTINELA_LEAVE_DESPAWN_AHEAD. `index.js` chama isso no
+// branch de trilho pra despawnar de verdade (chamada é barata: só um dot de vetor).
+export function sentinelaShouldDespawn(enemy, frame) {
+  if (enemy.state !== SENTINELA_STATE_LEAVING) return false
+  const ahead = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+  return ahead > SENTINELA_LEAVE_DESPAWN_AHEAD
+}
+
+// dispara uma moldura quadrada travada na posição ATUAL do jogador (mesmo truque do laser do
+// chefe) — some após o 4º disparo e entra em modo "indo embora". `ctx.pushGate` empurra o
+// descritor no array compartilhado do orquestrador.
 export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   const targetPos = playerPosition.clone()
-  const originPos = new THREE.Vector3()
-  enemy.coreMesh.getWorldPosition(originPos)
-
+  const originPos = enemy.mesh.position.clone()
   const toTarget = targetPos.clone().sub(originPos)
   const targetDistance = toTarget.length()
   const dir = targetDistance > 1e-4 ? toTarget.clone().normalize() : new THREE.Vector3(0, 0, -1)
@@ -273,6 +158,8 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
   scene.add(group)
 
+  // período do ciclo sincronizado com o tempo de voo de VERDADE — ver comentário em
+  // GATE_CYCLES_PER_FLIGHT acima
   const flightTime = targetDistance / GATE_SPEED
   const cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, flightTime / GATE_CYCLES_PER_FLIGHT)
 
@@ -298,13 +185,15 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
 
   enemy.shotsFired += 1
   if (enemy.shotsFired >= SENTINELA_SHOTS_TOTAL) {
-    enemy.mode = SENTINELA_MODE_LEAVING
+    enemy.state = SENTINELA_STATE_LEAVING
     enemy.fireTimer = Infinity
   }
   return true
 }
 
-// ============ MOLDURAS (inalterado) ============
+// redimensiona as 4 barras (compartilham geometria entre todas as molduras, só a escala/posição
+// de cada instância muda) pra o buraco visual bater com `gate.innerHalf` no instante atual —
+// banda cresce conforme o buraco encolhe, até cobrir o quadro inteiro (fechado = sem passagem).
 function applyGateVisual(gate) {
   const innerHalf = gate.innerHalf
   const band = Math.max(GATE_MIN_INNER_HALF, GATE_OUTER_HALF - innerHalf)
@@ -322,6 +211,10 @@ function applyGateVisual(gate) {
   right.position.x = bandCenter
 }
 
+// pedido do usuário: a moldura abre e fecha de verdade enquanto viaja até o jogador (cosseno —
+// começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) — chamado a cada
+// frame pelo orquestrador em `updateEnemyGates`, antes de mover a moldura. `gate.cyclePeriod`
+// é calculado por moldura (não uma constante global) — ver GATE_CYCLES_PER_FLIGHT.
 export function updateGateAnimation(gate, dt) {
   gate.phase += dt
   const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / gate.cyclePeriod)
@@ -329,6 +222,12 @@ export function updateGateAnimation(gate, dt) {
   applyGateVisual(gate)
 }
 
+// chamado quando a moldura chega na distância travada — projeta a posição ATUAL do jogador (que
+// pode ter se movido pra desviar, é o ponto da mecânica) nos eixos locais da moldura (fixados no
+// disparo). Dentro do buraco ou além da borda externa = seguro; na faixa entre os dois = dano.
+// como `gate.innerHalf` é atualizado a cada frame por `updateGateAnimation`, o resultado depende
+// também de EM QUE FASE do ciclo aberto/fechado a moldura estava no instante exato da chegada —
+// fechada (innerHalf ≈ 0) machuca em qualquer posição dentro do quadro, aberta é só a borda fina.
 export function resolveGateHit(gate, playerPosition) {
   const rel = playerPosition.clone().sub(gate.mesh.position)
   const localX = rel.dot(gate.right)
@@ -338,21 +237,9 @@ export function resolveGateHit(gate, playerPosition) {
   return { hit }
 }
 
-export function sentinelaPassBehind(enemy) {
-  return enemy.mode === SENTINELA_MODE_LEAVING ? PASS_BEHIND : PASS_BEHIND * 8
-}
-
-export function sentinelaShouldDespawn(enemy, frame) {
-  if (enemy.mode !== SENTINELA_MODE_LEAVING) return false
-  const ahead = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
-  return ahead > SENTINELA_LEAVE_DESPAWN_AHEAD
-}
-
 export function disposeSentinela() {
-  shellGeometry.dispose()
-  shellMaterial.dispose()
-  coreGeometry.dispose()
-  coreMaterial.dispose()
+  geometry.dispose()
+  material.dispose()
   gateTopBottomGeometry.dispose()
   gateSideGeometry.dispose()
   gateMaterial.dispose()

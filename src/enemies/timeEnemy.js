@@ -5,8 +5,9 @@ import { FORWARD_AXIS, PASS_BEHIND, spawnPositionForEnemy } from './shared.js'
 export const TIME_KIND = 'time'
 export const TIME_COLOR = 0xb026ff
 const TIME_EMISSIVE = 0x4b0082
-const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 140
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo
+const SPAWN_DISTANCE_MIN = 60
+const SPAWN_DISTANCE_MAX = 100
 const BOX_X = 7
 const BOX_Y = 5
 export const TIME_HIT_RADIUS = 1.8

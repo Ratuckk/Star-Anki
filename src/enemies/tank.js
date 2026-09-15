@@ -8,8 +8,8 @@ export const TANK_HIT_RADIUS = 1.8
 export const TANK_DEATH_DURATION = 0.2
 const TANK_SCALE = 1.6
 export const TANK_DEFAULT_HP = 5
-const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 140
+const SPAWN_DISTANCE_MIN = 60
+const SPAWN_DISTANCE_MAX = 100
 const BOX_X = 7
 const BOX_Y = 5
 

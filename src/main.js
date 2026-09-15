@@ -201,7 +201,11 @@ function mountGame(session, deck, menu) {
 
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x0b0d12)
-  scene.fog = new THREE.FogExp2(0x0b0d12, 0.014)
+  // v0.51.10: densidade 0.014 deixava um inimigo a 140 unidades (distância normal de spawn)
+  // ~98% coberto pela cor de fundo — na prática invisível até chegar bem perto. 0.004 deixa
+  // ~27% de neblina a 140u (visível, ainda com profundidade atmosférica) e ~92% perto do plano
+  // de corte da câmera (400u, fade de horizonte continua existindo).
+  scene.fog = new THREE.FogExp2(0x0b0d12, 0.004)
 
   const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 400)
 

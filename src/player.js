@@ -31,6 +31,9 @@ const HOMING_CHARGE_MAX_MS = 4000
 const HOMING_CHARGE_MIN_FLOOR_MS = 1000
 const HOMING_MAX_TARGETS_BASE = 4
 const HOMING_MAX_TARGETS_CAP = 8
+// carta "Ricochete": quantas vezes um tiro carregado pula pro próximo inimigo mais próximo após
+// atingir o alvo mirado. Cap defensivo (evita uma cadeia infinita se o jogador empilhar demais).
+const RICOCHET_CAP = 5
 
 // giro completo (Z/C, 2 toques): cooldown global (não importa o lado) pra não spammar
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
@@ -77,6 +80,7 @@ export function createPlayerSystem(session) {
   let homingMaxTargets = HOMING_MAX_TARGETS_BASE
   let homingChargeMinMs = HOMING_CHARGE_MIN_MS
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
+  let ricochetCount = 0
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
   let fullSpinCooldownTimer = 0
 
@@ -126,6 +130,7 @@ export function createPlayerSystem(session) {
       get homingMaxTargets() { return homingMaxTargets },
       get homingChargeMinMs() { return homingChargeMinMs },
       get homingChargeMaxMs() { return homingChargeMaxMs },
+      get ricochetCount() { return ricochetCount },
     },
 
     getMaxHealth: () => maxHealth,
@@ -207,6 +212,9 @@ export function createPlayerSystem(session) {
           homingChargeMinMs = Math.max(HOMING_CHARGE_MIN_FLOOR_MS, homingChargeMinMs - 300)
           homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
           break
+        case 'ricochet':
+          ricochetCount = Math.min(RICOCHET_CAP, ricochetCount + 1)
+          break
         case 'longer-dodge-iframe':
           fullSpinIframeMs += 150
           break
@@ -228,6 +236,7 @@ export function createPlayerSystem(session) {
       if (projectileCount >= PROJECTILE_COUNT_CAP) exclude.add('extra-projectile')
       if (session.lives >= LIVES_CAP) exclude.add('extra-life')
       if (homingChargeMinMs <= HOMING_CHARGE_MIN_FLOOR_MS) exclude.add('faster-charge')
+      if (ricochetCount >= RICOCHET_CAP) exclude.add('ricochet')
       if (ramCardActive) exclude.add('propulsion-ram')
       return exclude
     },
@@ -345,6 +354,7 @@ export function createPlayerSystem(session) {
       invincibilityDurationMs = INVINCIBILITY_CAP_MS
       fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE + 150 * DEBUG_MAX_UNCAPPED_STACKS
       wingmanCount = WINGMAN_CAP
+      ricochetCount = RICOCHET_CAP
       deflectCardActive = true
       ramCardActive = true
       session.lives = LIVES_CAP

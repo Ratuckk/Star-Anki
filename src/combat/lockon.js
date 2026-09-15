@@ -15,11 +15,9 @@ import * as THREE from 'three'
 // clearLockedEnemies / getLockedEnemySnapshots) — main.js, combat/projectiles.js e
 // combat/index.js não mudam nenhuma linha.
 
-// histerese: alvo entra no lock pelo cone estreito, mas SÓ SAI pelo cone largo. Sem isso, um
-// alvo parado exatamente em cima do limite do cone de aquisição liga/desliga o marcador a
-// cada frame (o pequeno jitter da mira já cruza a fronteira).
+// cone de AQUISIÇÃO — só usado pra travar um alvo novo. Uma vez travado, o alvo fica travado
+// (ver comentário em sweepLockOn) até virar inválido por conta própria, não por causa da mira.
 const LOCK_ACQUIRE_ANGLE = THREE.MathUtils.degToRad(6)
-const LOCK_RELEASE_ANGLE = THREE.MathUtils.degToRad(9)
 
 // Fase 8 (VISUAL): ângulo de "tô mirando em algo" pra mira normal (crosshair muda de cor) —
 // mais largo que o cone de aquisição porque aqui é só um hint visual, não trava nada.
@@ -67,16 +65,19 @@ export function createLockOnSystem(rail, enemies) {
     sweepLockOn(origin, direction, maxAllowed = Infinity) {
       const frame = rail.getFrameAt(0)
 
-      // 1) MANUTENÇÃO — remove records inválidos. Critério de REMOÇÃO usa o cone largo
-      // (histerese): um alvo que já estava travado só solta se a mira ficar MUITO fora.
+      // 1) MANUTENÇÃO — remove records inválidos. NÃO usa mais o ângulo da mira atual: isto é
+      // um MULTI-lock que ACUMULA alvos ao longo da carga (maxAllowed sobe aos poucos) — se uma
+      // trava já feita fosse solta assim que a mira sai do cone dela, virar a mira pra travar o
+      // PRÓXIMO alvo destravava o anterior na hora (bug reportado: "esquece o alvo que já
+      // estava mirando"). Uma trava só sai por motivo de VALIDADE do alvo em si (morreu, ficou
+      // perto demais, passou pra trás) — nunca porque a mira do jogador se moveu.
       lockedEnemies = lockedEnemies.filter((rec) => {
         if (rec.entity.dying) return false
         const rel = rec.entity.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist < MIN_LOCK_RANGE) return false
         if (rel.dot(frame.forward) < PASS_BEHIND) return false
-        const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(rel.normalize()), -1, 1))
-        return angle < LOCK_RELEASE_ANGLE
+        return true
       })
 
       // 2) AQUISIÇÃO — tenta adicionar novos até bater o orçamento. Critério de ENTRADA usa o

@@ -12,6 +12,7 @@ export const ROGUELIKE_CARDS = [
   { id: 'faster-fire', category: 'ofensivo', label: 'Recarga rápida', description: 'Reduz o tempo entre disparos.' },
   { id: 'wingman', category: 'ofensivo', label: 'Nave de apoio', description: 'Uma nave cosmética passa a atirar com você (não leva dano).' },
   { id: 'more-homing-targets', category: 'ofensivo', label: 'Enxame teleguiado', description: 'O tiro carregado atinge mais alvos de uma vez.' },
+  { id: 'ricochet', category: 'ofensivo', label: 'Ricochete', description: 'Seus tiros carregados pulam para outro inimigo (o mais próximo) após atingir o alvo mirado. Pode ser pego múltiplas vezes para mais pulos.' },
 
   { id: 'extra-shield-charge', category: 'defensivo', label: 'Escudo reforçado', description: '+1 carga máxima de escudo.' },
   { id: 'faster-shield-recharge', category: 'defensivo', label: 'Recarga do escudo', description: 'O escudo recarrega mais rápido após esgotar.' },
