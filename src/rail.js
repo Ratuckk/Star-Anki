@@ -616,20 +616,28 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     // aparece deslocado na tela na direção do movimento; um spawn ancorado AQUI aparece no
     // centro da tela (que é o que a sensação de "inimigo vem de frente" espera).
     //
+    // v0.51.1 (fix do "spawn pra direita"): antes esta função partia de `lastPlayerPos` (que
+    // já contém `right * playerX + up * playerY`) e somava `aimOffsetX = playerX *
+    // (CAM_FOLLOW_LATERAL - 1)`. Matematicamente o resultado batia, MAS dependia de
+    // `lastPlayerPos` estar sincronizado com `playerX`/`playerY` no instante da chamada —
+    // dependência de ORDEM de update entre main.js e rail.update(), que quebrava quando o
+    // spawn era chamado no mesmo frame antes de `update()` rodar (o `playerX` novo ainda não
+    // tinha sido refletido em `lastPlayerPos`). Agora a fórmula é fechada a partir de
+    // `frame.position` (fonte primária do trilho, sempre correta) + os valores ATUAIS de
+    // `playerX`/`playerY` (não o cache `lastPlayerPos`).
+    //
     // A câmera ainda tem CAM_HEIGHT (acima) e dynLateral/dynVertical (drift senoidal) — o
     // CAM_HEIGHT não importa (é vertical, o spawn é ancorado no mesmo plano Y do jogador); os
     // drifts são ignorados de propósito (o spawn não deve tremer junto com a oscilação
     // cosmética da câmera).
     getAimLineAhead(distanceAhead) {
       const frame = lastFrame
-      // offset lateral: câmera segue 0.3 do jogador, então o jogador está 0.7 "mais longe" que
-      // a câmera no eixo lateral. Pra cair na linha de visão, o ponto alvo retrocede esse 0.7.
-      const aimOffsetX = playerX * (CAM_FOLLOW_LATERAL - 1)
-      const aimOffsetY = playerY * (CAM_FOLLOW_LATERAL - 1)
-      return lastPlayerPos.clone()
+      // ponto do trilho puro + offset lateral/vertical seguindo a MESMA fração que a câmera
+      // usa (CAM_FOLLOW_LATERAL) + avanço `distanceAhead` no forward
+      return frame.position.clone()
+        .addScaledVector(frame.right, playerX * CAM_FOLLOW_LATERAL)
+        .addScaledVector(frame.up, playerY * CAM_FOLLOW_LATERAL)
         .addScaledVector(frame.forward, distanceAhead)
-        .addScaledVector(frame.right, aimOffsetX)
-        .addScaledVector(frame.up, aimOffsetY)
     },
 
     setAdvancing: (v) => { advancing = v },
