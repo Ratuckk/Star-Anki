@@ -1,5 +1,6 @@
 import { showScreen } from './hud-shared.js'
 import { listDecks } from './decks.js'
+import { GAME_VERSION } from './version.js'
 
 export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   showScreen('pregame')
@@ -12,7 +13,7 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
 
   // 1. Título & Subtítulo
   const title = document.createElement('h1')
-  title.innerHTML = 'Star Anki <span class="version-tag">v0.53.2</span>'
+  title.innerHTML = `Star Anki <span class="version-tag">${GAME_VERSION}</span>`
   root.appendChild(title)
 
   const desc = document.createElement('p')

@@ -332,6 +332,44 @@ Correções de jogabilidade, revisão de UI e infraestrutura do launcher desktop
 
 **Versão**: v0.53.1 → **v0.53.2**
 
+---
+
+## Alinhamento de Decolagem, Pista Reta, Aceleração Física e Timing Arcade — v0.53.3
+
+Ajustes de física, geometria do trilho e timing cinemático solicitados pelo usuário:
+
+### 1. Correção da Orientação Inicial da Nave e Pista Reta Frontal
+- **Causa Raiz da Nave Torta**: No `rail.js`, o modelo 3D da nave era instanciado sem rotação inicial (`(0, 0, 0)`, apontando para `(0, 0, -1)`). Além disso, a curva original do trilho iniciava virando ~32° para a direita (`+X, -Z`). Durante a cutscene de decolagem, a nave ficava travada em `(0, 0, 0)` enquanto a câmera olhava ao longo do vetor da pista, fazendo a nave parecer torta para a esquerda e dando um solavanco para a direita ao término da cutscene.
+- **Resolução**:
+  - **Pista Reta Frontal (`buildCurve`)**: Redesenhamos o início da curva com 75 metros estritamente alinhados no eixo Z (`(0, 3, 0) -> (0, 3, -75)`), garantindo tangente inicial matematicamente pura em `(0, 0, -1)`.
+  - **Orientação Imediata**: `ship.up.copy(lastFrame.up)` e `ship.lookAt(lastFrame.position + lastFrame.forward)` adicionados na criação do mesh em `rail.js`.
+  - **Controle de Distância (`rail.setDistance`)**: Exposto método público no controlador do trilho para posicionar e orientar a nave em qualquer ponto do trilho durante cinemáticas.
+
+### 2. Aceleração Contínua na Decolagem (Padrão Star Fox 64)
+- Em `src/cutscenes.js` (`updateLaunchCutscene`):
+  - **0.0s – 0.35s**: Câmera na perspectiva traseira direita (3/4 baixa), exibindo a fuselagem e os motores enquanto o banner sci-fi surge.
+  - **0.35s**: Ignição potente dos propulsores com explosão de partículas (`effects.propulsionBurst`), anel de choque e flash de bico.
+  - **0.35s – 2.0s**: A nave **acelera fisicamente pela pista** ($s = a \cdot t^2$), cobrindo 22 metros em aceleração contínua. A câmera sobe suavemente (`smoothstep`) e se centraliza atrás da nave, sincronizando com a velocidade de cruzeiro.
+  - Ao término (2.0s), a entrega de controle para o jogador ocorre com a nave já em velocidade máxima, sem congelamento ou solavancos.
+
+### 3. Calibração do Timing Arcade
+- Em `src/main-constants.js`:
+  - **Decolagem (`LAUNCH_CUTSCENE_MS`)**: 2000ms (2.0s rápidos e energéticos).
+  - **Apresentação do Chefe (`BOSS_SUMMON_CUTSCENE_MS`)**: Reduzido de **5200ms para 3200ms** (3.2s). O card fica em destaque por 2.1s com pulsos de fenda espacial e a câmera retorna ágil em 0.7s, eliminando o vazio de 2 segundos de tela escura anterior.
+  - **Morte do Chefe (`BOSS_DEATH_CUTSCENE_MS`)**: 3000ms com câmera lenta nas detonações, whiteout terminal e flyby comemorativo heroico.
+  - **Morte de Inimigo / Dourado (`DEATH_CUTSCENE_MS`)**: 1200ms com câmera lenta e zoom rápido.
+
+### 4. Tag de Versão Centralizada Dinâmica
+- Criado `src/version.js` como fonte única da verdade (`GAME_VERSION = 'v0.53.3'`).
+- `src/hud-pregame.js` consome dinamicamente a versão para exibir o badge `v0.53.3` na tela inicial.
+
+### Testes e Verificação
+- `node --check` executado em todos os arquivos tocados.
+- `node src/selftest.mjs` passou com 100% de sucesso.
+
+**Versão**: v0.53.2 → **v0.53.3**
+
+
 
 
 
