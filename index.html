@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Star Anki</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0b0d12">
+<link rel="icon" href="./icons/favicon-32.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -679,6 +683,31 @@
     const ping = () => fetch('/__ping', { keepalive: true }).catch(() => {})
     ping()
     setInterval(ping, 2000)
+  }
+</script>
+<script>
+  // App instalável com auto-atualização: registra o service worker e recarrega sozinho quando
+  // uma versão nova assume o controle da página. `hadController` evita recarregar no PRIMEIRO
+  // registro de todos (não tem "versão anterior" pra atualizar) — só recarrega quando já existia
+  // um service worker controlando a aba e um novo o substitui (deploy novo publicado).
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      const hadController = !!navigator.serviceWorker.controller
+      navigator.serviceWorker.register('./service-worker.js').then((reg) => {
+        reg.update()
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update()
+        })
+        setInterval(() => reg.update(), 5 * 60 * 1000)
+      }).catch(() => {})
+
+      let refreshed = false
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || refreshed) return
+        refreshed = true
+        window.location.reload()
+      })
+    })
   }
 </script>
 <script type="module" src="./src/main.js"></script>
