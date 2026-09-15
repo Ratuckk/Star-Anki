@@ -473,13 +473,48 @@ export function injectHudExtraStyles() {
 }
 
 /* ============ OVERHAUL DE CUTSCENES CINEMÁTICAS ============ */
+.reticle,
+.hud-status,
+.hud-lives-bar,
+.hud-bar-wrap,
+.hud-horizon,
+.hud-minimap,
+.hud-boss-fight-bar,
+.hud-question,
+.hud-legend {
+  transition: opacity 0.35s ease;
+}
+
+/* Ocultação limpa de miras, barras e status de combate durante cutscenes cinemáticas */
+.cinematic-active .reticle,
+.cinematic-active .hud-status,
+.cinematic-active .hud-lives-bar,
+.cinematic-active .hud-shield-wrap,
+.cinematic-active .hud-health-wrap,
+.cinematic-active .hud-boost-wrap,
+.cinematic-active .hud-bar-wrap,
+.cinematic-active .hud-horizon,
+.cinematic-active .hud-question,
+.cinematic-active .hud-legend,
+.cinematic-active .hud-countdown,
+.cinematic-active .hud-arena-warning,
+.cinematic-active .hud-boss-banner,
+.cinematic-active .hud-golden-banner,
+.cinematic-active .hud-boss-fight-bar,
+.cinematic-active .hud-minimap,
+.cinematic-active .hud-lockon-crosshair,
+.cinematic-active .hud-lockon-target {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .hud-letterbox {
   position: absolute;
   left: 0;
   right: 0;
-  height: 11vh;
+  height: 12vh;
   background: #000000;
-  z-index: 22;
+  z-index: 32;
   pointer-events: none;
   transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -512,7 +547,7 @@ export function injectHudExtraStyles() {
   border: 2px solid #ff2d4d;
   box-shadow: 0 0 30px rgba(255, 45, 77, 0.5), inset 0 0 16px rgba(255, 45, 77, 0.25);
   border-radius: 4px;
-  z-index: 23;
+  z-index: 34;
   pointer-events: none;
   font-family: monospace, sans-serif;
   text-align: center;
@@ -564,7 +599,7 @@ export function injectHudExtraStyles() {
   border: 2px solid #ffd700;
   box-shadow: 0 0 30px rgba(255, 215, 0, 0.5), inset 0 0 16px rgba(255, 215, 0, 0.25);
   border-radius: 4px;
-  z-index: 23;
+  z-index: 34;
   pointer-events: none;
   font-family: monospace, sans-serif;
   text-align: center;
@@ -574,10 +609,23 @@ export function injectHudExtraStyles() {
   0% { opacity: 0; transform: translate(-50%, -45%) scale(0.9); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
+.hud-golden-warning-header {
+  color: #ffd700;
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.7);
+}
+.hud-golden-warning-sub {
+  color: #fff4b8;
+  font-size: 0.85rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
 
 .hud-launch-banner {
   position: absolute;
-  top: 36%;
+  top: 45%;
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
@@ -585,12 +633,12 @@ export function injectHudExtraStyles() {
   align-items: center;
   gap: 0.4rem;
   font-family: monospace, sans-serif;
-  z-index: 23;
+  z-index: 34;
   pointer-events: none;
   animation: launch-banner-in 0.5s cubic-bezier(0.2, 1, 0.3, 1) both;
 }
 @keyframes launch-banner-in {
-  0% { opacity: 0; transform: translate(-50%, -60%) scale(0.85); }
+  0% { opacity: 0; transform: translate(-50%, -55%) scale(0.85); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 .hud-launch-sector {
@@ -618,7 +666,7 @@ export function injectHudExtraStyles() {
   background: #ffffff;
   opacity: 0;
   pointer-events: none;
-  z-index: 35;
+  z-index: 40;
   transition: opacity 0.5s ease-out;
 }
 .hud-whiteout-overlay.flash {
@@ -628,14 +676,14 @@ export function injectHudExtraStyles() {
 
 .hud-mission-complete {
   position: absolute;
-  top: 42%;
+  top: 46%;
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  z-index: 25;
+  z-index: 34;
   pointer-events: none;
   font-family: monospace, sans-serif;
   animation: mission-complete-in 0.6s cubic-bezier(0.18, 1.25, 0.4, 1) both;

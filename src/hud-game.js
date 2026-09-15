@@ -608,17 +608,13 @@ export function createGameHud() {
         : `Chefe se aproximando em ${seconds}s`
     },
 
-    // overlay de texto durante a cutscene de câmera/mapa se ajeitando — kind null esconde.
-    // 'bossSummon' (pedido do usuário): texto próprio pra cutscene de invocação do chefe, que
-    // roda depois da caçada de orbes em vez do chefe simplesmente aparecer na hora.
-    setArenaCutscene(kind) {
-      arenaCutsceneOverlay.textContent = kind === 'bossSummon'
-        ? 'O chefe está sendo invocado...'
-        : 'Transicionando para o modo All-Range...'
-      arenaCutsceneOverlay.hidden = !kind
+    // overlay de texto legado durante a cutscene de câmera/mapa — desativado em prol dos warning cards
+    setArenaCutscene(_kind) {
+      arenaCutsceneOverlay.hidden = true
     },
 
     setLetterbox(active) {
+      root.classList.toggle('cinematic-active', !!active)
       if (active) {
         letterboxTop.classList.add('active')
         letterboxBottom.classList.add('active')
@@ -990,6 +986,7 @@ export function createGameHud() {
         cardChoiceGpStop()
         cardChoiceGpStop = null
       }
+      root.classList.remove('cinematic-active')
       root.innerHTML = ''
     },
   }

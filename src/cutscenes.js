@@ -226,6 +226,11 @@ export function createCutscenesSystem(deps) {
 
     const isBoss = state.deathCutsceneKind === 'boss'
 
+    if (!state.deathCutsceneUiInitialized) {
+      state.deathCutsceneUiInitialized = true
+      hud.setLetterbox(true)
+    }
+
     if (isBoss) {
       // ---- MORTE DO CHEFE: DETONAÇÕES SECUNDÁRIAS + WHITEOUT + FLYBY ----
       const phase1T = 0.36 // 0 a 36% do tempo: destabilização em câmera lenta
@@ -331,6 +336,7 @@ export function createCutscenesSystem(deps) {
       hud.setLetterbox(false)
       camera.fov = 70
       camera.updateProjectionMatrix()
+      state.deathCutsceneUiInitialized = false
       state.deathWhiteoutTriggered = false
       state.secondaryExplosionTimer = 0
       const done = state.deathCutsceneOnDone

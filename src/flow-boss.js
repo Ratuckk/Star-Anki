@@ -36,7 +36,6 @@ export function createBossFlow(deps) {
     state.arenaCutsceneBaseRight = rail.getFrameAt(0).right.clone()
     hud.setArenaWarning(null)
     hud.setCountdown(null)
-    hud.setArenaCutscene(kind)
     combat.clearArenaPreview()
   }
 
