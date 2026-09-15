@@ -210,12 +210,14 @@ const SUMMERSAULT_DURATION = 0.6
 
 function buildCurve() {
   const points = [
-    new THREE.Vector3(0, 3, 0),
-    new THREE.Vector3(35, 7, -55),
-    new THREE.Vector3(15, 4, -125),
-    new THREE.Vector3(-45, 9, -165),
-    new THREE.Vector3(-95, 5, -125),
-    new THREE.Vector3(-70, 3, -40),
+    new THREE.Vector3(0, 3, 0),         // 0: Ponto inicial / Pista de decolagem
+    new THREE.Vector3(0, 3, -75),       // 1: Reta de aceleração de decolagem
+    new THREE.Vector3(35, 7, -155),     // 2: Curva alta à direita
+    new THREE.Vector3(15, 4, -235),     // 3: Vale sinuoso
+    new THREE.Vector3(-55, 9, -245),    // 4: Curva fechada à esquerda
+    new THREE.Vector3(-95, 5, -165),    // 5: Reta lateral
+    new THREE.Vector3(-60, 3, -70),     // 6: Entrada de retorno
+    new THREE.Vector3(0, 3, 35),        // 7: Alinhamento reto final de volta à largada
   ]
   return new THREE.CatmullRomCurve3(points, true)
 }
@@ -347,6 +349,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
 
   const ship = buildShip(shipVisual)
   ship.position.copy(lastFrame.position)
+  ship.up.copy(lastFrame.up)
+  ship.lookAt(lastFrame.position.clone().add(lastFrame.forward))
   scene.add(ship)
 
   camera.fov = 70
@@ -744,6 +748,18 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   return {
     update,
     getDistance: () => distance,
+    setDistance: (d) => {
+      distance = d
+      lastFrame = frameAtArcLength(distance)
+      const frame = lastFrame
+      const playerPos = frame.position.clone()
+        .addScaledVector(frame.right, playerX)
+        .addScaledVector(frame.up, playerY)
+      ship.position.copy(playerPos)
+      ship.up.copy(frame.up)
+      ship.lookAt(playerPos.clone().add(frame.forward))
+      lastPlayerPos = playerPos.clone()
+    },
     getPlayerPosition: () => lastPlayerPos.clone(),
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
     getFrameAt,

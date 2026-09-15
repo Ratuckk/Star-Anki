@@ -58,39 +58,60 @@ export function createCutscenesSystem(deps) {
     state.launchCutsceneTimer -= dt * 1000
     const t = THREE.MathUtils.clamp(1 - Math.max(0, state.launchCutsceneTimer) / duration, 0, 1)
 
+    // Fase 1: 0 a 0.35 (Pre-ignição / foco nos propulsores)
+    // Fase 2: 0.35 a 1.0 (Ignição dos propulsores + aceleração suave pela pista reta)
+    const ignitionT = 0.35
+
+    if (t >= ignitionT && !state.launchIgnited) {
+      state.launchIgnited = true
+      const pPos = rail.getPlayerPosition()
+      const pFrame = rail.getFrameAt(0)
+      if (effects) {
+        effects.propulsionBurst(pPos, pFrame.forward)
+        effects.shockwave(pPos, 0x3ea6ff, 2.0)
+        effects.muzzleFlash(pPos, pFrame.forward)
+      }
+    }
+
+    // Aceleração contínua da nave ao longo da pista reta a partir da ignição
+    let currentDist = 0
+    if (t >= ignitionT) {
+      const p = (t - ignitionT) / (1 - ignitionT)
+      const accelCurve = p * p
+      currentDist = accelCurve * 22
+      rail.setDistance(currentDist)
+    } else {
+      rail.setDistance(0)
+    }
+
     const playerPos = rail.getPlayerPosition()
-    const frame = rail.getFrameAt(0)
+    const frame = rail.getFrameAt(currentDist)
 
-    // Posição A: baixa e lateral olhando os propulsores
-    const startCamPos = playerPos.clone()
-      .addScaledVector(frame.forward, -7.5)
-      .addScaledVector(frame.right, -4.5)
-      .addScaledVector(frame.up, 1.2)
+    // Câmera dinâmica de decolagem
+    const initialFrame = rail.getFrameAt(0)
+    const baseStartCam = initialFrame.position.clone()
+      .addScaledVector(initialFrame.forward, -6.5)
+      .addScaledVector(initialFrame.right, 3.8)
+      .addScaledVector(initialFrame.up, 1.2)
 
-    // Posição B: câmera de perseguição de combate padrão
     const endCamPos = playerPos.clone()
       .addScaledVector(frame.forward, -10)
       .addScaledVector(frame.up, 3)
 
-    // Ignição dos motores em t = 0.22
-    if (t >= 0.22 && !state.launchIgnited) {
-      state.launchIgnited = true
-      if (effects) {
-        effects.propulsionBurst(playerPos, frame.forward)
-        effects.shockwave(playerPos, 0x3ea6ff, 1.5)
-        effects.muzzleFlash(playerPos, frame.forward)
-      }
-    }
-
-    if (t < 0.22) {
-      camera.position.copy(startCamPos)
+    if (t < ignitionT) {
+      camera.position.copy(baseStartCam)
       camera.fov = 68
       camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 2.5))
     } else {
-      const progress = THREE.MathUtils.smoothstep(t, 0.22, 1.0)
-      camera.position.lerpVectors(startCamPos, endCamPos, progress)
-      camera.fov = 70 + Math.sin(progress * Math.PI) * 14
-      camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 15 + progress * 25))
+      const p = (t - ignitionT) / (1 - ignitionT)
+      const camProgress = THREE.MathUtils.smoothstep(p, 0, 1)
+      const dynamicStartCam = playerPos.clone()
+        .addScaledVector(frame.forward, -6.5)
+        .addScaledVector(frame.right, 3.8 * (1 - camProgress))
+        .addScaledVector(frame.up, 1.2 + camProgress * 1.8)
+      camera.position.lerpVectors(dynamicStartCam, endCamPos, camProgress)
+      camera.fov = 70 + Math.sin(camProgress * Math.PI) * 12
+      camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 15 + camProgress * 20))
     }
     camera.updateProjectionMatrix()
 
@@ -99,7 +120,7 @@ export function createCutscenesSystem(deps) {
         camera,
         shieldValue: player.getShieldValue(),
         shieldMax: player.getShieldMax(),
-        boostActive: t >= 0.22,
+        boostActive: t >= ignitionT,
       })
     }
 
