@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { nextQuestion, resolveAnswer, getSummary, pickBonusCard, buildBonusQuestion, computeDifficultyBias } from './quiz.js'
+import { getSummary, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat/index.js'
 import { createEnemiesSystem } from './enemies/index.js'
@@ -7,26 +7,22 @@ import { createPlayerSystem } from './player.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { createGameHud } from './hud.js'
-import { saveHistory, recordResult } from './storage.js'
 import { getSettings } from './settings.js'
 import { getBindings, isActionPressed } from './keybindings.js'
-import { pickRandomCards } from './roguelike.js'
 import { createGameMenu } from './game-menu.js'
 import { createDebugActions } from './debug-actions.js'
 import { initMobileSupport, requestGameOrientation, releaseGameOrientation } from './mobile.js'
 import { createCutscenesSystem } from './cutscenes.js'
+import { createBossFlow } from './flow-boss.js'
+import { createQuestionFlow } from './flow-question.js'
 import {
-  CYCLE_MS, ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS, FEEDBACK_MS, WRONG_FEEDBACK_MS,
+  CYCLE_MS, ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
   SPEED_STEP, BOOST_EVERY_CORRECT, GROUND_Y,
   INVINCIBILITY_FLICKER_MS,
   HIT_SHAKE_DURATION_MS, SHIP_SHAKE_MAGNITUDE, CAMERA_SHAKE_MAGNITUDE, HOMING_KILL_SHAKE_MS,
   LEVEL_BACKGROUNDS,
   RETICLE_AHEAD, RETICLE_OVERSHOOT_FACTOR, RETICLE_SETTLE_RATE,
-  BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT, BOSS_BUILDUP_MS,
-  BOSS_QUESTION_COUNT, BOSS_HUNT_BONUS_MS, BOSS_BASE_HP, BOSS_HP_PER_ERROR,
-  BOSS_DEFEAT_BONUS, BOSS_SPREAD_MIN_BASE, BOSS_SPREAD_MAX_BASE, BOSS_SPREAD_STEP,
-  BOSS_SPREAD_MIN_CAP, BOSS_SPREAD_MAX_CAP, BOSS_EXTRA_ENEMIES_BASE, BOSS_EXTRA_ENEMIES_STEP,
-  BOSS_EXTRA_ENEMIES_CAP, BOSS_DIFFICULTY_CAP,
+  BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT,
   ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_STEP,
   ENEMY_AGGRESSION_STEP, ENEMY_AGGRESSION_CAP,
   ENEMY_SPAWN_BONUS_WRONG_THRESHOLD, ENEMY_PROJECTILE_SPEED_PER_WRONG, ENEMY_DAMAGE_WRONG_THRESHOLD,
@@ -40,9 +36,7 @@ import {
   DETRITO_SPAWN_INTERVAL_MIN_MS, DETRITO_SPAWN_INTERVAL_MAX_MS,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
   IMA_SPAWN_INTERVAL_MIN_MS, IMA_SPAWN_INTERVAL_MAX_MS,
-  ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS, ARENA_CUTSCENE_MS,
-  BOSS_SUMMON_CUTSCENE_MS,
-  DEATH_CUTSCENE_MS,
+  ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
 } from './main-constants.js'
@@ -105,19 +99,8 @@ function mountGame(session, deck, menu) {
   const enemyIntervalMaxInit = Math.max(enemyIntervalMinInit + 150, ENEMY_INTERVAL_MAX_BASE + difficultyBiasOffsetMs)
 
   // ============ ESTADO MUTÁVEL DA PARTIDA (etapa 2 do overhaul de organização) ============
-  // Antes vivia espalhado como ~40 `let` soltos dentro do closure de mountGame. Agora agrupado
-  // num objeto único (mesmo padrão que `debugFlags` já usava, ver comentário em
-  // debug-actions.js: "objeto (não 4 lets soltos) pra poder ser compartilhado por referência
-  // com debug-actions.js"). O motivo é o mesmo em escala maior: nas próximas etapas do overhaul
-  // (extração de flows — cutscenes, fluxo boss/dourado, fluxo pergunta/cartas, progressão),
-  // cada flow extraído recebe `state` como referência e mexe nele diretamente, sem precisar
-  // devolver N valores diferentes por retorno.
-  //
-  // Zero mudança de comportamento: nenhum nome de variável mudou, só o endereço de memória
-  // (todos os `x = ...` e `x === ...` viraram `state.x = ...` e `state.x === ...`). Os campos
-  // que dependiam de funções locais (`randomGoldenInterval` etc.) são inicializados em 0 no
-  // literal e recebem o valor real logo abaixo — mantém a inicialização legível sem depender
-  // de hoisting.
+  // Ver comentário detalhado na entrega da etapa 2 — resumo: era ~40 `let` soltos, agora um
+  // objeto único compartilhado por referência com os flows extraídos (cutscenes, boss, etc.).
   const state = {
     // ============ loop / debug ============
     debugVisible: false,
@@ -153,7 +136,7 @@ function mountGame(session, deck, menu) {
 
     // ============ cutscene de arena (dourado/chefe se aproximando) ============
     arenaCutsceneTimer: 0,
-    arenaCutsceneDurationMs: ARENA_CUTSCENE_MS, // reaproveitada com valor maior pro summon do chefe (ver BOSS_SUMMON_CUTSCENE_MS)
+    arenaCutsceneDurationMs: 0, // setado por startArenaCutscene (flow-boss.js) antes de rodar
     arenaCutsceneOnDone: null,
     arenaCutsceneBaseCameraPos: null,
     arenaCutsceneBaseForward: null,
@@ -192,20 +175,37 @@ function mountGame(session, deck, menu) {
     bonusTimer: 0, // valor real logo abaixo (randomBonusInterval)
   }
 
-  // inicialização "pós-declaração" dos timers que dependem de funções locais (todas self-
-  // contained, só leem constantes — ver definições logo abaixo). Antes viviam inline em `let
-  // x = randomYInterval()`, mas agora ficam explicitamente fora do literal do state pra não
-  // depender de hoisting de function declaration dentro de object literal.
+  // inicialização "pós-declaração" dos timers que dependem de funções locais
   state.goldenTimer = randomGoldenInterval()
   state.detritoTimer = randomDetritoInterval()
   state.imaTimer = randomImaInterval()
   state.bonusTimer = randomBonusInterval()
 
-  // cutscenes (etapa 3 do overhaul de organização): arenaCutscene/deathCutscene extraídas pra
-  // cutscenes.js — o tick() só pergunta "alguma cutscene tratou este frame?", e cada uma recebe
-  // a fatia de dt que já recebia antes (dt escalado por slowMo pra arena, rawDt sem escala pra
-  // morte). Ver comentário no topo de cutscenes.js.
+  // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
   const cutscenes = createCutscenesSystem({ state, camera, renderer, scene, effects, hud, rail, player })
+
+  // fluxo do chefe/dourado (etapa 4): caçada de orbes, invocação, luta, vitória + arena dourada
+  // e sua pergunta-bônus + a cutscene de transição compartilhada — tudo extraído pra
+  // flow-boss.js. Helpers que ainda vivem aqui (applyDifficulty, currentBossSpread, etc.) vão
+  // como deps até a etapa 6 (flow-progression.js).
+  const bossFlow = createBossFlow({
+    state, session, deck, menu,
+    camera, hud, combat, rail,
+    applyDifficulty, applyBossDifficulty, applySpeedProgression,
+    currentBossSpread, currentBossExtraEnemies,
+    randomGoldenInterval,
+    applyHealthLoss, endSector,
+  })
+
+  // fluxo da pergunta normal + cartas roguelike (etapa 5): extraído pra flow-question.js.
+  // forceAnswerOutcome (que roteia entre os dois flows) continua morando aqui, porque só aqui
+  // os dois lados são visíveis juntos.
+  const questionFlow = createQuestionFlow({
+    state, session, deck, menu,
+    hud, combat, player,
+    applyDifficulty, applySpeedProgression,
+    applyHealthLoss, endSector,
+  })
 
   function currentEnemyCap() {
     return (rail.isArena() ? ENEMY_CAP_ARENA_BASE : ENEMY_CAP_NORMAL_BASE) + state.enemyCap
@@ -248,30 +248,6 @@ function mountGame(session, deck, menu) {
       state.speedMultiplier = 1
       rail.setSpeedMultiplier(1)
     }
-  }
-
-  function applyRoguelikeCard(card) {
-    player.applyCard(card)
-    combat.setFireCooldown(player.config.fireCooldown)
-    combat.setWingmanCount(player.getWingmanCount())
-    hud.setLives(session.lives, player.getMaxLives())
-  }
-
-  function buildCardExcludeSet() {
-    return player.buildCardExcludeSet()
-  }
-
-  function enterCardChoice(onDone) {
-    const cards = pickRandomCards(3, buildCardExcludeSet())
-    if (cards.length === 0) { onDone(); return }
-    state.phase = 'cardChoice'
-    hud.showCardChoice({
-      cards,
-      onPick: (card) => {
-        applyRoguelikeCard(card)
-        onDone()
-      },
-    })
   }
 
   function applyDifficulty() {
@@ -323,288 +299,8 @@ function mountGame(session, deck, menu) {
     scene.fog.color.set(bg)
   }
 
-  // Fase 6: pergunta normal também pausa tudo e usa o modal centralizado (mesmo modelo do
-  // chefe, Fase 5) — não é mais "voa e atira nos 4 alvos flutuantes". pendingQuestionKind
-  // marca qual settle function usar enquanto phase === 'questionPause' (normal ou dourado
-  // compartilham a mesma fase de pausa).
-  // v0.32: pergunta abre na hora que o ciclo termina — era precedida por uma fase 'recall' de
-  // 3.5s (só mostrando o texto da pergunta, sem alternativas, sobra da mecânica antiga de
-  // "voar e atirar") que o usuário reportou como "intervalo estranho depois que o jogo pausa".
-  function enterAlternatives() {
-    const result = nextQuestion(session, deck.allCards)
-    if (!result) {
-      endSector()
-      return
-    }
-    combat.clearBonusTargets()
-    hud.setCountdown(null)
-    hud.setFeedback(null)
-    state.questionResult = result
-    state.pendingQuestionKind = 'normal'
-    state.phase = 'questionPause'
-    hud.showQuestionModal({
-      question: result.card.question,
-      alternatives: result.alternatives,
-      onPick: (slot) => {
-        settleQuestion({
-          type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
-          card: state.questionResult.card,
-          timeBonus: 1.2,
-          accuracyBonus: 1.2,
-        })
-      },
-    })
-  }
-
-  // Fase 5: a caçada agora é literal — 6 orbes-pergunta genéricos espalhados pela arena
-  // (combat.spawnBossOrbs), o jogador precisa achar e atirar em cada um pra revelar/responder
-  // aquela pergunta (numa pausa total, ver triggerBossQuestion). Nada de pergunta já visível
-  // na tela esperando 4 alternativas-alvo, como era antes.
-  function enterBossBuildup() {
-    state.phase = 'bossBuildup'
-    state.bossBuildupTimer = BOSS_BUILDUP_MS
-    state.bossHealthBonus = 0
-    state.bossOrbsRemaining = BOSS_QUESTION_COUNT
-    state.questionResult = null
-    rail.enterArena()
-    hud.setBossActive(true, state.bossOrbsRemaining)
-    hud.setCountdown(null)
-    for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
-    combat.spawnBossOrbs(BOSS_QUESTION_COUNT, currentBossSpread())
-  }
-
-  // chamado quando um projétil acerta QUALQUER orbe-pergunta (events.bossOrbHit) — pausa total
-  // (nave travada, ver tick()) e mostra a pergunta+alternativas centralizadas pra escolher por
-  // clique, em vez de atirar nelas
-  function triggerBossQuestion() {
-    const result = nextQuestion(session, deck.allCards)
-    if (!result) {
-      endSector()
-      return
-    }
-    state.questionResult = result
-    state.bossOrbsRemaining = Math.max(0, state.bossOrbsRemaining - 1)
-    hud.setBossActive(true, state.bossOrbsRemaining)
-    state.phase = 'bossQuestionPause'
-    hud.showQuestionModal({
-      question: result.card.question,
-      alternatives: result.alternatives,
-      onPick: (slot) => {
-        settleBossBuildupQuestion({
-          type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
-          card: state.questionResult.card,
-          timeBonus: 1.2,
-          accuracyBonus: 1.2,
-        })
-      },
-    })
-  }
-
-  // errar mantém a punição de sempre (vida do chefe dobra); acertar soma tempo de caçada —
-  // confirmado com o usuário (ver PROGRESSO.md, Fase 5)
-  function settleBossBuildupQuestion(outcome) {
-    hud.hideQuestionModal()
-    const correct = outcome.type === 'correct'
-    const resolution = resolveAnswer(session, outcome)
-    applySpeedProgression(outcome.type)
-    if (!correct) {
-      applyDifficulty()
-      applyBossDifficulty()
-      state.bossHealthBonus += BOSS_HP_PER_ERROR
-    } else {
-      state.bossBuildupTimer += BOSS_HUNT_BONUS_MS
-    }
-
-    recordResult(session.history, outcome.card.guid, correct)
-    saveHistory(session.history)
-    menu.sessionResults.push({ guid: outcome.card.guid, correct })
-
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        points: resolution.points,
-        comboMultiplier: resolution.comboMultiplier,
-        health: resolution.healthRemaining,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
-    }
-
-    // v0.51.0 — `resolution.sectorOver` removido: desde o modo infinito (v0.29.6) o único fim
-    // de setor é zerar vidas, e desde o ajuste de "errar não tira vida" ele é SEMPRE false.
-    // `applyHealthLoss()` continua sendo o único caminho real (health chegou a 0 vindo de dano
-    // de inimigo).
-    const outOfLives = applyHealthLoss()
-    if (outOfLives) {
-      state.pendingSectorOver = true
-      state.pendingCardChoice = false
-      state.phase = 'resolution'
-      state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
-      return
-    }
-
-    state.pendingCardChoice = correct
-    state.phase = 'bossBuildupResolution'
-    state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
-  }
-
-  // tempo (90s + bônus) acabou antes das 6 perguntas: chefe surge na hora, +20 de vida por orbe
-  // que sobrou sem ser respondido — igual à punição de errar (confirmado com o usuário)
-  function finishBossHunt() {
-    hud.hideQuestionModal()
-    state.bossHealthBonus += BOSS_HP_PER_ERROR * state.bossOrbsRemaining
-    state.bossOrbsRemaining = 0
-    combat.clearBossOrbs()
-    // pedido do usuário: em vez do chefe simplesmente aparecer na hora, roda uma cutscene de
-    // pelo menos 5s ("pro jogador respirar") antes de invocar ele de verdade
-    startArenaCutscene('bossSummon', enterBossFight, BOSS_SUMMON_CUTSCENE_MS)
-  }
-
-  // usado tanto pro dourado quanto pro chefe: 5s de aviso (já em andamento antes desta chamada,
-  // via hud.setArenaWarning) + cutscene de câmera se ajeitando (nave travada, ver tick()) antes
-  // de `onDone` (enterGoldenArena/enterBossBuildup) finalmente rodar
-  function startArenaCutscene(kind, onDone, durationMs = ARENA_CUTSCENE_MS) {
-    state.phase = 'arenaCutscene'
-    state.arenaCutsceneTimer = durationMs
-    state.arenaCutsceneDurationMs = durationMs
-    state.arenaCutsceneOnDone = onDone
-    state.arenaCutsceneBaseCameraPos = camera.position.clone()
-    state.arenaCutsceneBaseForward = rail.getFrameAt(0).forward.clone()
-    state.arenaCutsceneBaseRight = rail.getFrameAt(0).right.clone()
-    hud.setArenaWarning(null)
-    hud.setCountdown(null)
-    hud.setArenaCutscene(kind)
-    // pedido do usuário: o preview do chefe/dourado ao longe (mostrado durante o aviso de 5s)
-    // só fazia sentido até aqui — a partir da cutscene de verdade, some (o combate real spawna
-    // o chefe/dourado de verdade em seguida)
-    combat.clearArenaPreview()
-  }
-
-  function enterBossFight() {
-    state.phase = 'bossFight'
-    hud.setBossActive(false)
-    hud.setCountdown(null)
-    hud.setBossTint(true)
-    combat.clearAllCombatants()
-    const bossHp = BOSS_BASE_HP + state.bossHealthBonus
-    combat.spawnBossEnemy(bossHp)
-    hud.setBossFight(true, bossHp, bossHp)
-
-    hud.damageFlash()
-    camera.fov = 88
-    camera.updateProjectionMatrix()
-    setTimeout(() => {
-      camera.fov = 70
-      camera.updateProjectionMatrix()
-    }, 500)
-  }
-
-  function enterGoldenArena() {
-    state.phase = 'goldenArena'
-    // v0.32: duração ilimitada — a luta só acaba quando o dourado é derrotado (pedido do
-    // usuário), sem mais um timeout que forçava a volta ao combate normal.
-    rail.enterArena()
-    combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX })
-    hud.setGoldenActive(true)
-  }
-
-  function exitGoldenArenaVisuals() {
-    rail.exitArena()
-    combat.clearGoldenTargets()
-    hud.setGoldenActive(false)
-  }
-
-  function resumeCombatFromGolden() {
-    state.phase = 'combat'
-    rail.setAdvancing(true)
-    state.goldenTimer = randomGoldenInterval()
-    hud.setFeedback(null)
-  }
-
-  // v0.32: mesma mudança da pergunta normal — sem a fase 'goldenRecall' de 3.5s antes do modal
-  function enterGoldenAlternatives() {
-    state.goldenCard = pickBonusCard(deck, session)
-    const result = buildBonusQuestion(state.goldenCard, deck.allCards)
-    state.questionResult = result
-    state.pendingQuestionKind = 'golden'
-    state.phase = 'questionPause'
-    hud.showQuestionModal({
-      question: result.card.question,
-      alternatives: result.alternatives,
-      onPick: (slot) => {
-        settleGoldenBonus({
-          type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
-          card: state.questionResult.card,
-          timeBonus: 1.2,
-          accuracyBonus: 1.2,
-        })
-      },
-    })
-  }
-
   function applyHealthLoss() {
     return player.applyHealthLoss()
-  }
-
-  function settleQuestion(outcome) {
-    hud.hideQuestionModal()
-    const resolution = resolveAnswer(session, outcome)
-    applySpeedProgression(outcome.type)
-
-    const correct = outcome.type === 'correct'
-    if (!correct) applyDifficulty()
-
-    recordResult(session.history, outcome.card.guid, correct)
-    saveHistory(session.history)
-    menu.sessionResults.push({ guid: outcome.card.guid, correct })
-
-    hud.setBossActive(false)
-    // v0.29.6: painel de feedback só pra acerto — erro vira um texto flutuante rápido
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        points: resolution.points,
-        comboMultiplier: resolution.comboMultiplier,
-        health: resolution.healthRemaining,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
-    }
-
-    // v0.51.0 — `resolution.sectorOver` removido (ver comentário em settleBossBuildupQuestion).
-    const outOfLives = applyHealthLoss()
-    state.pendingSectorOver = outOfLives
-    state.pendingCardChoice = correct
-    state.phase = 'resolution'
-    state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
-  }
-
-  function settleGoldenBonus(outcome) {
-    hud.hideQuestionModal()
-    const correct = outcome.type === 'correct'
-
-    recordResult(session.history, outcome.card.guid, correct)
-    saveHistory(session.history)
-    menu.sessionResults.push({ guid: outcome.card.guid, correct })
-
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        bonus: true,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
-    }
-
-    state.pendingCardChoice = correct
-    state.phase = 'goldenResolution'
-    state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
   }
 
   function endSector() {
@@ -651,19 +347,12 @@ function mountGame(session, deck, menu) {
     if (state.paused) return
 
     // ============ PAUSA TOTAL: PERGUNTA (CHEFE/NORMAL/DOURADO) OU CARTA ROGUELIKE ============
-    // nave travada, sem input nenhum — só espera a resolução (modal ou clique na carta).
-    // questionPause é da Fase 6: pergunta normal e bônus dourado passaram a pausar tudo igual
-    // ao chefe (Fase 5), em vez de "voa e atira nos 4 alvos flutuantes". cardChoice entrou
-    // antes disso, na v0.29.6. Continua renderizando a cena parada.
     if (state.phase === 'bossQuestionPause' || state.phase === 'questionPause' || state.phase === 'cardChoice') {
       renderer.render(scene, camera)
       return
     }
 
-    // cutscenes (etapa 3 do overhaul): arenaCutscene e deathCutscene extraídas pra
-    // cutscenes.js — cada uma devolve true se tratou o frame (early-return do tick), e cada
-    // uma recebe a fatia de dt que já recebia antes (dt escalado por slowMo pra arena, rawDt
-    // sem escala pra morte). Ver comentário no topo de cutscenes.js.
+    // cutscenes (etapa 3): arenaCutscene e deathCutscene extraídas pra cutscenes.js
     if (cutscenes.updateArenaCutscene(dt)) return
     if (cutscenes.updateDeathCutscene(rawDt)) return
 
@@ -672,16 +361,9 @@ function mountGame(session, deck, menu) {
 
     player.update(dt)
 
-    // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9) —
-    // em lutas de chefe/dourado o "mais próximo" quase sempre era ele mesmo, então a nave ficava
-    // sendo puxada pra lá o tempo todo em vez de responder só ao controle manual do jogador.
+    // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9)
     rail.update(dt, inputState)
-    // CRÍTICO: camera.lookAt() (chamado dentro de rail.update) atualiza camera.matrixWorld,
-    // mas NÃO camera.matrixWorldInverse — e Vector3.project(camera) usa matrixWorldInverse.
-    // Sem isso, TODO project() feito neste tick usa a câmera do frame ANTERIOR: marcador de
-    // lock, barra de vida de inimigo, número de dano, reticle e minimapa ficam deslocados pelo
-    // deslocamento do trilho entre frames (~0.37u a 60fps). O renderer só sincroniza no final
-    // do tick, tarde demais pros HUDs que leem .project() no meio do update.
+    // CRÍTICO: camera.updateMatrixWorld() — ver comentário no arquivo original
     camera.updateMatrixWorld()
 
     const playerPos = rail.getPlayerPosition()
@@ -718,8 +400,7 @@ function mountGame(session, deck, menu) {
 
     const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
 
-    // Fase 8 (VISUAL): mira normal acende quando há um inimigo vivo na frente dela — só hint,
-    // roda sempre (charging ou não), independente do lock-on de verdade do tiro teleguiado
+    // Fase 8 (VISUAL): mira normal acende quando há um inimigo vivo na frente dela
     hud.setReticleAiming(combat.isAimingAtEnemy(nosePos, fireDirection))
 
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
@@ -769,7 +450,6 @@ function mountGame(session, deck, menu) {
           effects.spinWind(playerPos, noseFrame.forward, -1)
           if (player.isDeflectActive()) {
             combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
-            // pedido do usuário: argolas azuis + afterimage marcando o giro rebatedor de verdade
             effects.deflectBurst(playerPos, noseFrame.forward)
           }
         }
@@ -786,7 +466,6 @@ function mountGame(session, deck, menu) {
           effects.spinWind(playerPos, noseFrame.forward, 1)
           if (player.isDeflectActive()) {
             combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
-            // pedido do usuário: argolas azuis + afterimage marcando o giro rebatedor de verdade
             effects.deflectBurst(playerPos, noseFrame.forward)
           }
         }
@@ -827,16 +506,13 @@ function mountGame(session, deck, menu) {
 
     const enemiesActive = state.phase === 'combat' || state.phase === 'goldenArena' || state.phase === 'bossBuildup' || state.phase === 'bossFight'
 
-    // v0.34.0: Detrito spawna no timer próprio, sem checar spawnPauseThreshold/currentEnemyCap()
-    // — só "tá em combate de verdade" importa (pedido do usuário, confirmado: ignora as duas
-    // regras que os outros inimigos seguem)
+    // v0.34.0: Detrito/Enxame-Ímã com timer próprio — só "tá em combate de verdade" importa
     if (enemiesActive) {
       state.detritoTimer -= dt * 1000
       if (state.detritoTimer <= 0) {
         combat.spawnDetrito()
         state.detritoTimer = randomDetritoInterval()
       }
-      // Enxame-Ímã: campo estático, funciona nos dois modos (ver comentário na declaração)
       state.imaTimer -= dt * 1000
       if (state.imaTimer <= 0) {
         combat.spawnImaSwarm()
@@ -868,7 +544,6 @@ function mountGame(session, deck, menu) {
       state.hitShakeTimer = Math.max(state.hitShakeTimer, 120)
       effects.gridPulse()
     }
-    // shake maior — inimigo comum, dourado ou chefe destruído pelo tiro carregado (teleguiado)
     const chargedKillHappened =
       (events.hitsLog && events.hitsLog.some((h) => h.killed && h.isHoming)) ||
       (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
@@ -887,8 +562,6 @@ function mountGame(session, deck, menu) {
         }
       }
     }
-    // pedido do usuário: número roxo pequeno + ícone de ampulheta acima do redutor de tempo
-    // destruído, mostrando exatamente quanto tempo aquele kill específico reduziu do ciclo
     if (events.timeReductionMs && events.timeReductionWorldPos) {
       const ndcT = events.timeReductionWorldPos.project(camera)
       const xFracT = THREE.MathUtils.clamp((ndcT.x + 1) / 2, 0, 1)
@@ -921,11 +594,10 @@ function mountGame(session, deck, menu) {
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),
-      skipTrail: player.isRepulsionActive(), // freando = sem rastro de motor
+      skipTrail: player.isRepulsionActive(),
       ramActive,
       rollActive: player.isRollIframeActive(),
     })
-    // v0.51.0 — passa `dt` (era passo fixo de 1/60 lá dentro; ver comentário em effects.js).
     effects.spawnContrailTick(combat.getWingmanPositions(), dt)
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
@@ -933,60 +605,28 @@ function mountGame(session, deck, menu) {
     if (events.timeReductionMs) state.cycleTimer = Math.max(0, state.cycleTimer - events.timeReductionMs)
     if (events.enemyKills > 0) state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
 
-    // pedido do usuário: cutscene em câmera lenta do chefe explodindo antes de sair da arena,
-    // em vez da transição instantânea/awkward direto pro modo normal — a explosão de verdade
-    // (explodeBoss) já foi disparada dentro de enemies.js no mesmo frame; aqui só segura a
-    // câmera nela por um instante em slow-mo antes de aplicar a transição de verdade.
+    // cutscene em câmera lenta do chefe explodindo antes de sair da arena — handler extraído
+    // pra flow-boss.js (handleBossDefeated). A guarda de fase continua AQUI (era um `if` de
+    // topo de tick no original, antes dos branches de fase), preservando a estrutura original.
     if (events.bossDefeated && state.phase === 'bossFight') {
-      hud.setBossFight(false)
-      hud.setBossTint(false)
-      // pedido do usuário: destrói todo o resto (inimigos extras + projéteis inimigos) na hora
-      // em que o chefe morre, em vez de deixá-los na tela — o próprio chefe (já `dying`) não é
-      // afetado, continua a animação/explosão dele normalmente.
-      combat.clearOtherEnemies()
-      state.deathCutscenePos = (events.bossHitWorldPos || playerPos).clone()
-      state.deathCutsceneOnDone = () => {
-        session.score += BOSS_DEFEAT_BONUS
-        rail.exitArena()
-        hud.setFeedback({
-          correct: true,
-          correctAnswer: '',
-          points: BOSS_DEFEAT_BONUS,
-          comboMultiplier: session.comboMultiplier,
-          health: session.health,
-        })
-        state.pendingCardChoice = true
-        state.phase = 'bossVictory'
-        state.phaseTimer = FEEDBACK_MS
-      }
-      state.phase = 'deathCutscene'
-      state.deathCutsceneTimer = DEATH_CUTSCENE_MS
+      bossFlow.handleBossDefeated(events.bossHitWorldPos || playerPos)
     }
 
     // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============
     if (events.enemyHits > 0 && !player.isInvincible() && !state.debugFlags.godMode) {
       state.hitShakeTimer = HIT_SHAKE_DURATION_MS
 
-      // v0.34.0: alguns ataques específicos (laser da ampulheta mega, borda da moldura da
-      // sentinela) declaram seu próprio dano "pesado" (events.enemyDamage) — usa o MAIOR entre
-      // esse valor e a escalada normal por erro, nunca o menor (não quero a dificuldade por erro
-      // "abafar" o ataque especial nem o contrário)
       const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
       rail.triggerImpactSquash()
 
       if (result.absorbedByShield) {
-        // ---- dano ABSORVIDO pelo escudo: faixa azul com grid nas laterais ----
         hud.showShieldBlock()
         effects.shockwave(playerPos, 0x4da6ff, 0.6)
         effects.explosion(playerPos, 0x4da6ff, 0.5)
         if (result.shieldBroke) effects.glassShatter(playerPos, 0x4da6ff)
       } else {
-        // ---- dano DIRETO na vida: faixa vermelha nas laterais + flash rápido ----
         hud.showDamageSide()
         hud.damageFlash()
-        // Fase 7: "levar um acerto causa um efeito de explosão de tiro na nossa nave" — faltava
-        // qualquer efeito 3D na própria nave quando o dano ia direto na vida (só existia o
-        // shockwave azul do lado do escudo); agora todo acerto real também explode na nave.
         effects.explosion(playerPos, 0xff4d4d, 0.7)
       }
 
@@ -995,8 +635,7 @@ function mountGame(session, deck, menu) {
         return
       }
     }
-    // pedido do usuário: não pisca durante o rolamento (giro completo) — o afterimage (ver
-    // effects.update, rollActive) já comunica a invencibilidade nessa janela específica
+    // pedido do usuário: não pisca durante o rolamento (giro completo)
     rail.setShipVisible(
       player.isRollIframeActive() ||
       !player.isInvincible() ||
@@ -1007,17 +646,12 @@ function mountGame(session, deck, menu) {
       state.enemyTimer -= dt * 1000
       if (state.enemyTimer <= 0) {
         if (combat.getEnemyCount() < currentEnemyCap()) {
-          // Fragata-Escudo: só arena/all-range, o mecanismo de "flanquear o lado exposto" só
-          // faz sentido num espaço onde o jogador pode voar ao redor
           if (Math.random() < FRAGATA_SPAWN_CHANCE) combat.spawnFragata()
           else combat.spawnEnemy()
         }
         state.enemyTimer = randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
       }
     } else if (state.phase === 'combat') {
-      // pausa maior (8s) num ciclo de chefe, porque além do "vai vir pergunta" tem o aviso de
-      // 5s + cutscene do chefe se aproximando; também para tudo enquanto o dourado está a
-      // menos de 8s de surgir (mesma regra, "impedindo a geração de inimigos")
       const spawnPauseThreshold = state.isBossCycle ? ARENA_WARNING_STOP_SPAWN_MS : NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS
       if (state.cycleTimer > spawnPauseThreshold && state.goldenTimer > ARENA_WARNING_STOP_SPAWN_MS) {
         state.normalSpawnTimer -= dt * 1000
@@ -1055,23 +689,16 @@ function mountGame(session, deck, menu) {
         }
 
         state.goldenTimer -= dt * 1000
-        if (state.goldenTimer <= 0) startArenaCutscene('golden', enterGoldenArena)
+        if (state.goldenTimer <= 0) bossFlow.startArenaCutscene('golden', bossFlow.enterGoldenArena)
       }
 
       if (state.phase === 'combat') {
         state.cycleTimer -= dt * 1000
-        // aviso de "chefe se aproximando" substitui o contador genérico do ciclo nos últimos 5s
-        // (confirmado com o usuário); o do dourado aparece por cima, sem esconder o contador
         const bossWarnActive = state.isBossCycle && state.cycleTimer > 0 && state.cycleTimer <= ARENA_WARNING_COUNTDOWN_MS
         const goldenWarnActive = !state.isBossCycle && state.goldenTimer > 0 && state.goldenTimer <= ARENA_WARNING_COUNTDOWN_MS
-        // pedido do usuário: o chefe/dourado já aparece bem distante mas visível assim que o
-        // aviso de 5s começa — dispara só na borda (não a cada frame) pra não recriar o mesh
         if (bossWarnActive && !state.arenaPreviewShown) { combat.showArenaPreview('boss'); state.arenaPreviewShown = true }
         else if (goldenWarnActive && !state.arenaPreviewShown) { combat.showArenaPreview('golden'); state.arenaPreviewShown = true }
         if (!bossWarnActive && !goldenWarnActive) state.arenaPreviewShown = false
-        // pedido do usuário: segurar o impulso durante o aviso de 5s dobra a velocidade da
-        // contagem — indica visualmente que o jogador tá "se aproximando mais rápido" do
-        // chefe/dourado (uma segunda passada de decremento por cima da normal, só nessa janela)
         if (player.isPropulsionActive()) {
           if (bossWarnActive) state.cycleTimer = Math.max(0, state.cycleTimer - dt * 1000)
           if (goldenWarnActive) state.goldenTimer = Math.max(0, state.goldenTimer - dt * 1000)
@@ -1085,52 +712,42 @@ function mountGame(session, deck, menu) {
         }
         // v0.32: pergunta abre na hora — sem a fase 'recall' de 3.5s antes do modal
         if (state.cycleTimer <= 0) {
-          if (state.isBossCycle) startArenaCutscene('boss', enterBossBuildup)
-          else enterAlternatives()
+          if (state.isBossCycle) bossFlow.startArenaCutscene('boss', bossFlow.enterBossBuildup)
+          else questionFlow.enterAlternatives()
         }
       }
     } else if (state.phase === 'bossBuildup') {
       state.bossBuildupTimer -= dt * 1000
       hud.setCountdown(Math.max(0, Math.ceil(state.bossBuildupTimer / 1000)), state.bossBuildupTimer <= WARNING_MS)
       if (state.bossBuildupTimer <= 0) {
-        finishBossHunt()
+        bossFlow.finishBossHunt()
       } else if (events.bossOrbHit) {
-        triggerBossQuestion()
+        bossFlow.triggerBossQuestion()
       }
     } else if (state.phase === 'bossBuildupResolution') {
       state.phaseTimer -= dt * 1000
       if (state.phaseTimer <= 0) {
         // bug reportado: o painel de "Acertou!" ficava preso na tela pra sempre depois disso —
-        // nem aqui, nem em finishBossHunt()/enterBossFight() ninguém limpava o feedback (os
-        // outros fluxos limpam via enterCombat()/resumeCombatFromGolden(), mas a caçada de
-        // orbes do chefe volta pra 'bossBuildup' direto, sem passar por nenhum dos dois).
+        // nem aqui, nem em finishBossHunt()/enterBossFight() ninguém limpava o feedback.
         hud.setFeedback(null)
         const proceed = () => {
           if (state.bossOrbsRemaining > 0 && state.bossBuildupTimer > 0) state.phase = 'bossBuildup'
-          else finishBossHunt()
+          else bossFlow.finishBossHunt()
         }
-        if (state.pendingCardChoice) enterCardChoice(proceed)
+        if (state.pendingCardChoice) questionFlow.enterCardChoice(proceed)
         else proceed()
       }
     } else if (state.phase === 'bossVictory') {
       state.phaseTimer -= dt * 1000
       if (state.phaseTimer <= 0) {
-        if (state.pendingCardChoice) enterCardChoice(enterCombat)
+        if (state.pendingCardChoice) questionFlow.enterCardChoice(enterCombat)
         else enterCombat()
       }
     } else if (state.phase === 'goldenArena') {
-      // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário),
-      // e a explosão dele ganha a mesma cutscene em câmera lenta do chefe antes da transição.
+      // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário).
+      // O handler (handleGoldenDefeated) NÃO checa fase internamente — o branch já é a guarda.
       if (events.goldenSpecialHit) {
-        // pedido do usuário: mesmo comportamento do chefe — destrói o resto na hora
-        combat.clearOtherEnemies()
-        state.deathCutscenePos = (events.goldenHitWorldPos || playerPos).clone()
-        state.deathCutsceneOnDone = () => {
-          exitGoldenArenaVisuals()
-          enterGoldenAlternatives()
-        }
-        state.phase = 'deathCutscene'
-        state.deathCutsceneTimer = DEATH_CUTSCENE_MS
+        bossFlow.handleGoldenDefeated(events.goldenHitWorldPos || playerPos)
       }
     } else if (state.phase === 'resolution') {
       state.phaseTimer -= dt * 1000
@@ -1139,14 +756,14 @@ function mountGame(session, deck, menu) {
           endSector()
           return
         }
-        if (state.pendingCardChoice) enterCardChoice(enterCombat)
+        if (state.pendingCardChoice) questionFlow.enterCardChoice(enterCombat)
         else enterCombat()
       }
     } else if (state.phase === 'goldenResolution') {
       state.phaseTimer -= dt * 1000
       if (state.phaseTimer <= 0) {
-        if (state.pendingCardChoice) enterCardChoice(resumeCombatFromGolden)
-        else resumeCombatFromGolden()
+        if (state.pendingCardChoice) questionFlow.enterCardChoice(bossFlow.resumeCombatFromGolden)
+        else bossFlow.resumeCombatFromGolden()
       }
     }
 
@@ -1200,9 +817,9 @@ function mountGame(session, deck, menu) {
   function forceAnswerOutcome(correct) {
     if (!state.questionResult) return
     const outcome = { type: correct ? 'correct' : 'wrong', card: state.questionResult.card, timeBonus: 1.2, accuracyBonus: 1.2 }
-    if (state.phase === 'bossQuestionPause') settleBossBuildupQuestion(outcome)
-    else if (state.phase === 'questionPause' && state.pendingQuestionKind === 'golden') settleGoldenBonus(outcome)
-    else if (state.phase === 'questionPause' && state.pendingQuestionKind === 'normal') settleQuestion(outcome)
+    if (state.phase === 'bossQuestionPause') bossFlow.settleBossBuildupQuestion(outcome)
+    else if (state.phase === 'questionPause' && state.pendingQuestionKind === 'golden') bossFlow.settleGoldenBonus(outcome)
+    else if (state.phase === 'questionPause' && state.pendingQuestionKind === 'normal') questionFlow.settleQuestion(outcome)
   }
 
   hud.debug.bind(createDebugActions({
@@ -1212,8 +829,12 @@ function mountGame(session, deck, menu) {
     getPhase: () => state.phase,
     resetBossHealthBonus: () => { state.bossHealthBonus = 0 },
     applyHealthLoss, endSector, forceAnswerOutcome,
-    startArenaCutscene, enterBossBuildup, finishBossHunt, enterBossFight, enterGoldenArena,
-    enterCardChoice, enterCombat,
+    startArenaCutscene: bossFlow.startArenaCutscene,
+    enterBossBuildup: bossFlow.enterBossBuildup,
+    finishBossHunt: bossFlow.finishBossHunt,
+    enterBossFight: bossFlow.enterBossFight,
+    enterGoldenArena: bossFlow.enterGoldenArena,
+    enterCardChoice: questionFlow.enterCardChoice, enterCombat,
   }))
 
   enterCombat()
