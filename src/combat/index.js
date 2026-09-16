@@ -42,6 +42,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     if (!showHitboxes) return
     for (const item of targets.getHitboxTargets()) markHitbox(item.worldPos, item.radius)
     for (const item of enemies.getHitboxTargets()) markHitbox(item.worldPos, item.radius)
+    if (rail && rail.getShipHitboxPoints) {
+      for (const item of rail.getShipHitboxPoints()) markHitbox(item.worldPos, item.radius)
+    }
   }
 
   return {
@@ -82,6 +85,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),
     getBossSnapshot: () => enemies.getBossSnapshot(),
+    getGoldenSnapshot: () => enemies.getGoldenSnapshot(),
 
     // QoL (v0.29.4): os orbes-pergunta do chefe também aparecem no minimapa
     getMinimapBlips: () => [...enemies.getMinimapBlips(), ...targets.getMinimapBlips()],
@@ -143,7 +147,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (enemiesActive) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
-        const enemyResult = enemies.update(dt, playerPosition, { ramDamage: opts.ramDamage || 0 })
+        const enemyResult = enemies.update(dt, playerPosition, { ...opts, ramDamage: opts.ramDamage || 0 })
         enemyHits += enemyResult.hits
         ramKills = enemyResult.ramKills
         ramKillPoints = enemyResult.ramKillPoints
@@ -152,7 +156,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramGoldenDefeated = enemyResult.ramGoldenDefeated
         ramGoldenWorldPos = enemyResult.ramGoldenWorldPos
         bossCollisionWorldPos = enemyResult.bossCollisionWorldPos || null
-        const projResult = enemies.updateProjectiles(dt, playerPosition)
+        const projResult = enemies.updateProjectiles(dt, playerPosition, opts)
         enemyHits += projResult.hits
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
       }

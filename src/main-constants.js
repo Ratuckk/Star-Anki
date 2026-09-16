@@ -33,12 +33,12 @@ export const HOMING_KILL_SHAKE_MS = 380
 
 // ============ BACKGROUND POR "NÍVEL" ============
 export const LEVEL_BACKGROUNDS = [
-  0x0b0d12,
-  0x120b18,
-  0x0b1812,
-  0x18110b,
-  0x0b1218,
-  0x180b0f,
+  0x000000,
+  0x000000,
+  0x000000,
+  0x000000,
+  0x000000,
+  0x000000,
 ]
 
 // ============ MIRA ============

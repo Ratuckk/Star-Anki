@@ -261,7 +261,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // ============ IA principal ============
   // ramDamage > 0: carta roguelike "impulso aríete" ativa durante o impulso de propulsão —
   // colisão vira dano de verdade (inclusive no CHEFE) em vez do kamikaze padrão
-  function updateEnemies(dt, playerPosition, ramDamage = 0) {
+  function updateEnemies(dt, playerPosition, ramDamage = 0, opts = {}) {
     const inArena = rail.isArena()
     const frame = rail.getFrameAt(0)
     let hits = 0
@@ -270,6 +270,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let ramBossDefeated = false
     let ramBossWorldPos = null
     let bossCollisionWorldPos = null
+    const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
     for (const enemy of [...enemies]) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
@@ -283,8 +284,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
       enemy.deathScale = baseScale
 
-      const collisionRadius = hitRadius + (ramDamage > 0 ? 5.5 : 0)
-      if (playerPosition.distanceTo(enemy.mesh.position) <= collisionRadius) {
+      const ramExtra = ramDamage > 0 ? 5.0 : 0
+      const isColliding = shipPoints.some((pt) => pt.worldPos.distanceTo(enemy.mesh.position) <= hitRadius + pt.radius + ramExtra)
+      if (isColliding) {
         hits += 1
         if (enemy.kind === BOSS_KIND) {
           bossCollisionWorldPos = enemy.mesh.position.clone()
@@ -489,8 +491,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       const hitRadius = projectile.hitRadius ?? ENEMY_PROJECTILE_HIT_RADIUS
       const maxRange = projectile.maxRange ?? ENEMY_PROJECTILE_MAX_RANGE
+      const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
 
-      if (playerPosition.distanceTo(projectile.mesh.position) <= hitRadius) {
+      const projHit = shipPoints.some((pt) => pt.worldPos.distanceTo(projectile.mesh.position) <= hitRadius + pt.radius)
+      if (projHit) {
         hits += 1
         damage = Math.max(damage, projectile.shieldDamage ?? 1)
         removeEnemyProjectile(projectile)
@@ -501,9 +505,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
-  function updateEnemyLasers(dt, playerPosition) {
+  function updateEnemyLasers(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
+    const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
     for (const laser of [...enemyLasers]) {
       const step = laser.velocity.clone().multiplyScalar(dt)
       const prevPos = laser.mesh.position.clone()
@@ -519,7 +524,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (laser.outerMat) laser.outerMat.opacity = Math.max(0.2, (1 - prog * 0.6) * 0.85)
 
       const hitRadius = (laser.hitRadius ?? BOSS_LASER_HIT_RADIUS) * Math.max(0.5, beamScale)
-      if (distanceToSegment(playerPosition, prevPos, laser.mesh.position) <= hitRadius) {
+      const laserHit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, prevPos, laser.mesh.position) <= hitRadius + pt.radius)
+      if (laserHit) {
         hits += 1
         damage = Math.max(damage, laser.shieldDamage ?? 1)
         removeEnemyLaser(laser)
@@ -531,7 +537,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   // ao cruzar o plano do jogador ou chegar na distância travada, resolve uma vez e remove
-  function updateEnemyGates(dt, playerPosition) {
+  function updateEnemyGates(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
     for (const gate of [...enemyGates]) {
@@ -543,8 +549,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const rel = playerPosition.clone().sub(gate.mesh.position)
       const alongDir = rel.dot(gate.dir)
 
-      if (alongDir <= 0 || gate.traveled >= gate.targetDistance) {
-        const { hit } = resolveGateHit(gate, playerPosition)
+      if (alongDir <= 0 || gate.traveled >= gate.targetDistance + 25) {
+        const { hit } = resolveGateHit(gate, playerPosition, opts)
         if (hit) { hits += 1; damage = Math.max(damage, gate.shieldDamage ?? 1) }
         removeEnemyGate(gate)
       }
@@ -555,11 +561,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function registerSpawn(enemy) {
     if (!enemy) return null
     enemy.spawnRailDist = rail.getDistance()
-    if (!rail.isArena() && enemy.mesh && enemy.kind !== BOSS_KIND && enemy.kind !== DETRITO_KIND) {
-      enemy.targetScale = enemy.mesh.scale.x || 1.0
+    if (enemy.mesh && enemy.kind !== BOSS_KIND) {
+      enemy.targetScale = enemy.scale || enemy.mesh.scale.x || 1.0
       enemy.spawnAge = 0
-      enemy.spawnDuration = 0.35
-      enemy.mesh.scale.setScalar(enemy.targetScale * 0.2)
+      enemy.spawnDuration = enemy.kind === DETRITO_KIND ? 0.42 : 0.35
+      enemy.mesh.scale.setScalar(enemy.targetScale * 0.1)
       if (effects) {
         if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
           effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
@@ -608,16 +614,29 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnTitanicDetrito(opts = {}) {
+      const activeGiants = enemies.filter((e) => e.kind === DETRITO_KIND && e.isGiant && !e.dying).length
+      if (activeGiants >= 2) {
+        // Teto de 2 gigantes ativos respeitado: gera detrito comum menor no lugar
+        const regular = spawnDetrito(scene, rail, nextEnemyId++, { ...opts, allowGiant: false })
+        registerSpawn(regular)
+        return regular
+      }
       const enemy = spawnTitanicDetrito(scene, rail, nextEnemyId++, opts)
       registerSpawn(enemy)
       return enemy
     },
 
     spawnDetrito(count = 1, opts = {}) {
+      const activeGiants = enemies.filter((e) => e.kind === DETRITO_KIND && e.isGiant && !e.dying).length
+      let giantsAllowed = Math.max(0, 2 - activeGiants)
       const n = Math.max(1, Math.min(15, count))
       const spawned = []
       for (let i = 0; i < n; i++) {
-        const enemy = spawnDetrito(scene, rail, nextEnemyId++, opts)
+        const canBeGiant = giantsAllowed > 0 && opts.allowGiant !== false
+        const enemy = spawnDetrito(scene, rail, nextEnemyId++, { ...opts, allowGiant: canBeGiant })
+        if (enemy.isGiant) {
+          giantsAllowed--
+        }
         registerSpawn(enemy)
         spawned.push(enemy)
       }
@@ -675,8 +694,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       elapsed += dt
       if (arenaPreviewMesh) arenaPreviewMesh.rotation.y += dt * 0.4
       const ramDamage = opts.ramDamage || 0
-      const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage)
-      const result = updateEnemies(dt, playerPosition, ramDamage)
+      const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage, opts)
+      const result = updateEnemies(dt, playerPosition, ramDamage, opts)
       const bossCollisionWorldPos = result.bossCollisionWorldPos || goldenRamResult?.bossCollisionWorldPos || null
       return {
         ...result,
@@ -687,10 +706,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
     },
 
-    updateProjectiles(dt, playerPosition) {
-      const p = updateEnemyProjectiles(dt, playerPosition)
-      const l = updateEnemyLasers(dt, playerPosition)
-      const g = updateEnemyGates(dt, playerPosition)
+    updateProjectiles(dt, playerPosition, opts = {}) {
+      const p = updateEnemyProjectiles(dt, playerPosition, opts)
+      const l = updateEnemyLasers(dt, playerPosition, opts)
+      const g = updateEnemyGates(dt, playerPosition, opts)
       return { hits: p.hits + l.hits + g.hits, damage: Math.max(p.damage, l.damage, g.damage) }
     },
 
@@ -827,6 +846,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     getBossSnapshot: () => {
       const boss = enemies.find((e) => e.kind === BOSS_KIND && !e.dying)
       return boss ? { hp: boss.hp, maxHp: boss.maxHp } : null
+    },
+
+    getGoldenSnapshot: () => {
+      const snaps = golden.getSnapshots()
+      return snaps.length > 0 ? { hp: snaps[0].hp, maxHp: snaps[0].maxHp } : null
     },
 
     getMinimapBlips: () => {

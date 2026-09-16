@@ -207,22 +207,69 @@ function pickUnique(list, count, usedNorms) {
 export function generateDistractors(card, allCards, opts = { count: 3 }) {
   const correctLen = card.answer.length
   const correctNorm = normalizeAnswer(card.answer)
+  const targetCount = opts.count ?? 3
 
-  const candidates = allCards.filter((c) => {
+  // Prioridade 1: candidatos do mesmo baralho com comprimento aproximado (±50%)
+  const strictCandidates = allCards.filter((c) => {
     if (c.guid === card.guid) return false
     const len = c.answer.length
     if (len < correctLen * 0.5 || len > correctLen * 1.5) return false
     return normalizeAnswer(c.answer) !== correctNorm
   })
 
-  const sameType = candidates.filter((c) => c.notetype === card.notetype)
-  const otherType = candidates.filter((c) => c.notetype !== card.notetype)
+  // Prioridade 2: candidatos que compartilham tags (alta afinidade temática)
+  const cardTags = new Set(card.tags || [])
+  const tagCandidates = allCards.filter((c) => {
+    if (c.guid === card.guid) return false
+    if (normalizeAnswer(c.answer) === correctNorm) return false
+    return (c.tags || []).some((t) => cardTags.has(t))
+  })
+
+  // Prioridade 3: qualquer outra carta do baralho
+  const anyCandidates = allCards.filter((c) => {
+    if (c.guid === card.guid) return false
+    return normalizeAnswer(c.answer) !== correctNorm
+  })
 
   const usedNorms = new Set([correctNorm])
-  const picked = pickUnique(sameType, opts.count, usedNorms)
-  if (picked.length < opts.count) {
-    picked.push(...pickUnique(otherType, opts.count - picked.length, usedNorms))
+  const picked = []
+
+  // 1. Mesmo notetype + comprimento similar
+  picked.push(...pickUnique(strictCandidates.filter((c) => c.notetype === card.notetype), targetCount - picked.length, usedNorms))
+
+  // 2. Outro notetype + comprimento similar
+  if (picked.length < targetCount) {
+    picked.push(...pickUnique(strictCandidates.filter((c) => c.notetype !== card.notetype), targetCount - picked.length, usedNorms))
   }
+
+  // 3. Mesma tag / tópico (coesão semântica)
+  if (picked.length < targetCount) {
+    picked.push(...pickUnique(tagCandidates, targetCount - picked.length, usedNorms))
+  }
+
+  // 4. Qualquer outra carta do baralho
+  if (picked.length < targetCount) {
+    picked.push(...pickUnique(anyCandidates, targetCount - picked.length, usedNorms))
+  }
+
+  // 5. Fallback temático caso o baralho seja muito curto
+  if (picked.length < targetCount) {
+    const contextualFallbacks = [
+      'Memória Cache L2', 'Placa de Vídeo Dedicada', 'Barramento PCIe',
+      'Controlador DMA', 'Fonte de Alimentação ATX', 'Chipset Ponte Sul',
+      'Interface SATA III', 'Registrador de Estado (FLAGS)', 'Memória ROM Flash',
+      'Unidade de Controle (UC)', 'Módulo DDR4 SDRAM', 'Arranjo RAID 5',
+      'Microprocessador CISC', 'Barramento de Controle', 'Circuito Integrado',
+    ]
+    for (const fb of shuffle(contextualFallbacks)) {
+      if (picked.length >= targetCount) break
+      const norm = normalizeAnswer(fb)
+      if (usedNorms.has(norm)) continue
+      usedNorms.add(norm)
+      picked.push(fb)
+    }
+  }
+
   return picked
 }
 

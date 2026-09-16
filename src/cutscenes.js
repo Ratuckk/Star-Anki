@@ -329,8 +329,91 @@ export function createCutscenesSystem(deps) {
           })
         }
       }
+    } else if (state.deathCutsceneKind === 'golden') {
+      // ---- MORTE ESPALHAFATOSA DO INIMIGO DOURADO: DETONAÇÕES DOURADAS + WHITEOUT + EXPLOSÃO MASSIVA ----
+      const phase1T = 0.45 // 0 a 45%: colapso e detonações rápidas
+      if (t < phase1T) {
+        const slowDt = rawDt * 0.22
+        if (effects) {
+          effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+            camera,
+            shieldValue: player.getShieldValue(),
+            shieldMax: player.getShieldMax(),
+            boostActive: false,
+            skipTrail: true,
+          })
+        }
+
+        // Detonações secundárias douradas em cascata rápida (a cada 90ms)
+        state.secondaryExplosionTimer = (state.secondaryExplosionTimer || 0) - rawDt
+        if (state.secondaryExplosionTimer <= 0 && state.deathCutscenePos) {
+          state.secondaryExplosionTimer = 0.09
+          const offset = new THREE.Vector3(
+            (Math.random() - 0.5) * 4.5,
+            (Math.random() - 0.5) * 4.5,
+            (Math.random() - 0.5) * 4.5,
+          )
+          if (effects) {
+            const goldColors = [0xffd700, 0xffaa00, 0xffffff, 0xffea75]
+            const col = goldColors[Math.floor(Math.random() * goldColors.length)]
+            effects.explosion(state.deathCutscenePos.clone().add(offset), col, 2.2, { rings: true })
+            effects.hitSpark(state.deathCutscenePos.clone().add(offset), 0xffffff)
+            effects.shockwave(state.deathCutscenePos.clone().add(offset), col, 1.4)
+          }
+        }
+
+        // Zoom dramático e câmera focada
+        const zoomT = Math.sin((t / phase1T) * Math.PI)
+        camera.fov = 70 - zoomT * 26
+        camera.updateProjectionMatrix()
+        if (state.deathCutscenePos) {
+          const targetQuat = new THREE.Quaternion().setFromRotationMatrix(
+            new THREE.Matrix4().lookAt(camera.position, state.deathCutscenePos, camera.up),
+          )
+          camera.quaternion.slerp(targetQuat, 1 - Math.exp(-8 * rawDt))
+        }
+      } else {
+        // Fase 2: Clímax com Whiteout cegante + Explosão Dourada Titânica
+        if (!state.deathWhiteoutTriggered) {
+          state.deathWhiteoutTriggered = true
+          hud.triggerWhiteout()
+          hud.setLetterbox(true)
+          hud.showMissionComplete({
+            title: 'ANOMALIA DOURADA DESTRUÍDA',
+            subtitle: 'SETOR PURIFICADO // RECOMPENSA DESBLOQUEADA',
+          })
+          if (effects && state.deathCutscenePos) {
+            effects.explosion(state.deathCutscenePos, 0xffd700, 6.5, { rings: true, isBoss: true })
+            effects.explosion(state.deathCutscenePos, 0xff9900, 5.0, { rings: true })
+            effects.shockwave(state.deathCutscenePos, 0xffffff, 4.2)
+            effects.shockwave(state.deathCutscenePos, 0xffd700, 5.5)
+            effects.hitSpark(state.deathCutscenePos, 0xffffff)
+          }
+        }
+
+        // Câmera orbita suavemente com recuo dramático
+        if (state.deathCutscenePos) {
+          const p = (t - phase1T) / (1 - phase1T)
+          const forward = rail.getFrameAt(0).forward
+          const retreatCam = state.deathCutscenePos.clone()
+            .addScaledVector(forward, 14 + p * 12)
+            .addScaledVector(new THREE.Vector3(0, 1, 0), 3.0 + p * 2.5)
+          camera.position.lerp(retreatCam, 0.08)
+          camera.lookAt(state.deathCutscenePos)
+        }
+
+        if (effects) {
+          effects.update(rawDt * 0.6, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {
+            camera,
+            shieldValue: player.getShieldValue(),
+            shieldMax: player.getShieldMax(),
+            boostActive: false,
+            skipTrail: true,
+          })
+        }
+      }
     } else {
-      // ---- MORTE DO DOURADO / INIMIGO COMUM ----
+      // ---- MORTE DE INIMIGO COMUM ----
       const slowDt = rawDt * DEATH_CUTSCENE_TIME_SCALE
       if (effects) {
         effects.update(slowDt, rail.getPlayerPosition(), rail.getFrameAt(0).forward, {

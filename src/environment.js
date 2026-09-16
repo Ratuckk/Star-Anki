@@ -275,8 +275,12 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
       planetGroup.position.copy(camera.position).multiplyScalar(0.08) // paralaxe sutil
     }
 
+    skyDome.visible = !!ENVIRONMENT_CONFIG.enableSkyDome
+    planetGroup.visible = !!ENVIRONMENT_CONFIG.enableCelestialBodies
+
     if (ENVIRONMENT_CONFIG.enableSkyDome) {
-      skyDome.rotation.y += dt * 0.003
+      skyDome.rotation.y += dt * 0.008
+      skyDome.position.copy(camera ? camera.position : rail.getPlayerPosition())
       // Respiração cósmica do brilho
       skyMat.opacity = 0.88 + Math.sin(elapsed * 0.2) * 0.08
     }
@@ -381,6 +385,9 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     }
 
     // 5. Grid de Solo Energizado
+    if (gridPulseMesh) {
+      gridPulseMesh.visible = !!ENVIRONMENT_CONFIG.enableEnergizedGrid && !inArena
+    }
     if (ENVIRONMENT_CONFIG.enableEnergizedGrid && !inArena) {
       energizedPulseZ -= dt * 65
       if (energizedPulseZ < -160) energizedPulseZ = 40

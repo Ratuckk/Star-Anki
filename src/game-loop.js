@@ -96,7 +96,19 @@ export function createGameLoop(deps) {
     }
     if (state.paused) return
 
-    // ============ PAUSA TOTAL: PERGUNTA (CHEFE/NORMAL/DOURADO) OU CARTA ROGUELIKE ============
+    // ============ PAUSA TOTAL: PERGUNTA (CHEFE/NORMAL/DOURADO) OU CARTA ROGUELIKE OU PAUSA DE ERRO ============
+    if (state.phase === 'wrongPause') {
+      state.phaseTimer -= rawDt * 1000
+      const skipPressed = isActionPressed(bindings, inputState.pressed, 'skipErrorFeedback')
+      if (skipPressed || state.phaseTimer <= 0) {
+        hud.hideErrorFloat()
+        enterCombat()
+      } else {
+        renderer.render(scene, camera)
+        return
+      }
+    }
+
     if (state.phase === 'bossQuestionPause' || state.phase === 'questionPause' || state.phase === 'cardChoice') {
       renderer.render(scene, camera)
       return
@@ -296,23 +308,23 @@ export function createGameLoop(deps) {
     if (enemiesActive) {
       state.detritoTimer -= dt * 1000
       if (state.detritoTimer <= 0) {
-        // v0.54.0: chuva de detritos de até 10 de 6 tamanhos diferentes, no rail e all-range
+        // Pedido do usuário: taxa de detritos moderada (1 a 2, raramente 3) para permitir navegação limpa
         const inArena = rail.isArena()
         const roll = Math.random()
         let count = 1
         if (inArena) {
-          if (roll < 0.40) count = Math.floor(Math.random() * 4) + 7 // 7 a 10 detritos!
-          else if (roll < 0.75) count = Math.floor(Math.random() * 4) + 3 // 3 a 6 detritos
-          else count = Math.floor(Math.random() * 2) + 1 // 1 a 2 detritos
+          if (roll < 0.20) count = 3
+          else if (roll < 0.60) count = 2
+          else count = 1
         } else {
-          if (roll < 0.30) count = Math.floor(Math.random() * 5) + 6 // 6 a 10 detritos!
-          else if (roll < 0.65) count = Math.floor(Math.random() * 3) + 3 // 3 a 5 detritos
+          if (roll < 0.15) count = 3
+          else if (roll < 0.50) count = 2
           else count = 1
         }
         combat.spawnDetrito(count)
-        state.detritoTimer = inArena
-          ? progression.randomDetritoInterval() * 0.65
-          : progression.randomDetritoInterval()
+        state.detritoTimer = (inArena
+          ? progression.randomDetritoInterval() * 0.9
+          : progression.randomDetritoInterval()) * 1.3
       }
       state.imaTimer -= dt * 1000
       if (state.imaTimer <= 0) {
@@ -333,12 +345,12 @@ export function createGameLoop(deps) {
 
           // Durante a tempestade, spawna levas rápidas a cada 0.8s a 1.25s
           if (state.debrisStormSpawnTimer <= 0) {
-            state.debrisStormSpawnTimer = 800 + Math.random() * 450
-            const stormCount = Math.floor(Math.random() * 4) + 3 // 3 a 6 por salva
+            state.debrisStormSpawnTimer = 1100 + Math.random() * 500
+            const stormCount = Math.floor(Math.random() * 2) + 2 // 2 a 3 por salva
             combat.spawnDetrito(stormCount, { drift: true })
 
-            // 35% de chance de surgir um detrito TITÂNICO colossal!
-            if (Math.random() < 0.35) {
+            // 20% de chance de surgir um detrito TITÂNICO colossal (respeitando limite de 2)
+            if (Math.random() < 0.20) {
               combat.spawnTitanicDetrito({ drift: true })
             }
           }
@@ -361,12 +373,14 @@ export function createGameLoop(deps) {
       }
     }
 
+    const shipHitboxPoints = rail.getShipHitboxPoints ? rail.getShipHitboxPoints() : null
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimDirection: fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
       allowBossOrbHit: state.phase === 'bossBuildup',
       boostActive: boostOn,
+      shipHitboxPoints,
     })
 
     // ============ HIT MARKER ============
@@ -460,16 +474,10 @@ export function createGameLoop(deps) {
       })
     }
 
-    // ============ NEBLINA VIVA (deriva suave de cor no trilho) ============
+    // ============ FUNDO PRETO CLÁSSICO E NEBLINA CÓSMICA ============
     if (scene.fog && state.phase === 'combat' && !rail.isArena()) {
-      const dist = rail.getDistance()
-      const t1 = Math.sin(dist * 0.0012) * 0.5 + 0.5
-      const t2 = Math.cos(dist * 0.0017) * 0.5 + 0.5
-      _baseColor.set(LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length])
-      _blendedShift.copy(_cosmicTint1).lerp(_cosmicTint2, t1).lerp(_cosmicTint3, t2)
-      _finalColor.copy(_baseColor).lerp(_blendedShift, 0.4)
-      scene.fog.color.copy(_finalColor)
-      scene.background.copy(_finalColor)
+      scene.fog.color.set(0x000000)
+      scene.background.set(0x000000)
     }
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
@@ -673,7 +681,13 @@ export function createGameLoop(deps) {
 
     if (state.phase === 'bossFight') {
       const bossSnap = combat.getBossSnapshot()
-      if (bossSnap) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp)
+      if (bossSnap) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp, 'CHEFE', false)
+    } else if (state.phase === 'goldenArena') {
+      const goldenSnap = combat.getGoldenSnapshot()
+      if (goldenSnap) hud.setBossFight(true, goldenSnap.hp, goldenSnap.maxHp, 'ANOMALIA DOURADA', true)
+      else hud.setBossFight(false, 0, 1)
+    } else {
+      hud.setBossFight(false, 0, 1)
     }
 
     if (rail.isArena()) {

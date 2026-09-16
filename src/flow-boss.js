@@ -99,17 +99,16 @@ export function createBossFlow(deps) {
     saveHistory(session.history)
     menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        points: resolution.points,
-        comboMultiplier: resolution.comboMultiplier,
-        health: resolution.healthRemaining,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      points: correct ? resolution.points : 0,
+      comboMultiplier: correct ? resolution.comboMultiplier : session.comboMultiplier,
+      health: correct ? resolution.healthRemaining : session.health,
+      accuracyBonus: outcome.accuracyBonus,
+    })
+    if (!correct) {
+      hud.showErrorFloat(`Errou! Resposta: ${outcome.card.answer}`)
     }
 
     const prevLives = session.lives
@@ -212,15 +211,14 @@ export function createBossFlow(deps) {
     saveHistory(session.history)
     menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        bonus: true,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      bonus: true,
+      accuracyBonus: outcome.accuracyBonus,
+    })
+    if (!correct) {
+      hud.showErrorFloat(`Errou! Resposta: ${outcome.card.answer}`)
     }
 
     state.pendingCardChoice = correct
@@ -262,8 +260,8 @@ export function createBossFlow(deps) {
       enterGoldenAlternatives()
     }
     state.phase = 'deathCutscene'
-    state.deathCutsceneTimer = DEATH_CUTSCENE_MS
-    state.deathCutsceneDurationMs = DEATH_CUTSCENE_MS
+    state.deathCutsceneTimer = 3400
+    state.deathCutsceneDurationMs = 3400
   }
 
   return {

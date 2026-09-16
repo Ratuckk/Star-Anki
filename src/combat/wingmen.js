@@ -621,16 +621,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
 
           if (w.burstRemaining <= 0) {
-            // Break-turn de combate após disparar: curva evasiva antes de voltar à patrulha
+            // Retorna suavemente à patrulha mantendo o voo planado estável
             w.state = 'patrol'
             w.stateTimer = 0
             w.fireCooldown = squadronCommandMode === 'focus' ? 0.3 : w.profile.fireInterval + Math.random() * 0.5
-            w.nextWaypointTimer = squadronCommandMode === 'focus' ? 0.2 : 1.0
-            // Evasão lateral
-            w.patrolTarget.copy(w.mesh.position)
-              .addScaledVector(frame.right, w.breakTurnAngle * 14)
-              .addScaledVector(frame.up, 5)
-              .addScaledVector(frame.forward, 15)
+            w.nextWaypointTimer = squadronCommandMode === 'focus' ? 0.4 : 1.6
           }
         }
       }
@@ -650,7 +645,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (w.state === 'regroup' || distToPlayer > 35) cruiseSpeed += 32
       }
       if (boostActive || w.state === 'flyby') cruiseSpeed *= 1.65
-      else if (w.state === 'dogfight') cruiseSpeed *= 1.3
+      else if (w.state === 'dogfight') cruiseSpeed *= 1.2
 
       const desiredVelocity = targetDir.multiplyScalar(cruiseSpeed)
 
@@ -666,22 +661,33 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // Aceleração com inércia
-      const accelRate = w.state === 'flyby' ? 6.5 : 4.0
+      // Aceleração com inércia suave
+      const accelRate = w.state === 'flyby' ? 6.0 : (w.state === 'dogfight' ? 3.0 : 2.5)
       w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
-      // Orientação: o bico do caça aponta suavemente para a direção do movimento real
-      const currentSpeed = w.velocity.length()
-      if (currentSpeed > 1.0) {
-        const moveDir = w.velocity.clone().normalize()
-        w.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, moveDir)
-
-        // Banking / Roll real na curva: inclina a asa proporcionalmente ao componente lateral do movimento
-        const lateralMove = w.velocity.dot(frame.right)
-        const targetRoll = THREE.MathUtils.clamp(-lateralMove * 0.045, -1.2, 1.2) // até ~70° de inclinação
-        w.smoothRoll += (targetRoll - w.smoothRoll) * (1 - Math.exp(-5.5 * dt))
+      // Orientação: no dogfight mira firme no inimigo; na patrulha plana suavemente com roll sutil
+      if (w.state === 'dogfight' && w.targetEnemy && w.targetEnemy.mesh && !w.targetEnemy.dying) {
+        const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
+        if (toEnemy.lengthSq() > 1e-4) {
+          const aimQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, toEnemy.normalize())
+          w.mesh.quaternion.slerp(aimQuat, 1 - Math.exp(-8.5 * dt))
+        }
+        w.smoothRoll += (0 - w.smoothRoll) * (1 - Math.exp(-6.0 * dt))
         w.mesh.rotateZ(w.smoothRoll)
+      } else {
+        const currentSpeed = w.velocity.length()
+        if (currentSpeed > 1.0) {
+          const moveDir = w.velocity.clone().normalize()
+          const moveQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, moveDir)
+          w.mesh.quaternion.slerp(moveQuat, 1 - Math.exp(-5.0 * dt))
+
+          // Banking suave / planado em curvas (inclinando suavemente no máximo ~18° em vez de piruetas)
+          const lateralMove = w.velocity.dot(frame.right)
+          const targetRoll = THREE.MathUtils.clamp(-lateralMove * 0.015, -0.32, 0.32)
+          w.smoothRoll += (targetRoll - w.smoothRoll) * (1 - Math.exp(-3.5 * dt))
+          w.mesh.rotateZ(w.smoothRoll)
+        }
       }
     }
 

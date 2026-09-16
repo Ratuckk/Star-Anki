@@ -144,13 +144,14 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     },
 
     // ctx = { fireEnemyProjectile, pushProjectile, pushLaser }
-    update(dt, playerPosition, ctx, ramDamage = 0) {
+    update(dt, playerPosition, ctx, ramDamage = 0, opts = {}) {
       elapsed += dt
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
       let bossCollisionWorldPos = null
       let goldenHits = 0
+      const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
       for (const g of [...goldenTargets]) {
         if (g.dying) {
           g.deathT += dt / GOLDEN_DEATH_DURATION
@@ -159,11 +160,11 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           continue
         }
 
-        // Colisão com o Boss Dourado (aríete com dano E choque de fuselagem com knockback/tumble)
-        const ramRadius = GOLDEN_HIT_RADIUS + 5.0
-        const bodyRadius = GOLDEN_HIT_RADIUS + 2.5
-        const inRamRange = ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= ramRadius
-        const inBodyRange = playerPosition && playerPosition.distanceTo(g.mesh.position) <= bodyRadius
+        // Colisão com o Boss Dourado (ajustado para casar precisamente com o TorusKnotGeometry 1.5u)
+        const ramRadius = 3.0
+        const bodyRadius = 1.6
+        const inRamRange = ramDamage > 0 && shipPoints.some((pt) => pt.worldPos.distanceTo(g.mesh.position) <= ramRadius + pt.radius)
+        const inBodyRange = shipPoints.some((pt) => pt.worldPos.distanceTo(g.mesh.position) <= bodyRadius + pt.radius)
 
         if (inRamRange || inBodyRange) {
           if (!g.ramHitActive && !g.bodyHitActive) {

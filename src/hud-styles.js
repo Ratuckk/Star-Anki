@@ -52,21 +52,37 @@ export function injectHudExtraStyles() {
   left: 50%;
   top: 38%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-weight: 900;
   font-size: 20px;
   letter-spacing: 0.02em;
   color: #ff4d4d;
   text-shadow: 0 0 8px rgba(255, 40, 40, 0.85), 0 1px 2px rgba(0,0,0,0.95);
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 30;
-  animation: hud-error-float-anim 3000ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+  animation: hud-error-float-anim 5000ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+.hud-error-skip-hint {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-shadow: none;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 3px 10px;
+  border-radius: 4px;
 }
 @keyframes hud-error-float-anim {
   0%   { transform: translate(-50%, -50%) translateY(8px)  scale(0.7); opacity: 0; }
-  15%  { transform: translate(-50%, -50%) translateY(-2px) scale(1.1); opacity: 1; }
-  75%  { transform: translate(-50%, -50%) translateY(-14px) scale(1); opacity: 1; }
-  100% { transform: translate(-50%, -50%) translateY(-32px) scale(0.95); opacity: 0; }
+  10%  { transform: translate(-50%, -50%) translateY(-2px) scale(1.05); opacity: 1; }
+  85%  { transform: translate(-50%, -50%) translateY(-10px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) translateY(-24px) scale(0.95); opacity: 0; }
 }
 
 /* ============ HIT MARKER (X na mira) ============ */
@@ -731,6 +747,100 @@ export function injectHudExtraStyles() {
 }
 .hud-codex-footer b {
   color: #38bdf8;
+}
+
+/* ============ PAINEL DE EXPLICAÇÃO PÓS-RESPOSTA (v0.61.0) ============ */
+.hud-expl-drawer {
+  border-left-color: rgba(251, 191, 36, 0.5);
+  box-shadow: -15px 0 50px rgba(0, 0, 0, 0.85), -4px 0 25px rgba(251, 191, 36, 0.25);
+}
+.hud-expl-header {
+  border-bottom-color: rgba(251, 191, 36, 0.22);
+}
+.hud-expl-badge-title {
+  color: #fbbf24 !important;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.6) !important;
+}
+.hud-expl-answer-card {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(16, 28, 20, 0.75);
+}
+.hud-expl-answer-text {
+  color: #34d399 !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+}
+.hud-expl-footer {
+  border-top-color: rgba(251, 191, 36, 0.12);
+}
+.hud-expl-footer b {
+  color: #fbbf24;
+}
+.hud-expl-backdrop.is-open {
+  z-index: 50;
+}
+.hud-expl-drawer.is-open {
+  z-index: 52;
+}
+
+/* ============ BOTÕES INLINE DE EXPLICAÇÃO (CARD CHOICE + ERRO) ============ */
+.hud-expl-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1.5px solid rgba(251, 191, 36, 0.35);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  user-select: none;
+}
+.hud-expl-inline-btn:hover {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: #fbbf24;
+  color: #fef3c7;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+.hud-expl-inline-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+}
+
+/* Row do botão de explicação na tela de cartas */
+.hud-expl-card-row {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-top: 1.2rem;
+}
+.hud-expl-card-btn {
+  animation: question-modal-pop-in 400ms cubic-bezier(0.22, 1.4, 0.38, 1) 400ms both;
+}
+
+/* Botão de explicação embutido no float de erro */
+.hud-error-float {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.hud-expl-error-btn {
+  font-size: 0.72rem;
+  padding: 6px 12px;
+  animation: fadeIn 300ms ease 600ms both;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .question-modal-list {
   display: flex;

@@ -5,15 +5,15 @@
 // Pode ser alterado diretamente aqui ou em tempo de execução via menu de debug.
 
 export const ENVIRONMENT_CONFIG = {
-  enableSkyDome: true,          // Cúpula cósmica procedural com gradientes de nebulosa orgânica
-  enableCelestialBodies: true,  // Planeta gigante gasoso com anéis e lua em paralaxe profunda
+  enableSkyDome: false,         // Desativado: fundo preto clássico do espaço
+  enableCelestialBodies: false, // Desativado: planetas/luas removidos conforme pedido
   enableMultiLayerStars: true,  // Estrelas multicamadas com cintilação suave (twinkle)
-  enableWarpStreaks: true,       // Esticamento de estrelas/poeira no boost (efeito hiperespaço)
+  enableWarpStreaks: true,      // Esticamento de estrelas/poeira no boost (efeito hiperespaço)
   enableNebulaPockets: true,    // Bolsões de névoa densa e transição de atmosfera no percurso
-  enableIonStorms: true,        // Relâmpagos cósmicos difusos esporádicos no horizonte
-  enableShootingStars: true,    // Meteoros / estrelas cadentes periódicas cortando o céu
-  enableEnergizedGrid: true,    // Ondas de pulso neon viajando no grid de solo
-  enableDebrisStormEvent: true, // Mini-evento ambiental: tempestade intensa de detritos e asteroides titânicos
+  enableIonStorms: false,       // Desativado: preserva fundo preto limpo
+  enableShootingStars: false,   // Desativado
+  enableEnergizedGrid: false,   // Desativado: grid clássico
+  enableDebrisStormEvent: false, // Desativado para evitar excesso de detritos na pista
 }
 
 export function setEnvironmentFeature(feature, enabled) {

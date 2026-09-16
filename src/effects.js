@@ -47,16 +47,16 @@ const EXPLOSION_PARTICLE_SIZE = 0.9
 const EXPLOSION_GRAY_RING_COUNT_MIN = 1
 const EXPLOSION_GRAY_RING_COUNT_MAX = 3
 const EXPLOSION_GRAY_RING_COLOR = 0x999999
-const EXPLOSION_GRAY_RING_DURATION = 0.65
-const EXPLOSION_GRAY_RING_SCALE_MIN = 1.6
-const EXPLOSION_GRAY_RING_SCALE_MAX = 3.4
-const EXPLOSION_GRAY_RING_START_SCALE = 0.2
+const EXPLOSION_GRAY_RING_DURATION = 0.75
+const EXPLOSION_GRAY_RING_SCALE_MIN = 2.8
+const EXPLOSION_GRAY_RING_SCALE_MAX = 5.8
+const EXPLOSION_GRAY_RING_START_SCALE = 0.3
 // pedido do usuário: nem toda morte solta as argolas — chance de 45% (chefe: 80%, opts.isBoss)
 // em vez de sempre; e a argola em si passa a ser visível só de um lado (FrontSide) em vez dos
 // 2 lados do plano (DoubleSide, o padrão de makeRingMesh — só as cinzas mudam, os outros usos
 // de makeRingMesh continuam DoubleSide)
 const EXPLOSION_GRAY_RING_CHANCE_NORMAL = 0.45
-const EXPLOSION_GRAY_RING_CHANCE_BOSS = 0.8
+const EXPLOSION_GRAY_RING_CHANCE_BOSS = 0.85
 
 // ============ MUZZLE FLASH ============
 const MUZZLE_DURATION = 0.07
@@ -169,16 +169,16 @@ const BOOST_TRAIL_OPACITY = 0.5
 // "asset/efeito que deixe a neblina reconhecível como neblina" — antes só o FogExp2 (sem
 // nenhuma pista visual direta). Nuvens grandes, suaves e esparsas, no mesmo padrão de volume
 // fixo em espaço-mundo da poeira ambiente (o jogador atravessa, não persegue a câmera).
-const FOG_WISP_COUNT = 46
-const FOG_WISP_SIZE_MIN = 3.5
-const FOG_WISP_SIZE_MAX = 7
-const FOG_WISP_OPACITY = 0.1
-const FOG_WISP_COLOR = 0xc7d6e8
+const FOG_WISP_COUNT = 85
+const FOG_WISP_SIZE_MIN = 5.0
+const FOG_WISP_SIZE_MAX = 12.0
+const FOG_WISP_OPACITY = 0.24
+const FOG_WISP_COLOR = 0x9cbbe0
 const FOG_WISP_AREA_CENTER = { x: -30, y: 2, z: -80 }
-const FOG_WISP_AREA_HALF_X = 140
-const FOG_WISP_AREA_HALF_Y = 18
-const FOG_WISP_AREA_HALF_Z = 140
-const FOG_WISP_DRIFT_SPEED = 0.6
+const FOG_WISP_AREA_HALF_X = 160
+const FOG_WISP_AREA_HALF_Y = 22
+const FOG_WISP_AREA_HALF_Z = 160
+const FOG_WISP_DRIFT_SPEED = 0.8
 
 // ============ HOMING ============
 const HOMING_EFFECT_COLOR = 0x2bff88
@@ -425,6 +425,7 @@ export function createEffectsSystem(scene, opts = {}) {
   // reutilizamos geometrias canônicas unitárias e ajustamos via mesh.scale.
   const sharedSphereGeometry = new THREE.SphereGeometry(1, 8, 8)
   const sharedRingGeometry = new THREE.RingGeometry(0.85, 1.0, 24)
+  const sharedWideRingGeometry = new THREE.RingGeometry(0.55, 1.0, 32)
   const sharedTorusGeometry = new THREE.TorusGeometry(1, 0.15, 8, 20)
   const sharedConeGeometry = new THREE.ConeGeometry(0.5, 2.5, 6)
   sharedConeGeometry.rotateX(Math.PI / 2)
@@ -437,13 +438,13 @@ export function createEffectsSystem(scene, opts = {}) {
   const _tmpQuat = new THREE.Quaternion()
 
   // ============ SHOCKWAVE / RING HELPERS ============
-  function makeRingMesh(colorHex) {
+  function makeRingMesh(colorHex, isWide = false) {
     const mat = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.85,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
       depthWrite: false, fog: false,
     })
-    const mesh = new THREE.Mesh(sharedRingGeometry, mat)
+    const mesh = new THREE.Mesh(isWide ? sharedWideRingGeometry : sharedRingGeometry, mat)
     mesh.frustumCulled = false
     return mesh
   }
@@ -508,7 +509,7 @@ export function createEffectsSystem(scene, opts = {}) {
     if (opts.rings && Math.random() < ringChance) {
       const count = EXPLOSION_GRAY_RING_COUNT_MIN + Math.floor(Math.random() * (EXPLOSION_GRAY_RING_COUNT_MAX - EXPLOSION_GRAY_RING_COUNT_MIN + 1))
       for (let i = 0; i < count; i += 1) {
-        const mesh = makeRingMesh(EXPLOSION_GRAY_RING_COLOR, 0.16 + Math.random() * 0.14)
+        const mesh = makeRingMesh(EXPLOSION_GRAY_RING_COLOR, true)
         mesh.material.side = THREE.FrontSide
         mesh.position.copy(position)
         mesh.quaternion.setFromEuler(new THREE.Euler(
@@ -1294,6 +1295,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
     // ARGOLAS CINZAS GRANDES (só explosão de inimigo, ver opts.rings) — ângulo fixo (setado na
     // criação, NÃO billboard) pra ler como destroço de verdade visto de um ângulo qualquer.
+    // pedido do usuário: maiores, mais largas, alargando-se com o tempo em apenas um dos eixos (escala assimétrica)
     for (let i = grayRings.length - 1; i >= 0; i--) {
       const r = grayRings[i]
       r.life += dt
@@ -1304,8 +1306,9 @@ export function createEffectsSystem(scene, opts = {}) {
         grayRings.splice(i, 1); continue
       }
       const scale = EXPLOSION_GRAY_RING_START_SCALE + (r.maxScale - EXPLOSION_GRAY_RING_START_SCALE) * Math.sqrt(t)
-      r.mesh.scale.setScalar(scale)
-      r.mesh.material.opacity = 0.8 * (1 - t)
+      const majorScale = scale * (1 + t * 1.05)
+      r.mesh.scale.set(majorScale, scale, 1)
+      r.mesh.material.opacity = 0.85 * (1 - t)
     }
 
     // HIT SPARKS
@@ -1754,6 +1757,7 @@ export function createEffectsSystem(scene, opts = {}) {
     silhouetteMaterial.dispose()
     sharedSphereGeometry.dispose()
     sharedRingGeometry.dispose()
+    sharedWideRingGeometry.dispose()
     sharedTorusGeometry.dispose()
     sharedConeGeometry.dispose()
     ricochetArcs.length = 0

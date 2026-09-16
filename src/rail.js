@@ -830,6 +830,17 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       lastPlayerPos = playerPos.clone()
     },
     getPlayerPosition: () => lastPlayerPos.clone(),
+    getShipHitboxPoints: () => {
+      const f = lastFrame ? lastFrame.forward : new THREE.Vector3(0, 0, 1)
+      const r = lastFrame ? lastFrame.right : new THREE.Vector3(1, 0, 0)
+      const p = lastPlayerPos
+      return [
+        { worldPos: p.clone().addScaledVector(f, 1.1), radius: 0.4 }, // bico
+        { worldPos: p.clone(), radius: 0.55 }, // cabine/centro
+        { worldPos: p.clone().addScaledVector(r, -1.6).addScaledVector(f, -0.3), radius: 0.38 }, // asa esquerda
+        { worldPos: p.clone().addScaledVector(r, 1.6).addScaledVector(f, -0.3), radius: 0.38 }, // asa direita
+      ]
+    },
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
     getFrameAt,
     getSpawnFrame,

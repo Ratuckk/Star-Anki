@@ -275,13 +275,15 @@ export function createGameHud() {
   questionModalTitle.className = 'question-modal-title'
   questionModalFrame.appendChild(questionModalTitle)
 
-  // ============ BOTÃO NA EXTREMA DIREITA & GAVETA DO CÓDICE (ANKI OVERHAUL) ============
+  // ============ BOTÃO DE CONTEXTO NA EXTREMA DIREITA (DURANTE A PERGUNTA) ============
+  // Mostra o CONCEITO geral por trás da pergunta — nunca revela a resposta.
+  // Seguro de exibir a qualquer momento durante o recall ativo.
   const codexTabBtn = document.createElement('button')
   codexTabBtn.className = 'hud-codex-tab-btn'
   codexTabBtn.type = 'button'
   codexTabBtn.innerHTML = `
-    <span class="hud-codex-tab-icon">📖</span>
-    <span class="hud-codex-tab-label">CÓDICE &amp; FONTES</span>
+    <span class="hud-codex-tab-icon">💡</span>
+    <span class="hud-codex-tab-label">CONTEXTO</span>
     <span class="hud-codex-tab-key">E</span>
   `
   questionModalOverlay.appendChild(codexTabBtn)
@@ -297,10 +299,10 @@ export function createGameHud() {
   codexDrawer.innerHTML = `
     <div class="hud-codex-header">
       <div class="hud-codex-meta">
-        <span class="hud-codex-badge">TERMINAL CÓDICE // ANKI</span>
+        <span class="hud-codex-badge">CONTEXTO // CONCEITO</span>
         <span class="hud-codex-tag-badge" id="hudCodexTag"></span>
       </div>
-      <button type="button" class="hud-codex-close-btn" id="hudCodexCloseBtn" aria-label="Fechar Códice">
+      <button type="button" class="hud-codex-close-btn" id="hudCodexCloseBtn" aria-label="Fechar Contexto">
         ✕ Fechar [Esc]
       </button>
     </div>
@@ -310,16 +312,16 @@ export function createGameHud() {
         <div class="hud-codex-question-text" id="hudCodexQuestion"></div>
       </div>
       <div class="hud-codex-section" id="hudCodexExplanationSection">
-        <div class="hud-codex-section-label">🔬 EXPLICAÇÃO DENSA &amp; CONCEITO</div>
+        <div class="hud-codex-section-label">💡 CONCEITO GERAL</div>
         <div class="hud-codex-explanation-text" id="hudCodexExplanation"></div>
       </div>
       <div class="hud-codex-section" id="hudCodexSourcesSection">
-        <div class="hud-codex-section-label">📚 FONTES &amp; REFERÊNCIAS OFICIAIS</div>
+        <div class="hud-codex-section-label">📚 FONTE / REFERÊNCIA</div>
         <div class="hud-codex-sources-content" id="hudCodexSources"></div>
       </div>
     </div>
     <div class="hud-codex-footer">
-      <span>Pressione <b>E</b> ou <b>Esc</b> para alternar o Códice</span>
+      <span>Pressione <b>E</b> ou <b>Esc</b> para alternar o Contexto</span>
     </div>
   `
 
@@ -358,6 +360,137 @@ export function createGameHud() {
   }
   codexBackdrop.onclick = () => {
     closeCodex()
+  }
+
+  // ============ PAINEL DE EXPLICAÇÃO PÓS-RESPOSTA (SÓ APARECE APÓS RESPONDER) ============
+  // Mostra a explicação densa + fontes + resposta correta. Visível nas telas de
+  // card choice (acerto) e feedback de erro.
+  const explDrawerBackdrop = document.createElement('div')
+  explDrawerBackdrop.className = 'hud-codex-backdrop hud-expl-backdrop'
+  root.appendChild(explDrawerBackdrop)
+
+  const explDrawer = document.createElement('aside')
+  explDrawer.className = 'hud-codex-drawer hud-expl-drawer'
+  root.appendChild(explDrawer)
+
+  explDrawer.innerHTML = `
+    <div class="hud-codex-header hud-expl-header">
+      <div class="hud-codex-meta">
+        <span class="hud-codex-badge hud-expl-badge-title">EXPLICAÇÃO DA RESPOSTA</span>
+        <span class="hud-codex-tag-badge" id="hudExplTag"></span>
+      </div>
+      <button type="button" class="hud-codex-close-btn" id="hudExplCloseBtn" aria-label="Fechar Explicação">
+        ✕ Fechar [Esc]
+      </button>
+    </div>
+    <div class="hud-codex-scroll">
+      <div class="hud-codex-question-card hud-expl-answer-card">
+        <div class="hud-codex-section-label">✅ RESPOSTA CORRETA</div>
+        <div class="hud-codex-question-text hud-expl-answer-text" id="hudExplAnswer"></div>
+      </div>
+      <div class="hud-codex-section" id="hudExplExplanationSection">
+        <div class="hud-codex-section-label">🔬 EXPLICAÇÃO DENSA &amp; APROFUNDADA</div>
+        <div class="hud-codex-explanation-text" id="hudExplExplanation"></div>
+      </div>
+      <div class="hud-codex-section" id="hudExplSourcesSection">
+        <div class="hud-codex-section-label">📚 FONTES &amp; REFERÊNCIAS OFICIAIS</div>
+        <div class="hud-codex-sources-content" id="hudExplSources"></div>
+      </div>
+    </div>
+    <div class="hud-codex-footer hud-expl-footer">
+      <span>Pressione <b>Esc</b> para fechar</span>
+    </div>
+  `
+
+  const hudExplTag = explDrawer.querySelector('#hudExplTag')
+  const hudExplCloseBtn = explDrawer.querySelector('#hudExplCloseBtn')
+  const hudExplAnswer = explDrawer.querySelector('#hudExplAnswer')
+  const hudExplExplanationSection = explDrawer.querySelector('#hudExplExplanationSection')
+  const hudExplExplanation = explDrawer.querySelector('#hudExplExplanation')
+  const hudExplSourcesSection = explDrawer.querySelector('#hudExplSourcesSection')
+  const hudExplSources = explDrawer.querySelector('#hudExplSources')
+
+  // guardar dados da última pergunta resolvida para alimentar o painel de explicação
+  let lastResolvedCard = null
+  let currentErrorFloat = null
+
+  function openExplDrawer() {
+    explDrawer.classList.add('is-open')
+    explDrawerBackdrop.classList.add('is-open')
+  }
+
+  function closeExplDrawer() {
+    explDrawer.classList.remove('is-open')
+    explDrawerBackdrop.classList.remove('is-open')
+  }
+
+  function populateExplDrawer(card) {
+    if (!card) return
+    hudExplAnswer.textContent = card.answer || card.correctAnswer || ''
+    hudExplTag.textContent = (card.tags && card.tags.length > 0) ? card.tags.join(' • ') : (card.deck || 'Estudo')
+
+    const hasExpl = Boolean(card.explanation && card.explanation.trim().length > 0)
+    const hasSrc = Boolean(card.sourceUrl || (card.sourcesText && card.sourcesText.trim().length > 0))
+
+    if (hasExpl) {
+      hudExplExplanationSection.style.display = 'block'
+      hudExplExplanation.textContent = card.explanation
+    } else {
+      hudExplExplanationSection.style.display = 'none'
+    }
+
+    if (hasSrc) {
+      hudExplSourcesSection.style.display = 'block'
+      hudExplSources.innerHTML = ''
+      if (card.sourceUrl) {
+        const a = document.createElement('a')
+        a.className = 'hud-codex-source-link'
+        a.href = card.sourceUrl
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        const label = card.sourceUrl.length > 55 ? card.sourceUrl.slice(0, 52) + '...' : card.sourceUrl
+        a.innerHTML = `<span>🔗</span> <span>${label}</span>`
+        hudExplSources.appendChild(a)
+      }
+      if (card.sourcesText && card.sourcesText !== card.sourceUrl) {
+        const p = document.createElement('div')
+        p.className = 'hud-codex-source-citation'
+        p.textContent = card.sourcesText
+        hudExplSources.appendChild(p)
+      }
+    } else {
+      hudExplSourcesSection.style.display = 'none'
+    }
+  }
+
+  // handler global de teclado para fechar o painel de explicação
+  let explKeyHandler = null
+  function attachExplKeyHandler() {
+    if (explKeyHandler) return
+    explKeyHandler = (e) => {
+      if (e.key === 'Escape' || e.code === 'Escape') {
+        if (explDrawer.classList.contains('is-open')) {
+          e.preventDefault()
+          e.stopPropagation()
+          closeExplDrawer()
+        }
+      }
+    }
+    window.addEventListener('keydown', explKeyHandler, true)
+  }
+  function detachExplKeyHandler() {
+    if (explKeyHandler) {
+      window.removeEventListener('keydown', explKeyHandler, true)
+      explKeyHandler = null
+    }
+  }
+
+  hudExplCloseBtn.onclick = (e) => {
+    e.stopPropagation()
+    closeExplDrawer()
+  }
+  explDrawerBackdrop.onclick = () => {
+    closeExplDrawer()
   }
 
   const questionModalList = document.createElement('div')
@@ -554,9 +687,11 @@ export function createGameHud() {
 
     closeCodex()
 
+    // Guardar dados da carta para o painel de explicação pós-resposta
+    lastResolvedCard = { question, explanation, sourceUrl, sourcesText, tags, deck, answer: '' }
+
     const hasExplanation = Boolean(explanation && explanation.trim().length > 0)
-    const hasSources = Boolean(sourceUrl || (sourcesText && sourcesText.trim().length > 0))
-    const hasConcept = hasExplanation || hasSources
+    const hasConcept = hasExplanation
 
     if (hasConcept) {
       codexTabBtn.style.display = 'flex'
@@ -570,7 +705,7 @@ export function createGameHud() {
         hudCodexExplanationSection.style.display = 'none'
       }
 
-      if (hasSources) {
+      if (sourceUrl || sourcesText) {
         hudCodexSourcesSection.style.display = 'block'
         hudCodexSources.innerHTML = ''
         if (sourceUrl) {
@@ -759,6 +894,11 @@ export function createGameHud() {
         ? (data.correct ? 'Buff de arma reforçado!' : 'Sem efeito na partida.')
         : `+${Math.round(data.points)} pontos · combo x${data.comboMultiplier.toFixed(2)} · vida ${data.health}`
       feedback.appendChild(stats)
+
+      // Guardar resposta correta no card resolvido para o painel de explicação
+      if (lastResolvedCard && data.correctAnswer) {
+        lastResolvedCard.answer = data.correctAnswer
+      }
     },
 
     setPaused(paused) {
@@ -1018,15 +1158,52 @@ export function createGameHud() {
       scheduleTimeout(() => el.remove(), 950)
     },
 
-    // v0.29.6: errar pergunta não mostra mais o painel de feedback (resposta certa/pontos) —
-    // só isso, um texto vermelho pequeno que sobe e some sozinho em 3s. O jogo continua
-    // "pausado" (fase de resolução) até ele sumir, mas sem UI grande no meio da tela.
     showErrorFloat(text = 'Errou!') {
+      if (currentErrorFloat) {
+        currentErrorFloat.remove()
+        currentErrorFloat = null
+      }
       const el = document.createElement('div')
       el.className = 'hud-error-float'
-      el.textContent = text
+
+      const textSpan = document.createElement('span')
+      textSpan.textContent = text
+      el.appendChild(textSpan)
+
+      // Botão de explicação no float de erro — só aparece se houver dados
+      const hasExpl = lastResolvedCard && (
+        (lastResolvedCard.explanation && lastResolvedCard.explanation.trim().length > 0) ||
+        lastResolvedCard.sourceUrl ||
+        (lastResolvedCard.sourcesText && lastResolvedCard.sourcesText.trim().length > 0)
+      )
+      if (hasExpl) {
+        const explBtn = document.createElement('button')
+        explBtn.className = 'hud-expl-inline-btn hud-expl-error-btn'
+        explBtn.type = 'button'
+        explBtn.innerHTML = '📖 <span>Ver Explicação</span>'
+        explBtn.onclick = (e) => {
+          e.stopPropagation()
+          populateExplDrawer(lastResolvedCard)
+          openExplDrawer()
+          attachExplKeyHandler()
+        }
+        el.appendChild(explBtn)
+      }
+
+      const skipHint = document.createElement('span')
+      skipHint.className = 'hud-error-skip-hint'
+      skipHint.textContent = '[ESPAÇO] Continuar'
+      el.appendChild(skipHint)
+
       root.appendChild(el)
-      scheduleTimeout(() => el.remove(), 3000)
+      currentErrorFloat = el
+    },
+
+    hideErrorFloat() {
+      if (currentErrorFloat) {
+        currentErrorFloat.remove()
+        currentErrorFloat = null
+      }
     },
 
     setEnemyHealthBars(list) {
@@ -1074,9 +1251,13 @@ export function createGameHud() {
       }
     },
 
-    setBossFight(active, hp, maxHp) {
+    setBossFight(active, hp, maxHp, label = 'CHEFE', isGolden = false) {
       bossFightBar.hidden = !active
-      if (active) bossFightFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`
+      if (active) {
+        bossFightLabel.textContent = label
+        bossFightBar.classList.toggle('is-golden', !!isGolden)
+        bossFightFill.style.width = `${Math.max(0, Math.min(1, hp / maxHp)) * 100}%`
+      }
     },
 
     setMinimap(active, data) {
@@ -1109,8 +1290,12 @@ export function createGameHud() {
     // funciona no modal de pergunta — reusa os mesmos binds quizSlot1..4 (Digit1..4 por padrão).
     showCardChoice({ cards, onPick }) {
       cardChoiceList.innerHTML = ''
+      cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
       const close = () => {
         cardChoiceOverlay.hidden = true
+        cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
+        closeExplDrawer()
+        detachExplKeyHandler()
         if (cardChoiceKeyHandler) {
           window.removeEventListener('keydown', cardChoiceKeyHandler)
           cardChoiceKeyHandler = null
@@ -1144,6 +1329,30 @@ export function createGameHud() {
         el.addEventListener('click', () => pick(i))
         cardChoiceList.appendChild(el)
       })
+
+      // Botão de explicação da resposta na tela de cartas (acerto)
+      const hasExpl = lastResolvedCard && (
+        (lastResolvedCard.explanation && lastResolvedCard.explanation.trim().length > 0) ||
+        lastResolvedCard.sourceUrl ||
+        (lastResolvedCard.sourcesText && lastResolvedCard.sourcesText.trim().length > 0)
+      )
+      if (hasExpl) {
+        const explRow = document.createElement('div')
+        explRow.className = 'hud-expl-card-row'
+        const explBtn = document.createElement('button')
+        explBtn.className = 'hud-expl-inline-btn hud-expl-card-btn'
+        explBtn.type = 'button'
+        explBtn.innerHTML = '📖 <span>Explicação da Resposta</span>'
+        explBtn.onclick = (e) => {
+          e.stopPropagation()
+          populateExplDrawer(lastResolvedCard)
+          openExplDrawer()
+          attachExplKeyHandler()
+        }
+        explRow.appendChild(explBtn)
+        cardChoiceOverlay.appendChild(explRow)
+      }
+
       cardChoiceOverlay.hidden = false
 
       if (cardChoiceKeyHandler) {
@@ -1315,11 +1524,14 @@ export function createGameHud() {
         cardChoiceGpStop()
         cardChoiceGpStop = null
       }
+      // limpar paineis laterais
+      closeCodex()
+      closeExplDrawer()
+      detachExplKeyHandler()
+      lastResolvedCard = null
       root.classList.remove('cinematic-active', 'game-paused')
       cardsTray.innerHTML = ''
       prevCardsSignature = ''
-      questionConceptDrawer.classList.remove('is-open')
-      questionConceptBtn.classList.remove('is-open')
       root.innerHTML = ''
     },
   }

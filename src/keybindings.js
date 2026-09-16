@@ -17,6 +17,7 @@ export const ACTIONS = [
   { id: 'quizSlot3', label: 'Resposta 3' },
   { id: 'quizSlot4', label: 'Resposta 4' },
   { id: 'squadronCommand', label: 'Comando do esquadrão (Foco / Ataque livre)' },
+  { id: 'skipErrorFeedback', label: 'Pular feedback de erro / Continuar' },
 ]
 
 // A e S viraram propulsor/repulsor; D virou comando tático de esquadrão (Star Fox).
@@ -32,6 +33,7 @@ const DEFAULT_ACTIONS = {
   propulsion: ['KeyA'],
   repulsion: ['KeyS'],
   squadronCommand: ['KeyD'],
+  skipErrorFeedback: ['Space'],
   pause: ['Escape', 'KeyP'],
   debugToggle: ['Backquote'],
   quizSlot1: ['Digit1'],
@@ -43,7 +45,7 @@ const DEFAULT_ACTIONS = {
 // Ações mapeáveis a um botão físico de controle — movimento fica de fora de propósito (usa os
 // eixos analógicos configurados abaixo, não faz sentido "botão = direção" com um analógico à mão)
 export const GAMEPAD_ACTIONS = [
-  'fire', 'dodgeLeft', 'dodgeRight', 'propulsion', 'repulsion', 'squadronCommand',
+  'fire', 'dodgeLeft', 'dodgeRight', 'propulsion', 'repulsion', 'squadronCommand', 'skipErrorFeedback',
   'pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4',
 ]
 
@@ -63,6 +65,7 @@ const DEFAULT_GAMEPAD = {
     propulsion: [],
     repulsion: [],
     squadronCommand: [3],
+    skipErrorFeedback: [0],
     pause: [9],
     debugToggle: [8],
     quizSlot1: [],

@@ -36,43 +36,40 @@ export const SENTINELA_STATE_ENGAGING = 'engaging' // persegue mantendo distânc
 export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera pra trás e some
 
 // ============ TAMANHO DA MOLDURA ============
-// pedido do usuário: "quero que estes quadrados sejam maiores, como enquadramentos ao invés de
-// quadrados grandões... que abrem e fecham no meio" — outer=14 (moldura 28x28), inner=11
-// (buraco 22x22 — 78% do lado), banda de apenas 3 (fina, lê como BORDA). A moldura é
-// literalmente um enquadramento: o jogador vê o buraco desde longe, entende "preciso passar
-// por ali" — o abrir/fechar de verdade é outra mecânica, ver `updateGateAnimation` abaixo.
-const GATE_OUTER_HALF = 14
-const GATE_INNER_HALF = 11
-const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
-// Ajuste backlog (v0.53.9): moldura viaja a 40u/s (antes 80) e abre/fecha devagar (2.8s) pra excelente legibilidade
-const GATE_SPEED = 40
+// Pedido do usuário: moldura com bordas finas com opacidade apenas no centro
+const GATE_OUTER_HALF = 12.0
+const GATE_INNER_HALF = 11.2
+const GATE_BORDER_WIDTH = 0.8
+const GATE_BAR_THICKNESS = 0.4
+const GATE_SPEED = 42
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
-// pedido do usuário: a moldura tem que abrir e fechar com cadência majestosa e legível (2.8s),
-// sem oscilar freneticamente na tela, com centro holográfico seguro pra atravessar.
-const GATE_CYCLE_PERIOD = 2.8
-const GATE_MIN_INNER_HALF = 0.01
 
-// Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
-// `pass-behind` normal (que despawna quem ficou ATRÁS) nunca dispara — ela ficava viva pra
-// sempre, invisível pela névoa mas ainda no array de inimigos. Despawna por distância à frente.
+// Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido)
 const SENTINELA_LEAVE_DESPAWN_AHEAD = 220
 
 // Modelo 3D mais curto (Z=0.4 em vez de 0.7)
 const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.4)
 const material = new THREE.MeshPhongMaterial({ color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true })
 
-// moldura tipo "quadro de janela": holográfica translúcida (AdditiveBlending + depthWrite: false)
-// para não parecer sólida nem bloquear z-buffer, com opacidade sutil de 28%.
-const GATE_BAND = GATE_OUTER_HALF - GATE_INNER_HALF
-const GATE_BAND_CENTER = (GATE_OUTER_HALF + GATE_INNER_HALF) / 2
-const gateTopBottomGeometry = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BAND, GATE_BAR_THICKNESS)
-const gateSideGeometry = new THREE.BoxGeometry(GATE_BAND, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
-const gateMaterial = new THREE.MeshBasicMaterial({
+// Moldura: bordas finas brilhantes + centro com opacidade translúcida sutil
+const gateBorderTopBottomGeo = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BORDER_WIDTH, GATE_BAR_THICKNESS)
+const gateBorderSideGeo = new THREE.BoxGeometry(GATE_BORDER_WIDTH, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
+const gateBorderMaterial = new THREE.MeshBasicMaterial({
+  color: 0x70c5ff,
+  transparent: true,
+  opacity: 0.88,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+})
+
+const gateCenterGeo = new THREE.PlaneGeometry(GATE_INNER_HALF * 2, GATE_INNER_HALF * 2)
+const gateCenterMaterial = new THREE.MeshBasicMaterial({
   color: GATE_COLOR,
   transparent: true,
-  opacity: 0.28,
+  opacity: 0.14,
   side: THREE.DoubleSide,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
@@ -141,26 +138,24 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   const dir = targetDistance > 1e-4 ? toTarget.clone().normalize() : new THREE.Vector3(0, 0, -1)
 
   const group = new THREE.Group()
-  const top = new THREE.Mesh(gateTopBottomGeometry, gateMaterial)
-  top.position.set(0, GATE_BAND_CENTER, 0)
-  const bottom = new THREE.Mesh(gateTopBottomGeometry, gateMaterial)
-  bottom.position.set(0, -GATE_BAND_CENTER, 0)
-  const left = new THREE.Mesh(gateSideGeometry, gateMaterial)
-  left.position.set(-GATE_BAND_CENTER, 0, 0)
-  const right = new THREE.Mesh(gateSideGeometry, gateMaterial)
-  right.position.set(GATE_BAND_CENTER, 0, 0)
-  group.add(top, bottom, left, right)
+  const centerMesh = new THREE.Mesh(gateCenterGeo, gateCenterMaterial)
+  const borderOffset = GATE_INNER_HALF + GATE_BORDER_WIDTH / 2
+  const top = new THREE.Mesh(gateBorderTopBottomGeo, gateBorderMaterial)
+  top.position.set(0, borderOffset, 0)
+  const bottom = new THREE.Mesh(gateBorderTopBottomGeo, gateBorderMaterial)
+  bottom.position.set(0, -borderOffset, 0)
+  const left = new THREE.Mesh(gateBorderSideGeo, gateBorderMaterial)
+  left.position.set(-borderOffset, 0, 0)
+  const right = new THREE.Mesh(gateBorderSideGeo, gateBorderMaterial)
+  right.position.set(borderOffset, 0, 0)
+  group.add(centerMesh, top, bottom, left, right)
   group.position.copy(originPos)
   group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
-  group.scale.set(0.7, 0.7, 1)
+  group.scale.set(0.75, 0.75, 1)
   scene.add(group)
-
-  // período de ciclo fixo, calmo e previsível de 2.8s para passagem legível
-  const cyclePeriod = GATE_CYCLE_PERIOD
 
   const gate = {
     mesh: group,
-    bars: { top, bottom, left, right },
     dir,
     right: new THREE.Vector3(1, 0, 0).applyQuaternion(group.quaternion),
     up: new THREE.Vector3(0, 1, 0).applyQuaternion(group.quaternion),
@@ -168,14 +163,11 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
     targetDistance,
     traveled: 0,
     velocity: dir.clone().multiplyScalar(GATE_SPEED),
-    phase: 0,
-    cyclePeriod,
     innerHalf: GATE_INNER_HALF,
     outerHalf: GATE_OUTER_HALF,
     damage: GATE_DAMAGE,
     shieldDamage: GATE_SHIELD_DAMAGE,
   }
-  applyGateVisual(gate)
   ctx.pushGate(gate)
 
   enemy.shotsFired += 1
@@ -186,60 +178,46 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   return true
 }
 
-// redimensiona as 4 barras (compartilham geometria entre todas as molduras, só a escala/posição
-// de cada instância muda) pra o buraco visual bater com `gate.innerHalf` no instante atual —
-// banda cresce conforme o buraco encolhe, até cobrir o quadro inteiro (fechado = sem passagem).
-function applyGateVisual(gate) {
-  const innerHalf = gate.innerHalf
-  const band = Math.max(GATE_MIN_INNER_HALF, GATE_OUTER_HALF - innerHalf)
-  const bandCenter = (GATE_OUTER_HALF + innerHalf) / 2
-  const bandScale = band / GATE_BAND
-  const holeScale = Math.max(GATE_MIN_INNER_HALF, innerHalf) / GATE_INNER_HALF
-  const { top, bottom, left, right } = gate.bars
-  top.scale.y = bandScale
-  top.position.y = bandCenter
-  bottom.scale.y = bandScale
-  bottom.position.y = -bandCenter
-  left.scale.set(bandScale, holeScale, 1)
-  left.position.x = -bandCenter
-  right.scale.set(bandScale, holeScale, 1)
-  right.position.x = bandCenter
-}
-
-// pedido do usuário: a moldura abre e fecha de verdade enquanto viaja até o jogador (cosseno —
-// começa TOTALMENTE ABERTA no disparo, dá tempo de reação, depois alterna) e cresce em escala
-// ao longo da trajetória até o jogador.
 export function updateGateAnimation(gate, dt) {
-  gate.phase += dt
-  const t = 0.5 + 0.5 * Math.cos((2 * Math.PI * gate.phase) / gate.cyclePeriod)
-  gate.innerHalf = GATE_INNER_HALF * t
-
-  // cresce em escala ao longo da trajetória (de 0.7x até 1.25x na chegada)
+  // Cresce suavemente em escala ao longo da trajetória (de 0.75x até 1.18x na chegada)
   const flightProgress = THREE.MathUtils.clamp(gate.traveled / Math.max(1, gate.targetDistance), 0, 1)
-  const growthScale = THREE.MathUtils.lerp(0.7, 1.25, flightProgress)
+  const growthScale = THREE.MathUtils.lerp(0.75, 1.18, flightProgress)
   gate.mesh.scale.set(growthScale, growthScale, 1)
-
-  applyGateVisual(gate)
 }
 
-// chamado quando a moldura chega na distância travada — projeta a posição ATUAL do jogador (que
-// pode ter se movido pra desviar, é o ponto da mecânica) nos eixos locais da moldura (fixados no
-// disparo). Dentro do buraco ou além da borda externa = seguro; na faixa entre os dois = dano.
-// como a moldura cresceu, a distância é normalizada pela escala atual do mesh.
-export function resolveGateHit(gate, playerPosition) {
-  const rel = playerPosition.clone().sub(gate.mesh.position)
-  const localX = rel.dot(gate.right)
-  const localY = rel.dot(gate.up)
+// Resolução coesa e justa da colisão com a moldura:
+// - O centro translúcido é passagem livre: jogador dentro do centro NÃO toma dano.
+// - O espaço além da moldura externa é livre (desvio lateral).
+// - Apenas a colisão real com as bordas finas causa dano.
+export function resolveGateHit(gate, playerPosition, opts = {}) {
+  const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
   const currentScale = gate.mesh.scale.x || 1
-  const dist = Math.max(Math.abs(localX), Math.abs(localY)) / currentScale
-  const hit = dist > gate.innerHalf && dist <= gate.outerHalf
+  const inner = gate.innerHalf * currentScale
+  const outer = gate.outerHalf * currentScale
+
+  let hit = false
+  for (const pt of shipPoints) {
+    const rel = pt.worldPos.clone().sub(gate.mesh.position)
+    const localX = Math.abs(rel.dot(gate.right))
+    const localY = Math.abs(rel.dot(gate.up))
+    const maxCoord = Math.max(localX, localY)
+
+    // Se qualquer ponto colide com a faixa estreita da borda
+    const hitBorder = maxCoord >= (inner - pt.radius) && maxCoord <= (outer + pt.radius)
+    if (hitBorder) {
+      hit = true
+      break
+    }
+  }
   return { hit }
 }
 
 export function disposeSentinela() {
   geometry.dispose()
   material.dispose()
-  gateTopBottomGeometry.dispose()
-  gateSideGeometry.dispose()
-  gateMaterial.dispose()
+  gateBorderTopBottomGeo.dispose()
+  gateBorderSideGeo.dispose()
+  gateBorderMaterial.dispose()
+  gateCenterGeo.dispose()
+  gateCenterMaterial.dispose()
 }

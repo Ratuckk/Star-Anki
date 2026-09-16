@@ -94,29 +94,45 @@ export function createQuestionFlow(deps) {
     menu.sessionResults.push({ guid: outcome.card.guid, correct })
 
     hud.setBossActive(false)
-    if (correct) {
-      hud.setFeedback({
-        correct: true,
-        correctAnswer: outcome.card.answer,
-        points: resolution.points,
-        comboMultiplier: resolution.comboMultiplier,
-        health: resolution.healthRemaining,
-        accuracyBonus: outcome.accuracyBonus,
-      })
-    } else {
-      hud.showErrorFloat('Errou!')
-    }
-
+    // Sempre alimentar o HUD com a resposta correta para o painel de explicação
+    hud.setFeedback({
+      correct,
+      correctAnswer: outcome.card.answer,
+      points: correct ? resolution.points : 0,
+      comboMultiplier: correct ? resolution.comboMultiplier : session.comboMultiplier,
+      health: correct ? resolution.healthRemaining : session.health,
+      accuracyBonus: outcome.accuracyBonus,
+    })
     const prevLives = session.lives
     const outOfLives = applyHealthLoss()
     if (!outOfLives && session.lives < prevLives && deps.effects && deps.rail && deps.effects.respawnBurst) {
       deps.effects.respawnBurst(deps.rail.getPlayerPosition())
     }
-    state.pendingSectorOver = outOfLives
-    state.pendingCardChoice = correct
-    state.phase = 'resolution'
-    // v0.53.9: 500ms de celebração da resposta certa no HUD antes da transição para os cards
-    state.phaseTimer = correct ? 500 : WRONG_FEEDBACK_MS
+
+    if (outOfLives) {
+      endSector()
+      return
+    }
+
+    if (correct) {
+      // Pedido 10: instantâneo, o jogo não despausa após acertar a pergunta
+      state.pendingCardChoice = false
+      state.phase = 'cardChoice'
+      enterCardChoice(() => {
+        if (deps.enterCombat) deps.enterCombat()
+        else {
+          state.phase = 'combat'
+          hud.setFeedback(null)
+          hud.setCountdown(null)
+        }
+      })
+    } else {
+      // Pedido 16: ao errar, jogo permanece pausado por 5s ou até o jogador apertar Espaço
+      hud.showErrorFloat(`Errou! Resposta: ${outcome.card.answer}`)
+      state.pendingCardChoice = false
+      state.phase = 'wrongPause'
+      state.phaseTimer = 5000
+    }
   }
 
   return {

@@ -1,7 +1,10 @@
-# Progresso pós-v0.50 — novas documentações a partir daqui
+# Progresso pós-v0.50 — CONGELADO na v0.60.0
+
+> **⚠️ Este arquivo está congelado.** O histórico cobre v0.51.9 → v0.60.0.
+> A continuação está em [PROGRESSO_POS_.60.md](PROGRESSO_POS_.60.md).
 
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
-congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
+congelado).
 
 ## Overhaul de Perguntas Anki, Códice Lateral na Extrema Direita com Fontes e Recriação dos Decks — v0.60.0
 
