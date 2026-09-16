@@ -72,8 +72,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
   let fireCooldownDuration = DEFAULT_FIRE_COOLDOWN
 
   function removeProjectile(p) {
-    scene.remove(p.mesh)
-    projectiles.splice(projectiles.indexOf(p), 1)
+    if (p.mesh) scene.remove(p.mesh)
+    const idx = projectiles.indexOf(p)
+    if (idx !== -1) projectiles.splice(idx, 1)
   }
 
   function fire(origin, direction) {

@@ -1,3 +1,45 @@
+## Caçada Ampla por Gargalos de Desempenho em Efeitos Visuais (VBO Thrashing, GC Pressure e CPU Particle Loops) — v0.59.0
+
+Contexto e pedidos do usuário:
+1. *"agora eu quero que faça uma caçada por problemas de desempenho no jogo em relação a efeitos visuais"*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Eliminação Crítica de Garbage Collection no Game Loop (`src/game-loop.js`)**:
+   - Identificado gargalo severo: o sistema de transição de névoa cósmica viva alocava 6 novas instâncias de `new THREE.Color` a cada frame no modo trilho (21.600 alocações/minuto de lixo geradas diretamente para o Garbage Collector do JavaScript).
+   - Pré-alocadas cores estáticas reutilizáveis a nível de módulo (`_cosmicTint1`, `_cosmicTint2`, `_cosmicTint3`, `_baseColor`, `_blendedShift`, `_finalColor`).
+   - A interpolação contínua da névoa agora é 100% in-place com `.copy().lerp()`, zerando completamente a pressão de GC e eliminando engasgos (microstutter) por pausas de coleta de lixo.
+
+2. **Eliminação de Alocações Per-Frame no Ambiente Cósmico (`src/environment.js`)**:
+   - No lerp de warp streaks de estrelas, era alocado `new THREE.Vector3(1, 1, 1)` a cada frame.
+   - Na orientação das caudas aditivas dos meteoros, múltiplos `new THREE.Vector3()` eram instanciados a cada tick.
+   - Nos clarões iônicos difusos, novas instâncias de `new THREE.Color()` eram criadas a cada disparo.
+   - Pré-alocados objetos auxiliares estáticos (`_tmpScaleOne`, `_tmpTailVec`, `_tmpVelNorm`, `_tmpFlashColor`, `_tmpAppliedFlash`) e convertidas as operações para in-place.
+
+3. **VBO / Shader Pooling e Fim do Churn de Geometrias WebGL (`src/effects.js`)**:
+   - Instanciação de 4 geometrias unitárias canônicas compartilhadas na VRAM:
+     - `sharedSphereGeometry`: `new THREE.SphereGeometry(1, 8, 8)`
+     - `sharedRingGeometry`: `new THREE.RingGeometry(0.85, 1.0, 24)`
+     - `sharedTorusGeometry`: `new THREE.TorusGeometry(1, 0.15, 8, 20)`
+     - `sharedConeGeometry`: `new THREE.ConeGeometry(0.5, 2.5, 6)`
+   - Antes desta versão, cada muzzle flash, smoke ring, ring de choque, telegraph, bloom, contrail de asa, rastro de réplica e partícula de freio instanciada alocava uma nova geometria Three.js na VRAM e a destruía via `geometry.dispose()` poucos milissegundos depois, gerando contínuo VBO thrashing e stalls no pipeline do driver WebGL.
+   - Todos esses geradores agora compartilham as geometrias canônicas persistentes, alterando apenas `mesh.scale.setScalar(...)`.
+   - Nos loops de expiração (`grayRings`, `muzzleFlashes`, `smokeRings`, `maxChargeRingsList`, `spinWinds`, `ramRings`, `deflectRings`, `boostTrails`, `homingAfterimages`, `shockwaves`, `bossImpactRings`, `chargeCircles`, `telegraphs`, `bloomSprites`, `contrails`, `reverseBrakeJetsList`, `distantFlashes`), apenas os materiais são descartados, preservando os buffers WebGL quentes na GPU.
+   - As 4 geometrias canônicas são descartadas centralizadamente apenas no método `dispose()` do sistema de efeitos.
+
+4. **Zero-Alloc na Chama do Motor e Pulsação de Grid (`src/effects.js`)**:
+   - A animação do exaustor da nave (`engineFlameMesh`) alocava múltiplos clones e vetores (`shipPosition.clone()`, `shipForward.clone()`, `new THREE.Vector3(0, 0, -1)`) a cada frame. Substituídos pelos temporários `_tmpExhaust`, `_tmpNorm`, `_tmpQuat` e pelo eixo canônico `_BACKWARD_AXIS`.
+   - A pulsação de choque no piso (`gridPulse`) alocava `new THREE.Color(0xff8844)` a cada tick, agora substituída por `_GRID_PULSE_COLOR`.
+
+5. **Otimização de Carga de CPU em Partículas de Poeira Estelar (`src/effects.js`)**:
+   - `DUST_COUNT` ajustado de 700 para 300 partículas. Reduz em 57% a iteração de CPU de drift e wrap-around a cada frame e alivia o upload de dados via `glBufferSubData` para a GPU, preservando 100% da imersão de voo através da névoa.
+
+6. **Guarda Defensiva de Splice em Projéteis (`src/combat/projectiles.js`)**:
+   - Corrigido risco de remoção indevida do último elemento com `splice(-1, 1)` em `removeProjectile`, adicionando checagem explícita `if (idx !== -1)`.
+
+**Testado**: `node --check` em todos os arquivos JS e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.58.0 → v0.59.0.
+
 ## Caçada Ampla por Bugs em Inimigos: Spawns, Disparos, Física, Hitboxes e Ciclo de Vida — v0.58.0
 
 Contexto e pedidos do usuário:

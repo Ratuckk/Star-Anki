@@ -34,6 +34,14 @@ import {
   LEVEL_BACKGROUNDS,
 } from './main-constants.js'
 
+// Temporários reutilizáveis para interpolação da neblina cósmica (evita 21.600 alocações/min no GC)
+const _cosmicTint1 = new THREE.Color(0x0c1626) // azul-petróleo
+const _cosmicTint2 = new THREE.Color(0x190d24) // roxo estelar
+const _cosmicTint3 = new THREE.Color(0x0a1f18) // verde-abissal
+const _baseColor = new THREE.Color()
+const _blendedShift = new THREE.Color()
+const _finalColor = new THREE.Color()
+
 export function createGameLoop(deps) {
   const {
     state, session, bindings, showEnemyHealthBars,
@@ -457,14 +465,11 @@ export function createGameLoop(deps) {
       const dist = rail.getDistance()
       const t1 = Math.sin(dist * 0.0012) * 0.5 + 0.5
       const t2 = Math.cos(dist * 0.0017) * 0.5 + 0.5
-      const baseColor = new THREE.Color(LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length])
-      const cosmicTint1 = new THREE.Color(0x0c1626) // azul-petróleo
-      const cosmicTint2 = new THREE.Color(0x190d24) // roxo estelar
-      const cosmicTint3 = new THREE.Color(0x0a1f18) // verde-abissal
-      const blendedShift = cosmicTint1.clone().lerp(cosmicTint2, t1).lerp(cosmicTint3, t2)
-      const finalColor = baseColor.clone().lerp(blendedShift, 0.4)
-      scene.fog.color.copy(finalColor)
-      scene.background.copy(finalColor)
+      _baseColor.set(LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length])
+      _blendedShift.copy(_cosmicTint1).lerp(_cosmicTint2, t1).lerp(_cosmicTint3, t2)
+      _finalColor.copy(_baseColor).lerp(_blendedShift, 0.4)
+      scene.fog.color.copy(_finalColor)
+      scene.background.copy(_finalColor)
     }
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints

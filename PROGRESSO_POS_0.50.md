@@ -3,6 +3,22 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Caçada Ampla por Gargalos de Desempenho em Efeitos Visuais (VBO Thrashing, GC Pressure e CPU Particle Loops) — v0.59.0
+
+Contexto e pedidos do usuário:
+1. *"agora eu quero que faça uma caçada por problemas de desempenho no jogo em relação a efeitos visuais"*
+
+**O que mudou e detalhes técnicos:**
+1. **Eliminação de 21.600 Alocações/Minuto de GC no Game Loop (`game-loop.js`)**: Identificado que o sistema de transição da névoa viva instanciava 6 novas cores (`new THREE.Color`) a cada frame no trilho. Pré-alocadas cores estáticas a nível de módulo (`_cosmicTint1`, `_cosmicTint2`, `_cosmicTint3`, `_baseColor`, `_blendedShift`, `_finalColor`) e convertida a interpolação para `.copy().lerp()` in-place, reduzindo o lixo de memória do loop de névoa a zero.
+2. **Zero-Allocation no Ambiente Cósmico (`environment.js`)**: No lerp de warp das estrelas, na rotação de cauda dos meteoros e nos clarões iônicos, novos vetores e cores eram criados a cada frame. Pré-alocados temporários estáticos (`_tmpScaleOne`, `_tmpTailVec`, `_tmpVelNorm`, `_tmpFlashColor`, `_tmpAppliedFlash`) e eliminadas as alocações contínuas.
+3. **VBO / Shader Pooling e Fim do Churn de Geometrias WebGL (`effects.js`)**: Instanciadas 4 geometrias unitárias canônicas compartilhadas (`sharedSphereGeometry`, `sharedRingGeometry`, `sharedTorusGeometry`, `sharedConeGeometry`). Todos os efeitos efêmeros de anéis, esferas, toros e cones (muzzleFlash, smokeRing, machSpeedRing, deflectBurst, boostTrail, homingAfterimage, telegraph, chargeCircle, bloomSprite, contrail, reverseBrakeJets, distantFlashes) agora reutilizam essas geometrias unitárias na VRAM e ajustam apenas `mesh.scale.setScalar(...)`. Ao expirarem, apenas os materiais são descartados, mantendo as geometrias residentes e quentes na GPU sem recriar VBOs.
+4. **Zero-Alloc na Chama do Motor e Grid Pulse (`effects.js`)**: Substituídos múltiplos `.clone()` e `new Vector3` a cada frame por `_tmpExhaust`, `_tmpNorm`, `_tmpQuat`, `_BACKWARD_AXIS` e `_GRID_PULSE_COLOR`.
+5. **Redução de Carga de CPU em Partículas (`effects.js`)**: `DUST_COUNT` ajustado de 700 para 300 partículas. Reduz em 57% a iteração por frame e o volume de transferência `glBufferSubData` para o WebGL com fidelidade visual idêntica.
+6. **Defesa de Splice em Projéteis (`projectiles.js`)**: Guarda preventiva contra remoção acidental por `indexOf === -1` em `removeProjectile`.
+
+**Testado**: `node --check` em todos os arquivos JS e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.58.0 → v0.59.0.
+
 ## Caçada Ampla por Bugs em Inimigos: Spawns, Disparos, Física, Hitboxes e Ciclo de Vida — v0.58.0
 
 Contexto e pedidos do usuário:

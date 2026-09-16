@@ -224,7 +224,7 @@ const BLOOM_END_SCALE = 2.5
 // Poeira FIXA em espaço-mundo (não segue o jogador) — o jogador voa ATRAVÉS dela, como
 // acontece com o grid. As partículas ficam num volume grande que cobre o trilho e o
 // alcance da arena; cada uma tem drift lento e wrap-around por eixo no volume.
-const DUST_COUNT = 700
+const DUST_COUNT = 300
 const DUST_SIZE = 0.28
 const DUST_COLOR = 0xaaccee
 const DUST_AREA_CENTER = { x: -30, y: 0, z: -80 }
@@ -420,15 +420,30 @@ export function createEffectsSystem(scene, opts = {}) {
   let rollAfterimageTimer = 0
   let reverseBrakeTimer = 0
 
+  // ============ GEOMETRIAS COMPARTILHADAS (VBO POOLING & ZERO-ALLOC) ============
+  // Em vez de instanciar e destruir geometrias na VRAM a cada tiro/shockwave/bloom,
+  // reutilizamos geometrias canônicas unitárias e ajustamos via mesh.scale.
+  const sharedSphereGeometry = new THREE.SphereGeometry(1, 8, 8)
+  const sharedRingGeometry = new THREE.RingGeometry(0.85, 1.0, 24)
+  const sharedTorusGeometry = new THREE.TorusGeometry(1, 0.15, 8, 20)
+  const sharedConeGeometry = new THREE.ConeGeometry(0.5, 2.5, 6)
+  sharedConeGeometry.rotateX(Math.PI / 2)
+
+  const _FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
+  const _BACKWARD_AXIS = new THREE.Vector3(0, 0, -1)
+  const _GRID_PULSE_COLOR = new THREE.Color(0xff8844)
+  const _tmpExhaust = new THREE.Vector3()
+  const _tmpNorm = new THREE.Vector3()
+  const _tmpQuat = new THREE.Quaternion()
+
   // ============ SHOCKWAVE / RING HELPERS ============
-  function makeRingMesh(colorHex, thickness = 0.15) {
-    const geo = new THREE.RingGeometry(1 - thickness, 1, 32)
+  function makeRingMesh(colorHex) {
     const mat = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.85,
       side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
       depthWrite: false, fog: false,
     })
-    const mesh = new THREE.Mesh(geo, mat)
+    const mesh = new THREE.Mesh(sharedRingGeometry, mat)
     mesh.frustumCulled = false
     return mesh
   }
@@ -511,12 +526,12 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function muzzleFlash(position, direction) {
-    const geometry = new THREE.SphereGeometry(0.4, 8, 8)
     const material = new THREE.MeshBasicMaterial({
       color: 0xfff2a8, transparent: true, opacity: 1,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
+    mesh.scale.setScalar(0.4)
     mesh.position.copy(position).addScaledVector(direction, 0.6)
     scene.add(mesh)
     muzzleFlashes.push({ mesh, life: 0 })
@@ -531,19 +546,19 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function smokeRing(position, direction) {
-    const geometry = new THREE.TorusGeometry(1, 0.22, 8, 20)
     const material = new THREE.MeshBasicMaterial({
       color: HOMING_EFFECT_COLOR, transparent: true, opacity: 0.6,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedTorusGeometry, material)
     mesh.position.copy(position)
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction.clone().normalize())
+    _tmpNorm.copy(direction).normalize()
+    mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
     mesh.scale.setScalar(0.4)
     scene.add(mesh)
     // v0.29.6: a argola viaja pra frente (mesma direção do disparo) em vez de ficar parada
     // na origem — combina melhor com o tiro carregado saindo voando
-    smokeRings.push({ mesh, life: 0, velocity: direction.clone().normalize().multiplyScalar(22) })
+    smokeRings.push({ mesh, life: 0, velocity: _tmpNorm.clone().multiplyScalar(22) })
   }
 
   // marco visual ao atingir 100% de carga (item 9)
@@ -556,10 +571,8 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // anéis circulares de velocidade Mach emitidos na frente do tiro carregado em alta velocidade (pedido do usuário)
   function machSpeedRing(position, direction) {
-    const normDir = direction.clone().normalize()
-    const forwardAxis = new THREE.Vector3(0, 0, 1)
-    const quat = new THREE.Quaternion().setFromUnitVectors(forwardAxis, normDir)
-    const geometry = new THREE.TorusGeometry(0.85, 0.07, 8, 32)
+    _tmpNorm.copy(direction).normalize()
+    _tmpQuat.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
     const material = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
@@ -568,9 +581,9 @@ export function createEffectsSystem(scene, opts = {}) {
       blending: THREE.AdditiveBlending,
       fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedTorusGeometry, material)
     mesh.position.copy(position)
-    mesh.quaternion.copy(quat)
+    mesh.quaternion.copy(_tmpQuat)
     mesh.scale.setScalar(0.7)
     scene.add(mesh)
     maxChargeRingsList.push({
@@ -646,10 +659,11 @@ export function createEffectsSystem(scene, opts = {}) {
   // burst único de argolas azuis + 1 afterimage — disparado só quando a carta "giro rebatedor"
   // de fato deflete projéteis (item 6), pra marcar visualmente que esse giro fez algo a mais
   function deflectBurst(position, forward) {
+    _tmpNorm.copy(forward).normalize()
     for (let i = 0; i < DEFLECT_RING_COUNT; i += 1) {
-      const mesh = makeRingMesh(DEFLECT_RING_COLOR, 0.16)
+      const mesh = makeRingMesh(DEFLECT_RING_COLOR)
       mesh.position.copy(position)
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+      mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
       mesh.scale.setScalar(0.3)
       mesh.material.opacity = 0
       scene.add(mesh)
@@ -662,25 +676,23 @@ export function createEffectsSystem(scene, opts = {}) {
   // item 12 último pedido: "traga devolta esse trail de propulsar apenas quando o jogador
   // realiza um impulso". Mesma técnica do antigo cometTrailParticle (removido na Fase 7).
   function boostTrailParticle(position, forward) {
-    const geometry = new THREE.SphereGeometry(0.35, 6, 6)
     const material = new THREE.MeshBasicMaterial({
       color: BOOST_TRAIL_COLOR, transparent: true, opacity: BOOST_TRAIL_OPACITY,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
+    mesh.scale.setScalar(0.35)
     mesh.position.copy(position)
     scene.add(mesh)
     boostTrails.push({ mesh, life: 0, velocity: forward.clone().multiplyScalar(-BOOST_TRAIL_SPEED) })
   }
 
   function homingAfterimage(position, quaternion) {
-    const geometry = new THREE.ConeGeometry(0.5, 3, 6)
-    geometry.rotateX(Math.PI / 2)
     const material = new THREE.MeshBasicMaterial({
       color: HOMING_EFFECT_COLOR, transparent: true, opacity: 0.45,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedConeGeometry, material)
     mesh.position.copy(position)
     mesh.quaternion.copy(quaternion)
     scene.add(mesh)
@@ -777,12 +789,11 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function telegraph(position, colorHex = 0xff5a3d) {
-    const geometry = new THREE.SphereGeometry(1, 8, 8)
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.9,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
     mesh.position.copy(position)
     mesh.scale.setScalar(0.15)
     scene.add(mesh)
@@ -800,13 +811,12 @@ export function createEffectsSystem(scene, opts = {}) {
   function chargeCircle(positionOrFn, durationSec = 3.0, colorHex = 0xff4d4d) {
     const group = new THREE.Group()
     for (let i = 0; i < 3; i += 1) {
-      const geo = new THREE.RingGeometry(0.85, 1.0, 32)
       const mat = new THREE.MeshBasicMaterial({
         color: colorHex, transparent: true, opacity: 0.75,
         side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
         depthWrite: false, fog: false,
       })
-      group.add(new THREE.Mesh(geo, mat))
+      group.add(new THREE.Mesh(sharedRingGeometry, mat))
     }
     const followFn = typeof positionOrFn === 'function' ? positionOrFn : null
     if (!followFn) group.position.copy(positionOrFn)
@@ -841,12 +851,11 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function bloomSprite(position, colorHex, size = 1) {
-    const geometry = new THREE.SphereGeometry(1, 10, 8)
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.6,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
     mesh.position.copy(position)
     mesh.scale.setScalar(BLOOM_START_SCALE * size)
     scene.add(mesh)
@@ -854,12 +863,12 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function contrailParticle(position, colorHex = 0x7fe0ff) {
-    const geometry = new THREE.SphereGeometry(CONTRAIL_SIZE, 5, 5)
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.7,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
+    mesh.scale.setScalar(CONTRAIL_SIZE)
     mesh.position.copy(position)
     scene.add(mesh)
     contrails.push({ mesh, life: 0 })
@@ -905,7 +914,6 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function spawnReverseBrakeJetParticle(pos, vel) {
-    const geo = new THREE.SphereGeometry(0.22, 6, 6)
     const mat = new THREE.MeshBasicMaterial({
       color: 0x7fe0ff,
       transparent: true,
@@ -914,7 +922,8 @@ export function createEffectsSystem(scene, opts = {}) {
       depthWrite: false,
       fog: false,
     })
-    const mesh = new THREE.Mesh(geo, mat)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, mat)
+    mesh.scale.setScalar(0.22)
     mesh.position.copy(pos)
     scene.add(mesh)
     reverseBrakeJetsList.push({ mesh, velocity: vel, life: 0 })
@@ -999,12 +1008,11 @@ export function createEffectsSystem(scene, opts = {}) {
     const pos = centerPos ? centerPos.clone().add(offset) : offset
     const color = DISTANT_FLASH_COLORS[Math.floor(Math.random() * DISTANT_FLASH_COLORS.length)]
 
-    const geo = new THREE.SphereGeometry(1, 8, 8)
     const mat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     })
-    const mesh = new THREE.Mesh(geo, mat)
+    const mesh = new THREE.Mesh(sharedSphereGeometry, mat)
     mesh.position.copy(pos)
     mesh.scale.setScalar(6)
     scene.add(mesh)
@@ -1147,9 +1155,10 @@ export function createEffectsSystem(scene, opts = {}) {
     // intervalo: só muda tamanho/cor/opacidade conforme o boost, nunca multiplica cópias.
     if (!skipTrail && shipPosition && shipForward) {
       engineFlameMesh.visible = true
-      const exhaust = shipPosition.clone().addScaledVector(shipForward, -1.8)
-      engineFlameMesh.position.copy(exhaust)
-      engineFlameMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), shipForward.clone().normalize())
+      _tmpExhaust.copy(shipPosition).addScaledVector(shipForward, -1.8)
+      engineFlameMesh.position.copy(_tmpExhaust)
+      _tmpNorm.copy(shipForward).normalize()
+      engineFlameMesh.quaternion.setFromUnitVectors(_BACKWARD_AXIS, _tmpNorm)
       const flicker = 1 + Math.sin(now * 0.001 * ENGINE_FLAME_FLICKER_RATE) * ENGINE_FLAME_FLICKER_AMOUNT
       const boostT = boostActive ? 1 : 0
       const radius = THREE.MathUtils.lerp(ENGINE_FLAME_RADIUS, ENGINE_FLAME_BOOST_RADIUS, boostT)
@@ -1291,7 +1300,7 @@ export function createEffectsSystem(scene, opts = {}) {
       if (r.life < 0) continue
       const t = r.life / EXPLOSION_GRAY_RING_DURATION
       if (t >= 1) {
-        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        scene.remove(r.mesh); r.mesh.material.dispose()
         grayRings.splice(i, 1); continue
       }
       const scale = EXPLOSION_GRAY_RING_START_SCALE + (r.maxScale - EXPLOSION_GRAY_RING_START_SCALE) * Math.sqrt(t)
@@ -1327,7 +1336,7 @@ export function createEffectsSystem(scene, opts = {}) {
       m.life += dt
       const t = m.life / MUZZLE_DURATION
       if (t >= 1) {
-        scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose()
+        scene.remove(m.mesh); m.mesh.material.dispose()
         muzzleFlashes.splice(i, 1); continue
       }
       m.mesh.material.opacity = 1 - t
@@ -1340,7 +1349,7 @@ export function createEffectsSystem(scene, opts = {}) {
       s.life += dt
       const t = s.life / SMOKE_RING_DURATION
       if (t >= 1) {
-        scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose()
+        scene.remove(s.mesh); s.mesh.material.dispose()
         smokeRings.splice(i, 1); continue
       }
       s.mesh.position.addScaledVector(s.velocity, dt)
@@ -1355,7 +1364,7 @@ export function createEffectsSystem(scene, opts = {}) {
       if (r.life < 0) continue
       const t = r.life / (r.duration || 0.28)
       if (t >= 1) {
-        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        scene.remove(r.mesh); r.mesh.material.dispose()
         maxChargeRingsList.splice(i, 1); continue
       }
       const grow = r.baseScale + (r.maxScale - r.baseScale) * Math.sin(t * Math.PI * 0.5)
@@ -1369,7 +1378,7 @@ export function createEffectsSystem(scene, opts = {}) {
       w.life += dt
       const t = w.life / SPIN_WIND_DURATION
       if (t >= 1) {
-        scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose()
+        scene.remove(w.mesh); w.mesh.material.dispose()
         spinWinds.splice(i, 1); continue
       }
       const scale = SPIN_WIND_START_SCALE + (SPIN_WIND_MAX_SCALE - SPIN_WIND_START_SCALE) * Math.sqrt(t)
@@ -1384,7 +1393,7 @@ export function createEffectsSystem(scene, opts = {}) {
       r.life += dt
       const t = r.life / RAM_RING_DURATION
       if (t >= 1) {
-        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        scene.remove(r.mesh); r.mesh.material.dispose()
         ramRings.splice(i, 1); continue
       }
       const scale = 0.6 + (RAM_RING_MAX_SCALE - 0.6) * Math.sqrt(t)
@@ -1425,7 +1434,7 @@ export function createEffectsSystem(scene, opts = {}) {
       if (r.life < 0) continue
       const t = r.life / DEFLECT_RING_DURATION
       if (t >= 1) {
-        scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
+        scene.remove(r.mesh); r.mesh.material.dispose()
         deflectRings.splice(i, 1); continue
       }
       const scale = 0.3 + (r.maxScale - 0.3) * Math.sqrt(t)
@@ -1439,7 +1448,7 @@ export function createEffectsSystem(scene, opts = {}) {
       c.life += dt
       const t = c.life / BOOST_TRAIL_DURATION
       if (t >= 1) {
-        scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose()
+        scene.remove(c.mesh); c.mesh.material.dispose()
         boostTrails.splice(i, 1); continue
       }
       c.mesh.position.addScaledVector(c.velocity, dt)
@@ -1453,7 +1462,7 @@ export function createEffectsSystem(scene, opts = {}) {
       a.life += dt
       const t = a.life / HOMING_AFTERIMAGE_DURATION
       if (t >= 1) {
-        scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose()
+        scene.remove(a.mesh); a.mesh.material.dispose()
         homingAfterimages.splice(i, 1); continue
       }
       a.mesh.material.opacity = 0.45 * (1 - t)
@@ -1479,7 +1488,7 @@ export function createEffectsSystem(scene, opts = {}) {
       s.life += dt
       const t = s.life / SHOCKWAVE_DURATION
       if (t >= 1) {
-        scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose()
+        scene.remove(s.mesh); s.mesh.material.dispose()
         shockwaves.splice(i, 1); continue
       }
       const scale = 0.3 + (s.maxScale - 0.3) * Math.sqrt(t)
@@ -1494,7 +1503,7 @@ export function createEffectsSystem(scene, opts = {}) {
       s.life += dt
       const t = s.life / BOSS_IMPACT_DURATION
       if (t >= 1) {
-        scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose()
+        scene.remove(s.mesh); s.mesh.material.dispose()
         bossImpactRings.splice(i, 1); continue
       }
       const scale = 0.4 + (s.maxScale - 0.4) * Math.sqrt(t)
@@ -1512,7 +1521,7 @@ export function createEffectsSystem(scene, opts = {}) {
       const t = c.life / c.duration
       if (t >= 1) {
         scene.remove(c.group)
-        for (const child of c.group.children) { child.geometry.dispose(); child.material.dispose() }
+        for (const child of c.group.children) { child.material.dispose() }
         chargeCircles.splice(i, 1); continue
       }
       if (c.followFn) {
@@ -1533,7 +1542,7 @@ export function createEffectsSystem(scene, opts = {}) {
       tg.life += dt
       const t = tg.life / TELEGRAPH_DURATION
       if (t >= 1) {
-        scene.remove(tg.mesh); tg.mesh.geometry.dispose(); tg.mesh.material.dispose()
+        scene.remove(tg.mesh); tg.mesh.material.dispose()
         telegraphs.splice(i, 1); continue
       }
       const s = 0.15 + (TELEGRAPH_MAX_SCALE - 0.15) * t
@@ -1568,7 +1577,7 @@ export function createEffectsSystem(scene, opts = {}) {
       b.life += dt
       const t = b.life / BLOOM_DURATION
       if (t >= 1) {
-        scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose()
+        scene.remove(b.mesh); b.mesh.material.dispose()
         bloomSprites.splice(i, 1); continue
       }
       const scale = BLOOM_START_SCALE + (BLOOM_END_SCALE - BLOOM_START_SCALE) * Math.sqrt(t)
@@ -1582,7 +1591,7 @@ export function createEffectsSystem(scene, opts = {}) {
       c.life += dt
       const t = c.life / CONTRAIL_DURATION
       if (t >= 1) {
-        scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose()
+        scene.remove(c.mesh); c.mesh.material.dispose()
         contrails.splice(i, 1); continue
       }
       c.mesh.material.opacity = 0.7 * (1 - t)
@@ -1611,7 +1620,6 @@ export function createEffectsSystem(scene, opts = {}) {
       const t = p.life / REVERSE_BRAKE_LIFETIME
       if (t >= 1) {
         scene.remove(p.mesh)
-        p.mesh.geometry.dispose()
         p.mesh.material.dispose()
         reverseBrakeJetsList.splice(i, 1)
         continue
@@ -1633,7 +1641,6 @@ export function createEffectsSystem(scene, opts = {}) {
       const t = f.life / 0.55
       if (t >= 1) {
         scene.remove(f.mesh)
-        f.mesh.geometry.dispose()
         f.mesh.material.dispose()
         distantFlashes.splice(i, 1)
         continue
@@ -1686,7 +1693,7 @@ export function createEffectsSystem(scene, opts = {}) {
       const t = 1 - gridPulseTimer / GRID_PULSE_DURATION
       const intensity = Math.sin(t * Math.PI)
       if (gridRef.material.color && gridRef.material.__origColor) {
-        gridRef.material.color.copy(gridRef.material.__origColor).lerp(new THREE.Color(0xff8844), intensity * 0.8)
+        gridRef.material.color.copy(gridRef.material.__origColor).lerp(_GRID_PULSE_COLOR, intensity * 0.8)
       }
     } else if (gridRef && gridRef.material && gridRef.material.__origColor) {
       gridRef.material.color.copy(gridRef.material.__origColor)
@@ -1714,37 +1721,41 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.remove(fogWispPoints); fogWispGeometry.dispose(); fogWispMaterial.dispose(); softCircleTexture.dispose()
     scene.remove(engineFlameMesh); engineFlameGeometry.dispose(); engineFlameMaterial.dispose()
     scene.remove(ramShieldMesh); ramShieldGeometry.dispose(); ramShieldMaterial.dispose()
-    for (const r of ramRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
+    for (const r of ramRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const a of ramAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const a of rollAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
-    for (const r of deflectRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
-    for (const r of maxChargeRingsList) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
-    for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
+    for (const r of deflectRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
+    for (const r of maxChargeRingsList) { scene.remove(r.mesh); r.mesh.material.dispose() }
+    for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.material.dispose() }
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
-    for (const r of grayRings) { scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose() }
+    for (const r of grayRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
-    for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.geometry.dispose(); m.mesh.material.dispose() }
-    for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
-    for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.material.dispose() }
+    for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.material.dispose() }
+    for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.material.dispose() }
     for (const p of projectileTrails) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
-    for (const s of shockwaves) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
-    for (const s of bossImpactRings) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() }
+    for (const s of shockwaves) { scene.remove(s.mesh); s.mesh.material.dispose() }
+    for (const s of bossImpactRings) { scene.remove(s.mesh); s.mesh.material.dispose() }
     for (const c of chargeCircles) {
       scene.remove(c.group)
-      for (const child of c.group.children) { child.geometry.dispose(); child.material.dispose() }
+      for (const child of c.group.children) { child.material.dispose() }
     }
     chargeCircles.length = 0
-    for (const t of telegraphs) { scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mesh.material.dispose() }
+    for (const t of telegraphs) { scene.remove(t.mesh); t.mesh.material.dispose() }
     for (const g of glassShards) { for (const s of g.shards) { scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose() } }
-    for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
-    for (const c of contrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
-    for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
+    for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.material.dispose() }
+    for (const c of contrails) { scene.remove(c.mesh); c.mesh.material.dispose() }
+    for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.material.dispose() }
     for (const a of ricochetArcs) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
-    for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.geometry.dispose(); j.mesh.material.dispose() }
-    for (const f of distantFlashes) { scene.remove(f.mesh); f.mesh.geometry.dispose(); f.mesh.material.dispose() }
+    for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.material.dispose() }
+    for (const f of distantFlashes) { scene.remove(f.mesh); f.mesh.material.dispose() }
     for (const s of distantSilhouettes) { scene.remove(s.mesh); }
     silhouetteGeometry.dispose()
     silhouetteMaterial.dispose()
+    sharedSphereGeometry.dispose()
+    sharedRingGeometry.dispose()
+    sharedTorusGeometry.dispose()
+    sharedConeGeometry.dispose()
     ricochetArcs.length = 0
     reverseBrakeJetsList.length = 0
     distantFlashes.length = 0

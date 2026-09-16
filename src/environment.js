@@ -90,6 +90,13 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   let nextIonStormTime = 16 + Math.random() * 15
   let baseFogDensity = scene.fog ? scene.fog.density : 0.004
 
+  // Temporários reutilizáveis para eliminar alocações por frame no loop de renderização
+  const _tmpScaleOne = new THREE.Vector3(1, 1, 1)
+  const _tmpTailVec = new THREE.Vector3()
+  const _tmpVelNorm = new THREE.Vector3()
+  const _tmpFlashColor = new THREE.Color(0x38bdf8)
+  const _tmpAppliedFlash = new THREE.Color()
+
   // ============ 1. SKYDOME PROCEDURAL ============
   const skyTexture = createNebulaTexture()
   const skyGeo = new THREE.SphereGeometry(380, 32, 18)
@@ -291,7 +298,7 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         deepStars.scale.set(1.0, 1.0, 2.2)
         deepStarMat.size = 2.4
       } else {
-        deepStars.scale.lerp(new THREE.Vector3(1, 1, 1), 1 - Math.exp(-6 * dt))
+        deepStars.scale.lerp(_tmpScaleOne, 1 - Math.exp(-6 * dt))
       }
     }
 
@@ -327,10 +334,11 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         } else {
           m.life -= dt
           m.pos.addScaledVector(m.vel, dt)
-          const tail = m.pos.clone().addScaledVector(m.vel.clone().normalize(), -m.length)
+          _tmpVelNorm.copy(m.vel).normalize()
+          _tmpTailVec.copy(m.pos).addScaledVector(_tmpVelNorm, -m.length)
           const posAttr = m.line.geometry.attributes.position
           posAttr.setXYZ(0, m.pos.x, m.pos.y, m.pos.z)
-          posAttr.setXYZ(1, tail.x, tail.y, tail.z)
+          posAttr.setXYZ(1, _tmpTailVec.x, _tmpTailVec.y, _tmpTailVec.z)
           posAttr.needsUpdate = true
 
           const fade = Math.max(0, m.life / m.maxLife)
@@ -366,8 +374,8 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         if (ionFlashTimer > 0) {
           ionFlashTimer -= dt
           const flashIntensity = Math.sin((ionFlashTimer / ionFlashDuration) * Math.PI)
-          const flashColor = new THREE.Color(0x38bdf8).multiplyScalar(flashIntensity * 0.35)
-          scene.fog.color.add(flashColor)
+          _tmpAppliedFlash.copy(_tmpFlashColor).multiplyScalar(flashIntensity * 0.35)
+          scene.fog.color.add(_tmpAppliedFlash)
         }
       }
     }
