@@ -228,7 +228,13 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         // (que pula inimigos `dying`) não dobra o dano nele.
         if (projectile.isMaxCharge) {
           const splash = enemies.applyAreaDamage(hit.worldPos, MAX_CHARGE_SPLASH_RADIUS, MAX_CHARGE_SPLASH_DAMAGE)
-          if (effects) effects.explosion(hit.worldPos, 0x2bff88, MAX_CHARGE_SPLASH_RADIUS, { rings: true })
+          if (effects) {
+            if (effects.maxChargeImpact) {
+              effects.maxChargeImpact(hit.worldPos, MAX_CHARGE_SPLASH_RADIUS)
+            } else {
+              effects.explosion(hit.worldPos, 0x3ea6ff, MAX_CHARGE_SPLASH_RADIUS, { rings: true })
+            }
+          }
           enemyKills += splash.enemyKills
           enemyKillPoints += splash.enemyKillPoints
           hitsLog.push(...splash.hitsLog)

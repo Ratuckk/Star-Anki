@@ -215,7 +215,11 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
             if (Math.random() < 0.5) lateral.negate()
             g.dashDir.copy(lateral)
             if (effects) {
-              effects.shockwave(g.mesh.position, GOLDEN_COLOR, 0.7)
+              if (effects.goldenDashVFX) {
+                effects.goldenDashVFX(g.mesh.position, g.dashDir)
+              } else {
+                effects.shockwave(g.mesh.position, GOLDEN_COLOR, 0.7)
+              }
             }
           } else if (distToPlayer > 1e-4) {
             g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)

@@ -1068,6 +1068,55 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(position, 0x3ea6ff)
   }
 
+  // ============ IMPACTO DO TIRO CARREGADO NO MÁXIMO (Seção 7 do backlog) ============
+  function maxChargeImpact(position, radius = 6) {
+    shockwave(position, 0x3ea6ff, radius * 0.4)
+    shockwave(position, 0x7fe0ff, radius * 0.25)
+    shockwave(position, 0xffffff, radius * 0.15)
+    bloomSprite(position, 0x3ea6ff, radius * 0.6)
+    bloomSprite(position, 0xffffff, radius * 0.3)
+    explosion(position, 0x3ea6ff, radius, { rings: true })
+    hitSpark(position, 0x7fe0ff)
+    hitSpark(position, 0xffffff)
+  }
+
+  // ============ DASH EVASIVO DO INIMIGO DOURADO (Seções 5 e 7 do backlog) ============
+  function goldenDashVFX(position, direction) {
+    shockwave(position, 0xffe066, 1.3)
+    bloomSprite(position, 0xffd700, 1.8)
+    const norm = direction ? direction.clone().normalize() : new THREE.Vector3(1, 0, 0)
+    for (let i = 0; i < 4; i++) {
+      const p = position.clone().addScaledVector(norm, i * 1.5)
+      hitSpark(p, 0xffe066)
+    }
+  }
+
+  // ============ RASTRO DE FLANQUEAMENTO NA ENTRADA (Seção 2.3 do backlog) ============
+  function flankSpawnTrail(position, velocity, colorHex = 0x7fe0ff) {
+    fogWispCondensation(position, colorHex)
+    const geometry = new THREE.BufferGeometry()
+    const count = 4
+    const positions = new Float32Array(count * 3)
+    const vels = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = position.x
+      positions[i * 3 + 1] = position.y
+      positions[i * 3 + 2] = position.z
+      vels[i * 3] = (velocity ? velocity.x : 0) * 0.2 + (Math.random() - 0.5) * 4
+      vels[i * 3 + 1] = (velocity ? velocity.y : 0) * 0.2 + (Math.random() - 0.5) * 4
+      vels[i * 3 + 2] = (velocity ? velocity.z : 0) * 0.2 + (Math.random() - 0.5) * 4
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: colorHex, size: 2.0, sizeAttenuation: true,
+      map: softCircleTexture, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.frustumCulled = false
+    scene.add(points)
+    hitSparks.push({ points, velocities: vels, life: 0 })
+  }
+
   // pulso no grid do chão — emite uma ondulação de cor no GridHelper
   let gridPulseTimer = 0
   function gridPulse() {
@@ -1713,6 +1762,7 @@ export function createEffectsSystem(scene, opts = {}) {
     ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
     fogWispCondensation,
     lateralDashVFX, summersaultVFX, emergencyBrakeVFX, extraLifeHeal, wingmanSpawn,
+    maxChargeImpact, goldenDashVFX, flankSpawnTrail,
     dispose,
   }
 }

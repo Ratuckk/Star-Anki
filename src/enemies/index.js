@@ -521,8 +521,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.spawnAge = 0
       enemy.spawnDuration = 0.35
       enemy.mesh.scale.setScalar(0.2)
-      if (effects && effects.fogWispCondensation) {
-        effects.fogWispCondensation(enemy.mesh.position, colorFor(enemy))
+      if (effects) {
+        if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+          effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
+        } else if (effects.fogWispCondensation) {
+          effects.fogWispCondensation(enemy.mesh.position, colorFor(enemy))
+        }
       }
     }
     enemies.push(enemy)
