@@ -132,6 +132,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     scene.remove(l.mesh)
     if (l.geo) l.geo.dispose()
     if (l.mat) l.mat.dispose()
+    if (l.outerMat) l.outerMat.dispose()
+    if (l.innerMat) l.innerMat.dispose()
+    if (l.mesh && l.mesh.traverse) {
+      l.mesh.traverse((child) => {
+        if (child.geometry) child.geometry.dispose()
+        if (child.material) child.material.dispose()
+      })
+    }
     enemyLasers.splice(enemyLasers.indexOf(l), 1)
   }
 
@@ -467,14 +475,22 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       laser.mesh.position.add(step)
       laser.traveled += step.length()
 
-      const hitRadius = laser.hitRadius ?? BOSS_LASER_HIT_RADIUS
+      // Taper visual: começa largo e afunila/encolhe suavemente conforme viaja
+      const maxR = laser.maxRange ?? 220
+      const prog = THREE.MathUtils.clamp(laser.traveled / maxR, 0, 1)
+      const pulse = 1 + Math.sin(laser.traveled * 0.4) * 0.15
+      const beamScale = Math.max(0.18, 1.3 - prog * 0.9) * pulse
+      laser.mesh.scale.set(beamScale, beamScale, 1.0)
+      if (laser.outerMat) laser.outerMat.opacity = Math.max(0.2, (1 - prog * 0.6) * 0.85)
+
+      const hitRadius = (laser.hitRadius ?? BOSS_LASER_HIT_RADIUS) * Math.max(0.5, beamScale)
       if (distanceToSegment(playerPosition, prevPos, laser.mesh.position) <= hitRadius) {
         hits += 1
         damage = Math.max(damage, laser.shieldDamage ?? 1)
         removeEnemyLaser(laser)
         continue
       }
-      if (laser.traveled > (laser.maxRange ?? 220)) removeEnemyLaser(laser)
+      if (laser.traveled > maxR) removeEnemyLaser(laser)
     }
     return { hits, damage }
   }

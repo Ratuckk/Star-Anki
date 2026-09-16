@@ -1029,6 +1029,45 @@ export function createEffectsSystem(scene, opts = {}) {
   }
   initDistantSilhouettes()
 
+  // ============ MANOBRAS ESPECIAIS DE ARENA (ALL-RANGE) ============
+  function lateralDashVFX(position, rightDir, bankDirection) {
+    const dir = rightDir.clone().multiplyScalar(Math.sign(bankDirection || 1))
+    shockwave(position, 0x4db8ff, 1.2)
+    hitSpark(position, 0x7fe0ff)
+    for (let i = 0; i < 2; i++) {
+      const offsetPos = position.clone().addScaledVector(dir, -(i + 1) * 1.8)
+      contrailParticle(offsetPos, 0x3ea6ff)
+    }
+  }
+
+  function summersaultVFX(position, forward) {
+    spinWind(position, forward, 1)
+    shockwave(position, 0x7fe0ff, 1.4)
+    bloomSprite(position, 0x3ea6ff, 2.0)
+  }
+
+  function emergencyBrakeVFX(position, forward, right) {
+    reverseBrakeJets(position, forward, right)
+    shockwave(position, 0xffffff, 1.0)
+    shockwave(position, 0x7fe0ff, 1.6)
+    hitSpark(position, 0xffffff)
+  }
+
+  // ============ CURA / VIDA EXTRA E WINGMAN SPAWN ============
+  function extraLifeHeal(position) {
+    shockwave(position, 0xffd700, 2.0)
+    shockwave(position, 0x44ff88, 1.5)
+    bloomSprite(position, 0xffd700, 2.6)
+    hitSpark(position, 0xffea77)
+    hitSpark(position, 0x55ff99)
+  }
+
+  function wingmanSpawn(position) {
+    shockwave(position, 0x3ea6ff, 1.3)
+    bloomSprite(position, 0x7fe0ff, 2.2)
+    hitSpark(position, 0x3ea6ff)
+  }
+
   // pulso no grid do chão — emite uma ondulação de cor no GridHelper
   let gridPulseTimer = 0
   function gridPulse() {
@@ -1673,6 +1712,7 @@ export function createEffectsSystem(scene, opts = {}) {
     maxChargeReady, maxChargeRings,
     ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
     fogWispCondensation,
+    lateralDashVFX, summersaultVFX, emergencyBrakeVFX, extraLifeHeal, wingmanSpawn,
     dispose,
   }
 }

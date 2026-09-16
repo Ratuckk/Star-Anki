@@ -68,6 +68,7 @@ export function createPlayerSystem(session) {
   let shieldRegenRate = SHIELD_REGEN_RATE
   let shieldValue = shieldMax
   let shieldRegenDelayTimer = 0
+  let wrongAnswerCount = 0
 
   let invincibilityDurationMs = INVINCIBILITY_MS
   let invincibleTimer = 0
@@ -139,6 +140,8 @@ export function createPlayerSystem(session) {
     getMaxLives: () => maxLives,
     getShieldValue: () => shieldValue,
     getShieldMax: () => shieldMax,
+    setWrongCount(count) { wrongAnswerCount = Math.max(0, count || 0) },
+    getWrongCount: () => wrongAnswerCount,
     isInvincible: () => invincibleTimer > 0,
     // pedido do usuário: nave não pisca durante o rolamento — main.js usa isso pra suprimir o
     // flicker padrão de invencibilidade e mostrar afterimage no lugar só nessa janela
@@ -240,6 +243,7 @@ export function createPlayerSystem(session) {
       shieldValue = shieldMax
       shieldRegenRate = SHIELD_REGEN_RATE
       shieldRegenDelayMs = SHIELD_REGEN_DELAY_MS
+      wrongAnswerCount = 0
       invincibilityDurationMs = INVINCIBILITY_MS
       homingMaxTargets = HOMING_MAX_TARGETS_BASE
       homingChargeMinMs = HOMING_CHARGE_MIN_MS
@@ -274,7 +278,8 @@ export function createPlayerSystem(session) {
     // sobrar (escudo vazio, ou quebrou nesse hit e sobrou dano) desce pra vida. `amount` varia
     // com a dificuldade por erro (ver applyDifficulty em main.js) — era sempre 1 fixo.
     takeDamage(amount = 1) {
-      shieldRegenDelayTimer = shieldRegenDelayMs
+      // Seção 3 do backlog (contrapeso do jogador): em patamares altos (wrongAnswerCount >= 3), atraso de +150ms na recarga do escudo
+      shieldRegenDelayTimer = shieldRegenDelayMs + (wrongAnswerCount >= 3 ? 150 : 0)
       let remaining = Math.max(1, amount)
       const absorbedByShield = shieldValue >= 1
       if (absorbedByShield) {

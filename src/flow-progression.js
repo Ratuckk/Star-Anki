@@ -20,7 +20,7 @@ import {
 } from './main-constants.js'
 
 export function createProgressionFlow(deps) {
-  const { state, rail, combat } = deps
+  const { state, rail, combat, hud, player } = deps
 
   function randomDetritoInterval() {
     return DETRITO_SPAWN_INTERVAL_MIN_MS + Math.random() * (DETRITO_SPAWN_INTERVAL_MAX_MS - DETRITO_SPAWN_INTERVAL_MIN_MS)
@@ -73,6 +73,7 @@ export function createProgressionFlow(deps) {
     state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
     combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
     combat.setEnemyAimError?.(Math.max(1.2, 5.0 - state.wrongAnswerCount * 0.7))
+    player?.setWrongCount?.(state.wrongAnswerCount)
   }
 
   function applyDifficulty() {
@@ -87,6 +88,8 @@ export function createProgressionFlow(deps) {
     state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
     combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
     combat.setEnemyAimError?.(Math.max(1.2, 5.0 - state.wrongAnswerCount * 0.7))
+    player?.setWrongCount?.(state.wrongAnswerCount)
+    hud?.showTierIncrease?.(state.wrongAnswerCount)
   }
 
   function applyBossDifficulty() {

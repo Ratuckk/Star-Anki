@@ -208,6 +208,9 @@ export function createGameLoop(deps) {
     if (isActionPressed(bindings, inputState.pressed, 'propulsion')) {
       if (arenaNow && inputState.bank !== 0) {
         rail.triggerArenaLateralDash(inputState.bank)
+        if (effects && effects.lateralDashVFX) {
+          effects.lateralDashVFX(playerPos, noseFrame.right, inputState.bank)
+        }
       } else if (player.activatePropulsion()) {
         effects.propulsionBurst(playerPos, noseFrame.forward)
       }
@@ -215,9 +218,15 @@ export function createGameLoop(deps) {
     if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
       if (arenaNow && inputState.moveY === -1) {
         rail.triggerArenaSummersault()
+        if (effects && effects.summersaultVFX) {
+          effects.summersaultVFX(playerPos, noseFrame.forward)
+        }
       } else if (arenaNow && nowMs - state.lastRepulsionTapAt <= DODGE_TAP_WINDOW_MS) {
         // 2º toque rápido (sem Baixo) — freio de emergência em vez de outra repulsão normal
         rail.triggerEmergencyBrake()
+        if (effects && effects.emergencyBrakeVFX) {
+          effects.emergencyBrakeVFX(playerPos, noseFrame.forward, noseFrame.right)
+        }
         state.lastRepulsionTapAt = -Infinity
       } else {
         player.activateRepulsion()
@@ -400,7 +409,8 @@ export function createGameLoop(deps) {
       state.enemyTimer -= dt * 1000
       if (state.enemyTimer <= 0) {
         if (combat.getEnemyCount() < progression.currentEnemyCap()) {
-          if (Math.random() < FRAGATA_SPAWN_CHANCE) combat.spawnFragata()
+          const fragataChance = FRAGATA_SPAWN_CHANCE + Math.min(0.25, (state.wrongAnswerCount || 0) * 0.05)
+          if (Math.random() < fragataChance) combat.spawnFragata()
           else combat.spawnEnemy()
         }
         state.enemyTimer = progression.randomEnemyInterval() * ARENA_ENEMY_INTERVAL_MULT * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
@@ -411,12 +421,13 @@ export function createGameLoop(deps) {
         state.normalSpawnTimer -= dt * 1000
         if (state.normalSpawnTimer <= 0) {
           state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
+          const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
           if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
             if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
             else combat.spawnTimeEnemy()
           } else if (Math.random() < MINI_SWARM_CHANCE) {
             combat.spawnMiniSwarm()
-          } else if (Math.random() < SENTINELA_SPAWN_CHANCE) {
+          } else if (Math.random() < sentinelaChance) {
             combat.spawnSentinela()
           } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
             combat.spawnReplica()

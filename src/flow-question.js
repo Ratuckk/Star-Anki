@@ -23,6 +23,14 @@ export function createQuestionFlow(deps) {
     if (deps.effects && deps.rail && deps.effects.cardAcquiredPulse) {
       deps.effects.cardAcquiredPulse(deps.rail.getPlayerPosition(), card.category)
     }
+    if (card.id === 'extra-life' && deps.effects?.extraLifeHeal && deps.rail) {
+      deps.effects.extraLifeHeal(deps.rail.getPlayerPosition())
+    }
+    if (card.id === 'wingman' && deps.effects?.wingmanSpawn && deps.rail) {
+      const positions = combat.getWingmanPositions?.()
+      const pos = (positions && positions.length > 0) ? positions[positions.length - 1] : deps.rail.getPlayerPosition()
+      deps.effects.wingmanSpawn(pos)
+    }
   }
 
   function buildCardExcludeSet() {

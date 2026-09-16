@@ -926,6 +926,49 @@ export function injectHudExtraStyles() {
   letter-spacing: 0.18em;
   text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
 }
+
+/* ============ ALERTA DE PATAMAR DE ERRO (Seção 3 do backlog) ============ */
+.hud-tier-warning {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  z-index: 35;
+  pointer-events: none;
+  font-family: monospace, sans-serif;
+  text-transform: uppercase;
+  padding: 0.6rem 1.4rem;
+  border-radius: 6px;
+  background: rgba(180, 20, 20, 0.4);
+  border: 1px solid rgba(255, 60, 60, 0.7);
+  box-shadow: 0 0 25px rgba(255, 30, 30, 0.6), inset 0 0 15px rgba(255, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  animation: hud-tier-anim 2.4s ease-out forwards;
+}
+@keyframes hud-tier-anim {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  12% { opacity: 1; transform: translateX(-50%) scale(1.08); }
+  20% { opacity: 1; transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-15px) scale(0.95); }
+}
+.hud-tier-warning-title {
+  color: #ff3344;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 18px rgba(255, 50, 50, 0.9), 0 2px 4px #000;
+}
+.hud-tier-warning-sub {
+  color: #ffc4c4;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 8px rgba(255, 100, 100, 0.7);
+}
 `
   document.head.appendChild(style)
 }

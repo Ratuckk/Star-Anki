@@ -190,7 +190,7 @@ export function mountGame(session, deck, menu) {
   // Extraído pra flow-progression.js: applyDifficulty/applyBossDifficulty/applySpeedProgression,
   // currentEnemyCap/currentBossSpread/currentBossExtraEnemies e os 5 randomizadores de
   // intervalo.
-  const progression = createProgressionFlow({ state, rail, combat })
+  const progression = createProgressionFlow({ state, rail, combat, hud, player })
 
   // inicialização dos timers que dependem de funções de progressão
   state.goldenTimer = progression.randomGoldenInterval()

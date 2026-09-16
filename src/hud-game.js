@@ -799,6 +799,27 @@ export function createGameHud() {
       damageVignette.classList.add('flash')
     },
 
+    showTierIncrease(level) {
+      if (level <= 0) return
+      damageVignette.classList.remove('flash')
+      void damageVignette.offsetWidth
+      damageVignette.classList.add('flash')
+
+      const existing = root.querySelector('.hud-tier-warning')
+      if (existing) existing.remove()
+
+      const banner = document.createElement('div')
+      banner.className = 'hud-tier-warning'
+      banner.innerHTML = `
+        <div class="hud-tier-warning-title">⚠️ AMEAÇA ESCALADA — NÍVEL ${level} ⚠️</div>
+        <div class="hud-tier-warning-sub">Inimigos mais rápidos e agressivos detectados</div>
+      `
+      root.appendChild(banner)
+      setTimeout(() => {
+        if (banner.parentElement) banner.remove()
+      }, 2500)
+    },
+
     setLowHealth(intensity) {
       const v = Math.max(0, Math.min(1, intensity))
       lowHealthVignette.style.opacity = String(v)

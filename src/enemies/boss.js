@@ -316,17 +316,38 @@ function fireBossLaser(scene, ctx, enemy, targetPos) {
   const startPos = enemy.mesh.position.clone()
   const direction = targetPos.clone().sub(startPos).normalize()
 
-  const geo = new THREE.ConeGeometry(LASER_RADIUS, LASER_LENGTH, 8)
-  geo.rotateX(Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({
-    color: enemy.phaseConfig.color, transparent: true, opacity: 0.95,
+  const group = new THREE.Group()
+  const outerGeo = new THREE.CylinderGeometry(LASER_RADIUS * 1.5, LASER_RADIUS * 1.5, LASER_LENGTH, 8)
+  outerGeo.rotateX(Math.PI / 2)
+  const outerMat = new THREE.MeshBasicMaterial({
+    color: enemy.phaseConfig.color, transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.copy(startPos)
-  mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
-  scene.add(mesh)
-  ctx.pushLaser({ mesh, geo, mat, velocity: direction.multiplyScalar(LASER_SPEED), traveled: 0, maxRange: LASER_MAX_RANGE, hitRadius: BOSS_LASER_HIT_RADIUS, shieldDamage: 1 })
+  const outerMesh = new THREE.Mesh(outerGeo, outerMat)
+
+  const innerGeo = new THREE.CylinderGeometry(LASER_RADIUS * 0.6, LASER_RADIUS * 0.6, LASER_LENGTH * 1.05, 8)
+  innerGeo.rotateX(Math.PI / 2)
+  const innerMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  })
+  const innerMesh = new THREE.Mesh(innerGeo, innerMat)
+
+  group.add(outerMesh, innerMesh)
+  group.position.copy(startPos)
+  group.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+  scene.add(group)
+
+  ctx.pushLaser({
+    mesh: group,
+    outerMat,
+    innerMat,
+    velocity: direction.multiplyScalar(LASER_SPEED),
+    traveled: 0,
+    maxRange: LASER_MAX_RANGE,
+    hitRadius: BOSS_LASER_HIT_RADIUS,
+    shieldDamage: 1,
+  })
 }
 
 // ============ LASER (telegrafado) ============
