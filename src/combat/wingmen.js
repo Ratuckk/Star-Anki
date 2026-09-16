@@ -1,8 +1,11 @@
 import * as THREE from 'three'
 
-// ============ ESQUADRÃO STAR FOX (WINGMEN IA) ============
-// Sistema de companheiros de equipe autônomos e úteis (v0.54.0).
+// ============ ESQUADRÃO STAR FOX (WINGMEN IA DE VOO LIVRE) ============
+// Sistema de companheiros de equipe autônomos, vivos e úteis (v0.54.1).
 // Até 4 membros permanentes com naves, modelos 3D, cores, personalidades e IA distintas.
+// Modelo de Voo Livre (Free-Flight Patrol): voam livremente pelo espaço do trilho e da arena,
+// cortam a tela em fly-bys cinematográficos, fazem dogfights independentes com roll dinâmico
+// (banking nas curvas) e atacam inimigos sem ficarem colados como satélites na nave do jogador.
 
 export const WINGMAN_PROFILES = [
   {
@@ -12,11 +15,11 @@ export const WINGMAN_PROFILES = [
     color: 0x1d4ed8, // azul cobalto
     accentColor: 0x38bdf8, // ciano elétrico
     laserColor: 0x38bdf8,
-    offset: { right: -4.8, up: 0.3, forward: 1.4 },
-    fireInterval: 0.8,
+    homeSide: -1, // viés de patrulha: ala esquerda
+    fireInterval: 0.75,
     burstCount: 2,
     burstDelay: 0.12,
-    speed: 40,
+    speed: 42,
     modelType: 'interceptor',
   },
   {
@@ -26,11 +29,11 @@ export const WINGMAN_PROFILES = [
     color: 0x059669, // verde esmeralda
     accentColor: 0xfbbf24, // ouro
     laserColor: 0x34d399,
-    offset: { right: 4.8, up: 0.3, forward: 1.4 },
-    fireInterval: 1.15,
+    homeSide: 1, // viés de patrulha: ala direita
+    fireInterval: 1.1,
     burstCount: 1,
     burstDelay: 0,
-    speed: 34,
+    speed: 36,
     modelType: 'bomber',
   },
   {
@@ -40,11 +43,11 @@ export const WINGMAN_PROFILES = [
     color: 0xea580c, // laranja intenso
     accentColor: 0xfde047, // amarelo brilhante
     laserColor: 0xfbbf24,
-    offset: { right: -3.8, up: -0.6, forward: -3.0 },
-    fireInterval: 0.9,
+    homeSide: -1,
+    fireInterval: 0.85,
     burstCount: 2,
     burstDelay: 0.14,
-    speed: 36,
+    speed: 38,
     modelType: 'scout',
   },
   {
@@ -54,16 +57,16 @@ export const WINGMAN_PROFILES = [
     color: 0x7c3aed, // roxo estelar
     accentColor: 0xf43f5e, // rosa neon
     laserColor: 0xe879f9,
-    offset: { right: 3.8, up: -0.6, forward: -3.0 },
-    fireInterval: 0.85,
+    homeSide: 1,
+    fireInterval: 0.8,
     burstCount: 3,
     burstDelay: 0.1,
-    speed: 42,
+    speed: 45,
     modelType: 'stealth',
   },
 ]
 
-const WINGMAN_LASER_SPEED = 120
+const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
@@ -278,14 +281,13 @@ function buildWingmanShip(profile) {
   }
 }
 
-// ============ SISTEMA PRINCIPAL DO ESQUADRÃO ============
+// ============ SISTEMA PRINCIPAL DO ESQUADRÃO LIVRE ============
 
 export function createSquadronSystem(scene, rail, effects, enemies) {
   const activeWingmen = []
   const activeLasers = []
   let elapsed = 0
 
-  // Geometria compartilhada dos tiros laser dos companheiros
   const laserGeometry = new THREE.CylinderGeometry(0.09, 0.09, 1.4, 6)
   laserGeometry.rotateX(Math.PI / 2)
 
@@ -297,7 +299,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const { mesh, thrusters } = buildWingmanShip(profile)
     const playerPos = rail.getPlayerPosition()
     const frame = rail.getFrameAt(0)
-    mesh.position.copy(playerPos).addScaledVector(frame.right, profile.offset.right)
+    
+    // Posição inicial no espaço
+    const spawnPos = playerPos.clone()
+      .addScaledVector(frame.right, profile.homeSide * (8 + Math.random() * 6))
+      .addScaledVector(frame.up, (Math.random() * 2 - 1) * 3)
+      .addScaledVector(frame.forward, 10 + Math.random() * 15)
+    mesh.position.copy(spawnPos)
+    mesh.lookAt(spawnPos.clone().add(frame.forward))
     scene.add(mesh)
 
     const laserMaterial = new THREE.MeshBasicMaterial({ color: profile.laserColor })
@@ -307,14 +316,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       mesh,
       thrusters,
       laserMaterial,
-      state: 'formation', // 'formation' | 'engaging' | 'returning'
+      state: 'patrol', // 'patrol' | 'flyby' | 'dogfight' | 'regroup'
       stateTimer: 0,
+      velocity: frame.forward.clone().multiplyScalar(profile.speed),
+      smoothRoll: 0,
+      patrolTarget: spawnPos.clone(),
+      nextWaypointTimer: 0.2 + Math.random() * 0.8,
+      flybyCooldown: 4.0 + Math.random() * 5.0,
       targetEnemy: null,
-      cooldownTimer: 0.5 + Math.random() * 0.8,
+      fireCooldown: 0.5 + Math.random() * 0.5,
       burstRemaining: 0,
       burstTimer: 0,
-      currentVel: new THREE.Vector3(),
-      smoothRoll: 0,
+      breakTurnAngle: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.5),
     }
 
     activeWingmen.push(wingman)
@@ -334,13 +347,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function setWingmanCount(n) {
     const targetCount = Math.max(0, Math.min(4, n))
-    // adiciona os que faltam na ordem 0..3
     for (let i = 0; i < targetCount; i += 1) {
       if (!activeWingmen.some((w) => w.profile.id === i)) {
         spawnMember(i)
       }
     }
-    // remove os excedentes do final
     while (activeWingmen.length > targetCount) {
       const last = activeWingmen[activeWingmen.length - 1]
       removeMember(last.profile.id)
@@ -375,110 +386,212 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  // ============ TICK DE ATUALIZAÇÃO DA IA ============
+  // ============ TICK DE ATUALIZAÇÃO DA IA DE VOO LIVRE ============
 
   function update(dt, playerPos, frame, opts = {}) {
     elapsed += dt
     const boostActive = !!opts.boostActive
     const inArena = rail.isArena()
 
-    // 1. Atualiza cada companheiro de equipe
-    for (const w of activeWingmen) {
+    for (let idx = 0; idx < activeWingmen.length; idx++) {
+      const w = activeWingmen[idx]
       w.stateTimer += dt
-      w.cooldownTimer -= dt
+      w.fireCooldown -= dt
+      w.flybyCooldown -= dt
 
-      // Efeito de propulsor / pós-combustor pulsante
+      // Fogo das turbinas reage a boost ou manobras fly-by
+      const isThrusting = boostActive || w.state === 'flyby' || w.state === 'dogfight'
       for (const t of w.thrusters) {
-        const boostScale = boostActive ? 2.4 : 1.0 + Math.sin(elapsed * 18 + w.profile.id) * 0.2
-        t.scale.set(boostActive ? 1.4 : 1.0, boostActive ? 1.4 : 1.0, boostScale)
+        const boostScale = isThrusting ? 2.5 : 1.0 + Math.sin(elapsed * 16 + w.profile.id) * 0.25
+        t.scale.set(isThrusting ? 1.4 : 1.0, isThrusting ? 1.4 : 1.0, boostScale)
       }
 
-      // Posição base de formação com micro-drift orgânico
-      const driftX = Math.sin(elapsed * 1.7 + w.profile.id * 1.6) * 0.45
-      const driftY = Math.cos(elapsed * 2.1 + w.profile.id * 1.3) * 0.35
-      const forwardPush = boostActive ? 2.5 : 0
-      const formationTarget = playerPos.clone()
-        .addScaledVector(frame.right, w.profile.offset.right + driftX)
-        .addScaledVector(frame.up, w.profile.offset.up + driftY)
-        .addScaledVector(frame.forward, w.profile.offset.forward + forwardPush)
+      const distToPlayer = w.mesh.position.distanceTo(playerPos)
 
-      // ============ DECISÃO DA IA ============
-      if (w.state === 'formation') {
-        // Segue suavemente para a formação
-        w.mesh.position.lerp(formationTarget, 1 - Math.exp(-6.5 * dt))
+      // ============ MÁQUINA DE ESTADOS DA IA LIVRE ============
 
-        // Alinha bico e roll suave
-        const lookTarget = w.mesh.position.clone().add(frame.forward)
-        w.mesh.lookAt(lookTarget)
-        const lateralRoll = THREE.MathUtils.clamp(-driftX * 0.8, -0.4, 0.4)
-        w.mesh.rotateZ(lateralRoll)
+      // 1. Regroup se ficou longe demais do jogador
+      const maxDistance = inArena ? 160 : 90
+      if (distToPlayer > maxDistance && w.state !== 'regroup') {
+        w.state = 'regroup'
+        w.stateTimer = 0
+        w.targetEnemy = null
+      }
 
-        // Tenta engajar inimigo se o cooldown estiver livre
-        if (w.cooldownTimer <= 0 && enemies && enemies.getAlive) {
+      if (w.state === 'regroup') {
+        // Retorna suavemente em curva para o volume de patrulha visível
+        const targetSide = w.profile.homeSide * (7 + Math.random() * 5)
+        w.patrolTarget.copy(playerPos)
+          .addScaledVector(frame.right, targetSide)
+          .addScaledVector(frame.up, 2)
+          .addScaledVector(frame.forward, inArena ? 25 : 20)
+
+        if (distToPlayer < (inArena ? 60 : 40) || w.stateTimer > 3.0) {
+          w.state = 'patrol'
+          w.stateTimer = 0
+          w.nextWaypointTimer = 0
+        }
+      } else if (w.state === 'patrol') {
+        // ============ VOO LIVRE E PATRULHA ============
+        w.nextWaypointTimer -= dt
+
+        // Chance periódica de FLY-BY rasante cinematográfico na frente da câmera (no modo rail)
+        if (!inArena && w.flybyCooldown <= 0 && Math.random() < 0.25) {
+          w.state = 'flyby'
+          w.stateTimer = 0
+          w.flybyCooldown = 7.0 + Math.random() * 6.0
+          // Corta diagonalmente a tela de um lado pro outro (+14u à frente da câmera)
+          const startSide = w.profile.homeSide * 18
+          const destSide = -startSide * 1.1
+          w.mesh.position.copy(playerPos)
+            .addScaledVector(frame.right, startSide)
+            .addScaledVector(frame.up, (Math.random() * 2 - 1) * 3)
+            .addScaledVector(frame.forward, 8)
+          w.patrolTarget.copy(playerPos)
+            .addScaledVector(frame.right, destSide)
+            .addScaledVector(frame.up, 4)
+            .addScaledVector(frame.forward, 38)
+        } else if (w.nextWaypointTimer <= 0) {
+          // Novo waypoint autônomo na zona de patrulha
+          if (!inArena) {
+            // No modo rail: navega em um volume amplo à frente da nave (-16 a +16 lateral, -4 a +9 vertical, +12 a +42 frente)
+            const side = (Math.random() * 2 - 1) * 16
+            const vert = (Math.random() * 2 - 1) * 6.5 + 2.5
+            const ahead = 14 + Math.random() * 28
+            w.patrolTarget.copy(playerPos)
+              .addScaledVector(frame.right, side)
+              .addScaledVector(frame.up, vert)
+              .addScaledVector(frame.forward, ahead)
+            w.nextWaypointTimer = 2.4 + Math.random() * 2.2
+          } else {
+            // No modo all-range: voo 100% livre e independente pela arena
+            const center = rail.getArenaCenter()
+            const angle = Math.random() * Math.PI * 2
+            const radius = 35 + Math.random() * 60
+            const height = (Math.random() * 2 - 1) * 16
+            w.patrolTarget.set(
+              center.x + Math.cos(angle) * radius,
+              center.y + height,
+              center.z + Math.sin(angle) * radius
+            )
+            w.nextWaypointTimer = 3.0 + Math.random() * 2.5
+          }
+        }
+
+        // Checa se há inimigos para atacar (DOGFIGHT)
+        if (w.fireCooldown <= 0 && enemies && enemies.getAlive) {
           const alive = enemies.getAlive().filter((e) => !e.dying && e.mesh)
           if (alive.length > 0) {
-            // Escolhe o inimigo mais acessível à frente
             const candidates = alive.filter((e) => {
               const rel = e.mesh.position.clone().sub(w.mesh.position)
               const dotForward = rel.clone().normalize().dot(frame.forward)
-              return inArena ? rel.length() < 90 : (dotForward > 0.25 && rel.length() < 130)
+              return inArena ? rel.length() < 100 : (dotForward > 0.15 && rel.length() < 120)
             })
             if (candidates.length > 0) {
-              // Menor distância ao slot do companheiro
+              // Escolhe o alvo mais próximo do caça
               candidates.sort((a, b) => w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position))
               w.targetEnemy = candidates[0]
-              w.state = 'engaging'
+              w.state = 'dogfight'
               w.stateTimer = 0
               w.burstRemaining = w.profile.burstCount
               w.burstTimer = 0
             }
           }
         }
-      } else if (w.state === 'engaging') {
-        // Checa se o alvo ainda é válido
+      } else if (w.state === 'flyby') {
+        // Rasante rápido cortando a tela
+        if (w.stateTimer > 1.9 || w.mesh.position.distanceTo(w.patrolTarget) < 6.0) {
+          w.state = 'patrol'
+          w.stateTimer = 0
+          w.nextWaypointTimer = 0
+        }
+      } else if (w.state === 'dogfight') {
+        // ============ PERSEGUIÇÃO E DOGFIGHT ============
         const enemyLost = !w.targetEnemy || w.targetEnemy.dying || !w.targetEnemy.mesh ||
-          w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 160 ||
-          w.stateTimer > 2.6
+          w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 150 ||
+          w.stateTimer > 2.8
 
         if (enemyLost) {
-          w.state = 'returning'
+          w.state = 'patrol'
           w.stateTimer = 0
           w.targetEnemy = null
-          w.cooldownTimer = w.profile.fireInterval + Math.random() * 0.4
+          w.fireCooldown = w.profile.fireInterval + Math.random() * 0.4
+          w.nextWaypointTimer = 0
         } else {
-          // Manobra de ataque (strafe run): aproxima-se do inimigo e alinha mira
+          // Persegue o inimigo em curva de interceptação
           const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
           const dist = toEnemy.length()
           const aimDir = toEnemy.clone().normalize()
 
-          // Desloca em arco mantendo standoff de combate (~18u)
-          const desiredPos = w.targetEnemy.mesh.position.clone().addScaledVector(aimDir, -18)
-          w.mesh.position.lerp(desiredPos, 1 - Math.exp(-4.2 * dt))
-          w.mesh.lookAt(w.targetEnemy.mesh.position)
+          // Mira e aproxima-se mantendo standoff de combate
+          w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(aimDir, -16)
 
           // Disparo da rajada
           w.burstTimer -= dt
-          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 120) {
+          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 110) {
             w.burstRemaining -= 1
-            w.burstTimer = w.profile.burstDelay || 0.15
-            const muzzleOffset = w.mesh.position.clone().addScaledVector(aimDir, 1.2)
+            w.burstTimer = w.profile.burstDelay || 0.14
+            const muzzleOffset = w.mesh.position.clone().addScaledVector(aimDir, 1.3)
             fireWingmanLaser(w, muzzleOffset, aimDir)
           }
 
           if (w.burstRemaining <= 0) {
-            w.state = 'returning'
+            // Break-turn de combate após disparar: curva evasiva antes de voltar à patrulha
+            w.state = 'patrol'
             w.stateTimer = 0
-            w.cooldownTimer = w.profile.fireInterval + Math.random() * 0.5
+            w.fireCooldown = w.profile.fireInterval + Math.random() * 0.5
+            w.nextWaypointTimer = 1.0
+            // Evasão lateral
+            w.patrolTarget.copy(w.mesh.position)
+              .addScaledVector(frame.right, w.breakTurnAngle * 14)
+              .addScaledVector(frame.up, 5)
+              .addScaledVector(frame.forward, 15)
           }
         }
-      } else if (w.state === 'returning') {
-        // Retorno suave à formação
-        w.mesh.position.lerp(formationTarget, 1 - Math.exp(-5.0 * dt))
-        w.mesh.lookAt(w.mesh.position.clone().add(frame.forward))
-        if (w.mesh.position.distanceTo(formationTarget) < 2.0 || w.stateTimer > 2.0) {
-          w.state = 'formation'
-          w.stateTimer = 0
+      }
+
+      // ============ FÍSICA DE VOO COM ACELERAÇÃO E ROLL (BANKING) ============
+
+      // Vetor de direção até o alvo atual
+      const toTarget = w.patrolTarget.clone().sub(w.mesh.position)
+      const targetDist = toTarget.length()
+      const targetDir = targetDist > 1e-4 ? toTarget.clone().normalize() : frame.forward.clone()
+
+      // Velocidade de cruzeiro modulada pelo estado e por boost
+      let cruiseSpeed = w.profile.speed
+      if (boostActive || w.state === 'flyby') cruiseSpeed *= 1.65
+      else if (w.state === 'dogfight') cruiseSpeed *= 1.25
+
+      const desiredVelocity = targetDir.multiplyScalar(cruiseSpeed)
+
+      // Repulsão suave entre os companheiros para nunca se sobreporem
+      for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {
+        if (otherIdx === idx) continue
+        const other = activeWingmen[otherIdx]
+        const diff = w.mesh.position.clone().sub(other.mesh.position)
+        const distBetween = diff.length()
+        if (distBetween > 0.01 && distBetween < 6.0) {
+          const push = diff.normalize().multiplyScalar((6.0 - distBetween) * 12)
+          desiredVelocity.add(push)
         }
+      }
+
+      // Aceleração com inércia
+      const accelRate = w.state === 'flyby' ? 6.5 : 4.0
+      w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
+      w.mesh.position.addScaledVector(w.velocity, dt)
+
+      // Orientação: o bico do caça aponta suavemente para a direção do movimento real
+      const currentSpeed = w.velocity.length()
+      if (currentSpeed > 1.0) {
+        const moveDir = w.velocity.clone().normalize()
+        w.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, moveDir)
+
+        // Banking / Roll real na curva: inclina a asa proporcionalmente ao componente lateral do movimento
+        const lateralMove = w.velocity.dot(frame.right)
+        const targetRoll = THREE.MathUtils.clamp(-lateralMove * 0.045, -1.2, 1.2) // até ~70° de inclinação
+        w.smoothRoll += (targetRoll - w.smoothRoll) * (1 - Math.exp(-5.5 * dt))
+        w.mesh.rotateZ(w.smoothRoll)
       }
     }
 
@@ -516,11 +629,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  // Disparo manual sincronizado (quando o jogador atira, os wingmen que estão em formação dão suporte)
+  // Disparo manual sincronizado de suporte
   function tryFireSupport(direction) {
     for (const w of activeWingmen) {
-      if (w.state === 'formation') {
-        const muzzlePos = w.mesh.position.clone().addScaledVector(direction, 1.2)
+      if (w.state === 'patrol' || w.state === 'flyby') {
+        const muzzlePos = w.mesh.position.clone().addScaledVector(direction, 1.3)
         fireWingmanLaser(w, muzzlePos, direction)
       }
     }
