@@ -306,6 +306,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.ramHitActive = false
       }
 
+      if (enemy.spawnAge != null && enemy.spawnAge < enemy.spawnDuration) {
+        enemy.spawnAge += dt
+        const t = Math.min(1, enemy.spawnAge / enemy.spawnDuration)
+        const scale = THREE.MathUtils.lerp(0.2, 1.0, Math.sin(t * Math.PI * 0.5))
+        enemy.mesh.scale.setScalar(scale)
+      }
+
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
       // remove sozinha (não usa o pass-behind genérico abaixo)
       if (enemy.kind === MINI_SWARM_KIND) {
@@ -325,7 +332,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         else updateImaSpin(enemy, dt)
         if (!inArena) {
           const relative = enemy.mesh.position.clone().sub(frame.position)
-          if (relative.dot(frame.forward) < PASS_BEHIND) { removeEnemy(enemy); continue }
+          const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
+          if (relative.dot(frame.forward) < PASS_BEHIND || passedDistance) { removeEnemy(enemy); continue }
         }
       } else if (inArena) {
         // pedido do usuário: inimigos comuns muito lentos em arena — *0.5 limitava a metade da
@@ -381,7 +389,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
         const relative = enemy.mesh.position.clone().sub(frame.position)
         const passBehind = passBehindFor(enemy)
-        if (relative.dot(frame.forward) < passBehind) { removeEnemy(enemy); continue }
+        const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
+        if (relative.dot(frame.forward) < passBehind || passedDistance) { removeEnemy(enemy); continue }
       }
 
       // telegraph colorido por classe + deslocado pra fora do mesh do chefe (senão nasce
@@ -489,81 +498,89 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
+  function registerSpawn(enemy) {
+    if (!enemy) return null
+    enemy.spawnRailDist = rail.getDistance()
+    if (!rail.isArena() && enemy.mesh && enemy.kind !== BOSS_KIND) {
+      enemy.spawnAge = 0
+      enemy.spawnDuration = 0.35
+      enemy.mesh.scale.setScalar(0.2)
+      if (effects && effects.fogWispCondensation) {
+        effects.fogWispCondensation(enemy.mesh.position, colorFor(enemy))
+      }
+    }
+    enemies.push(enemy)
+    return enemy
+  }
+
+  function registerSpawnGroup(group) {
+    if (!group) return
+    for (const e of group) registerSpawn(e)
+  }
+
   return {
     spawnEnemy() {
       const enemy = spawnBlaster(scene, rail, nextEnemyId++)
       enemy.fireTimer = randomEnemyFireInterval()
-      enemies.push(enemy)
+      registerSpawn(enemy)
     },
 
     spawnMiniSwarm() {
       const group = spawnMiniSwarmGroup(scene, rail, () => nextEnemyId++)
-      for (const e of group) enemies.push(e)
+      registerSpawnGroup(group)
     },
 
     spawnTimeEnemy() {
       const enemy = spawnTimeEnemy(scene, rail, nextEnemyId++)
       enemy.fireTimer = randomEnemyFireInterval()
-      enemies.push(enemy)
+      registerSpawn(enemy)
     },
 
     spawnTimeEnemyMega() {
       const enemy = spawnTimeEnemyMega(scene, rail, nextEnemyId++)
       enemy.fireTimer = randomEnemyFireInterval()
-      enemies.push(enemy)
+      registerSpawn(enemy)
     },
 
     spawnTankEnemy(hp = TANK_DEFAULT_HP) {
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, hp)
       enemy.fireTimer = randomEnemyFireInterval()
-      enemies.push(enemy)
+      registerSpawn(enemy)
     },
 
     spawnDetrito() {
       const enemy = spawnDetrito(scene, rail, nextEnemyId++)
-      enemies.push(enemy)
+      registerSpawn(enemy)
     },
 
     spawnSentinela() {
       const enemy = spawnSentinela(scene, rail, nextEnemyId++)
-      if (enemy) {
-        enemies.push(enemy)
-      }
+      registerSpawn(enemy)
     },
 
     spawnReplica() {
       const enemy = spawnReplica(scene, rail, nextEnemyId++)
-      if (enemy) {
-        enemies.push(enemy)
-      }
+      registerSpawn(enemy)
     },
 
     spawnFragata() {
       const enemy = spawnFragata(scene, rail, nextEnemyId++)
-      if (enemy) {
-        enemies.push(enemy)
-      }
+      registerSpawn(enemy)
     },
 
     spawnVerme() {
       const segments = spawnVerme(scene, rail, () => nextEnemyId++)
-      for (const e of segments) {
-        enemies.push(e)
-      }
+      registerSpawnGroup(segments)
     },
 
     spawnImaSwarm() {
       const group = spawnImaSwarm(scene, rail, () => nextEnemyId++)
-      for (const e of group) {
-        enemies.push(e)
-      }
+      registerSpawnGroup(group)
     },
 
     spawnSussurro() {
       const enemy = spawnSussurro(scene, rail, nextEnemyId++)
-      if (enemy) {
-        enemies.push(enemy)
-      }
+      registerSpawn(enemy)
     },
 
     // Fase de ideias de inimigos: fonte do campo magnético do Enxame-Ímã, consumida direto por

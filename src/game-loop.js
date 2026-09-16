@@ -30,6 +30,7 @@ import {
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
   BOSS_ENEMY_INTERVAL_MULT,
+  LEVEL_BACKGROUNDS,
 } from './main-constants.js'
 
 export function createGameLoop(deps) {
@@ -333,6 +334,21 @@ export function createGameLoop(deps) {
       rollActive: player.isRollIframeActive(),
     })
     effects.spawnContrailTick(combat.getWingmanPositions(), dt)
+
+    // ============ NEBLINA VIVA (deriva suave de cor no trilho) ============
+    if (scene.fog && state.phase === 'combat' && !rail.isArena()) {
+      const dist = rail.getDistance()
+      const t1 = Math.sin(dist * 0.0012) * 0.5 + 0.5
+      const t2 = Math.cos(dist * 0.0017) * 0.5 + 0.5
+      const baseColor = new THREE.Color(LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length])
+      const cosmicTint1 = new THREE.Color(0x0c1626) // azul-petróleo
+      const cosmicTint2 = new THREE.Color(0x190d24) // roxo estelar
+      const cosmicTint3 = new THREE.Color(0x0a1f18) // verde-abissal
+      const blendedShift = cosmicTint1.clone().lerp(cosmicTint2, t1).lerp(cosmicTint3, t2)
+      const finalColor = baseColor.clone().lerp(blendedShift, 0.4)
+      scene.fog.color.copy(finalColor)
+      scene.background.copy(finalColor)
+    }
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints

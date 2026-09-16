@@ -947,6 +947,88 @@ export function createEffectsSystem(scene, opts = {}) {
     glassShatter(position, 0xff3333)
   }
 
+  // ============ CONDENSAÇÃO DE INIMIGO NA NEBLINA ============
+  function fogWispCondensation(position, colorHex = 0x7fe0ff) {
+    const geometry = new THREE.BufferGeometry()
+    const count = 5
+    const positions = new Float32Array(count * 3)
+    const velocities = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = position.x + (Math.random() - 0.5) * 1.6
+      positions[i * 3 + 1] = position.y + (Math.random() - 0.5) * 1.6
+      positions[i * 3 + 2] = position.z + (Math.random() - 0.5) * 1.6
+      const theta = Math.random() * Math.PI * 2
+      const speed = 1.5 + Math.random() * 2.5
+      velocities[i * 3] = Math.cos(theta) * speed
+      velocities[i * 3 + 1] = Math.sin(theta) * speed
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * speed
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: colorHex, size: 2.4, sizeAttenuation: true,
+      map: softCircleTexture, transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.frustumCulled = false
+    scene.add(points)
+    hitSparks.push({ points, velocities, life: 0 })
+  }
+
+  // ============ CLARÕES DE BATALHA DISTANTES NO FUNDO ============
+  const distantFlashes = []
+  let distantFlashTimer = 3.0
+  const DISTANT_FLASH_COLORS = [0x3ea6ff, 0xffaa33, 0xd444ff, 0x55ffff]
+
+  function spawnDistantFlash(centerPos) {
+    const angle = Math.random() * Math.PI * 2
+    const elevation = (Math.random() - 0.5) * 0.8
+    const dist = 260 + Math.random() * 80
+    const offset = new THREE.Vector3(
+      Math.cos(angle) * Math.cos(elevation) * dist,
+      Math.sin(elevation) * dist + 15,
+      Math.sin(angle) * Math.cos(elevation) * dist,
+    )
+    const pos = centerPos ? centerPos.clone().add(offset) : offset
+    const color = DISTANT_FLASH_COLORS[Math.floor(Math.random() * DISTANT_FLASH_COLORS.length)]
+
+    const geo = new THREE.SphereGeometry(1, 8, 8)
+    const mat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(pos)
+    mesh.scale.setScalar(6)
+    scene.add(mesh)
+    distantFlashes.push({ mesh, life: 0, maxScale: 14 + Math.random() * 10, maxOpacity: 0.45 + Math.random() * 0.25 })
+  }
+
+  // ============ SILHUETAS DE NAVES DISTANTES NO CENÁRIO ============
+  const distantSilhouettes = []
+  const silhouetteGeometry = new THREE.ConeGeometry(1.2, 5, 4)
+  silhouetteGeometry.rotateX(Math.PI / 2)
+  const silhouetteMaterial = new THREE.MeshBasicMaterial({
+    color: 0x142033, transparent: true, opacity: 0.45,
+    depthWrite: false, fog: false,
+  })
+
+  function initDistantSilhouettes() {
+    for (let i = 0; i < 3; i++) {
+      const mesh = new THREE.Mesh(silhouetteGeometry, silhouetteMaterial)
+      const x = (Math.random() - 0.5) * 280
+      const y = 30 + Math.random() * 70
+      const z = -180 - Math.random() * 140
+      mesh.position.set(x, y, z)
+      mesh.scale.setScalar(1.5 + Math.random() * 1.5)
+      const speed = 4 + Math.random() * 6
+      const dir = new THREE.Vector3(Math.random() > 0.5 ? 1 : -1, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.3).normalize()
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
+      scene.add(mesh)
+      distantSilhouettes.push({ mesh, velocity: dir.multiplyScalar(speed) })
+    }
+  }
+  initDistantSilhouettes()
+
   // pulso no grid do chão — emite uma ondulação de cor no GridHelper
   let gridPulseTimer = 0
   function gridPulse() {
@@ -1444,6 +1526,37 @@ export function createEffectsSystem(scene, opts = {}) {
       p.mesh.scale.setScalar(1 + t * 1.5)
     }
 
+    // CLARÕES DISTANTES NO FUNDO CÓSMICO
+    distantFlashTimer -= dt
+    if (distantFlashTimer <= 0) {
+      distantFlashTimer = 2.5 + Math.random() * 3.5
+      spawnDistantFlash(shipPosition)
+    }
+    for (let i = distantFlashes.length - 1; i >= 0; i--) {
+      const f = distantFlashes[i]
+      f.life += dt
+      const t = f.life / 0.55
+      if (t >= 1) {
+        scene.remove(f.mesh)
+        f.mesh.geometry.dispose()
+        f.mesh.material.dispose()
+        distantFlashes.splice(i, 1)
+        continue
+      }
+      const curve = Math.sin(t * Math.PI)
+      f.mesh.scale.setScalar(6 + (f.maxScale - 6) * t)
+      f.mesh.material.opacity = f.maxOpacity * curve
+    }
+
+    // SILHUETAS DISTANTES NAVEGANDO NO HORIZONTE
+    for (const s of distantSilhouettes) {
+      s.mesh.position.addScaledVector(s.velocity, dt)
+      if (shipPosition) {
+        if (s.mesh.position.x - shipPosition.x > 220) s.mesh.position.x -= 440
+        else if (s.mesh.position.x - shipPosition.x < -220) s.mesh.position.x += 440
+      }
+    }
+
     // ACTIVE FLASHES (mesh branco)
     //
     // v0.51.0 — checa `materialRef` antes de tudo: se o mesh trocou de material por fora desde
@@ -1533,8 +1646,14 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
     for (const a of ricochetArcs) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.geometry.dispose(); j.mesh.material.dispose() }
+    for (const f of distantFlashes) { scene.remove(f.mesh); f.mesh.geometry.dispose(); f.mesh.material.dispose() }
+    for (const s of distantSilhouettes) { scene.remove(s.mesh); }
+    silhouetteGeometry.dispose()
+    silhouetteMaterial.dispose()
     ricochetArcs.length = 0
     reverseBrakeJetsList.length = 0
+    distantFlashes.length = 0
+    distantSilhouettes.length = 0
     bursts.length = 0; grayRings.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
     smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
@@ -1553,6 +1672,7 @@ export function createEffectsSystem(scene, opts = {}) {
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
     maxChargeReady, maxChargeRings,
     ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
+    fogWispCondensation,
     dispose,
   }
 }
