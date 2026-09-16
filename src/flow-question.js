@@ -20,6 +20,9 @@ export function createQuestionFlow(deps) {
     combat.setFireCooldown(player.config.fireCooldown)
     combat.setWingmanCount(player.getWingmanCount())
     hud.setLives(session.lives, player.getMaxLives())
+    if (deps.effects && deps.rail && deps.effects.cardAcquiredPulse) {
+      deps.effects.cardAcquiredPulse(deps.rail.getPlayerPosition(), card.category)
+    }
   }
 
   function buildCardExcludeSet() {
@@ -54,6 +57,8 @@ export function createQuestionFlow(deps) {
     hud.showQuestionModal({
       question: result.card.question,
       alternatives: result.alternatives,
+      explanation: result.card.explanation,
+      sourceUrl: result.card.sourceUrl,
       onPick: (slot) => {
         settleQuestion({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
@@ -91,7 +96,11 @@ export function createQuestionFlow(deps) {
       hud.showErrorFloat('Errou!')
     }
 
+    const prevLives = session.lives
     const outOfLives = applyHealthLoss()
+    if (!outOfLives && session.lives < prevLives && deps.effects && deps.rail && deps.effects.respawnBurst) {
+      deps.effects.respawnBurst(deps.rail.getPlayerPosition())
+    }
     state.pendingSectorOver = outOfLives
     state.pendingCardChoice = correct
     state.phase = 'resolution'

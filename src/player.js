@@ -92,6 +92,7 @@ export function createPlayerSystem(session) {
 
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
   let projectileCount = PROJECTILE_COUNT_START
+  const collectedCards = new Map()
 
   // QoL (v0.29.4): única fonte de verdade de "pode usar boost?" — antes a checagem estava
   // copiada dentro de activatePropulsion/activateRepulsion, e canUseBoost() existia na API
@@ -225,7 +226,29 @@ export function createPlayerSystem(session) {
         default:
           return false
       }
+      collectedCards.set(card.id, (collectedCards.get(card.id) || 0) + 1)
       return true
+    },
+
+    getCollectedCards: () => new Map(collectedCards),
+
+    resetCards() {
+      collectedCards.clear()
+      deflectCardActive = false
+      wingmanCount = 0
+      shieldMax = SHIELD_MAX
+      shieldValue = shieldMax
+      shieldRegenRate = SHIELD_REGEN_RATE
+      shieldRegenDelayMs = SHIELD_REGEN_DELAY_MS
+      invincibilityDurationMs = INVINCIBILITY_MS
+      homingMaxTargets = HOMING_MAX_TARGETS_BASE
+      homingChargeMinMs = HOMING_CHARGE_MIN_MS
+      homingChargeMaxMs = HOMING_CHARGE_MAX_MS
+      ricochetCount = 0
+      fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
+      ramCardActive = false
+      fireCooldown = DEFAULT_FIRE_COOLDOWN
+      projectileCount = PROJECTILE_COUNT_START
     },
 
     buildCardExcludeSet() {
@@ -364,6 +387,19 @@ export function createPlayerSystem(session) {
       ramCardActive = true
       session.lives = LIVES_CAP
       maxLives = Math.max(maxLives, session.lives)
+
+      collectedCards.set('extra-projectile', PROJECTILE_COUNT_CAP - 1)
+      collectedCards.set('more-homing-targets', HOMING_MAX_TARGETS_CAP - HOMING_MAX_TARGETS_BASE)
+      collectedCards.set('faster-charge', 2)
+      collectedCards.set('extra-shield-charge', SHIELD_MAX_CAP - SHIELD_MAX)
+      collectedCards.set('faster-shield-recharge', DEBUG_MAX_UNCAPPED_STACKS)
+      collectedCards.set('longer-invincibility', DEBUG_MAX_UNCAPPED_STACKS)
+      collectedCards.set('longer-dodge-iframe', DEBUG_MAX_UNCAPPED_STACKS)
+      collectedCards.set('wingman', WINGMAN_CAP)
+      collectedCards.set('ricochet', RICOCHET_CAP)
+      collectedCards.set('deflect-on-spin', 1)
+      collectedCards.set('propulsion-ram', 1)
+      collectedCards.set('extra-life', 2)
     },
 
     // tick (1x por frame, chamado pelo main.js antes de rail.update): decai todos os timers e

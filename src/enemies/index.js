@@ -85,6 +85,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // "+1 na velocidade dos disparos dos inimigos por pergunta errada" — soma direto na
   // velocidade base do projétil comum (também usado pela rajada do chefe)
   let enemyProjectileSpeedBonus = 0
+  let enemyAimErrorDeg = ENEMY_AIM_ERROR_DEG
 
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
 
@@ -222,7 +223,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
 
-    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * ENEMY_AIM_ERROR_DEG)
+    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * enemyAimErrorDeg)
     const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
     direction.applyAxisAngle(errAxis, errAngle)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
@@ -768,6 +769,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     setEnemyAggressiveness(multiplier) { enemyAggression = multiplier },
     setEnemyProjectileSpeedBonus(bonus) { enemyProjectileSpeedBonus = bonus },
+    setEnemyAimError(deg) { enemyAimErrorDeg = Math.max(1, deg) },
 
     clearEnemies() {
       for (const enemy of [...enemies]) removeEnemy(enemy)

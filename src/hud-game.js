@@ -1,8 +1,10 @@
 import { getBindings } from './keybindings.js'
 import { DEBUG_ACTIONS } from './debug.js'
-import { CARD_CATEGORY_LABEL } from './roguelike.js'
+import { CARD_CATEGORY_LABEL, CARD_CATEGORY_COLOR, ROGUELIKE_CARDS } from './roguelike.js'
 import { COLOR_MAP, shapeMarkup, showScreen } from './hud-shared.js'
 import { injectHudExtraStyles } from './hud-styles.js'
+
+const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
 // Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
 // de comportamento. `createGameHud` continua sendo uma closure única — todos os métodos abaixo
@@ -144,6 +146,12 @@ export function createGameHud() {
   boostBar.appendChild(boostFill)
   let prevBoostCharge = 1
 
+  // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
+  const cardsTray = document.createElement('div')
+  cardsTray.className = 'hud-cards-tray'
+  root.appendChild(cardsTray)
+  let prevCardsSignature = ''
+
   const question = document.createElement('p')
   question.className = 'hud-question'
   question.hidden = true
@@ -220,17 +228,52 @@ export function createGameHud() {
   missionCompleteBanner.hidden = true
   root.appendChild(missionCompleteBanner)
 
-  // ============ MODAL DE PERGUNTA (chefe: pausa total ao acertar um orbe) ============
+  // ============ MODAL DE PERGUNTA (chefe/normal: pausa total e moldura holográfica) ============
   const questionModalOverlay = document.createElement('div')
   questionModalOverlay.className = 'question-modal-overlay'
   questionModalOverlay.hidden = true
   root.appendChild(questionModalOverlay)
+
+  const questionModalFrame = document.createElement('div')
+  questionModalFrame.className = 'question-modal-frame'
+  questionModalOverlay.appendChild(questionModalFrame)
+
+  const questionModalBadge = document.createElement('div')
+  questionModalBadge.className = 'question-modal-badge'
+  questionModalBadge.textContent = 'TERMINAL DE CONHECIMENTO // ANKI'
+  questionModalFrame.appendChild(questionModalBadge)
+
   const questionModalTitle = document.createElement('h3')
   questionModalTitle.className = 'question-modal-title'
-  questionModalOverlay.appendChild(questionModalTitle)
+  questionModalFrame.appendChild(questionModalTitle)
+
+  const questionConceptWrap = document.createElement('div')
+  questionConceptWrap.className = 'question-concept-wrap'
+  questionModalFrame.appendChild(questionConceptWrap)
+
+  const questionConceptBtn = document.createElement('button')
+  questionConceptBtn.className = 'question-concept-btn'
+  questionConceptBtn.type = 'button'
+  questionConceptBtn.innerHTML = '<span>💡 Ver Conceito &amp; Fonte (Tecla E)</span>'
+  questionConceptWrap.appendChild(questionConceptBtn)
+
+  const questionConceptDrawer = document.createElement('div')
+  questionConceptDrawer.className = 'question-concept-drawer'
+  questionConceptWrap.appendChild(questionConceptDrawer)
+
+  const questionConceptText = document.createElement('div')
+  questionConceptText.className = 'question-concept-text'
+  questionConceptDrawer.appendChild(questionConceptText)
+
+  const questionSourceLink = document.createElement('a')
+  questionSourceLink.className = 'question-source-link'
+  questionSourceLink.target = '_blank'
+  questionSourceLink.rel = 'noopener noreferrer'
+  questionConceptDrawer.appendChild(questionSourceLink)
+
   const questionModalList = document.createElement('div')
   questionModalList.className = 'question-modal-list'
-  questionModalOverlay.appendChild(questionModalList)
+  questionModalFrame.appendChild(questionModalList)
 
   const bossFightBar = document.createElement('div')
   bossFightBar.className = 'hud-boss-fight-bar'
@@ -409,19 +452,46 @@ export function createGameHud() {
   }
 
   // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
-  // terminar (ver showQuestionModal no objeto retornado). Comportamento idêntico ao que já
-  // existia (escolha por clique ou pelos números 1–4, via quizSlot1..4) — a única mudança é
-  // visual: título e cards entram com exaggeration/follow-through (overshoot de escala) em vez
-  // de aparecerem instantâneos junto do overlay (pedido do usuário).
-  function revealQuestionModal({ question, alternatives, onPick }) {
+  // terminar (ver showQuestionModal no objeto retornado). Suporta explicação e fonte didática (Anki Overhaul).
+  function revealQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }) {
     questionModalBurst()
     questionModalTitle.textContent = question
     questionModalList.innerHTML = ''
+
+    const hasConcept = (explanation && explanation.trim().length > 0) || Boolean(sourceUrl)
+    if (hasConcept) {
+      questionConceptWrap.style.display = 'flex'
+      questionConceptBtn.classList.remove('is-open')
+      questionConceptDrawer.classList.remove('is-open')
+      questionConceptText.textContent = explanation || ''
+      questionConceptText.style.display = explanation ? 'block' : 'none'
+      if (sourceUrl) {
+        questionSourceLink.href = sourceUrl
+        questionSourceLink.textContent = `🔗 Acessar Fonte: ${sourceUrl.length > 55 ? sourceUrl.slice(0, 52) + '...' : sourceUrl}`
+        questionSourceLink.style.display = 'inline-flex'
+      } else {
+        questionSourceLink.style.display = 'none'
+      }
+    } else {
+      questionConceptWrap.style.display = 'none'
+    }
+
+    function toggleConcept() {
+      if (!hasConcept) return
+      const isOpen = questionConceptDrawer.classList.toggle('is-open')
+      questionConceptBtn.classList.toggle('is-open', isOpen)
+    }
+    questionConceptBtn.onclick = (e) => {
+      e.stopPropagation()
+      toggleConcept()
+    }
 
     // ponto único de escolha (clique, tecla 1–4 ou botão de controle mapeado) — evita triplicar
     // o teardown dos 3 listeners/watchers em cada caminho
     function pick(i) {
       questionModalOverlay.hidden = true
+      questionConceptDrawer.classList.remove('is-open')
+      questionConceptBtn.classList.remove('is-open')
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
@@ -458,6 +528,11 @@ export function createGameHud() {
     }
     const bindings = getBindings()
     questionModalKeyHandler = (e) => {
+      if (hasConcept && (e.code === 'KeyE' || e.key === 'e' || e.key === 'E')) {
+        e.preventDefault()
+        toggleConcept()
+        return
+      }
       for (let i = 0; i < alternatives.length; i += 1) {
         const codes = bindings.actions[`quizSlot${i + 1}`] || []
         if (codes.includes(e.code)) {
@@ -574,6 +649,7 @@ export function createGameHud() {
 
     setPaused(paused) {
       pause.hidden = !paused
+      root.classList.toggle('game-paused', !!paused)
     },
 
     setCountdown(n, urgent) {
@@ -688,14 +764,14 @@ export function createGameHud() {
     // desde a v0.29.2, também dá pra escolher pelos NÚMEROS 1–4 (reusa os binds quizSlot1..4,
     // padrão Digit1..Digit4) em vez de ter que clicar no card — quem remapeou os números nas
     // Configurações também funciona aqui, porque leio de getBindings() em vez de hardcodar.
-    showQuestionModal({ question, alternatives, onPick }) {
+    showQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }) {
       // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro"): em vez
       // do modal simplesmente dar snap, um burst de partículas nas bordas da tela voa pro
       // centro exato onde ele vai nascer, e só então o modal aparece de verdade. Puramente
       // DOM/CSS (mesmo padrão do cardAbsorbBeam) — o jogo já está em pausa total nesse ponto
       // (phase questionPause/bossQuestionPause), então um atraso visual de ~300ms aqui não
       // acumula com nada, é só o "beat" da cutscene.
-      playFocusCollapse(() => revealQuestionModal({ question, alternatives, onPick }))
+      playFocusCollapse(() => revealQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }))
     },
 
     hideQuestionModal() {
@@ -705,6 +781,8 @@ export function createGameHud() {
       // estado por outra via (morte do chefe no mesmo frame, debug forçando outcome).
       cancelFocusCollapse()
       questionModalOverlay.hidden = true
+      questionConceptDrawer.classList.remove('is-open')
+      questionConceptBtn.classList.remove('is-open')
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
@@ -945,6 +1023,45 @@ export function createGameHud() {
       cardChoiceGpStop = watchGamepadSlots(cards.length, pick)
     },
 
+    updateCollectedCards(cardsMap) {
+      if (!cardsMap) {
+        cardsTray.innerHTML = ''
+        prevCardsSignature = ''
+        return
+      }
+      const entries = Array.from(cardsMap.entries()).filter(([_, count]) => count > 0)
+      const sig = entries.map(([id, count]) => `${id}:${count}`).sort().join(';')
+      if (sig === prevCardsSignature) return
+      prevCardsSignature = sig
+
+      cardsTray.innerHTML = ''
+      for (const [id, count] of entries) {
+        const card = CARD_MAP.get(id)
+        if (!card) continue
+        const catColor = CARD_CATEGORY_COLOR[card.category] || '#3ea6ff'
+        const catLabel = CARD_CATEGORY_LABEL[card.category] || card.category
+
+        const chip = document.createElement('div')
+        chip.className = 'hud-card-chip'
+        chip.style.setProperty('--card-color', catColor)
+        chip.style.setProperty('--card-glow', `${catColor}44`)
+
+        chip.innerHTML = `
+          <span class="hud-card-icon">${card.icon || '📦'}</span>
+          <span class="hud-card-count">x${count}</span>
+          <div class="hud-card-tooltip">
+            <div class="hud-card-tooltip-header">
+              <span class="hud-card-tooltip-title">${card.label}</span>
+              <span class="hud-card-tooltip-cat">${catLabel}</span>
+            </div>
+            <div class="hud-card-tooltip-body">${card.description}</div>
+            <div class="hud-card-tooltip-stacks">Nível acumulado: x${count}</div>
+          </div>
+        `
+        cardsTray.appendChild(chip)
+      }
+    },
+
     debug: {
       setVisible(v) { debugPanel.hidden = !v },
       bind(handlers) {
@@ -986,7 +1103,11 @@ export function createGameHud() {
         cardChoiceGpStop()
         cardChoiceGpStop = null
       }
-      root.classList.remove('cinematic-active')
+      root.classList.remove('cinematic-active', 'game-paused')
+      cardsTray.innerHTML = ''
+      prevCardsSignature = ''
+      questionConceptDrawer.classList.remove('is-open')
+      questionConceptBtn.classList.remove('is-open')
       root.innerHTML = ''
     },
   }

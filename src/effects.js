@@ -148,6 +148,11 @@ const DEFLECT_RING_DURATION = 0.45
 // rollActive=true aqui em vez disso.
 const ROLL_AFTERIMAGE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_DURATION = 0.3
+
+// ============ RICOCHETE E FREIO REVERSO ============
+const RICOCHET_ARC_DURATION = 0.18
+const REVERSE_BRAKE_LIFETIME = 0.18
+const REVERSE_BRAKE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_COLOR = 0xcfe9ff
 
 // ============ TRAIL DE PROPULSÃO (item 12, restaurado) ============
@@ -406,11 +411,14 @@ export function createEffectsSystem(scene, opts = {}) {
   const rollAfterimages = []
   const deflectRings = []
   const maxChargeRingsList = []
+  const ricochetArcs = []
+  const reverseBrakeJetsList = []
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
   let boostTrailTimer = 0
   let rollAfterimageTimer = 0
+  let reverseBrakeTimer = 0
 
   // ============ SHOCKWAVE / RING HELPERS ============
   function makeRingMesh(colorHex, thickness = 0.15) {
@@ -857,6 +865,88 @@ export function createEffectsSystem(scene, opts = {}) {
     bossImpactRings.push({ mesh, life: 0, maxScale: BOSS_IMPACT_MAX_SCALE * scale })
   }
 
+  // feixe elétrico entre alvos atingidos pelo tiro Ricochete
+  function ricochetArc(fromPos, toPos) {
+    const from = fromPos instanceof THREE.Vector3 ? fromPos : new THREE.Vector3(fromPos.x, fromPos.y, fromPos.z)
+    const to = toPos instanceof THREE.Vector3 ? toPos : new THREE.Vector3(toPos.x, toPos.y, toPos.z)
+    const dist = from.distanceTo(to)
+    if (dist < 1e-3) return
+
+    const mid = from.clone().add(to).multiplyScalar(0.5)
+    const dir = to.clone().sub(from).normalize()
+    const up = new THREE.Vector3(0, 1, 0)
+    const quat = new THREE.Quaternion().setFromUnitVectors(up, dir)
+
+    const geo = new THREE.CylinderGeometry(0.12, 0.12, dist, 6)
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x55ffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(mid)
+    mesh.quaternion.copy(quat)
+    scene.add(mesh)
+    ricochetArcs.push({ mesh, life: 0 })
+
+    hitSpark(from, 0x55ffff)
+    hitSpark(to, 0x55ffff)
+  }
+
+  function spawnReverseBrakeJetParticle(pos, vel) {
+    const geo = new THREE.SphereGeometry(0.22, 6, 6)
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x7fe0ff,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(pos)
+    scene.add(mesh)
+    reverseBrakeJetsList.push({ mesh, velocity: vel, life: 0 })
+  }
+
+  function reverseBrakeJets(position, forward, right) {
+    const fwd = forward ? forward.clone().normalize() : new THREE.Vector3(0, 0, -1)
+    const rgt = right ? right.clone().normalize() : new THREE.Vector3(1, 0, 0)
+
+    const leftJetOrigin = position.clone().addScaledVector(rgt, -1.1).addScaledVector(fwd, 0.4)
+    const rightJetOrigin = position.clone().addScaledVector(rgt, 1.1).addScaledVector(fwd, 0.4)
+
+    const leftDir = fwd.clone().multiplyScalar(18).addScaledVector(rgt, -4)
+    const rightDir = fwd.clone().multiplyScalar(18).addScaledVector(rgt, 4)
+
+    spawnReverseBrakeJetParticle(leftJetOrigin, leftDir)
+    spawnReverseBrakeJetParticle(rightJetOrigin, rightDir)
+  }
+
+  function cardAcquiredPulse(position, category = 'ofensivo') {
+    const colorHex = category === 'ofensivo' ? 0xff4d6d : (category === 'defensivo' ? 0x3ea6ff : 0xffd700)
+    shockwave(position, colorHex, 2.2)
+    bloomSprite(position, colorHex, 2.5)
+    hitSpark(position, colorHex)
+  }
+
+  function respawnBurst(position) {
+    shockwave(position, 0x55ffff, 2.8)
+    shockwave(position, 0xffffff, 1.8)
+    bloomSprite(position, 0x55ffff, 3.2)
+    hitSpark(position, 0x55ffff)
+    hitSpark(position, 0xffffff)
+  }
+
+  function hullDamageBurst(position) {
+    shockwave(position, 0xff2222, 1.4)
+    hitSpark(position, 0xff4422)
+    glassShatter(position, 0xff3333)
+  }
+
   // pulso no grid do chão — emite uma ondulação de cor no GridHelper
   let gridPulseTimer = 0
   function gridPulse() {
@@ -871,7 +961,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false } = opts
+    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false, repulsionActive = false, shipRight = null } = opts
     const now = performance.now()
     const cam = opts.camera
 
@@ -935,6 +1025,15 @@ export function createEffectsSystem(scene, opts = {}) {
       if (rollAfterimageTimer <= 0) {
         rollAfterimageTimer = ROLL_AFTERIMAGE_INTERVAL
         rollAfterimage(shipPosition, shipForward)
+      }
+    }
+
+    // JATOS DE FREIO REVERSO (repulsor ativo)
+    if (repulsionActive && shipPosition && shipForward) {
+      reverseBrakeTimer -= dt
+      if (reverseBrakeTimer <= 0) {
+        reverseBrakeTimer = REVERSE_BRAKE_INTERVAL
+        reverseBrakeJets(shipPosition, shipForward, shipRight)
       }
     }
 
@@ -1313,6 +1412,38 @@ export function createEffectsSystem(scene, opts = {}) {
       c.mesh.scale.setScalar(1 - t * 0.7)
     }
 
+    // RICOCHET ARCS
+    for (let i = ricochetArcs.length - 1; i >= 0; i--) {
+      const arc = ricochetArcs[i]
+      arc.life += dt
+      const t = arc.life / RICOCHET_ARC_DURATION
+      if (t >= 1) {
+        scene.remove(arc.mesh)
+        arc.mesh.geometry.dispose()
+        arc.mesh.material.dispose()
+        ricochetArcs.splice(i, 1)
+        continue
+      }
+      arc.mesh.material.opacity = (1 - t) * 0.95
+    }
+
+    // REVERSE BRAKE JETS
+    for (let i = reverseBrakeJetsList.length - 1; i >= 0; i--) {
+      const p = reverseBrakeJetsList[i]
+      p.life += dt
+      const t = p.life / REVERSE_BRAKE_LIFETIME
+      if (t >= 1) {
+        scene.remove(p.mesh)
+        p.mesh.geometry.dispose()
+        p.mesh.material.dispose()
+        reverseBrakeJetsList.splice(i, 1)
+        continue
+      }
+      p.mesh.position.addScaledVector(p.velocity, dt)
+      p.mesh.material.opacity = (1 - t) * 0.85
+      p.mesh.scale.setScalar(1 + t * 1.5)
+    }
+
     // ACTIVE FLASHES (mesh branco)
     //
     // v0.51.0 — checa `materialRef` antes de tudo: se o mesh trocou de material por fora desde
@@ -1400,6 +1531,10 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const b of bloomSprites) { scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose() }
     for (const c of contrails) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose() }
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.geometry.dispose(); w.mesh.material.dispose() }
+    for (const a of ricochetArcs) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.geometry.dispose(); j.mesh.material.dispose() }
+    ricochetArcs.length = 0
+    reverseBrakeJetsList.length = 0
     bursts.length = 0; grayRings.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
     smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
@@ -1417,6 +1552,7 @@ export function createEffectsSystem(scene, opts = {}) {
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
     maxChargeReady, maxChargeRings,
+    ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
     dispose,
   }
 }

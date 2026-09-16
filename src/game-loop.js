@@ -326,6 +326,8 @@ export function createGameLoop(deps) {
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),
+      repulsionActive: player.isRepulsionActive(),
+      shipRight: noseFrame.right,
       skipTrail: player.isRepulsionActive(),
       ramActive,
       rollActive: player.isRollIframeActive(),
@@ -360,6 +362,10 @@ export function createGameLoop(deps) {
         hud.showDamageSide()
         hud.damageFlash()
         effects.explosion(playerPos, 0xff4d4d, 0.7)
+        if (effects.hullDamageBurst) effects.hullDamageBurst(playerPos)
+        if (!result.outOfLives && effects.respawnBurst) {
+          effects.respawnBurst(playerPos)
+        }
       }
 
       if (result.outOfLives) {
@@ -421,13 +427,20 @@ export function createGameLoop(deps) {
         }
 
         state.goldenTimer -= dt * 1000
-        if (state.goldenTimer <= 0) bossFlow.startArenaCutscene('golden', bossFlow.enterGoldenArena)
+        if (state.goldenTimer <= 0) {
+          if (state.debugFlags?.disableArena) {
+            state.goldenTimer = progression.randomGoldenInterval()
+          } else {
+            bossFlow.startArenaCutscene('golden', bossFlow.enterGoldenArena)
+          }
+        }
       }
 
       if (state.phase === 'combat') {
         state.cycleTimer -= dt * 1000
-        const bossWarnActive = state.isBossCycle && state.cycleTimer > 0 && state.cycleTimer <= ARENA_WARNING_COUNTDOWN_MS
-        const goldenWarnActive = !state.isBossCycle && state.goldenTimer > 0 && state.goldenTimer <= ARENA_WARNING_COUNTDOWN_MS
+        const disableArena = !!state.debugFlags?.disableArena
+        const bossWarnActive = !disableArena && state.isBossCycle && state.cycleTimer > 0 && state.cycleTimer <= ARENA_WARNING_COUNTDOWN_MS
+        const goldenWarnActive = !disableArena && !state.isBossCycle && state.goldenTimer > 0 && state.goldenTimer <= ARENA_WARNING_COUNTDOWN_MS
         if (bossWarnActive && !state.arenaPreviewShown) { combat.showArenaPreview('boss'); state.arenaPreviewShown = true }
         else if (goldenWarnActive && !state.arenaPreviewShown) { combat.showArenaPreview('golden'); state.arenaPreviewShown = true }
         if (!bossWarnActive && !goldenWarnActive) state.arenaPreviewShown = false
@@ -444,7 +457,7 @@ export function createGameLoop(deps) {
         }
         // v0.32: pergunta abre na hora — sem a fase 'recall' de 3.5s antes do modal
         if (state.cycleTimer <= 0) {
-          if (state.isBossCycle) bossFlow.startArenaCutscene('boss', bossFlow.enterBossBuildup)
+          if (state.isBossCycle && !disableArena) bossFlow.startArenaCutscene('boss', bossFlow.enterBossBuildup)
           else questionFlow.enterAlternatives()
         }
       }
@@ -504,6 +517,7 @@ export function createGameLoop(deps) {
     hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax())
+    hud.updateCollectedCards(player.getCollectedCards())
 
     hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 

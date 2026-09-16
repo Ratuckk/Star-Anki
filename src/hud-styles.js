@@ -283,74 +283,294 @@ export function injectHudExtraStyles() {
   z-index: 18;
 }
 
-/* ============ MODAL DE PERGUNTA COM PAUSA TOTAL (orbe do chefe) — Fase 5 ============ */
-/* pedido do usuário: o efeito de a pergunta aparecer era instantâneo demais (só um "hidden =
-   false", snap direto) — aplicados os princípios de animação discutidos (anticipation já
-   existia via playFocusCollapse/partículas convergindo; aqui entram exaggeration + follow
-   through no overlay/título via overshoot de escala, e secondary action no stagger dos cards) */
+/* ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============ */
+.hud-cards-tray {
+  position: absolute;
+  top: 136px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 250px;
+  z-index: 12;
+  pointer-events: none;
+}
+#game-screen.game-paused .hud-cards-tray {
+  pointer-events: auto;
+}
+.hud-card-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(10, 16, 26, 0.88);
+  border: 1.5px solid var(--card-color, #3ea6ff);
+  box-shadow: 0 0 8px var(--card-glow, rgba(62, 166, 255, 0.25));
+  color: #fff;
+  cursor: default;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+#game-screen.game-paused .hud-card-chip {
+  cursor: pointer;
+}
+#game-screen.game-paused .hud-card-chip:hover {
+  transform: translateY(-2px) scale(1.06);
+  box-shadow: 0 0 14px var(--card-color, #3ea6ff);
+  z-index: 55;
+}
+.hud-card-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.hud-card-count {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+.hud-card-tooltip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  max-width: 290px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(8, 14, 24, 0.97);
+  border: 1px solid var(--card-color, #3ea6ff);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.85), 0 0 16px rgba(0, 140, 255, 0.3);
+  backdrop-filter: blur(10px);
+  z-index: 60;
+  pointer-events: none;
+  text-align: left;
+}
+#game-screen.game-paused .hud-card-chip:hover .hud-card-tooltip {
+  display: block;
+  animation: hud-card-tooltip-pop 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes hud-card-tooltip-pop {
+  0% { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.hud-card-tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.hud-card-tooltip-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #ffffff;
+}
+.hud-card-tooltip-cat {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #0b0f19;
+  background: var(--card-color, #3ea6ff);
+  flex-shrink: 0;
+}
+.hud-card-tooltip-body {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+.hud-card-tooltip-stacks {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* ============ MODAL DE PERGUNTA COM PAUSA TOTAL (v0.53.4 - 12 Princípios de Animação) ============ */
 .question-modal-overlay {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.4rem;
-  background: rgba(11, 13, 18, 0.85);
-  z-index: 16;
-  animation: question-modal-overlay-in 220ms ease-out both;
+  background: radial-gradient(circle at center, rgba(14, 22, 36, 0.88) 0%, rgba(4, 7, 12, 0.96) 100%);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+  animation: question-modal-overlay-in 240ms ease-out both;
 }
 @keyframes question-modal-overlay-in {
-  0%   { background: rgba(11, 13, 18, 0); }
-  100% { background: rgba(11, 13, 18, 0.85); }
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+.question-modal-frame {
+  position: relative;
+  max-width: 840px;
+  width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(13, 20, 32, 0.92);
+  border: 1.5px solid rgba(56, 189, 248, 0.4);
+  border-radius: 16px;
+  padding: 1.8rem 2rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.85), 0 0 35px rgba(56, 189, 248, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  overflow-y: auto;
+  overflow-x: hidden;
+  animation: question-frame-pop-in 420ms cubic-bezier(0.18, 1.25, 0.38, 1) both;
+}
+@keyframes question-frame-pop-in {
+  0%   { opacity: 0; transform: translateY(28px) scale(0.85); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.question-modal-badge {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 20px;
+  padding: 4px 14px;
+  margin-bottom: 0.85rem;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  pointer-events: none;
 }
 .question-modal-title {
-  margin: 0;
-  max-width: 70vw;
+  margin: 0 0 1.2rem 0;
+  max-width: 740px;
   text-align: center;
-  color: #f5f5f7;
-  font-size: 1.7rem;
+  color: #f8fafc;
+  font-size: 1.55rem;
   font-weight: 700;
-  text-shadow: 0 2px 8px #000;
-  animation: question-modal-pop-in 420ms cubic-bezier(0.22, 1.5, 0.4, 1) 90ms both;
+  line-height: 1.35;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.25);
+  animation: question-modal-pop-in 400ms cubic-bezier(0.22, 1.4, 0.38, 1) 80ms both;
+}
+.question-concept-wrap {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1.2rem;
+}
+.question-concept-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.08);
+  border: 1.5px solid rgba(255, 215, 0, 0.4);
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+.question-concept-btn:hover {
+  background: rgba(255, 215, 0, 0.18);
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.4);
+  transform: translateY(-1px);
+}
+.question-concept-btn.is-open {
+  background: rgba(255, 215, 0, 0.22);
+  border-color: #ffd700;
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.5);
+}
+.question-concept-drawer {
+  width: 100%;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.25s ease, margin 0.25s ease;
+  background: rgba(9, 14, 22, 0.95);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 10px;
+  margin-top: 0;
+  box-sizing: border-box;
+}
+.question-concept-drawer.is-open {
+  max-height: 240px;
+  opacity: 1;
+  margin-top: 10px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+.question-concept-text {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #e2e8f0;
+  margin: 0 0 8px 0;
+  text-align: left;
+  white-space: pre-wrap;
+}
+.question-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  color: #38bdf8;
+  text-decoration: none;
+  border-bottom: 1px dashed #38bdf8;
+  transition: color 0.15s;
+}
+.question-source-link:hover {
+  color: #7dd3fc;
+  border-bottom-style: solid;
 }
 .question-modal-list {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
   justify-content: center;
-  max-width: 90vw;
+  max-width: 800px;
 }
 .question-modal-card {
   position: relative;
-  width: 240px;
+  width: 250px;
+  min-height: 64px;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.75rem;
   text-align: left;
-  background: #16202b;
-  border: 2px solid #333944;
+  background: rgba(18, 28, 44, 0.85);
+  border: 2px solid #334155;
   border-radius: 12px;
-  padding: 0.9rem 1rem;
+  padding: 0.85rem 1rem;
   cursor: pointer;
-  color: #f5f5f7;
+  color: #f8fafc;
   font-family: inherit;
   font-size: 0.95rem;
-  transition: transform 0.12s;
+  font-weight: 500;
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
   animation: question-modal-pop-in 380ms cubic-bezier(0.22, 1.5, 0.4, 1) both;
-  animation-delay: calc(200ms + var(--stagger, 0) * 90ms);
+  animation-delay: calc(160ms + var(--stagger, 0) * 80ms);
 }
-/* exaggeration (overshoot de escala/posição) + follow through (assenta de volta em 1/0) —
-   usada no título (delay fixo) e nos cards (delay escalonado por --stagger, uma sequência em
-   vez de todos juntos) */
 @keyframes question-modal-pop-in {
-  0%   { opacity: 0; transform: translateY(22px) scale(0.86); }
-  55%  { opacity: 1; transform: translateY(-5px) scale(1.05); }
+  0%   { opacity: 0; transform: translateY(22px) scale(0.88); }
+  55%  { opacity: 1; transform: translateY(-4px) scale(1.04); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.question-modal-card:hover { transform: translateY(-4px); }
-/* burst de luz no centro exato onde o modal nasce — dispara junto do revealQuestionModal, dá o
-   "pouso" visual logo depois da convergência de partículas (question-focus-collapse) */
+.question-modal-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 18px currentColor;
+}
 .question-modal-burst {
   position: absolute;
   left: 50%;
@@ -359,8 +579,8 @@ export function injectHudExtraStyles() {
   height: 24px;
   margin: -12px 0 0 -12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(127,224,255,0.85) 40%, rgba(127,224,255,0) 72%);
-  box-shadow: 0 0 40px 14px rgba(127, 224, 255, 0.55);
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(56,189,248,0.85) 40%, rgba(56,189,248,0) 72%);
+  box-shadow: 0 0 40px 14px rgba(56, 189, 248, 0.55);
   pointer-events: none;
   z-index: 44;
   animation: question-modal-burst-anim 500ms cubic-bezier(0.15, 0.85, 0.3, 1) forwards;
@@ -378,8 +598,9 @@ export function injectHudExtraStyles() {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #8fa2b8;
-  background: rgba(11, 13, 18, 0.65);
+  color: #94a3b8;
+  background: rgba(11, 15, 25, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   padding: 1px 6px;
   pointer-events: none;

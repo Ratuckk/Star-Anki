@@ -79,6 +79,12 @@ export function extractClozeQuestions(rawFieldText) {
   })
 }
 
+export function extractSourceUrl(text) {
+  if (!text) return null
+  const match = text.match(/https?:\/\/[^\s"'<>)]+/)
+  return match ? match[0] : null
+}
+
 export function buildCardsFromNotes(notes) {
   const clozePattern = /\{\{c\d+::/
   const cards = []
@@ -86,6 +92,9 @@ export function buildCardsFromNotes(notes) {
     const clozeFieldIndex = note.fields.findIndex((f) => clozePattern.test(f))
     if (clozeFieldIndex !== -1) {
       const questions = extractClozeQuestions(note.fields[clozeFieldIndex])
+      const rawExtra = note.fields.find((f, idx) => idx !== clozeFieldIndex && f && f.trim().length > 0) || ''
+      const explanation = cleanHtml(rawExtra)
+      const sourceUrl = extractSourceUrl(rawExtra)
       for (const q of questions) {
         cards.push({
           guid: note.guid,
@@ -95,17 +104,24 @@ export function buildCardsFromNotes(notes) {
           answer: q.answer,
           tags: note.tags,
           clozeIndex: q.index,
+          explanation,
+          sourceUrl,
         })
       }
     } else {
+      const rawExtra = note.fields.slice(2).find((f) => f && f.trim().length > 0) || ''
+      const explanation = cleanHtml(rawExtra)
+      const sourceUrl = extractSourceUrl(rawExtra)
       cards.push({
         guid: note.guid,
         notetype: note.notetype,
         deck: note.deck,
-        question: cleanHtml(note.fields[0]),
-        answer: cleanHtml(note.fields[1]),
+        question: cleanHtml(note.fields[0] || ''),
+        answer: cleanHtml(note.fields[1] || ''),
         tags: note.tags,
         clozeIndex: null,
+        explanation,
+        sourceUrl,
       })
     }
   }

@@ -61,6 +61,7 @@ export function createTargetsSystem(scene, rail, effects) {
   const bonusTargets = []
   const bossOrbs = []
   let elapsed = 0
+  let lastBossOrbHitTime = 0
 
   const bonusMaterial = new THREE.MeshPhongMaterial({
     color: BONUS_COLOR, flatShading: true, emissive: 0x0a6622, emissiveIntensity: 0.25,
@@ -176,8 +177,11 @@ export function createTargetsSystem(scene, rail, effects) {
 
     resolveBossOrbHit(prevPos, currPos, hitBuffer) {
       if (!bossOrbs.length) return null
+      const now = performance.now()
+      if (now - lastBossOrbHitTime < 500) return null
       const orb = bossOrbs.find((o) => !o.dying && distanceToSegment(o.mesh.position, prevPos, currPos) <= BOSS_ORB_HIT_RADIUS + hitBuffer)
       if (!orb) return null
+      lastBossOrbHitTime = now
       orb.dying = true
       orb.deathT = 0
       if (effects) effects.explosion(orb.mesh.position, BOSS_ORB_COLOR, 1.1)

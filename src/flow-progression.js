@@ -5,7 +5,7 @@
 
 import {
   SPEED_STEP, BOOST_EVERY_CORRECT,
-  ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_STEP,
+  ENEMY_INTERVAL_FLOOR, ENEMY_INTERVAL_STEP, ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE,
   ENEMY_AGGRESSION_STEP, ENEMY_AGGRESSION_CAP,
   ENEMY_SPAWN_BONUS_WRONG_THRESHOLD, ENEMY_PROJECTILE_SPEED_PER_WRONG, ENEMY_DAMAGE_WRONG_THRESHOLD,
   ENEMY_CAP_NORMAL_BASE, ENEMY_CAP_ARENA_BASE, ENEMY_CAP_STEP_PER_ERROR,
@@ -49,11 +49,30 @@ export function createProgressionFlow(deps) {
         state.speedMultiplier *= 1 + SPEED_STEP
         rail.setSpeedMultiplier(state.speedMultiplier)
       }
+      // Mecânica de Comeback (Seção 3 do backlog): a cada 3 acertos seguidos, reduz 1 nível de erro acumulado
+      if (state.consecutiveCorrect % 3 === 0 && state.wrongAnswerCount > 0) {
+        decayDifficulty()
+      }
     } else {
       state.consecutiveCorrect = 0
       state.speedMultiplier = 1
       rail.setSpeedMultiplier(1)
     }
+  }
+
+  function decayDifficulty() {
+    if (state.wrongAnswerCount <= 0) return
+    state.wrongAnswerCount -= 1
+    state.enemyIntervalMin = Math.min(ENEMY_INTERVAL_MIN_BASE, state.enemyIntervalMin + ENEMY_INTERVAL_STEP)
+    state.enemyIntervalMax = Math.min(ENEMY_INTERVAL_MAX_BASE, state.enemyIntervalMax + ENEMY_INTERVAL_STEP)
+    state.enemyAggression = Math.max(1.0, state.enemyAggression - ENEMY_AGGRESSION_STEP)
+    combat.setEnemyAggressiveness(state.enemyAggression)
+    state.enemyCap = Math.max(0, state.enemyCap - ENEMY_CAP_STEP_PER_ERROR)
+
+    state.extraSpawnPerBatch = Math.floor(state.wrongAnswerCount / ENEMY_SPAWN_BONUS_WRONG_THRESHOLD)
+    state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
+    combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
+    combat.setEnemyAimError?.(Math.max(1.2, 5.0 - state.wrongAnswerCount * 0.7))
   }
 
   function applyDifficulty() {
@@ -67,6 +86,7 @@ export function createProgressionFlow(deps) {
     state.extraSpawnPerBatch = Math.floor(state.wrongAnswerCount / ENEMY_SPAWN_BONUS_WRONG_THRESHOLD)
     state.enemyDamageValue = 1 + Math.floor(state.wrongAnswerCount / ENEMY_DAMAGE_WRONG_THRESHOLD)
     combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
+    combat.setEnemyAimError?.(Math.max(1.2, 5.0 - state.wrongAnswerCount * 0.7))
   }
 
   function applyBossDifficulty() {
@@ -95,6 +115,7 @@ export function createProgressionFlow(deps) {
     randomBonusInterval,
     randomGoldenInterval,
     applyDifficulty,
+    decayDifficulty,
     applyBossDifficulty,
     applySpeedProgression,
     currentEnemyCap,

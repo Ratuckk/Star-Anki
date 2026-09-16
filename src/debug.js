@@ -2,6 +2,15 @@
 // acesso a combat/rail/session/hud dentro do closure de mountGame) — este módulo só descreve
 // o que existe, pra hud.js conseguir montar o painel genericamente.
 export const DEBUG_ACTIONS = [
+  { id: 'restartSector', label: 'Reiniciar setor atual' },
+  { id: 'nextSector', label: 'Próximo setor' },
+  { id: 'prevSector', label: 'Setor anterior' },
+  { id: 'exitArenaNow', label: 'Sair da arena agora' },
+  { id: 'toggleDisableArena', label: 'Travar/desativar arenas', toggle: true },
+  { id: 'nukeEnemies', label: 'Detonar todos os inimigos (Nuke)' },
+  { id: 'spawnWave', label: 'Spawnar esquadrão misto' },
+  { id: 'grantAllCards', label: 'Conceder todas as cartas' },
+  { id: 'resetBuffs', label: 'Resetar cartas e buffs' },
   { id: 'spawnEnemy', label: 'Spawnar inimigo vermelho' },
   { id: 'spawnTimeEnemy', label: 'Spawnar redutor de tempo' },
   { id: 'spawnBonus', label: 'Spawnar alvo bônus' },

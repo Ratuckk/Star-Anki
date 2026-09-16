@@ -18,7 +18,7 @@ import { recordResult, saveHistory } from './storage.js'
 export function createBossFlow(deps) {
   const {
     state, session, deck, menu,
-    camera, hud, combat, rail,
+    camera, hud, combat, rail, effects,
     applyDifficulty, applyBossDifficulty, applySpeedProgression,
     currentBossSpread, currentBossExtraEnemies,
     randomGoldenInterval,
@@ -53,6 +53,7 @@ export function createBossFlow(deps) {
   }
 
   function triggerBossQuestion() {
+    combat.clearProjectiles?.()
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()
@@ -65,6 +66,8 @@ export function createBossFlow(deps) {
     hud.showQuestionModal({
       question: result.card.question,
       alternatives: result.alternatives,
+      explanation: result.card.explanation,
+      sourceUrl: result.card.sourceUrl,
       onPick: (slot) => {
         settleBossBuildupQuestion({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
@@ -106,6 +109,7 @@ export function createBossFlow(deps) {
       hud.showErrorFloat('Errou!')
     }
 
+    const prevLives = session.lives
     const outOfLives = applyHealthLoss()
     if (outOfLives) {
       state.pendingSectorOver = true
@@ -113,6 +117,9 @@ export function createBossFlow(deps) {
       state.phase = 'resolution'
       state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
       return
+    }
+    if (session.lives < prevLives && effects && rail && effects.respawnBurst) {
+      effects.respawnBurst(rail.getPlayerPosition())
     }
 
     state.pendingCardChoice = correct
@@ -178,6 +185,8 @@ export function createBossFlow(deps) {
     hud.showQuestionModal({
       question: result.card.question,
       alternatives: result.alternatives,
+      explanation: result.card.explanation,
+      sourceUrl: result.card.sourceUrl,
       onPick: (slot) => {
         settleGoldenBonus({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',

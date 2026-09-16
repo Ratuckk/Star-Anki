@@ -19,7 +19,7 @@ const GOLDEN_CHASE_SPEED = 9
 // disparos" — cooldown próprio, reiniciado a cada teleporte de verdade (não a cada hit)
 const GOLDEN_TELEPORT_COOLDOWN_S = 10
 // pedido do usuário: "Dourado com dash lateral longo quando o jogador chega perto, 1x a cada 3s"
-const GOLDEN_DASH_TRIGGER_DIST = 28
+const GOLDEN_DASH_TRIGGER_DIST = 38
 const GOLDEN_DASH_COOLDOWN_S = 3.0
 const GOLDEN_DASH_DURATION_S = 0.35
 const GOLDEN_DASH_SPEED = 62
@@ -285,8 +285,10 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         goldenHit.mesh.position.copy(newPos)
         goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
         if (effects) {
-          effects.shockwave(oldPos, GOLDEN_COLOR, 0.9)
-          effects.shockwave(newPos, GOLDEN_COLOR, 0.9)
+          effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)
+          effects.explosion(oldPos, GOLDEN_COLOR, 1.0, { rings: true })
+          effects.shockwave(newPos, GOLDEN_COLOR, 1.2)
+          effects.explosion(newPos, GOLDEN_COLOR, 1.0, { rings: true })
         }
       }
       return {

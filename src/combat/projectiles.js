@@ -138,7 +138,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           projectile.homingTarget = null
         } else {
           const desired = projectile.homingTarget.mesh.position.clone().sub(projectile.mesh.position).normalize()
-          projectile.velocity.copy(desired.multiplyScalar(HOMING_PROJECTILE_SPEED))
+          const speed = projectile.isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
+          projectile.velocity.copy(desired.multiplyScalar(speed))
         }
       } else if (aimDirection && !projectile.isHoming) {
         const speed = projectile.velocity.length()
@@ -281,6 +282,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             if (toNext.lengthSq() > 1e-6) {
               projectile.mesh.position.addScaledVector(toNext.normalize(), RICOCHET_NUDGE_DISTANCE)
             }
+            if (effects && effects.ricochetArc) {
+              effects.ricochetArc(hit.worldPos, nextTarget.mesh.position)
+            }
             projectile.homingTarget = nextTarget
             projectile.bouncesLeft -= 1
             bounced = true
@@ -338,8 +342,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         mesh.position.copy(origin)
         if (isMaxCharge) mesh.scale.setScalar(MAX_CHARGE_VISUAL_SCALE)
         scene.add(mesh)
+        const homingSpeed = isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
         projectiles.push({
-          mesh, velocity: direction.multiplyScalar(HOMING_PROJECTILE_SPEED), traveled: 0,
+          mesh, velocity: direction.multiplyScalar(homingSpeed), traveled: 0,
           homingTarget: target, damage, isHoming: true, afterimageTimer: 0, isMaxCharge,
           bouncesLeft: player.config.ricochetCount ?? 0,
         })

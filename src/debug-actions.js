@@ -4,15 +4,86 @@
 // evita inflar main.js com ~70 linhas que não fazem parte do loop de jogo em si.
 export function createDebugActions(deps) {
   const {
-    combat, session, player, rail, effects, hud,
+    combat, session, player, rail, effects, hud, enemies,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
     debugFlags, getPhase, resetBossHealthBonus,
     applyHealthLoss, endSector, forceAnswerOutcome,
     startArenaCutscene, enterBossBuildup, finishBossHunt, enterBossFight, enterGoldenArena,
     enterCardChoice, enterCombat,
+    restartSector, nextSector, prevSector, exitArenaNow,
   } = deps
 
   return {
+    restartSector: () => {
+      if (restartSector) restartSector()
+      else {
+        rail.exitArena()
+        combat.clearAllCombatants()
+        enterCombat()
+      }
+    },
+    nextSector: () => {
+      if (nextSector) nextSector()
+      else {
+        session.pointer = (session.pointer + 1) % session.queue.length
+        rail.exitArena()
+        combat.clearAllCombatants()
+        enterCombat()
+      }
+    },
+    prevSector: () => {
+      if (prevSector) prevSector()
+      else {
+        session.pointer = (session.pointer - 1 + session.queue.length) % session.queue.length
+        rail.exitArena()
+        combat.clearAllCombatants()
+        enterCombat()
+      }
+    },
+    exitArenaNow: () => {
+      if (exitArenaNow) exitArenaNow()
+      else {
+        rail.exitArena()
+        combat.clearAllCombatants()
+        hud.setBossFight(false)
+        hud.setBossTint(false)
+        hud.setGoldenActive(false)
+        hud.setMinimap(false)
+        hud.setHorizon(null)
+        enterCombat()
+      }
+    },
+    toggleDisableArena: () => {
+      debugFlags.disableArena = !debugFlags.disableArena
+      hud.debug.setToggleActive('toggleDisableArena', debugFlags.disableArena)
+    },
+    nukeEnemies: () => {
+      if (enemies && enemies.getAlive) {
+        const alive = enemies.getAlive().concat(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])
+        for (const e of alive) {
+          if (e.mesh && e.mesh.position) {
+            effects.explosion(e.mesh.position, '#ff4d6d', 2.0, { rings: true })
+          }
+        }
+      }
+      combat.clearAllCombatants()
+    },
+    spawnWave: () => {
+      combat.spawnEnemy()
+      combat.spawnEnemy()
+      combat.spawnMiniSwarm()
+      combat.spawnTankEnemy()
+    },
+    grantAllCards: () => {
+      player.debugMaxBuffs()
+      combat.setWingmanCount(player.getWingmanCount())
+      hud.updateCollectedCards(player.getCollectedCards())
+    },
+    resetBuffs: () => {
+      player.resetCards()
+      combat.setWingmanCount(0)
+      hud.updateCollectedCards(player.getCollectedCards())
+    },
     spawnEnemy: () => combat.spawnEnemy(),
     spawnTimeEnemy: () => combat.spawnTimeEnemy(),
     spawnBonus: () => combat.spawnBonusTarget(),
@@ -54,6 +125,7 @@ export function createDebugActions(deps) {
     maxBuffs: () => {
       player.debugMaxBuffs()
       combat.setWingmanCount(player.getWingmanCount())
+      hud.updateCollectedCards(player.getCollectedCards())
     },
     // QoL: antes iam direto pra enterBossBuildup/enterGoldenArena, pulando a cutscene — não
     // dava pra testar a transição sem esperar o gatilho natural (dourado 45-100s, chefe a cada

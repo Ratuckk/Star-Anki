@@ -103,7 +103,7 @@ export function mountGame(session, deck, menu) {
   const state = {
     // ============ loop / debug ============
     debugVisible: false,
-    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false },
+    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false },
     lastTime: performance.now(),
     rafId: null,
     stopped: false,
@@ -206,7 +206,7 @@ export function mountGame(session, deck, menu) {
   // flow-boss.js.
   const bossFlow = createBossFlow({
     state, session, deck, menu,
-    camera, hud, combat, rail,
+    camera, hud, combat, rail, effects,
     applyDifficulty: progression.applyDifficulty,
     applyBossDifficulty: progression.applyBossDifficulty,
     applySpeedProgression: progression.applySpeedProgression,
@@ -221,7 +221,7 @@ export function mountGame(session, deck, menu) {
   // os dois lados são visíveis juntos.
   const questionFlow = createQuestionFlow({
     state, session, deck, menu,
-    hud, combat, player,
+    hud, combat, player, effects, rail,
     applyDifficulty: progression.applyDifficulty,
     applySpeedProgression: progression.applySpeedProgression,
     applyHealthLoss, endSector,
@@ -305,9 +305,56 @@ export function mountGame(session, deck, menu) {
     else if (state.phase === 'questionPause' && state.pendingQuestionKind === 'normal') questionFlow.settleQuestion(outcome)
   }
 
+  // ============ CONTROLE DE SETOR / ARENA (debug) ============
+  function restartSector() {
+    rail.exitArena()
+    combat.clearAllCombatants()
+    hud.setBossFight(false)
+    hud.setBossTint(false)
+    hud.setGoldenActive(false)
+    hud.setMinimap(false)
+    hud.setHorizon(null)
+    enterCombat()
+  }
+
+  function nextSector() {
+    session.pointer = (session.pointer + 1) % session.queue.length
+    rail.exitArena()
+    combat.clearAllCombatants()
+    hud.setBossFight(false)
+    hud.setBossTint(false)
+    hud.setGoldenActive(false)
+    hud.setMinimap(false)
+    hud.setHorizon(null)
+    enterCombat()
+  }
+
+  function prevSector() {
+    session.pointer = (session.pointer - 1 + session.queue.length) % session.queue.length
+    rail.exitArena()
+    combat.clearAllCombatants()
+    hud.setBossFight(false)
+    hud.setBossTint(false)
+    hud.setGoldenActive(false)
+    hud.setMinimap(false)
+    hud.setHorizon(null)
+    enterCombat()
+  }
+
+  function exitArenaNow() {
+    rail.exitArena()
+    combat.clearAllCombatants()
+    hud.setBossFight(false)
+    hud.setBossTint(false)
+    hud.setGoldenActive(false)
+    hud.setMinimap(false)
+    hud.setHorizon(null)
+    enterCombat()
+  }
+
   // ============ DEBUG PANEL ============
   hud.debug.bind(createDebugActions({
-    combat, session, player, rail, effects, hud,
+    combat, session, player, rail, effects, hud, enemies,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
     debugFlags: state.debugFlags,
     getPhase: () => state.phase,
@@ -319,6 +366,7 @@ export function mountGame(session, deck, menu) {
     enterBossFight: bossFlow.enterBossFight,
     enterGoldenArena: bossFlow.enterGoldenArena,
     enterCardChoice: questionFlow.enterCardChoice, enterCombat,
+    restartSector, nextSector, prevSector, exitArenaNow,
   }))
 
   // ============ KICKOFF ============
@@ -326,6 +374,7 @@ export function mountGame(session, deck, menu) {
   hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
   hud.setLives(session.lives, player.getMaxLives())
   hud.setShield(player.getShieldValue(), player.getShieldMax())
+  hud.updateCollectedCards(player.getCollectedCards())
 
   const sectorNum = (session.pointer || 0) + 1
   const deckTitle = deck?.title || deck?.name || 'ESPACIAL'

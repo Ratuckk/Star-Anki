@@ -113,6 +113,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     showArenaPreview: (kind) => enemies.showArenaPreview(kind),
     clearArenaPreview: () => enemies.clearArenaPreview(),
     clearOtherEnemies: () => enemies.clearOtherEnemies(),
+    clearProjectiles: () => projectiles.clearAll(),
 
     clearAllCombatants() {
       enemies.clearAll()
@@ -137,6 +138,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     setFireCooldown: (seconds) => projectiles.setFireCooldown(seconds),
     setEnemyAggressiveness(multiplier) { enemies.setEnemyAggressiveness(multiplier) },
     setEnemyProjectileSpeedBonus(bonus) { enemies.setEnemyProjectileSpeedBonus(bonus) },
+    setEnemyAimError(deg) { enemies.setEnemyAimError(deg) },
     setShowHitboxes(v) { showHitboxes = v; refreshHitboxes() },
 
     update(dt, playerPosition, opts = {}) {
