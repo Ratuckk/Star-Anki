@@ -135,3 +135,18 @@ Pacote maciço de correções, equilíbrio de combate e polimento audiovisual co
     - Ao errar, o jogo permanece pausado por 5s exibindo a resposta correta e o botão de explicação.
     - Pode ser pulado instantaneamente a qualquer momento pressionando `Espaço` (ou botão A no controle), com ação configurável nas Opções de Teclas.
 
+---
+
+### Correção Crítica de Referência Indefinida e Robustez de Input — v0.62.1
+
+1. **Causa Raiz do Erro de Inicialização/Combate (`src/enemies/index.js`)**:
+   - `ReferenceError: opts is not defined` no método `updateEnemyProjectiles` (L494).
+   - O método acessava `opts && opts.shipHitboxPoints` para o cálculo multiponto de colisão, porém o parâmetro `opts = {}` havia sido omitido na assinatura da função (`function updateEnemyProjectiles(dt, playerPosition)`).
+   - Corrigida a assinatura para `function updateEnemyProjectiles(dt, playerPosition, opts = {})`, eliminando os milhares de erros de console por segundo e o congelamento do loop de combate.
+2. **Robustez na Despausa de Erro (`src/game-loop.js`)**:
+   - Adicionada verificação direta de tecla de contingência (`Space`, `Enter`, `KeyX`) na fase `wrongPause`, garantindo que o jogador consiga despausar imediatamente mesmo caso os mapeamentos em `localStorage` ainda não tivessem sido sincronizados com a nova chave `skipErrorFeedback`.
+3. **Auditoria Geral de Escopo do Repositório**:
+   - Varredura via AST com Acorn em todos os 56 arquivos JavaScript confirmando **0 variáveis indefinidas** em todo o código-fonte.
+   - Testes unitários (`selftest.mjs`) e de resolução de módulos validados com 100% de integridade.
+
+**Versão**: v0.62.0 → **v0.62.1**

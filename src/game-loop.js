@@ -99,7 +99,10 @@ export function createGameLoop(deps) {
     // ============ PAUSA TOTAL: PERGUNTA (CHEFE/NORMAL/DOURADO) OU CARTA ROGUELIKE OU PAUSA DE ERRO ============
     if (state.phase === 'wrongPause') {
       state.phaseTimer -= rawDt * 1000
-      const skipPressed = isActionPressed(bindings, inputState.pressed, 'skipErrorFeedback')
+      const skipPressed = isActionPressed(bindings, inputState.pressed, 'skipErrorFeedback') ||
+        inputState.pressed?.has('Space') ||
+        inputState.pressed?.has('Enter') ||
+        inputState.pressed?.has('KeyX')
       if (skipPressed || state.phaseTimer <= 0) {
         hud.hideErrorFloat()
         enterCombat()

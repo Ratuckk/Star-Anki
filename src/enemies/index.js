@@ -459,7 +459,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos }
   }
 
-  function updateEnemyProjectiles(dt, playerPosition) {
+  function updateEnemyProjectiles(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
     for (const projectile of [...enemyProjectiles]) {
