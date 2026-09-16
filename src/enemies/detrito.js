@@ -10,9 +10,16 @@ import { BLASTER_KILL_BONUS } from './blaster.js'
 export const DETRITO_KIND = 'detrito'
 export const DETRITO_COLOR = 0x888888
 // hit radius base — escala junto com o tamanho do mesh.
-// Reduzido para 1.15 para casar precisamente com os vértices do icosaedro (raio 1.3),
-// eliminando a margem invisível de colisão falsa.
-const DETRITO_BASE_HIT_RADIUS = 1.15
+// Medido com um teste sintético amostrando 2M de pontos sobre a SUPERFÍCIE real da
+// IcosahedronGeometry(1.3, 0), ponderado por área de cada face: o raio circunscrito (vértice) é
+// 1.3, mas os vértices são só 12 pontos esparsos — a colisão de tiro/nave é contra as FACES
+// (a maior parte da área visível), cujo raio inscrito é 1.0331 e cuja distância média
+// centro->superfície (o que a maioria dos ângulos de aproximação realmente encontra primeiro) é
+// 1.1045 (RMS 1.1058). O valor antigo (1.15) tentava "casar com os vértices" mas nem chegava
+// perto disso (1.3) — na prática ficava ~4% ACIMA da média real da superfície visível, uma
+// margem fantasma pequena porém sistemática (escala com o tamanho do detrito). Ajustado pra
+// 1.10, colado na média medida.
+const DETRITO_BASE_HIT_RADIUS = 1.10
 export const DETRITO_HIT_RADIUS = DETRITO_BASE_HIT_RADIUS // mantido pra compat (index.js ainda exporta)
 export const DETRITO_DEATH_DURATION = 0.2
 export const DETRITO_HP = 9

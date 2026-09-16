@@ -13,8 +13,11 @@ export const REPLICA_HIT_RADIUS = 1.7
 export const REPLICA_DEATH_DURATION = 0.2
 export const REPLICA_HP = 3
 export const REPLICA_KILL_BONUS = 30
-const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 130
+// v0.62.2: mesma faixa e mesmo motivo da Sentinela (ver comentário em sentinela.js) — alargado
+// de 90-130 pra 70-160 pra dar variação real de distância sem repetir o teto "longe demais" já
+// rejeitado pelo mini-swarm.js.
+const SPAWN_DISTANCE_MIN = 70
+const SPAWN_DISTANCE_MAX = 160
 const BOX_X = 6
 const BOX_Y = 4
 

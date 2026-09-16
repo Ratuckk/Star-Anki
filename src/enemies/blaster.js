@@ -8,9 +8,15 @@ export const BLASTER_KIND = 'blaster'
 export const BLASTER_HIT_RADIUS = 1.8
 export const BLASTER_DEATH_DURATION = 0.2
 export const BLASTER_KILL_BONUS = 30
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo
-export const BLASTER_SPAWN_DISTANCE_MIN = 60
-export const BLASTER_SPAWN_DISTANCE_MAX = 100
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo.
+// v0.62.2: pedido do usuário de novo, mas o oposto problema — 60-100 (faixa de 40) fazia TODO
+// spawn cair perto da mesma distância, sem sensação real de variação. Alargado pra 50-150
+// (faixa de 100): chão (50) continua alto o bastante pra nunca nascer colado (a nave a 22u/s
+// ainda tem ~2.3s de reação), teto (150) fica abaixo do valor que o mini-swarm.js já tinha
+// testado e rejeitado como "longe demais" (160-240, ver comentário em miniSwarm.js) — mesmo
+// princípio aplicado às outras classes "comuns" de trilho abaixo (timeEnemy/verme/sussurro).
+export const BLASTER_SPAWN_DISTANCE_MIN = 50
+export const BLASTER_SPAWN_DISTANCE_MAX = 150
 export const BLASTER_BOX_X = 7
 export const BLASTER_BOX_Y = 5
 

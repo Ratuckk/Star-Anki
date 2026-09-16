@@ -29,7 +29,9 @@ const shieldMaterial = new THREE.MeshPhongMaterial({ color: FRAGATA_SHIELD_COLOR
 
 export function spawnFragata(scene, rail, id) {
   if (!rail.isArena()) return null
-  const position = spawnPositionForEnemy(rail, 90, 140, 7, 5)
+  // v0.62.2: alargado de 90-140 pra 90-170 (mesmo motivo do Blaster, ver comentário lá) — em
+  // arena o jogador já pode se aproximar livremente, então o chão continua o mesmo.
+  const position = spawnPositionForEnemy(rail, 90, 170, 7, 5)
   // grupo NUNCA rotaciona (sem lookAt/rotation) — assim a posição local da placa (`shieldFacing`)
   // é diretamente a direção mundial, sem precisar converter espaço a cada checagem de dano
   const group = new THREE.Group()

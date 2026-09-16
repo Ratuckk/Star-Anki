@@ -24,9 +24,11 @@ export const IMA_FIELD_STRENGTH = 180
 const GROUP_MIN = 3
 const GROUP_MAX = 5
 const SPREAD = 3.5
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo
-const SPAWN_DISTANCE_MIN = 55
-const SPAWN_DISTANCE_MAX = 90
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo.
+// v0.62.2: alargado de 55-90 pra 50-110 — variação real de distância, mas o teto continua baixo
+// de propósito (o campo magnético só importa se o jogador passar perto o bastante do enxame).
+const SPAWN_DISTANCE_MIN = 50
+const SPAWN_DISTANCE_MAX = 110
 const BOX_X = 6
 const BOX_Y = 5
 

@@ -14,9 +14,10 @@ export const SUSSURRO_HP = 2
 export const SUSSURRO_KILL_BONUS = 25
 export const SUSSURRO_SUMMON_AFTER_S = 6 // sobreviveu esse tempo sem morrer → chama reforços
 
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo
-const SPAWN_DISTANCE_MIN = 70
-const SPAWN_DISTANCE_MAX = 110
+// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo.
+// v0.62.2: alargado de 70-110 pra 55-150 pelo mesmo motivo do Blaster (ver comentário lá).
+const SPAWN_DISTANCE_MIN = 55
+const SPAWN_DISTANCE_MAX = 150
 const BOX_X = 7
 const BOX_Y = 5
 const ADVANCE_SPEED = 5

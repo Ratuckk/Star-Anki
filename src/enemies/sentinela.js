@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { PASS_BEHIND, randomSpawnPositionOnPath } from './shared.js'
+import { PASS_BEHIND, FORWARD_AXIS, randomSpawnPositionOnPath } from './shared.js'
 
 // ============ SENTINELA — inimigo quadrado inédito, só modo trilho ============
 // v0.34.0: pedido do usuário — persegue o jogador mantendo distância (nunca passa por ele),
@@ -10,8 +10,13 @@ export const SENTINELA_COLOR = 0x3fa9f5
 export const SENTINELA_HIT_RADIUS = 2.0
 export const SENTINELA_DEATH_DURATION = 0.25
 export const SENTINELA_HP = 10
-const SPAWN_DISTANCE_MIN = 90
-const SPAWN_DISTANCE_MAX = 130
+// v0.62.2: alargado de 90-130 (faixa de 40, sempre nascia a uma distância bem parecida) pra
+// 70-160 (faixa de 90) — chão um pouco mais baixo que antes mas ainda alto o bastante pra dar
+// tempo de reação pra um inimigo deste porte, teto abaixo dos 160-240 que o mini-swarm.js já
+// tinha testado e rejeitado como "longe demais" (ver comentário lá). Réplica usa a mesma faixa
+// (ver replica.js) por serem visualmente/mecanicamente parecidas, como o pedido original notou.
+const SPAWN_DISTANCE_MIN = 70
+const SPAWN_DISTANCE_MAX = 160
 const BOX_X = 6
 const BOX_Y = 4
 
@@ -129,13 +134,22 @@ export function sentinelaShouldDespawn(enemy, frame) {
 
 // dispara uma moldura quadrada travada na posição ATUAL do jogador (mesmo truque do laser do
 // chefe) — some após o 4º disparo e entra em modo "indo embora". `ctx.pushGate` empurra o
-// descritor no array compartilhado do orquestrador.
-export function sentinelaFire(scene, enemy, playerPosition, ctx) {
+// descritor no array compartilhado do orquestrador. `frame` é o frame do trilho (rail.getFrameAt(0))
+// NO INSTANTE do disparo — usado só pra decompor o alvo travado em coordenadas relativas ao
+// trilho (ver updateGateFlight abaixo, é lá que a curva é compensada de verdade).
+export function sentinelaFire(scene, enemy, playerPosition, ctx, frame) {
   const targetPos = playerPosition.clone()
   const originPos = enemy.mesh.position.clone()
   const toTarget = targetPos.clone().sub(originPos)
   const targetDistance = toTarget.length()
   const dir = targetDistance > 1e-4 ? toTarget.clone().normalize() : new THREE.Vector3(0, 0, -1)
+
+  const relTarget = targetPos.clone().sub(frame.position)
+  const targetLocal = {
+    depth: relTarget.dot(frame.forward),
+    right: relTarget.dot(frame.right),
+    up: relTarget.dot(frame.up),
+  }
 
   const group = new THREE.Group()
   const centerMesh = new THREE.Mesh(gateCenterGeo, gateCenterMaterial)
@@ -150,7 +164,7 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   right.position.set(borderOffset, 0, 0)
   group.add(centerMesh, top, bottom, left, right)
   group.position.copy(originPos)
-  group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir)
+  group.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
   group.scale.set(0.75, 0.75, 1)
   scene.add(group)
 
@@ -159,10 +173,10 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
     dir,
     right: new THREE.Vector3(1, 0, 0).applyQuaternion(group.quaternion),
     up: new THREE.Vector3(0, 1, 0).applyQuaternion(group.quaternion),
-    targetPos,
+    originPos,
+    targetLocal,
     targetDistance,
     traveled: 0,
-    velocity: dir.clone().multiplyScalar(GATE_SPEED),
     innerHalf: GATE_INNER_HALF,
     outerHalf: GATE_OUTER_HALF,
     damage: GATE_DAMAGE,
@@ -178,7 +192,42 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   return true
 }
 
-export function updateGateAnimation(gate, dt) {
+// BUG corrigido (moldura "incoesa"): a moldura viajava em linha reta com velocidade FIXA em
+// coordenadas de MUNDO, travada no instante do disparo. Só que o jogador, mesmo sem esquivar
+// (sem nenhum input lateral), continua avançando pelo trilho CURVO — e como o disparo dura
+// ~1-3s+ (GATE_SPEED=42 numa distância típica de ~150-190), a curva da pista durante esse tempo
+// fazia o alvo "escorregar" pra fora da linha reta original. Medido em teste sintético com o
+// rail.js real: um jogador 100% parado (sem esquivar) terminava até 39 unidades fora do centro
+// da moldura na hora do cruzamento, sempre que a pista curvava durante o voo — dando hit/miss
+// dependendo de ONDE na pista o tiro saiu, não de o jogador ter se desviado de verdade.
+// Fix (mesmo princípio de projectBlasterToWorld em blaster.js): o alvo travado (`targetLocal`)
+// fica em coordenadas RELATIVAS ao frame do trilho (profundidade + lateral/vertical), e a cada
+// frame a direção de voo é recalculada projetando esse alvo através do frame ATUAL — assim o
+// alvo "acompanha" a curva exatamente como o próprio jogador (que também é só frame.position +
+// lateral) acompanharia se não desviasse. A origem (`originPos`) continua fixa: é de onde o
+// tiro realmente saiu, um fato histórico que não faz sentido "andar" com a curva.
+export function updateGateFlight(gate, dt, rail) {
+  const frame = rail.getFrameAt(0)
+  const targetNow = frame.position.clone()
+    .addScaledVector(frame.forward, gate.targetLocal.depth)
+    .addScaledVector(frame.right, gate.targetLocal.right)
+    .addScaledVector(frame.up, gate.targetLocal.up)
+  const toTarget = targetNow.sub(gate.originPos)
+  if (toTarget.lengthSq() > 1e-6) {
+    gate.dir = toTarget.normalize()
+    gate.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, gate.dir)
+    gate.right.set(1, 0, 0).applyQuaternion(gate.mesh.quaternion)
+    gate.up.set(0, 1, 0).applyQuaternion(gate.mesh.quaternion)
+  }
+  gate.traveled += GATE_SPEED * dt
+  gate.mesh.position.copy(gate.originPos).addScaledVector(gate.dir, gate.traveled)
+}
+
+// escala (SEM recomputar posição/direção — isso é updateGateFlight, chamado ANTES desta) —
+// separado porque só depende de `gate.traveled`, já atualizado pra este frame. Precisa rodar
+// DEPOIS do traveled ser incrementado (index.js respeita essa ordem), senão a escala usada na
+// resolução do hit fica um frame atrasada em relação à posição real.
+export function updateGateAnimation(gate) {
   // Cresce suavemente em escala ao longo da trajetória (de 0.75x até 1.18x na chegada)
   const flightProgress = THREE.MathUtils.clamp(gate.traveled / Math.max(1, gate.targetDistance), 0, 1)
   const growthScale = THREE.MathUtils.lerp(0.75, 1.18, flightProgress)

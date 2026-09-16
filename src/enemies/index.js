@@ -24,7 +24,7 @@ import {
 import {
   SENTINELA_KIND, SENTINELA_COLOR, SENTINELA_HIT_RADIUS, SENTINELA_DEATH_DURATION, SENTINELA_FIRE_INTERVAL,
   spawnSentinela, updateSentinelaMovement, sentinelaPassBehind, sentinelaFire, resolveGateHit,
-  updateGateAnimation, sentinelaShouldDespawn, disposeSentinela,
+  updateGateFlight, updateGateAnimation, sentinelaShouldDespawn, disposeSentinela,
 } from './sentinela.js'
 import {
   REPLICA_KIND, REPLICA_COLOR, REPLICA_HIT_RADIUS, REPLICA_DEATH_DURATION, REPLICA_KILL_BONUS,
@@ -447,7 +447,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         let handled = false
         if (enemy.kind === BOSS_KIND) { fireBossVolley(enemy, playerPosition, projectileCtx); handled = true }
         else if (enemy.kind === TIME_KIND) handled = timeFire(scene, enemy, playerPosition, timeLaserCtx)
-        else if (enemy.kind === SENTINELA_KIND) handled = sentinelaFire(scene, enemy, playerPosition, { pushGate: (g) => enemyGates.push(g) })
+        else if (enemy.kind === SENTINELA_KIND) handled = sentinelaFire(scene, enemy, playerPosition, { pushGate: (g) => enemyGates.push(g) }, frame)
         if (!handled) fireEnemyProjectile(enemy, playerPosition)
         enemy.fireTimer = enemy.kind === BOSS_KIND
           ? randomBossFireInterval()
@@ -536,15 +536,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
-  // ao cruzar o plano do jogador ou chegar na distância travada, resolve uma vez e remove
+  // ao cruzar o plano do jogador ou chegar na distância travada, resolve uma vez e remove.
+  // updateGateFlight ANTES de updateGateAnimation: a escala depende de `gate.traveled`, que só
+  // fica correto pra este frame depois do voo ser atualizado (ver comentário em sentinela.js).
   function updateEnemyGates(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
     for (const gate of [...enemyGates]) {
-      updateGateAnimation(gate, dt)
-      const step = gate.velocity.clone().multiplyScalar(dt)
-      gate.mesh.position.add(step)
-      gate.traveled += step.length()
+      updateGateFlight(gate, dt, rail)
+      updateGateAnimation(gate)
 
       const rel = playerPosition.clone().sub(gate.mesh.position)
       const alongDir = rel.dot(gate.dir)
