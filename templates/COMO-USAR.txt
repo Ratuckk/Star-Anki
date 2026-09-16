@@ -1,40 +1,56 @@
-Como preencher baralho-modelo.txt
-==================================
+Como Criar e Preencher Baralhos Profissionais (Padrão Star-Anki)
+====================================================================
 
-O jogo NÃO lê um CSV comum (separado por vírgula). Ele lê o formato de
-exportação "Notas em Texto Simples" do Anki: 6 linhas de cabeçalho
-começando com # (não mexa nelas), depois uma nota por linha, com as
-colunas separadas por TAB (tecla Tab, não espaços, não vírgula).
+O Star-Anki lê o formato de exportação "Notas em Texto Simples" do Anki com suporte
+ao CÓDICE CIBERNÉTICO DE CONHECIMENTO (explicação densa + fontes bibliográficas).
+O arquivo possui cabeçalhos começando com # na linha 1 a 6, seguidos por uma nota
+por linha com as colunas separadas por TAB (tecla Tab, nunca espaços ou vírgulas).
 
-Ordem das colunas de cada linha:
-  1. guid       — um identificador único da nota (invente um texto único
-                  por linha, ex: modelo-001, modelo-002...)
-  2. notetype   — "Basic" (pergunta e resposta direta) ou "Cloze"
-                  (frase com {{c1::palavra}} para a lacuna)
-  3. deck       — nome do baralho (pode repetir em todas as linhas)
-  4. pergunta   — para Basic: a pergunta. Para Cloze: a frase inteira
-                  com {{c1::...}}, {{c2::...}} etc marcando as lacunas.
-  5. resposta   — para Basic: a resposta. Para Cloze: deixe em branco
-                  (a resposta de cada lacuna já está dentro da própria
-                  frase da coluna 4).
-  6. tags       — palavras separadas por espaço (opcional, pode deixar
-                  em branco).
+Ordem Oficial das 8 Colunas:
+-----------------------------
+  1. guid             — Identificador único da nota (ex: comp-001, raid-004).
+  2. notetype         — "Basic" (pergunta direta) ou "Cloze" (omissão com {{c1::...}}).
+  3. deck             — Nome do baralho (ex: Arquitetura de Computadores).
+  4. pergunta / cloze — Para Basic: a pergunta atômica.
+                        Para Cloze: a frase completa com {{c1::termo}} na lacuna.
+  5. resposta         — Para Basic: a resposta concisa (≤ 60 caracteres para shooter).
+                        Para Cloze: deixe em branco (a resposta está dentro do {{c1::...}}).
+  6. explicacao_densa — Parágrafo técnico detalhado e aprofundado explicando o contexto,
+                        funcionamento interno, porquês de engenharia e conceitos-chave.
+                        Aparecerá na gaveta do Códice quando o jogador clicar na aba
+                        lateral direita ou apertar a tecla [E].
+  7. fontes_e_links   — Links oficiais com https:// e/ou citações bibliográficas completas
+                        (ex: Tanenbaum, Stallings, documentação oficial Intel/IEEE/RFC).
+  8. tags             — Palavras-chave separadas por espaço (ex: cpu_arquitetura ula).
+                        IMPORTANTE: O gerador de alternativas erradas do jogo agrupa
+                        cartas com tags iguais para criar opções desafiadoras e plausíveis!
 
-Regras importantes:
-- Edite o arquivo num editor de texto puro (Bloco de Notas, VS Code,
-  Notepad++...). NÃO use Word/Google Docs — eles trocam os TABs por
-  outra coisa e o jogo para de reconhecer as colunas.
-- Cada guid (coluna 1) deve ser único no arquivo inteiro.
-- Respostas com até 60 caracteres viram perguntas do modo shooter
-  (voando e atirando). Respostas mais longas que isso caem sozinhas no
-  modo painel (pergunta aparece inteira, você revela e se autoavalia).
-- É preciso pelo menos 4 notas com resposta curta (≤60 caracteres) no
-  arquivo inteiro, senão o jogo recusa o baralho.
-- Cloze com o mesmo índice (ex: dois {{c1::...}} na mesma frase) vira
-  uma pergunta só, com as duas partes reveladas juntas.
+As 4 Regras de Ouro do Anki no Star-Anki:
+------------------------------------------
+1. PRINCÍPIO DA INFORMAÇÃO MÍNIMA (ATÔMICA):
+   Evite perguntas com múltiplas respostas ou dados soltos sem sentido.
+   Teste apenas um fato conceitual por nota.
+   Ruim: "O que é ULA e quando surgiu e quem fez?"
+   Bom: "Qual unidade da CPU realiza cálculos aritméticos e lógicas booleanas?" -> "ULA"
 
-Pra usar: apague as linhas de exemplo (modelo-001 a modelo-006, mas
-mantenha as 6 linhas de # no topo), escreva suas próprias notas
-seguindo o mesmo formato, e cole o conteúdo inteiro na caixa de texto
-da tela de carregamento do jogo (ou carregue o .txt direto pelo botão
-de arquivo).
+2. CLOZE DELETION INTELIGENTE:
+   No combate espacial, frases com {{c1::lacuna}} são mais rápidas de ler e
+   entender do que perguntas longas. O cérebro foca de imediato na lacuna e
+   o jogador atira na alternativa correta com muito mais fluidez.
+
+3. RESPOSTAS CURTAS (≤ 60 CARACTERES):
+   Cartas com resposta de até 60 caracteres entram automaticamente no modo shooter
+   (voando e atirando nas naves/orbes com o blaster). Respostas mais longas que
+   isso são enviadas ao modo painel de autoavaliação.
+
+4. EXPLICAÇÃO DENSA & FONTES:
+   Aproveite a coluna 6 para colocar explicações realmente densas e educativas.
+   O jogador não fica limitado a memorizar respostas curtas: ao pressionar [E],
+   ele tem acesso instantâneo ao artigo técnico completo sem quebrar a gameplay!
+
+Como Jogar com o seu Baralho:
+-----------------------------
+1. Salve o arquivo como texto puro (.txt) codificado em UTF-8.
+2. No menu do jogo, clique em "Carregar Baralho" e selecione seu arquivo .txt
+   (ou cole o texto diretamente na caixa de importação).
+3. Pressione Iniciar Partida e teste seu conhecimento no espaço!

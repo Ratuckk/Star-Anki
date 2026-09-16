@@ -68,6 +68,9 @@ export function createBossFlow(deps) {
       alternatives: result.alternatives,
       explanation: result.card.explanation,
       sourceUrl: result.card.sourceUrl,
+      sourcesText: result.card.sourcesText,
+      tags: result.card.tags,
+      deck: result.card.deck,
       onPick: (slot) => {
         settleBossBuildupQuestion({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',
@@ -187,6 +190,9 @@ export function createBossFlow(deps) {
       alternatives: result.alternatives,
       explanation: result.card.explanation,
       sourceUrl: result.card.sourceUrl,
+      sourcesText: result.card.sourcesText,
+      tags: result.card.tags,
+      deck: result.card.deck,
       onPick: (slot) => {
         settleGoldenBonus({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',

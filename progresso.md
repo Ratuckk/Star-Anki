@@ -1,3 +1,42 @@
+## Overhaul de Perguntas Anki, Códice Lateral na Extrema Direita com Fontes e Recriação dos Decks — v0.60.0
+
+Contexto e pedidos do usuário:
+1. *"após isso eu quero ideias de overhaul na forma como perguntas são feitas, no molde das perguntas anki e também uma forma de abrir uma explicação densa com fontes com o clicar de um botão na extrema direita da tela quando uma pergunta surge, isso inclui recriar as perguntas presentes na pasta de decks do Zero para serem mais coesas e refletirem estas mudanças, inclusive crie um template molde que adote tudo isso"*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Aba Cibernética na Extrema Direita da Tela (`hud-game.js` & `hud-styles.js`)**:
+   - Criada aba/botão neon vertical acoplado à borda extrema direita da tela (`.hud-codex-tab-btn`, `position: fixed; right: 0; top: 50%; transform: translateY(-50%)`).
+   - Apresenta ícone de livro holográfico `📖`, rótulo em caixa alta `CÓDICE & FONTES` e badge dourado da tecla de atalho `[E]`.
+   - Surge suavemente com animação de slide-in quando a pergunta aparece no modal, pulsando sutilmente para convidar à consulta sem obstruir as alternativas no centro da tela.
+
+2. **Gaveta Lateral Holográfica do Códice (Codex Drawer) (`hud-game.js` & `hud-styles.js`)**:
+   - Painel lateral retrátil (`.hud-codex-drawer`) de 500px de largura que desliza suavemente da direita com `backdrop-filter: blur(28px)`, fundo espacial escuro e bordas neon ciano.
+   - **Estrutura Interna**:
+     - *Header*: Título cibernético `TERMINAL CÓDICE // ANKI`, chip de tag temática e botão `✕ Fechar [Esc / E]`.
+     - *Card de Tópico*: Enunciado destacado da pergunta ou cloze.
+     - *Explicação Densa & Aprofundada*: Área de texto rica para 1 a 4 parágrafos técnicos explicando fundamentos teóricos, funcionamento de baixo nível, implicações de engenharia e contexto histórico.
+     - *Fontes & Referências Oficiais*: Cartões clicáveis com ícone `🔗` para links externos e caixas de citação Sci-Fi para referências bibliográficas (Tanenbaum, Stallings, Hennessy, documentações oficiais).
+     - *Backdrop translúcido*: Permite fechar a gaveta clicando fora dela.
+   - **Controles e Atalhos**: Pressionar `E` abre ou fecha o Códice; pressionar `Escape` fecha o Códice se estiver aberto; responder a qualquer alternativa (`pick`) fecha o Códice instantaneamente.
+
+3. **Parser Atualizado para o Padrão de 8 Colunas (`src/anki.js`)**:
+   - `buildCardsFromNotes` aprimorado com função `resolveExplanationAndSources` para mapear de forma canônica `fields[2]` como `explanation` e `fields[3]` como `sourcesText`/`sourceUrl`.
+   - Suporte transparente para notas do tipo `Basic` e `Cloze`.
+   - Retrocompatibilidade total preservada para baralhos legados de 5 ou 6 colunas.
+
+4. **Novo Template Molde Oficial e Guia Didático (`templates/`)**:
+   - `templates/baralho-modelo.txt`: Atualizado para o cabeçalho oficial de 8 colunas com notas modelo de `Basic` e `Cloze` com explicações densas e links reais.
+   - `templates/COMO-USAR.txt`: Manual completo explicando as 8 colunas, as 4 regras de ouro da ciência cognitiva para elaboração de cartas no padrão Anki (Princípio Atômico, Cloze Deletions, Regra dos 60 Caracteres para Shooter e Explicação Densa com Fontes).
+
+5. **Recriação dos Decks da Pasta `decks/` do Zero**:
+   - `decks/estudo-de-prova.txt`: 40 cartas coesas e densas cobrindo Pioneiros do Cálculo (Ábaco, Régua de Oughtred, Pascaline, Leibniz, Jacquard, Babbage, Lovelace, Boole, Hollerith), Criptografia (Enigma, Bombe de Turing), Gerações Eletrônicas (Válvulas, ENIAC, UNIVAC, Transistores, Circuitos Integrados, Microprocessadores), Arquitetura Von Neumann e Ciclo de Instrução (PC, IR, MAR, MBR, Pipeline, RISC vs CISC).
+   - `decks/arquitetura-manutencao-aumentado.txt`: 30 cartas coesas e densas cobrindo Placa-mãe, Chipset, Fontes ATX, Eficiência 80 Plus, Hierarquia de Memória (Caches L1/L2/L3, SRAM vs DRAM, DDR4 vs DDR5 com PMIC, Dual-Channel), Armazenamento (HDD, SSD, NVMe, Cabo SATA 7 pinos, RAID 0/1/5/10), Barramentos (PCIe x16, M.2, USB-C 24 pinos, DisplayPort vs HDMI), Refrigeração (TDP, Pasta Térmica) e Manutenção/Firmware (UEFI, POST, Beep Codes, ESD e Pulseira Antiestática, Preventiva vs Corretiva).
+   - Consolidadas e eliminadas as listas de fontes separadas (`estudo-de-prova-fontes.txt` e `arquitetura-manutencao-fontes.txt`), agora integradas diretamente em cada linha dos baralhos.
+
+**Testado**: `node --check` em todos os arquivos JS, `node src/selftest.mjs` com 100% de sucesso e validação de parsing nos decks recriados com 0 warnings.
+**Versão**: v0.59.0 → v0.60.0.
+
 ## Caçada Ampla por Gargalos de Desempenho em Efeitos Visuais (VBO Thrashing, GC Pressure e CPU Particle Loops) — v0.59.0
 
 Contexto e pedidos do usuário:

@@ -67,6 +67,9 @@ export function createQuestionFlow(deps) {
       alternatives: result.alternatives,
       explanation: result.card.explanation,
       sourceUrl: result.card.sourceUrl,
+      sourcesText: result.card.sourcesText,
+      tags: result.card.tags,
+      deck: result.card.deck,
       onPick: (slot) => {
         settleQuestion({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',

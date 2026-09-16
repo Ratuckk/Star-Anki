@@ -3,6 +3,21 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Overhaul de Perguntas Anki, Códice Lateral na Extrema Direita com Fontes e Recriação dos Decks — v0.60.0
+
+Contexto e pedidos do usuário:
+1. *"após isso eu quero ideias de overhaul na forma como perguntas são feitas, no molde das perguntas anki e também uma forma de abrir uma explicação densa com fontes com o clicar de um botão na extrema direita da tela quando uma pergunta surge, isso inclui recriar as perguntas presentes na pasta de decks do Zero para serem mais coesas e refletirem estas mudanças, inclusive crie um template molde que adote tudo isso"*
+
+**O que mudou e detalhes técnicos:**
+1. **Aba Cibernética na Extrema Direita (`hud-game.js` & `hud-styles.js`)**: Botão neon vertical acoplado à borda extrema direita da tela (`.hud-codex-tab-btn`, `right: 0; top: 50%`) com ícone `📖`, rótulo `CÓDICE & FONTES` e atalho `[E]`, surgindo ao abrir a pergunta sem poluir o centro da interface.
+2. **Gaveta Lateral Holográfica do Códice (`hud-game.js` & `hud-styles.js`)**: Painel retrátil de 500px com `backdrop-filter: blur(28px)` contendo cabeçalho com tag temática, cartão da pergunta/cloze, área de **Explicação Densa & Aprofundada** (1 a 4 parágrafos técnicos de fundamentação teórica) e seção de **Fontes & Referências Oficiais** com links clicáveis `🔗` e citações bibliográficas. Pressionar `E` ou `Esc` fecha ou alterna a gaveta.
+3. **Parser de 8 Colunas Tabuladas (`anki.js`)**: Função `resolveExplanationAndSources` para extrair nativamente `explanation` (coluna 6) e `sourcesText`/`sourceUrl` (coluna 7) tanto para cartas `Basic` quanto `Cloze`, preservando retrocompatibilidade com baralhos antigos.
+4. **Novo Template Molde Oficial e Guia (`templates/`)**: `baralho-modelo.txt` atualizado para o molde oficial de 8 colunas e `COMO-USAR.txt` reformulado com as 4 regras de ouro da ciência cognitiva de flashcards no Star-Anki.
+5. **Recriação dos Decks da Pasta `decks/` do Zero**: `estudo-de-prova.txt` (40 cartas atômicas e densas cobrindo Pioneiros, Criptografia, Gerações Eletrônicas, Von Neumann e Ciclo de Instrução) e `arquitetura-manutencao-aumentado.txt` (30 cartas cobrindo Hardware, Caches, Memórias, RAID, Conectores, Refrigeração e Manutenção) totalmente reconstruídos com explicações e fontes embutidas em cada linha. Listas separadas `-fontes.txt` eliminadas.
+
+**Testado**: `node --check` em todos os arquivos JS, `node src/selftest.mjs` com 100% de sucesso e validação de parsing nos decks recriados com 0 warnings.
+**Versão**: v0.59.0 → v0.60.0.
+
 ## Caçada Ampla por Gargalos de Desempenho em Efeitos Visuais (VBO Thrashing, GC Pressure e CPU Particle Loops) — v0.59.0
 
 Contexto e pedidos do usuário:

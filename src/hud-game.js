@@ -275,29 +275,90 @@ export function createGameHud() {
   questionModalTitle.className = 'question-modal-title'
   questionModalFrame.appendChild(questionModalTitle)
 
-  const questionConceptWrap = document.createElement('div')
-  questionConceptWrap.className = 'question-concept-wrap'
-  questionModalFrame.appendChild(questionConceptWrap)
+  // ============ BOTÃO NA EXTREMA DIREITA & GAVETA DO CÓDICE (ANKI OVERHAUL) ============
+  const codexTabBtn = document.createElement('button')
+  codexTabBtn.className = 'hud-codex-tab-btn'
+  codexTabBtn.type = 'button'
+  codexTabBtn.innerHTML = `
+    <span class="hud-codex-tab-icon">📖</span>
+    <span class="hud-codex-tab-label">CÓDICE &amp; FONTES</span>
+    <span class="hud-codex-tab-key">E</span>
+  `
+  questionModalOverlay.appendChild(codexTabBtn)
 
-  const questionConceptBtn = document.createElement('button')
-  questionConceptBtn.className = 'question-concept-btn'
-  questionConceptBtn.type = 'button'
-  questionConceptBtn.innerHTML = '<span>💡 Ver Conceito &amp; Fonte (Tecla E)</span>'
-  questionConceptWrap.appendChild(questionConceptBtn)
+  const codexBackdrop = document.createElement('div')
+  codexBackdrop.className = 'hud-codex-backdrop'
+  questionModalOverlay.appendChild(codexBackdrop)
 
-  const questionConceptDrawer = document.createElement('div')
-  questionConceptDrawer.className = 'question-concept-drawer'
-  questionConceptWrap.appendChild(questionConceptDrawer)
+  const codexDrawer = document.createElement('aside')
+  codexDrawer.className = 'hud-codex-drawer'
+  questionModalOverlay.appendChild(codexDrawer)
 
-  const questionConceptText = document.createElement('div')
-  questionConceptText.className = 'question-concept-text'
-  questionConceptDrawer.appendChild(questionConceptText)
+  codexDrawer.innerHTML = `
+    <div class="hud-codex-header">
+      <div class="hud-codex-meta">
+        <span class="hud-codex-badge">TERMINAL CÓDICE // ANKI</span>
+        <span class="hud-codex-tag-badge" id="hudCodexTag"></span>
+      </div>
+      <button type="button" class="hud-codex-close-btn" id="hudCodexCloseBtn" aria-label="Fechar Códice">
+        ✕ Fechar [Esc]
+      </button>
+    </div>
+    <div class="hud-codex-scroll">
+      <div class="hud-codex-question-card">
+        <div class="hud-codex-section-label">🎯 PERGUNTA / ENUNCIADO</div>
+        <div class="hud-codex-question-text" id="hudCodexQuestion"></div>
+      </div>
+      <div class="hud-codex-section" id="hudCodexExplanationSection">
+        <div class="hud-codex-section-label">🔬 EXPLICAÇÃO DENSA &amp; CONCEITO</div>
+        <div class="hud-codex-explanation-text" id="hudCodexExplanation"></div>
+      </div>
+      <div class="hud-codex-section" id="hudCodexSourcesSection">
+        <div class="hud-codex-section-label">📚 FONTES &amp; REFERÊNCIAS OFICIAIS</div>
+        <div class="hud-codex-sources-content" id="hudCodexSources"></div>
+      </div>
+    </div>
+    <div class="hud-codex-footer">
+      <span>Pressione <b>E</b> ou <b>Esc</b> para alternar o Códice</span>
+    </div>
+  `
 
-  const questionSourceLink = document.createElement('a')
-  questionSourceLink.className = 'question-source-link'
-  questionSourceLink.target = '_blank'
-  questionSourceLink.rel = 'noopener noreferrer'
-  questionConceptDrawer.appendChild(questionSourceLink)
+  const hudCodexTag = codexDrawer.querySelector('#hudCodexTag')
+  const hudCodexCloseBtn = codexDrawer.querySelector('#hudCodexCloseBtn')
+  const hudCodexQuestion = codexDrawer.querySelector('#hudCodexQuestion')
+  const hudCodexExplanationSection = codexDrawer.querySelector('#hudCodexExplanationSection')
+  const hudCodexExplanation = codexDrawer.querySelector('#hudCodexExplanation')
+  const hudCodexSourcesSection = codexDrawer.querySelector('#hudCodexSourcesSection')
+  const hudCodexSources = codexDrawer.querySelector('#hudCodexSources')
+
+  function openCodex() {
+    codexDrawer.classList.add('is-open')
+    codexTabBtn.classList.add('is-open')
+    codexBackdrop.classList.add('is-open')
+  }
+
+  function closeCodex() {
+    codexDrawer.classList.remove('is-open')
+    codexTabBtn.classList.remove('is-open')
+    codexBackdrop.classList.remove('is-open')
+  }
+
+  function toggleCodex() {
+    if (codexDrawer.classList.contains('is-open')) closeCodex()
+    else openCodex()
+  }
+
+  codexTabBtn.onclick = (e) => {
+    e.stopPropagation()
+    toggleCodex()
+  }
+  hudCodexCloseBtn.onclick = (e) => {
+    e.stopPropagation()
+    closeCodex()
+  }
+  codexBackdrop.onclick = () => {
+    closeCodex()
+  }
 
   const questionModalList = document.createElement('div')
   questionModalList.className = 'question-modal-list'
@@ -485,46 +546,61 @@ export function createGameHud() {
   }
 
   // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
-  // terminar (ver showQuestionModal no objeto retornado). Suporta explicação e fonte didática (Anki Overhaul).
-  function revealQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }) {
+  // terminar (ver showQuestionModal no objeto retornado). Suporta explicação densa e fontes no Códice lateral.
+  function revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }) {
     questionModalBurst()
     questionModalTitle.textContent = question
     questionModalList.innerHTML = ''
 
-    const hasConcept = (explanation && explanation.trim().length > 0) || Boolean(sourceUrl)
+    closeCodex()
+
+    const hasExplanation = Boolean(explanation && explanation.trim().length > 0)
+    const hasSources = Boolean(sourceUrl || (sourcesText && sourcesText.trim().length > 0))
+    const hasConcept = hasExplanation || hasSources
+
     if (hasConcept) {
-      questionConceptWrap.style.display = 'flex'
-      questionConceptBtn.classList.remove('is-open')
-      questionConceptDrawer.classList.remove('is-open')
-      questionConceptText.textContent = explanation || ''
-      questionConceptText.style.display = explanation ? 'block' : 'none'
-      if (sourceUrl) {
-        questionSourceLink.href = sourceUrl
-        questionSourceLink.textContent = `🔗 Acessar Fonte: ${sourceUrl.length > 55 ? sourceUrl.slice(0, 52) + '...' : sourceUrl}`
-        questionSourceLink.style.display = 'inline-flex'
+      codexTabBtn.style.display = 'flex'
+      hudCodexQuestion.textContent = question
+      hudCodexTag.textContent = (tags && tags.length > 0) ? tags.join(' • ') : (deck || 'Estudo')
+
+      if (hasExplanation) {
+        hudCodexExplanationSection.style.display = 'block'
+        hudCodexExplanation.textContent = explanation
       } else {
-        questionSourceLink.style.display = 'none'
+        hudCodexExplanationSection.style.display = 'none'
+      }
+
+      if (hasSources) {
+        hudCodexSourcesSection.style.display = 'block'
+        hudCodexSources.innerHTML = ''
+        if (sourceUrl) {
+          const a = document.createElement('a')
+          a.className = 'hud-codex-source-link'
+          a.href = sourceUrl
+          a.target = '_blank'
+          a.rel = 'noopener noreferrer'
+          const label = sourceUrl.length > 55 ? sourceUrl.slice(0, 52) + '...' : sourceUrl
+          a.innerHTML = `<span>🔗</span> <span>${label}</span>`
+          hudCodexSources.appendChild(a)
+        }
+        if (sourcesText && sourcesText !== sourceUrl) {
+          const p = document.createElement('div')
+          p.className = 'hud-codex-source-citation'
+          p.textContent = sourcesText
+          hudCodexSources.appendChild(p)
+        }
+      } else {
+        hudCodexSourcesSection.style.display = 'none'
       }
     } else {
-      questionConceptWrap.style.display = 'none'
-    }
-
-    function toggleConcept() {
-      if (!hasConcept) return
-      const isOpen = questionConceptDrawer.classList.toggle('is-open')
-      questionConceptBtn.classList.toggle('is-open', isOpen)
-    }
-    questionConceptBtn.onclick = (e) => {
-      e.stopPropagation()
-      toggleConcept()
+      codexTabBtn.style.display = 'none'
     }
 
     // ponto único de escolha (clique, tecla 1–4 ou botão de controle mapeado) — evita triplicar
     // o teardown dos 3 listeners/watchers em cada caminho
     function pick(i) {
       questionModalOverlay.hidden = true
-      questionConceptDrawer.classList.remove('is-open')
-      questionConceptBtn.classList.remove('is-open')
+      closeCodex()
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
@@ -563,7 +639,12 @@ export function createGameHud() {
     questionModalKeyHandler = (e) => {
       if (hasConcept && (e.code === 'KeyE' || e.key === 'e' || e.key === 'E')) {
         e.preventDefault()
-        toggleConcept()
+        toggleCodex()
+        return
+      }
+      if (codexDrawer.classList.contains('is-open') && (e.key === 'Escape' || e.code === 'Escape')) {
+        e.preventDefault()
+        closeCodex()
         return
       }
       for (let i = 0; i < alternatives.length; i += 1) {
@@ -797,14 +878,14 @@ export function createGameHud() {
     // desde a v0.29.2, também dá pra escolher pelos NÚMEROS 1–4 (reusa os binds quizSlot1..4,
     // padrão Digit1..Digit4) em vez de ter que clicar no card — quem remapeou os números nas
     // Configurações também funciona aqui, porque leio de getBindings() em vez de hardcodar.
-    showQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }) {
+    showQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }) {
       // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro"): em vez
       // do modal simplesmente dar snap, um burst de partículas nas bordas da tela voa pro
       // centro exato onde ele vai nascer, e só então o modal aparece de verdade. Puramente
       // DOM/CSS (mesmo padrão do cardAbsorbBeam) — o jogo já está em pausa total nesse ponto
       // (phase questionPause/bossQuestionPause), então um atraso visual de ~300ms aqui não
       // acumula com nada, é só o "beat" da cutscene.
-      playFocusCollapse(() => revealQuestionModal({ question, alternatives, explanation, sourceUrl, onPick }))
+      playFocusCollapse(() => revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }))
     },
 
     hideQuestionModal() {
@@ -814,8 +895,7 @@ export function createGameHud() {
       // estado por outra via (morte do chefe no mesmo frame, debug forçando outcome).
       cancelFocusCollapse()
       questionModalOverlay.hidden = true
-      questionConceptDrawer.classList.remove('is-open')
-      questionConceptBtn.classList.remove('is-open')
+      closeCodex()
       if (questionModalKeyHandler) {
         window.removeEventListener('keydown', questionModalKeyHandler)
         questionModalKeyHandler = null
