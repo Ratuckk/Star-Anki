@@ -18,22 +18,18 @@ export const DETRITO_DEATH_DURATION = 0.2
 export const DETRITO_HP = 9
 export const DETRITO_KILL_BONUS = BLASTER_KILL_BONUS / 2 // bônus menor, não é alvo de combate de verdade
 
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido de 90-250 (o teto
-// especialmente exagerado) pra ficar mais perto da faixa dos outros inimigos comuns.
-const SPAWN_DISTANCE_MIN = 60
-const SPAWN_DISTANCE_MAX = 130
-const BOX_X = 7
-const BOX_Y = 5
-const SPIN_RATE_MIN = 0.15
-const SPIN_RATE_MAX = 0.45
+// pedido do usuário (v0.54.0): bounds de spawn mais amplos para comportar até 10 detritos
+const SPAWN_DISTANCE_MIN = 50
+const SPAWN_DISTANCE_MAX = 160
+const BOX_X = 11
+const BOX_Y = 8
+const SPIN_RATE_MIN = 0.12
+const SPIN_RATE_MAX = 0.55
 
-// ============ TIERS DE TAMANHO ============
-// 3 categorias discretas em vez de distribuição contínua — contínua "todos parecem do mesmo
-// tamanho" na percepção do jogador. Pequeno/médio/grande, 1/3 de chance cada, com ±10% de
-// jitter interno pra não parecer fôrma.
-// pedido do usuário: tamanhos ainda maiores — mesmo o tier "pequeno" precisa ser visivelmente
-// maior que antes. Tier grande (5) já ultrapassa a envergadura da nave (~3.8) de propósito.
-const DETRITO_SIZE_TIERS = [1.5, 3, 5]
+// ============ 6 TIERS DE TAMANHO (v0.54.0) ============
+// 6 categorias bem distintas: microfragmento (0.7), pequeno (1.4), médio (2.5),
+// grande (4.0), enorme (5.8) e mega-asteroide (8.2), com jitter de ±10%.
+const DETRITO_SIZE_TIERS = [0.7, 1.4, 2.5, 4.0, 5.8, 8.2]
 const DETRITO_TIER_JITTER = 0.1
 
 function rollDetritoScale() {
@@ -48,15 +44,16 @@ export function spawnDetrito(scene, rail, id) {
   const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.copy(position)
-  // tamanho variável por spawn — cada detrito tem seu próprio tamanho
+  // tamanho variável por spawn — cada detrito tem seu próprio tamanho entre os 6 tiers
   const scale = rollDetritoScale()
   mesh.scale.setScalar(scale)
-  // rotação inicial aleatória — cada detrito nasce virado diferente, reforça a leitura de
-  // "destroço no espaço" em vez de peça repetida
+  // HP escala proporcionalmente com o tamanho do asteroide
+  const hp = Math.max(3, Math.round(3 + scale * 3.2))
+  // rotação inicial aleatória — cada detrito nasce virado diferente
   mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
   scene.add(mesh)
   return {
-    id, mesh, kind: DETRITO_KIND, dying: false, deathT: 0, hp: DETRITO_HP, maxHp: DETRITO_HP, fireTimer: Infinity,
+    id, mesh, kind: DETRITO_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: Infinity,
     scale, // guardado pra hitbox e animação de morte escalarem junto
     spinAxis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
     spinRate: SPIN_RATE_MIN + Math.random() * (SPIN_RATE_MAX - SPIN_RATE_MIN),

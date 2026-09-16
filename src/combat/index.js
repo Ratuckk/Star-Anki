@@ -15,10 +15,7 @@ export { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS, DEFAULT_FIRE_COOLDOWN }
 // arquivo mantém só o que não vale a pena isolar sozinho (escoltas, hitbox debug) e a
 // orquestração do `update()` — mesma API pública de antes, main.js/player.js não mudam nada.
 
-const WINGMAN_OFFSETS = [3.2, -3.2]
-const wingmanGeometry = new THREE.ConeGeometry(0.32, 1.1, 3)
-wingmanGeometry.rotateX(-Math.PI / 2)
-const wingmanMaterial = new THREE.MeshPhongMaterial({ color: 0x7fe0ff, flatShading: true })
+import { createSquadronSystem } from './wingmen.js'
 
 const hitboxGeometry = new THREE.SphereGeometry(1, 8, 6)
 const hitboxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, wireframe: true, depthTest: false })
@@ -27,21 +24,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   const lockon = createLockOnSystem(rail, enemies)
   const targets = createTargetsSystem(scene, rail, effects)
   const projectiles = createProjectileSystem(scene, effects, player, enemies, targets, lockon)
-
-  const wingmen = []
-
-  function updateWingmen() {
-    if (wingmen.length === 0) return
-    const playerPos = rail.getPlayerPosition()
-    const frame = rail.getFrameAt(0)
-    wingmen.forEach((w, i) => {
-      const lateral = WINGMAN_OFFSETS[i] ?? 0
-      const pos = playerPos.clone().addScaledVector(frame.right, lateral).addScaledVector(frame.up, -0.4)
-      w.mesh.position.copy(pos)
-      w.mesh.up.copy(frame.up)
-      w.mesh.lookAt(pos.clone().add(frame.forward))
-    })
-  }
+  const squadron = createSquadronSystem(scene, rail, effects, enemies)
 
   let showHitboxes = false
   const hitboxGroup = new THREE.Group()
@@ -64,27 +47,19 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
   return {
     tryFire(origin, direction) {
       if (!projectiles.tryFire(origin, direction)) return false
-      for (const w of wingmen) projectiles.fireSingle(w.mesh.position, direction)
+      squadron.tryFireSupport(direction)
       return true
     },
 
     fireHomingShot: (origin, maxTargets, isMaxCharge) => projectiles.fireHomingShot(origin, maxTargets, isMaxCharge),
     deflectNearbyProjectiles: (playerPos, radius) => projectiles.deflectNearbyProjectiles(playerPos, radius),
 
-    setWingmanCount(n) {
-      n = Math.max(0, Math.min(WINGMAN_OFFSETS.length, n))
-      while (wingmen.length < n) {
-        const mesh = new THREE.Mesh(wingmanGeometry, wingmanMaterial)
-        scene.add(mesh)
-        wingmen.push({ mesh })
-      }
-      while (wingmen.length > n) {
-        const w = wingmen.pop()
-        scene.remove(w.mesh)
-      }
-    },
-
-    getWingmanPositions: () => wingmen.map((w) => w.mesh.position.clone()),
+    setWingmanCount: (n) => squadron.setWingmanCount(n),
+    spawnSpecificWingman: (id) => squadron.spawnMember(id),
+    removeSpecificWingman: (id) => squadron.removeMember(id),
+    clearSquadron: () => squadron.clearSquadron(),
+    getWingmanPositions: () => squadron.getWingmanPositions(),
+    getActiveWingmen: () => squadron.getActiveMembers(),
 
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnMiniSwarm: () => enemies.spawnMiniSwarm(),
@@ -93,7 +68,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnTankEnemy: (hp) => enemies.spawnTankEnemy(hp),
     spawnBossEnemy: (hp) => enemies.spawnBossEnemy(hp),
     spawnGoldenSpecial: (opts) => enemies.spawnGoldenSpecial(opts),
-    spawnDetrito: () => enemies.spawnDetrito(),
+    spawnDetrito: (count) => enemies.spawnDetrito(count),
     spawnSentinela: () => enemies.spawnSentinela(),
     spawnReplica: () => enemies.spawnReplica(),
     spawnFragata: () => enemies.spawnFragata(),
@@ -177,7 +152,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
       }
 
-      updateWingmen()
+      squadron.update(dt, playerPosition, rail.getFrameAt(0), { boostActive: opts.boostActive })
 
       if (showHitboxes) refreshHitboxes()
 
@@ -201,14 +176,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     },
 
     dispose() {
-      for (const w of [...wingmen]) scene.remove(w.mesh)
-      wingmen.length = 0
+      squadron.dispose()
       lockon.clearLockedEnemies()
       enemies.dispose()
       projectiles.dispose()
       targets.dispose()
-      wingmanGeometry.dispose()
-      wingmanMaterial.dispose()
       while (hitboxGroup.children.length) hitboxGroup.remove(hitboxGroup.children[0])
       scene.remove(hitboxGroup)
       hitboxGeometry.dispose()

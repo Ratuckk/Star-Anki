@@ -569,9 +569,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       registerSpawn(enemy)
     },
 
-    spawnDetrito() {
-      const enemy = spawnDetrito(scene, rail, nextEnemyId++)
-      registerSpawn(enemy)
+    spawnDetrito(count = 1) {
+      const n = Math.max(1, Math.min(12, count))
+      for (let i = 0; i < n; i++) {
+        const enemy = spawnDetrito(scene, rail, nextEnemyId++)
+        registerSpawn(enemy)
+      }
     },
 
     spawnSentinela() {

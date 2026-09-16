@@ -254,8 +254,23 @@ export function createGameLoop(deps) {
     if (enemiesActive) {
       state.detritoTimer -= dt * 1000
       if (state.detritoTimer <= 0) {
-        combat.spawnDetrito()
-        state.detritoTimer = progression.randomDetritoInterval()
+        // v0.54.0: chuva de detritos de até 10 de 6 tamanhos diferentes, no rail e all-range
+        const inArena = rail.isArena()
+        const roll = Math.random()
+        let count = 1
+        if (inArena) {
+          if (roll < 0.40) count = Math.floor(Math.random() * 4) + 7 // 7 a 10 detritos!
+          else if (roll < 0.75) count = Math.floor(Math.random() * 4) + 3 // 3 a 6 detritos
+          else count = Math.floor(Math.random() * 2) + 1 // 1 a 2 detritos
+        } else {
+          if (roll < 0.30) count = Math.floor(Math.random() * 5) + 6 // 6 a 10 detritos!
+          else if (roll < 0.65) count = Math.floor(Math.random() * 3) + 3 // 3 a 5 detritos
+          else count = 1
+        }
+        combat.spawnDetrito(count)
+        state.detritoTimer = inArena
+          ? progression.randomDetritoInterval() * 0.65
+          : progression.randomDetritoInterval()
       }
       state.imaTimer -= dt * 1000
       if (state.imaTimer <= 0) {
@@ -269,6 +284,7 @@ export function createGameLoop(deps) {
       aimDirection: fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
       allowBossOrbHit: state.phase === 'bossBuildup',
+      boostActive: boostOn,
     })
 
     // ============ HIT MARKER ============

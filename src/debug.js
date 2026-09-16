@@ -45,4 +45,9 @@ export const DEBUG_ACTIONS = [
   { id: 'giveCard', label: 'Escolher carta roguelike' },
   { id: 'triggerFullDodge', label: 'Testar giro/inclinação (1s)' },
   { id: 'fireHomingTest', label: 'Testar tiro teleguiado' },
+  { id: 'spawnWingman1', label: '+ Wingman 1 (Falco / Interceptor)' },
+  { id: 'spawnWingman2', label: '+ Wingman 2 (Peppy / Bomber)' },
+  { id: 'spawnWingman3', label: '+ Wingman 3 (Slippy / Scout)' },
+  { id: 'spawnWingman4', label: '+ Wingman 4 (Phantom / Stealth)' },
+  { id: 'clearWingmen', label: 'Dispensar Esquadrão' },
 ]

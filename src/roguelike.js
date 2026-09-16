@@ -16,7 +16,7 @@ export const CARD_CATEGORY_COLOR = {
 export const ROGUELIKE_CARDS = [
   { id: 'extra-projectile', category: 'ofensivo', label: 'Tiro duplicado', icon: '⚔️', description: '+1 projétil disparado por tiro.' },
   { id: 'faster-fire', category: 'ofensivo', label: 'Recarga rápida', icon: '⚡', description: 'Reduz o tempo entre disparos.' },
-  { id: 'wingman', category: 'ofensivo', label: 'Nave de apoio', icon: '🛸', description: 'Uma nave cosmética passa a atirar com você (não leva dano).' },
+  { id: 'wingman', category: 'ofensivo', label: 'Companheiro de Esquadrão', icon: '🛸', description: 'Convoca um companheiro de equipe permanente (até 4). Voam em formação, combatem ativamente e perseguem inimigos com tiros próprios.' },
   { id: 'more-homing-targets', category: 'ofensivo', label: 'Enxame teleguiado', icon: '🎯', description: 'O tiro carregado atinge mais alvos de uma vez.' },
   { id: 'ricochet', category: 'ofensivo', label: 'Ricochete', icon: '🔀', description: 'Seus tiros carregados pulam para outro inimigo (o mais próximo) após atingir o alvo mirado. Pode ser pego múltiplas vezes para mais pulos.' },
 

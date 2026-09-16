@@ -158,5 +158,10 @@ export function createDebugActions(deps) {
       rail.debugForceBank(1, 1000)
     },
     fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),
+    spawnWingman1: () => combat.spawnSpecificWingman(0),
+    spawnWingman2: () => combat.spawnSpecificWingman(1),
+    spawnWingman3: () => combat.spawnSpecificWingman(2),
+    spawnWingman4: () => combat.spawnSpecificWingman(3),
+    clearWingmen: () => combat.clearSquadron(),
   }
 }
