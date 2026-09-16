@@ -269,7 +269,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
       enemy.deathScale = baseScale
 
-      if (playerPosition.distanceTo(enemy.mesh.position) <= hitRadius) {
+      const collisionRadius = hitRadius + (ramDamage > 0 ? 5.5 : 0)
+      if (playerPosition.distanceTo(enemy.mesh.position) <= collisionRadius) {
         hits += 1
         if (ramDamage > 0) {
           // BUG corrigido: aplicava `ramDamage` A CADA FRAME de sobreposição — pro chefe (hp

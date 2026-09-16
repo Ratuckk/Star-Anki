@@ -22,13 +22,11 @@ const FIRE_COOLDOWN_FLOOR = 0.06
 const PROJECTILE_COUNT_CAP = 4
 const PROJECTILE_COUNT_START = 1
 
-// tiro teleguiado: segurar o botão de atirar carrega, de HOMING_CHARGE_MIN_MS (começa a valer)
-// até HOMING_CHARGE_MAX_MS (carga máxima); nº de alvos escala com homingMaxTargets (cartas
-// aumentam), travando um novo a cada HOMING_LOCK_INTERVAL_MS (ver currentHomingAllowedTargets
-// em main.js)
-const HOMING_CHARGE_MIN_MS = 1000
-const HOMING_CHARGE_MAX_MS = 4000
-const HOMING_CHARGE_MIN_FLOOR_MS = 400
+// tiro teleguiado (v0.53.9): carga base ágil (600ms a 2200ms) para ritmo de arcade,
+// e redução real por stack da carta 'faster-charge' (-500ms na máxima, -120ms na mínima)
+const HOMING_CHARGE_MIN_MS = 600
+const HOMING_CHARGE_MAX_MS = 2200
+const HOMING_CHARGE_MIN_FLOOR_MS = 250
 const HOMING_MAX_TARGETS_BASE = 4
 const HOMING_MAX_TARGETS_CAP = 8
 // carta "Ricochete": quantas vezes um tiro carregado pula pro próximo inimigo mais próximo após
@@ -214,8 +212,8 @@ export function createPlayerSystem(session) {
           deflectCardActive = true
           break
         case 'faster-charge':
-          homingChargeMinMs = Math.max(HOMING_CHARGE_MIN_FLOOR_MS, homingChargeMinMs - 300)
-          homingChargeMaxMs = Math.max(homingChargeMinMs + 500, homingChargeMaxMs - 300)
+          homingChargeMinMs = Math.max(HOMING_CHARGE_MIN_FLOOR_MS, homingChargeMinMs - 120)
+          homingChargeMaxMs = Math.max(homingChargeMinMs + 450, homingChargeMaxMs - 500)
           break
         case 'ricochet':
           ricochetCount = Math.min(RICOCHET_CAP, ricochetCount + 1)

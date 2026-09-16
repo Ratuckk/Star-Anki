@@ -554,30 +554,38 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(cuePos, 0xffffff)
   }
 
-  // argolas ovais curtas disparadas junto com o tiro carregado máximo (item 9)
-  function maxChargeRings(position, direction) {
+  // anéis circulares de velocidade Mach emitidos na frente do tiro carregado em alta velocidade (pedido do usuário)
+  function machSpeedRing(position, direction) {
     const normDir = direction.clone().normalize()
     const forwardAxis = new THREE.Vector3(0, 0, 1)
     const quat = new THREE.Quaternion().setFromUnitVectors(forwardAxis, normDir)
+    const geometry = new THREE.TorusGeometry(0.85, 0.07, 8, 32)
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.copy(quat)
+    mesh.scale.setScalar(0.7)
+    scene.add(mesh)
+    maxChargeRingsList.push({
+      mesh,
+      life: 0,
+      duration: 0.28,
+      baseScale: 0.7,
+      maxScale: 2.2,
+    })
+  }
 
-    for (let i = 0; i < MAX_CHARGE_RING_COUNT; i += 1) {
-      const geometry = new THREE.TorusGeometry(0.9, 0.16, 8, 24)
-      const material = new THREE.MeshBasicMaterial({
-        color: MAX_CHARGE_RING_COLOR, transparent: true, opacity: 0.85,
-        depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-      })
-      const mesh = new THREE.Mesh(geometry, material)
-      const offsetPos = position.clone().addScaledVector(normDir, 0.8 + i * 1.4)
-      mesh.position.copy(offsetPos)
-      mesh.quaternion.copy(quat)
-      mesh.scale.set(1.5, 0.85, 1.0)
-      scene.add(mesh)
-      maxChargeRingsList.push({
-        mesh, life: -i * 0.03,
-        velocity: normDir.clone().multiplyScalar(MAX_CHARGE_RING_SPEED),
-        baseScaleX: 1.5, baseScaleY: 0.85,
-      })
-    }
+  function maxChargeRings(position, direction) {
+    const normDir = direction.clone().normalize()
+    machSpeedRing(position.clone().addScaledVector(normDir, 1.2), normDir)
+    machSpeedRing(position.clone().addScaledVector(normDir, 2.6), normDir)
   }
 
   // giro completo (Z/C, 2 toques): anel de vento no plano do roll (perpendicular ao forward
@@ -1340,20 +1348,19 @@ export function createEffectsSystem(scene, opts = {}) {
       s.mesh.material.opacity = 0.6 * (1 - t)
     }
 
-    // MAX CHARGE OVAL RINGS (item 9)
+    // MAX CHARGE MACH SPEED RINGS (anéis circulares que expandem e desvanecem no trajeto)
     for (let i = maxChargeRingsList.length - 1; i >= 0; i--) {
       const r = maxChargeRingsList[i]
       r.life += dt
       if (r.life < 0) continue
-      const t = r.life / MAX_CHARGE_RING_DURATION
+      const t = r.life / (r.duration || 0.28)
       if (t >= 1) {
         scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose()
         maxChargeRingsList.splice(i, 1); continue
       }
-      r.mesh.position.addScaledVector(r.velocity, dt)
-      const grow = 1 + t * 2.0
-      r.mesh.scale.set(r.baseScaleX * grow, r.baseScaleY * grow, grow)
-      r.mesh.material.opacity = 0.85 * (1 - t)
+      const grow = r.baseScale + (r.maxScale - r.baseScale) * Math.sin(t * Math.PI * 0.5)
+      r.mesh.scale.setScalar(grow)
+      r.mesh.material.opacity = 0.88 * (1 - t)
     }
 
     // SPIN WINDS (giro completo)
@@ -1758,7 +1765,7 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
-    maxChargeReady, maxChargeRings,
+    maxChargeReady, maxChargeRings, machSpeedRing,
     ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
     fogWispCondensation,
     lateralDashVFX, summersaultVFX, emergencyBrakeVFX, extraLifeHeal, wingmanSpawn,

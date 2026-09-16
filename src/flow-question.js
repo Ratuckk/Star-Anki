@@ -112,7 +112,8 @@ export function createQuestionFlow(deps) {
     state.pendingSectorOver = outOfLives
     state.pendingCardChoice = correct
     state.phase = 'resolution'
-    state.phaseTimer = correct ? 0 : WRONG_FEEDBACK_MS
+    // v0.53.9: 500ms de celebração da resposta certa no HUD antes da transição para os cards
+    state.phaseTimer = correct ? 500 : WRONG_FEEDBACK_MS
   }
 
   return {

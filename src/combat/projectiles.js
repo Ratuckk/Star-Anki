@@ -194,6 +194,15 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           projectile.afterimageTimer = HOMING_AFTERIMAGE_INTERVAL
           effects.homingAfterimage(projectile.mesh.position, projectile.mesh.quaternion)
         }
+        if (projectile.isMaxCharge && effects.machSpeedRing) {
+          projectile.machRingTimer = (projectile.machRingTimer ?? 0) - dt
+          if (projectile.machRingTimer <= 0) {
+            projectile.machRingTimer = 0.08
+            const dir = projectile.velocity.clone().normalize()
+            const ringPos = projectile.mesh.position.clone().addScaledVector(dir, 1.2)
+            effects.machSpeedRing(ringPos, dir)
+          }
+        }
       }
 
       const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER

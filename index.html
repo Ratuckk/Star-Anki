@@ -258,7 +258,7 @@
   .debug-panel button.active { background: #2bff6b; color: #0b0d12; border-color: #2bff6b; }
   .debug-hint { color: #6a7382; font-size: 0.75rem; margin: 0 0 0.6rem; }
 
-  /* ============ ESCOLHA DE CARTA ROGUELIKE ============ */
+  /* ============ ESCOLHA DE CARTA ROGUELIKE (OVERHAUL V0.53.9) ============ */
   .card-choice-overlay {
     position: absolute;
     inset: 0;
@@ -266,57 +266,232 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.2rem;
-    background: rgba(11, 13, 18, 0.75);
+    gap: 1.8rem;
+    background: radial-gradient(circle at center, rgba(14, 23, 38, 0.92) 0%, rgba(6, 9, 15, 0.97) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     z-index: 15;
+    animation: card-overlay-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
-  .card-choice-overlay h3 {
-    margin: 0;
-    color: #f5f5f7;
-    font-size: 1.4rem;
-    text-shadow: 0 2px 8px #000;
+  @keyframes card-overlay-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-  .card-choice-list {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 90vw;
+
+  .card-choice-header {
+    text-align: center;
+    max-width: 600px;
+    animation: card-header-slide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
-  .roguelike-card {
-    position: relative;
-    width: 220px;
-    text-align: left;
-    background: #16202b;
-    border: 2px solid #333944;
-    border-radius: 12px;
-    padding: 1rem;
-    cursor: pointer;
-    color: #f5f5f7;
-    font-family: inherit;
-    transition: transform 0.12s, border-color 0.12s;
+  @keyframes card-header-slide {
+    from { transform: translateY(-16px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
-  .roguelike-card:hover {
-    transform: translateY(-4px);
-  }
-  .roguelike-card .card-category {
+  .card-choice-badge {
     display: inline-block;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    padding: 0.25rem 0.8rem;
+    border-radius: 999px;
+    margin-bottom: 0.6rem;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
+  }
+  .card-choice-title {
+    margin: 0 0 0.4rem;
+    color: #ffffff;
+    font-size: 1.65rem;
+    font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    margin-bottom: 0.6rem;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.3);
   }
-  .roguelike-card h4 { margin: 0 0 0.5rem; font-size: 1.05rem; }
-  .roguelike-card p { margin: 0; font-size: 0.85rem; color: #c7ccd4; line-height: 1.4; }
-  .roguelike-card.category-ofensivo { border-color: #ff6b5a; }
-  .roguelike-card.category-ofensivo .card-category { background: #4a2620; color: #ff9d8a; }
-  .roguelike-card.category-defensivo { border-color: #4da6ff; }
-  .roguelike-card.category-defensivo .card-category { background: #1c2c40; color: #8fc4ff; }
-  .roguelike-card.category-utilitario { border-color: #2bff6b; }
-  .roguelike-card.category-utilitario .card-category { background: #16321f; color: #7dffa8; }
+  .card-choice-subtitle {
+    margin: 0;
+    color: #94a3b8;
+    font-size: 0.88rem;
+  }
+  .card-choice-subtitle kbd {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-weight: 700;
+    font-size: 0.8rem;
+    box-shadow: 0 2px 0 #0f172a;
+    margin: 0 0.15rem;
+  }
+
+  .card-choice-list {
+    display: flex;
+    gap: 1.4rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 95vw;
+    perspective: 1000px;
+  }
+
+  .roguelike-card {
+    position: relative;
+    width: 235px;
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    background: linear-gradient(155deg, rgba(23, 33, 49, 0.88) 0%, rgba(13, 19, 30, 0.95) 100%);
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 1.2rem;
+    cursor: pointer;
+    color: #f1f5f9;
+    font-family: inherit;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+    animation: card-enter-stagger 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--card-stagger, 0ms);
+    overflow: hidden;
+  }
+  @keyframes card-enter-stagger {
+    from {
+      opacity: 0;
+      transform: translateY(28px) scale(0.92);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .roguelike-card:hover {
+    transform: translateY(-8px) scale(1.03);
+  }
+  .roguelike-card:active {
+    transform: translateY(-2px) scale(0.98);
+  }
+
+  .roguelike-card .card-top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.9rem;
+  }
+  .roguelike-card .card-category {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+  }
+  .roguelike-card .card-key-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+  }
+
+  .roguelike-card .card-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 0.9rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .roguelike-card:hover .card-icon-wrap {
+    transform: scale(1.14) rotate(4deg);
+  }
+  .roguelike-card .card-icon {
+    font-size: 1.9rem;
+    line-height: 1;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+  }
+
+  .roguelike-card .card-name {
+    margin: 0 0 0.45rem;
+    font-size: 1.12rem;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.01em;
+  }
+  .roguelike-card .card-desc {
+    margin: 0;
+    font-size: 0.84rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+    flex-grow: 1;
+  }
+
+  /* Cores temáticas por categoria */
+  .roguelike-card.category-ofensivo {
+    border-color: rgba(255, 77, 109, 0.35);
+  }
+  .roguelike-card.category-ofensivo:hover {
+    border-color: #ff4d6d;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7), 0 0 28px rgba(255, 77, 109, 0.4);
+  }
+  .roguelike-card.category-ofensivo .card-category {
+    background: rgba(255, 77, 109, 0.16);
+    color: #ff859b;
+    border: 1px solid rgba(255, 77, 109, 0.4);
+  }
+  .roguelike-card.category-ofensivo .card-icon-wrap {
+    background: rgba(255, 77, 109, 0.1);
+    border-color: rgba(255, 77, 109, 0.25);
+  }
+
+  .roguelike-card.category-defensivo {
+    border-color: rgba(62, 166, 255, 0.35);
+  }
+  .roguelike-card.category-defensivo:hover {
+    border-color: #3ea6ff;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7), 0 0 28px rgba(62, 166, 255, 0.4);
+  }
+  .roguelike-card.category-defensivo .card-category {
+    background: rgba(62, 166, 255, 0.16);
+    color: #7dc2ff;
+    border: 1px solid rgba(62, 166, 255, 0.4);
+  }
+  .roguelike-card.category-defensivo .card-icon-wrap {
+    background: rgba(62, 166, 255, 0.1);
+    border-color: rgba(62, 166, 255, 0.25);
+  }
+
+  .roguelike-card.category-utilitario {
+    border-color: rgba(255, 215, 0, 0.35);
+  }
+  .roguelike-card.category-utilitario:hover {
+    border-color: #ffd700;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7), 0 0 28px rgba(255, 215, 0, 0.4);
+  }
+  .roguelike-card.category-utilitario .card-category {
+    background: rgba(255, 215, 0, 0.16);
+    color: #ffe66d;
+    border: 1px solid rgba(255, 215, 0, 0.4);
+  }
+  .roguelike-card.category-utilitario .card-icon-wrap {
+    background: rgba(255, 215, 0, 0.1);
+    border-color: rgba(255, 215, 0, 0.25);
+  }
 
 
   .enemy-health-bar {
@@ -536,20 +711,53 @@
   .hud-legend-text { font-size: 0.9rem; font-weight: 600; }
   .hud-feedback {
     position: absolute;
-    top: 50%;
+    top: 45%;
     left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
-    background: rgba(11, 13, 18, 0.8);
-    padding: 1.2rem 1.8rem;
-    border-radius: 12px;
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(7, 12, 22, 0.95));
+    padding: 1.4rem 2.4rem;
+    border-radius: 16px;
+    border: 1.5px solid rgba(43, 255, 136, 0.45);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(43, 255, 136, 0.28);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     pointer-events: none;
+    z-index: 10;
+    animation: feedback-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  .hud-feedback .feedback { font-size: 1.8rem; font-weight: 700; margin: 0; }
-  .hud-feedback .feedback.correct { color: #6bffb0; }
-  .hud-feedback .feedback.wrong { color: #ff8080; }
-  .hud-feedback .feedback-answer { margin: 0.5rem 0 0; font-size: 1.1rem; color: #f5f5f7; }
-  .hud-feedback .feedback-stats { margin: 0.5rem 0 0; color: #9aa4b2; }
+  @keyframes feedback-appear {
+    from { opacity: 0; transform: translate(-50%, -40%) scale(0.92); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  .hud-feedback .feedback {
+    font-size: 2rem;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .hud-feedback .feedback.correct {
+    color: #2bff88;
+    text-shadow: 0 0 18px rgba(43, 255, 136, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+  .hud-feedback .feedback.wrong {
+    color: #ff5e62;
+    text-shadow: 0 0 18px rgba(255, 94, 98, 0.8), 0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+  .hud-feedback .feedback-answer {
+    margin: 0.6rem 0 0;
+    font-size: 1.12rem;
+    color: #f8fafc;
+    font-weight: 600;
+  }
+  .hud-feedback .feedback-stats {
+    margin: 0.55rem 0 0;
+    color: #94a3b8;
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
   .hud-countdown {
     position: absolute;
     top: 14%;

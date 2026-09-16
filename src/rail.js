@@ -672,9 +672,13 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     roll = rollSpring.value
     rollVel = rollSpring.velocity
 
+    // avanço da nave adiante no trilho durante impulso (pedido do usuário): projeta a nave
+    // +14 unidades à frente em direção aos inimigos, permitindo abalroar com o aríete
+    const boostAdvance = boostBlend * 14
     const playerPos = frame.position.clone()
       .addScaledVector(frame.right, playerX)
       .addScaledVector(frame.up, playerY)
+      .addScaledVector(frame.forward, boostAdvance)
 
     ship.position.copy(playerPos)
     ship.up.copy(frame.up)

@@ -44,19 +44,14 @@ export const SENTINELA_STATE_LEAVING = 'leaving' // esgotou os disparos, acelera
 const GATE_OUTER_HALF = 14
 const GATE_INNER_HALF = 11
 const GATE_BAR_THICKNESS = 0.7 // profundidade Z das barras — mais fina que antes (era 1.1)
-// Ajuste backlog: moldura viaja mais devagar (80 em vez de 100) pra dar mais tempo de leitura
-const GATE_SPEED = 80
+// Ajuste backlog (v0.53.9): moldura viaja a 40u/s (antes 80) e abre/fecha devagar (2.8s) pra excelente legibilidade
+const GATE_SPEED = 40
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
 const GATE_COLOR = 0x3fa9f5
-// pedido do usuário: a moldura tem que abrir e fechar de verdade (buraco encolhendo até virar
-// bloco sólido, sem passagem segura, e voltando a abrir), não ficar com o buraco sempre do
-// mesmo tamanho até o resolve final. GATE_MIN_INNER_HALF > 0 evita o buraco colapsar pra uma
-// escala zero exata (glitch visual de matriz degenerada no Three.js).
-//
-// Velocidade do ciclo ~20% mais lenta e sincronizada com tempo de voo real
-const GATE_CYCLES_PER_FLIGHT = 3
-const GATE_MIN_CYCLE_PERIOD = 0.35 // segurança: nunca deixa o período ficar tão curto que pisque
+// pedido do usuário: a moldura tem que abrir e fechar com cadência majestosa e legível (2.8s),
+// sem oscilar freneticamente na tela, com centro holográfico seguro pra atravessar.
+const GATE_CYCLE_PERIOD = 2.8
 const GATE_MIN_INNER_HALF = 0.01
 
 // Sentinela em LEAVING voa pra FRENTE (mesmo sentido do jogador, só mais rápido), então o
@@ -68,15 +63,20 @@ const SENTINELA_LEAVE_DESPAWN_AHEAD = 220
 const geometry = new THREE.BoxGeometry(2.4, 2.4, 0.4)
 const material = new THREE.MeshPhongMaterial({ color: SENTINELA_COLOR, emissive: 0x0a3a5c, emissiveIntensity: 0.6, flatShading: true })
 
-// moldura tipo "quadro de janela": as 4 barras preenchem de verdade a faixa entre o buraco
-// interno e a borda externa (não só um aro fino na borda) — o visual precisa bater com a área
-// que resolveGateHit trata como perigosa, senão o jogador toma dano num espaço que parecia vazio.
-// Opacidade reduzida pra 35% (0.35) — mais discreta na tela
+// moldura tipo "quadro de janela": holográfica translúcida (AdditiveBlending + depthWrite: false)
+// para não parecer sólida nem bloquear z-buffer, com opacidade sutil de 28%.
 const GATE_BAND = GATE_OUTER_HALF - GATE_INNER_HALF
 const GATE_BAND_CENTER = (GATE_OUTER_HALF + GATE_INNER_HALF) / 2
 const gateTopBottomGeometry = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BAND, GATE_BAR_THICKNESS)
 const gateSideGeometry = new THREE.BoxGeometry(GATE_BAND, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
-const gateMaterial = new THREE.MeshBasicMaterial({ color: GATE_COLOR, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+const gateMaterial = new THREE.MeshBasicMaterial({
+  color: GATE_COLOR,
+  transparent: true,
+  opacity: 0.28,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+})
 
 export function spawnSentinela(scene, rail, id) {
   if (rail.isArena()) return null
@@ -155,9 +155,8 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx) {
   group.scale.set(0.7, 0.7, 1)
   scene.add(group)
 
-  // período do ciclo sincronizado com o tempo de voo de VERDADE — ciclo 20% mais lento
-  const flightTime = targetDistance / GATE_SPEED
-  const cyclePeriod = Math.max(GATE_MIN_CYCLE_PERIOD, (flightTime / GATE_CYCLES_PER_FLIGHT) * 1.25)
+  // período de ciclo fixo, calmo e previsível de 2.8s para passagem legível
+  const cyclePeriod = GATE_CYCLE_PERIOD
 
   const gate = {
     mesh: group,

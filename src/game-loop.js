@@ -42,11 +42,14 @@ export function createGameLoop(deps) {
   } = deps
 
   // tiro carregado: quantos alvos podem estar travados NESTE instante do carregamento — 1 no
-  // início, +1 a cada HOMING_LOCK_INTERVAL_MS (travar um alvo novo por vez, não todos juntos).
-  // Vive aqui (não em mount-game) porque só o tick usa, e fecha só sobre `player.config`.
+  // início, +1 progressivo conforme a carga avança até o ápice (escala proporcionalmente
+  // quando a carta 'faster-charge' acelera a carga, acelerando também os locks de alvos)
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
-    return Math.max(1, Math.min(player.config.homingMaxTargets, 1 + Math.floor(chargeMs / HOMING_LOCK_INTERVAL_MS)))
+    const windowMs = Math.max(250, player.config.homingChargeMaxMs - player.config.homingChargeMinMs)
+    const maxAdditionalTargets = Math.max(1, (player.config.homingMaxTargets || 4) - 1)
+    const lockStep = Math.max(100, windowMs / maxAdditionalTargets)
+    return Math.max(1, Math.min(player.config.homingMaxTargets, 1 + Math.floor(chargeMs / lockStep)))
   }
 
   function tick(now) {

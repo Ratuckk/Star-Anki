@@ -168,7 +168,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         // dano na BORDA DE SUBIDA (quando entra no raio vindo de fora) — um hit por encostada,
         // igual bate/some. Continua "congelado" (sem mover/atirar) enquanto durar a sobreposição,
         // e o flag reresta assim que o jogador sai do raio, liberando um novo hit na próxima vez.
-        const inRamRange = ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= GOLDEN_HIT_RADIUS
+        const ramRadius = GOLDEN_HIT_RADIUS + 5.0
+        const inRamRange = ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= ramRadius
         if (inRamRange) {
           if (!g.ramHitActive) {
             g.ramHitActive = true

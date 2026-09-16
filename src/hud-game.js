@@ -310,9 +310,14 @@ export function createGameHud() {
   cardChoiceOverlay.hidden = true
   root.appendChild(cardChoiceOverlay)
 
-  const cardChoiceTitle = document.createElement('h3')
-  cardChoiceTitle.textContent = 'Acertou! Escolha um upgrade'
-  cardChoiceOverlay.appendChild(cardChoiceTitle)
+  const cardChoiceHeader = document.createElement('div')
+  cardChoiceHeader.className = 'card-choice-header'
+  cardChoiceHeader.innerHTML = `
+    <div class="card-choice-badge">PROTOCOLO DE RECOMPENSA TÁTICA</div>
+    <h3 class="card-choice-title">UPGRADE DE SISTEMA DISPONÍVEL</h3>
+    <p class="card-choice-subtitle">Selecione um aprimoramento permanente para sua nave · Teclas <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></p>
+  `
+  cardChoiceOverlay.appendChild(cardChoiceHeader)
 
   const cardChoiceList = document.createElement('div')
   cardChoiceList.className = 'card-choice-list'
@@ -1015,7 +1020,19 @@ export function createGameHud() {
       cards.forEach((card, i) => {
         const el = document.createElement('button')
         el.className = `roguelike-card category-${card.category}`
-        el.innerHTML = `<span class="card-category">${CARD_CATEGORY_LABEL[card.category] ?? card.category}</span><h4>${card.label}</h4><p>${card.description}</p><span class="question-modal-hint">${i + 1}</span>`
+        el.style.setProperty('--card-stagger', `${i * 90}ms`)
+        const catLabel = CARD_CATEGORY_LABEL[card.category] ?? card.category
+        el.innerHTML = `
+          <div class="card-top-row">
+            <span class="card-category">${catLabel}</span>
+            <span class="card-key-badge">${i + 1}</span>
+          </div>
+          <div class="card-icon-wrap">
+            <span class="card-icon">${card.icon || '✨'}</span>
+          </div>
+          <h4 class="card-name">${card.label}</h4>
+          <p class="card-desc">${card.description}</p>
+        `
         el.addEventListener('click', () => pick(i))
         cardChoiceList.appendChild(el)
       })
