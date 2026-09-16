@@ -834,12 +834,17 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     // bodyLength=3.4) + asa delta): o corpo afina até virar um PONTO no bico (raio 0 na ponta,
     // 0.4 só na traseira) — um raio de 0.4 a 1.1 de distância do centro (65% do caminho até a
     // ponta) sobrava ~5.7x o raio real do cone ali (~0.07), sem a asa pra compensar (a asa não
-    // chega tão à frente). "cabine" (0.55) e "asa esquerda/direita" (0.38) já fazem sentido: a
-    // asa é bem mais larga que os raios usados (span real ±2.6 contra ±1.98 de alcance da
-    // esfera) e o corpo é fino/chato por design (nave achatada), então alguma folga vertical ali
-    // é esperada, não sobra fantasma. Só o "bico" estava desproporcional — reduzido de 0.4 pra
-    // 0.28 (ainda folgado o bastante pra não ficar minúsculo/injusto, mas bem mais perto do
-    // cone real naquele ponto).
+    // chega tão à frente). "cabine" (0.55) já faz sentido: a asa é bem mais larga que isso no
+    // mesmo Z (~2.3 de meia-largura real) e o corpo é fino/chato por design (nave achatada),
+    // então alguma folga vertical ali é esperada, não sobra fantasma. "bico" estava
+    // desproporcional — reduzido de 0.4 pra 0.28 (ainda folgado o bastante pra não ficar
+    // minúsculo/injusto, mas bem mais perto do cone real naquele ponto: raio real ~0.07).
+    // "asa esquerda/direita": com o offset antigo de -0.3 na direção de voo, o ponto caía numa
+    // fatia da asa (Z local ≈ -0.3, medido a partir do vértice frontal do delta em Z=-1.1 até o
+    // mais largo em Z=+0.13) onde a meia-largura real é só ~1.69 — MENOR que o alcance da esfera
+    // (offset 1.6 + raio 0.38 = 1.98), sobrando ~0.29 de margem fantasma lateral (a esfera furava
+    // pra fora da asa). Removido o offset de profundidade (fica em Z=0, junto da cabine, onde a
+    // meia-largura real medida é ~2.33) — mesmos raio/offset lateral, mas agora dentro da asa.
     getShipHitboxPoints: () => {
       const f = lastFrame ? lastFrame.forward : new THREE.Vector3(0, 0, 1)
       const r = lastFrame ? lastFrame.right : new THREE.Vector3(1, 0, 0)
@@ -847,8 +852,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       return [
         { worldPos: p.clone().addScaledVector(f, 1.1), radius: 0.28 }, // bico
         { worldPos: p.clone(), radius: 0.55 }, // cabine/centro
-        { worldPos: p.clone().addScaledVector(r, -1.6).addScaledVector(f, -0.3), radius: 0.38 }, // asa esquerda
-        { worldPos: p.clone().addScaledVector(r, 1.6).addScaledVector(f, -0.3), radius: 0.38 }, // asa direita
+        { worldPos: p.clone().addScaledVector(r, -1.6), radius: 0.38 }, // asa esquerda
+        { worldPos: p.clone().addScaledVector(r, 1.6), radius: 0.38 }, // asa direita
       ]
     },
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
