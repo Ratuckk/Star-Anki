@@ -202,7 +202,10 @@ export function mountGame(session, deck, menu) {
   state.bonusTimer = progression.randomBonusInterval()
 
   // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
-  const cutscenes = createCutscenesSystem({ state, camera, renderer, scene, effects, hud, rail, player })
+  // `environment` entrou nas deps só pra decolagem chamar environment.update() (ver
+  // cutscenes.js) — sem isso o sistema de skydome/planeta/grid ficava preso no visible=true
+  // padrão do three.js durante toda a cutscene, nunca sincronizado com ENVIRONMENT_CONFIG.
+  const cutscenes = createCutscenesSystem({ state, camera, renderer, scene, effects, hud, rail, player, environment })
 
   // fluxo do chefe/dourado (etapa 4): caçada de orbes, invocação, luta, vitória + arena dourada
   // e sua pergunta-bônus + a cutscene de transição compartilhada — tudo extraído pra

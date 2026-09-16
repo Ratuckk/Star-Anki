@@ -159,7 +159,13 @@ export const ARENA_CUTSCENE_ORBIT = 9
 export const BOSS_SUMMON_CUTSCENE_MS = 3200
 
 // ============ CUTSCENE DE DECOLAGEM / INÍCIO DE MISSÃO ============
-export const LAUNCH_CUTSCENE_MS = 2000
+// pedido do usuário: "péssimo timing e background/efeitos incorretos" — diagnóstico ao vivo
+// (ver cutscenes.js) achou a causa raiz do background: environment.update() nunca rodava
+// durante esta cutscene, deixando skyDome/planeta/grid energizado (todos desligados no resto
+// do jogo) visíveis o tempo todo por acidente. 2000ms → 2400ms dá mais respiro pro pulso de
+// FOV assentar ANTES do handoff (não mais no mesmo frame) sem esticar o hold parado inicial,
+// que continua ~700ms em tempo absoluto (só a fração dele muda, ver ignitionT em cutscenes.js).
+export const LAUNCH_CUTSCENE_MS = 2400
 
 // ============ CUTSCENE DE MORTE (chefe/dourado explodindo) ============
 // pedido do usuário: câmera lenta segurando na explosão do chefe/dourado ao ser derrotado,

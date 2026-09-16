@@ -24,7 +24,7 @@ import {
 } from './main-constants.js'
 
 export function createCutscenesSystem(deps) {
-  const { state, camera, renderer, scene, effects, hud, rail, player } = deps
+  const { state, camera, renderer, scene, effects, hud, rail, player, environment } = deps
 
   // ============ CUTSCENE 1: DECOLAGEM / INÍCIO DE MISSÃO ============
   function startLaunchCutscene(onDone, bannerOptions = {}) {
@@ -58,9 +58,10 @@ export function createCutscenesSystem(deps) {
     state.launchCutsceneTimer -= dt * 1000
     const t = THREE.MathUtils.clamp(1 - Math.max(0, state.launchCutsceneTimer) / duration, 0, 1)
 
-    // Fase 1: 0 a 0.35 (Pre-ignição / foco nos propulsores)
-    // Fase 2: 0.35 a 1.0 (Ignição dos propulsores + aceleração suave pela pista reta)
-    const ignitionT = 0.35
+    // Fase 1: 0 a 0.3 (Pre-ignição / foco nos propulsores) — ~720ms, quase o mesmo tempo
+    // absoluto de parada que já existia (700ms) antes do total subir pra 2400ms
+    // Fase 2: 0.3 a 1.0 (Ignição dos propulsores + aceleração suave pela pista reta)
+    const ignitionT = 0.3
 
     if (t >= ignitionT && !state.launchIgnited) {
       state.launchIgnited = true
@@ -68,7 +69,10 @@ export function createCutscenesSystem(deps) {
       const pFrame = rail.getFrameAt(0)
       if (effects) {
         effects.propulsionBurst(pPos, pFrame.forward)
-        effects.shockwave(pPos, 0x3ea6ff, 2.0)
+        // era 2.0 (maxScale ~16) — diagnóstico ao vivo mostrou o anel cobrindo quase a tela
+        // inteira nesse plano fechado (câmera a ~6.5-10 de distância); 1.1 mantém o punch sem
+        // estourar o enquadramento
+        effects.shockwave(pPos, 0x3ea6ff, 1.1)
         effects.muzzleFlash(pPos, pFrame.forward)
       }
     }
@@ -110,7 +114,15 @@ export function createCutscenesSystem(deps) {
         .addScaledVector(frame.right, 3.8 * (1 - camProgress))
         .addScaledVector(frame.up, 1.2 + camProgress * 1.8)
       camera.position.lerpVectors(dynamicStartCam, endCamPos, camProgress)
-      camera.fov = 70 + Math.sin(camProgress * Math.PI) * 12
+      // diagnóstico ao vivo: o pulso original (sin(camProgress*π)*12) só terminava de descer
+      // EXATAMENTE no último frame, no mesmo instante em que a cutscene entrega o controle —
+      // lia como um "solavanco" a mais em cima da troca de câmera/HUD, não como um efeito de
+      // câmera de propósito. Comprimido pra assentar em fov=70 aos 85% da fase de aceleração
+      // (fovPulseP satura antes de p chegar a 1) + amplitude reduzida de 12 pra 8, então o
+      // pulso lê como um "punch" de velocidade logo após a ignição, não uma respirada que só
+      // termina bem na hora da troca de fase.
+      const fovPulseP = Math.min(1, p / 0.85)
+      camera.fov = 70 + Math.sin(fovPulseP * Math.PI) * 8
       camera.lookAt(playerPos.clone().addScaledVector(frame.forward, 15 + camProgress * 20))
     }
     camera.updateProjectionMatrix()
@@ -122,6 +134,16 @@ export function createCutscenesSystem(deps) {
         shieldMax: player.getShieldMax(),
         boostActive: t >= ignitionT,
       })
+    }
+
+    // causa raiz do "background incorreto" (achado no diagnóstico ao vivo): esta cutscene
+    // nunca chamava environment.update() — o único lugar que sincroniza skyDome/planeta/grid
+    // energizado com ENVIRONMENT_CONFIG (hoje todos desligados, fundo preto puro por decisão
+    // do usuário). Como esses meshes nascem com `visible=true` por padrão (three.js) e só são
+    // corrigidos DENTRO de update(), a cutscene inteira renderizava com o skydome/planeta/
+    // grid old ligados, sumindo de golpe no primeiro frame do tick normal pós-cutscene.
+    if (environment) {
+      environment.update(dt, playerPos, { boostActive: t >= ignitionT })
     }
 
     if (state.launchCutsceneTimer <= 0) {

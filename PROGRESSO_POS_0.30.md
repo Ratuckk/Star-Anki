@@ -3,6 +3,32 @@
 Continuação do [PROGRESSO.md](PROGRESSO.md) (histórico até v0.33.x, agora congelado). A partir desta
 entrega, toda documentação nova entra neste arquivo.
 
+## Overhaul da cutscene de decolagem: causa raiz do background errado + retiming do FOV — v0.63.0
+
+Pedido do usuário: só *"péssimo timing e background/efeitos incorretos"* na cutscene de decolagem, sem detalhe extra — o pedido exigia diagnóstico ao vivo ANTES de qualquer redesenho.
+
+**Diagnóstico ao vivo** (servidor `static`, instrumentação temporária só nesta sessão do navegador, nunca commitada: `requestAnimationFrame`/`cancelAnimationFrame` sobrescritos por um stepper manual sincronizado com `performance.now()` no instante do `start()` — permite avançar a cutscene em incrementos exatos de tempo e tirar screenshot em qualquer ponto — mais um patch em `THREE.Object3D.prototype.add`/`THREE.PerspectiveCamera.prototype.updateProjectionMatrix` pra capturar `scene`/`camera` ao vivo sem precisar tocar no closure de `mountGame`):
+
+1. **Causa raiz do "background incorreto" (a mais grave)**: `updateLaunchCutscene` nunca chamava `environment.update()` (só `effects.update()`) — e `environment.update()` é o ÚNICO lugar que sincroniza `skyDome.visible`/`planetGroup.visible`/`gridPulseMesh.visible` com `ENVIRONMENT_CONFIG` (hoje todos `false`, fundo preto puro — decisão de uma entrega anterior). Esses meshes nascem com `visible=true` por padrão do three.js, então a cutscene INTEIRA (os 2s completos) renderizava com o skydome de nebulosa colorida, o planeta gigante gasoso com anéis + lua, e o grid energizado pulsante — os 3 elementos que o resto do jogo desliga de propósito — sumindo todos de uma vez no frame exato em que o tick normal assume logo após o handoff (um "pop" visual abrupto). Confirmado com screenshots em t≈0%, na ignição (30%), no pico de FOV (~56%) e no frame imediatamente pós-handoff — reproduzido de forma IDÊNTICA em 3 execuções frescas (bug 100% determinístico, sem aleatoriedade envolvida).
+2. **Neblina "congelada" a cutscene inteira**: mesma causa raiz — sem `environment.update()`, `scene.fog.density` ficava travado no valor inicial (0.0075) durante os 2s inteiros (incluindo o hold de 700ms com `rail.setDistance(0)` parado), só passando a reagir aos "bolsões de névoa" (`nebulaPockets`) no instante em que o tick normal assumia. Sintoma secundário do mesmo bug, corrigido pela mesma correção.
+3. **Pulso de FOV (70→82→70) media exatamente certo, mas só terminava de descer NO ÚLTIMO frame antes da troca de fase** (confirmado numericamente, com a duração antiga de 2000ms) — lia como mais um solavanco empilhado em cima da troca de câmera/HUD/background no mesmo instante, não como um efeito de câmera de propósito.
+4. **Efeito de ignição (shockwave escala 2.0, raio máx. ~16) cobria quase a tela inteira** nesse plano fechado (câmera a 6.5-10 de distância da nave) — confirmado visualmente no screenshot do instante de ignição.
+5. **A divisão de fases em si (hold 700ms / aceleração 1300ms) estava OK** — o problema de ritmo percebido vinha majoritariamente dos itens 1-4 acima, não da proporção hold/aceleração.
+
+**Redesenho** (`src/cutscenes.js`, `src/main-constants.js`, `src/mount-game.js`):
+- `createCutscenesSystem` passou a receber `environment` nas deps (`mount-game.js`) e `updateLaunchCutscene` chama `environment.update(dt, playerPos, { boostActive: t >= ignitionT })` a cada frame, igual ao tick normal — corrige os itens 1 e 2 de uma vez, e de quebra a decolagem ganha os efeitos que DEVERIAM estar ligados (`multiLayerStars`/`warpStreaks`/`nebulaPockets`) reagindo em tempo real desde o primeiro frame, em vez de só depois do handoff.
+- `LAUNCH_CUTSCENE_MS`: 2000 → **2400ms**. `ignitionT`: 0.35 → **0.3** (mantém o hold em ~720ms em tempo absoluto, quase idêntico ao anterior — o ganho de tempo é pro assentamento do FOV abaixo, não pra alongar a espera parada).
+- Pulso de FOV: amplitude 12 → **8**, comprimido pra assentar em `fov=70` aos 85% da fase de aceleração (`fovPulseP = min(1, p/0.85)`) em vez de exatamente no último frame — sobram ~250-300ms de câmera já estável antes do handoff, tirando o empilhamento de mudanças no mesmo instante.
+- Shockwave de ignição: escala 2.0 → **1.1** (mesmo punch, sem estourar o enquadramento).
+
+**Valores finais**: `LAUNCH_CUTSCENE_MS=2400`, `ignitionT=0.3` (hold ≈720ms, aceleração ≈1680ms), pico do pulso de FOV (78°) em ≈56% do total (≈1350ms), assentado em 70° por ≈300ms antes do handoff.
+
+**Testado**: `node --check` limpo em `cutscenes.js`/`main-constants.js`/`mount-game.js`. **Testado ao vivo**: servidor `static`, instrumentação de passo manual (ver acima) rodada 3× antes do fix (bug reproduzido de forma idêntica nas 3) e novamente depois — confirmado por leitura direta de `scene`/`camera` a cada frame que `skyDome`/`planetGroup`/`gridPulseMesh` ficam `visible=false` desde o frame 1 da cutscene, fundo permanece `#000000` o tempo todo, `fogDensity` evolui suavemente sem descontinuidade no handoff, e o FOV assenta em 70 ~300ms antes do fim. Handoff conferido: `letterboxActive`/`bannerHidden` viram na hora certa, HUD de combate (vida/escudo/pontuação/mira) aparece normalmente logo em seguida, sem erro de console (o único erro de console presente é o de Service Worker/CDN do Three.js já documentado como limitação do ambiente de teste, não deste código). Reprodução em tempo real (`requestAnimationFrame` nativo) esbarrou na mesma limitação de rAF sem foco de SO já documentada no histórico do projeto — compensado integralmente pela instrumentação de passo manual, determinística e mais precisa que observação em tempo real.
+
+**Achado, não corrigido (fora de escopo deste pedido)**: `updateArenaCutscene` e `updateDeathCutscene` (mesmo arquivo) muito provavelmente compartilham a mesma lacuna — nenhuma das duas chama `environment.update()` também. Não mexi nelas porque o pedido do usuário era especificamente sobre a cutscene de decolagem, e a instrução desta tarefa foi não tocar nas outras duas sem confirmação ao vivo própria delas. Vale investigar numa entrega futura se o mesmo pop de background acontece na apresentação do chefe/dourado ou na morte do chefe.
+
+**Versão**: v0.62.3 → v0.63.0.
+
 ## App instalável (PWA) com atualização automática — v0.50.0
 
 Pedido do usuário: *"faz um aplicativo do jogo que se atualiza automaticamente"*. Como o projeto
