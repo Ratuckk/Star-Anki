@@ -119,17 +119,23 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
   function removeEnemy(e) {
     e.dying = true
-    scene.remove(e.mesh)
-    enemies.splice(enemies.indexOf(e), 1)
+    if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
+    if (e.kind === SUSSURRO_KIND && e.mesh && e.mesh.material) {
+      e.mesh.material.dispose()
+    }
+    if (e.mesh) scene.remove(e.mesh)
+    const idx = enemies.indexOf(e)
+    if (idx !== -1) enemies.splice(idx, 1)
   }
 
   function removeEnemyProjectile(p) {
-    scene.remove(p.mesh)
-    enemyProjectiles.splice(enemyProjectiles.indexOf(p), 1)
+    if (p.mesh) scene.remove(p.mesh)
+    const idx = enemyProjectiles.indexOf(p)
+    if (idx !== -1) enemyProjectiles.splice(idx, 1)
   }
 
   function removeEnemyLaser(l) {
-    scene.remove(l.mesh)
+    if (l.mesh) scene.remove(l.mesh)
     if (l.geo) l.geo.dispose()
     if (l.mat) l.mat.dispose()
     if (l.outerMat) l.outerMat.dispose()
@@ -140,12 +146,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (child.material) child.material.dispose()
       })
     }
-    enemyLasers.splice(enemyLasers.indexOf(l), 1)
+    const idx = enemyLasers.indexOf(l)
+    if (idx !== -1) enemyLasers.splice(idx, 1)
   }
 
   function removeEnemyGate(g) {
-    scene.remove(g.mesh)
-    enemyGates.splice(enemyGates.indexOf(g), 1)
+    if (g.mesh) scene.remove(g.mesh)
+    const idx = enemyGates.indexOf(g)
+    if (idx !== -1) enemyGates.splice(idx, 1)
   }
 
   function randomEnemyFireInterval() {
@@ -225,11 +233,16 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   // ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
-  function fireEnemyProjectile(enemy, playerPosition) {
+  const WORLD_UP_AXIS = new THREE.Vector3(0, 1, 0)
+  function fireEnemyProjectile(enemy, playerPosition, extraAngleRad = 0) {
     const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
     mesh.position.copy(enemy.mesh.position)
 
     const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
+
+    if (extraAngleRad !== 0) {
+      direction.applyAxisAngle(WORLD_UP_AXIS, extraAngleRad)
+    }
 
     const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * enemyAimErrorDeg)
     const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
@@ -322,7 +335,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (enemy.spawnAge != null && enemy.spawnAge < enemy.spawnDuration) {
         enemy.spawnAge += dt
         const t = Math.min(1, enemy.spawnAge / enemy.spawnDuration)
-        const scale = THREE.MathUtils.lerp(0.2, 1.0, Math.sin(t * Math.PI * 0.5))
+        const targetScale = enemy.targetScale ?? 1.0
+        const scale = THREE.MathUtils.lerp(targetScale * 0.2, targetScale, Math.sin(t * Math.PI * 0.5))
         enemy.mesh.scale.setScalar(scale)
       }
 
@@ -516,8 +530,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
-  // ao chegar na distância travada, resolve uma vez (borda machuca, buraco/fora do alcance é
-  // seguro) e remove — sem colisão contínua por segmento como projétil/laser normais
+  // ao cruzar o plano do jogador ou chegar na distância travada, resolve uma vez e remove
   function updateEnemyGates(dt, playerPosition) {
     let hits = 0
     let damage = 1
@@ -526,7 +539,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const step = gate.velocity.clone().multiplyScalar(dt)
       gate.mesh.position.add(step)
       gate.traveled += step.length()
-      if (gate.traveled >= gate.targetDistance) {
+
+      const rel = playerPosition.clone().sub(gate.mesh.position)
+      const alongDir = rel.dot(gate.dir)
+
+      if (alongDir <= 0 || gate.traveled >= gate.targetDistance) {
         const { hit } = resolveGateHit(gate, playerPosition)
         if (hit) { hits += 1; damage = Math.max(damage, gate.shieldDamage ?? 1) }
         removeEnemyGate(gate)
@@ -538,10 +555,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function registerSpawn(enemy) {
     if (!enemy) return null
     enemy.spawnRailDist = rail.getDistance()
-    if (!rail.isArena() && enemy.mesh && enemy.kind !== BOSS_KIND) {
+    if (!rail.isArena() && enemy.mesh && enemy.kind !== BOSS_KIND && enemy.kind !== DETRITO_KIND) {
+      enemy.targetScale = enemy.mesh.scale.x || 1.0
       enemy.spawnAge = 0
       enemy.spawnDuration = 0.35
-      enemy.mesh.scale.setScalar(0.2)
+      enemy.mesh.scale.setScalar(enemy.targetScale * 0.2)
       if (effects) {
         if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
           effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
@@ -798,7 +816,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     getEnemyCount() {
-      return enemies.reduce((n, e) => n + (e.kind === BLASTER_KIND ? 1 : 0), 0)
+      return enemies.reduce((n, e) => n + (!e.dying && e.kind !== DETRITO_KIND && e.kind !== IMA_KIND ? 1 : 0), 0)
     },
 
     getEnemySnapshots: () => enemies

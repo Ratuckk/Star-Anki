@@ -3,6 +3,25 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Caçada Ampla por Bugs em Inimigos: Spawns, Disparos, Física, Hitboxes e Ciclo de Vida — v0.58.0
+
+Contexto e pedidos do usuário:
+1. *"faça uma caçada ampla por bugs envolvendo inimigos, a forma como surgem, disparos, movimento, tudo relacionado a eles"*
+
+**O que mudou e detalhes técnicos:**
+1. **Fix Crítico da Morte do Chefe Dourado (`golden.js`)**: Bloco `else` envolvia o `return` de dados de colisão. Quando `killed === true`, a função terminava sem retorno explícito (`undefined`), impedindo que disparos normais e teleguiados registrassem a derrota do Dourado. Bloco `else` devidamente fechado antes do `return`.
+2. **Fix do Leque de Projéteis do Boss Vermelho (`index.js` & `boss.js`)**: `fireEnemyProjectile` ignorava o 3º parâmetro `angleRad` enviado pelo leque das fases 2 e 3 do chefe vermelho. Adicionado suporte ao parâmetro angular rotacionando a direção no eixo vertical mundial (`applyAxisAngle(WORLD_UP_AXIS, extraAngleRad)`), restaurando os padrões de disparo em leque pretendidos.
+3. **Fix do Teto de Inimigos / Spawns Infinitos (`index.js`)**: `getEnemyCount()` calculava apenas contagem de `BLASTER_KIND`, ignorando Fragatas, Sentinelas, Vermes, Réplicas e Sussurros. O spawner achava que havia 0 inimigos e gerava spaws sobrepostos ilimitados. Atualizado para contabilizar todos os inimigos vivos combatentes (`!e.dying && e.kind !== DETRITO_KIND && e.kind !== IMA_KIND`).
+4. **Fix da Destruição de Escala no Spawn (`index.js`)**: Animação de spawn forçava `scale.setScalar(0.2)` e interpolava para `1.0` fixo, esmagando Mini-Swarm (0.7), Tanques (1.6) e Detritos (0.7 a 15.0). Corrigido para preservar `enemy.targetScale`, interpolando de `targetScale * 0.2` a `targetScale`, e isolando detritos de qualquer distorção de escala ou condensação de nave de combate.
+5. **Fix de Splice com Índice Negativo (`index.js`)**: Métodos `removeEnemy`, `removeEnemyProjectile`, `removeEnemyLaser` e `removeEnemyGate` executavam `splice(indexOf, 1)` sem checar `idx !== -1`, podendo deletar o último elemento ativo do jogo em chamadas duplicadas. Adicionadas checagens de proteção `idx !== -1`.
+6. **Fix da Detecção de Colisão dos Portais da Sentinela (`index.js`)**: Teste de colisão esperava `gate.traveled >= gate.targetDistance`, disparando dezenas de unidades atrás da nave do jogador. Atualizado para detectar o cruzamento no plano da nave (`alongDir <= 0`), resolvendo o dano e removendo o portal no momento exato do encontro.
+7. **Fix de Orfandade e Segmentos Congelados do Verme (`index.js`)**: Se a cabeça ou elos do verme eram removidos por ultrapassar o trilho (`pass-behind`), `severChainAt` não era invocado. Integrada a chamada de quebra de corrente diretamente em `removeEnemy` para qualquer remoção de `VERME_KIND`.
+8. **Fix de Independência de Framerate na Réplica (`replica.js`)**: Interpolação de standoff convergia com `Math.min(1, STANDOFF_EASE_RATE)` sem multiplicar por `dt`, gerando teleporte instantâneo em altas taxas de atualização. Corrigido com taxa em segundos `STANDOFF_EASE_RATE * dt`.
+9. **Fix da Mira Normal e Patrulha dos Caças Aliados no Dourado (`lockon.js` & `wingmen.js`)**: `isAimingAtEnemy` agora inclui alvos do chefe dourado para hint visual no crosshair do HUD. Rotina de combate autônomo dos caças aliados agora invoca `getAliveEnemies()`, permitindo que os aliados também engajem no chefe dourado no modo livre de patrulha.
+
+**Testado**: `node --check` em todos os arquivos JS e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.57.0 → v0.58.0.
+
 ## Evento Ambiental de Chuva/Tempestade de Detritos, Asteroides Titânicos Colossais, Física de Deriva e Alertas Holográficos com Reversibilidade Modular — v0.57.0
 
 Contexto e pedidos do usuário:

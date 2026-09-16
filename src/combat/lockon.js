@@ -107,7 +107,9 @@ export function createLockOnSystem(rail, enemies) {
     // inimigo vivo bem na frente da mira agora?" pro HUD colorir o crosshair.
     isAimingAtEnemy(origin, direction) {
       const frame = rail.getFrameAt(0)
-      for (const e of enemies.getAlive()) {
+      const targets = [...enemies.getAlive(), ...(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])]
+      for (const e of targets) {
+        if (!e || e.dying || !e.mesh) continue
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue

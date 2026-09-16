@@ -19,7 +19,7 @@ const BOX_X = 6
 const BOX_Y = 4
 
 const STANDOFF = 70 // distância fixa à frente da câmera, mesmo princípio do standoff da Sentinela
-const STANDOFF_EASE_RATE = 0.7
+const STANDOFF_EASE_RATE = 2.5 // s^-1, independente de framerate
 const DELAY_S = 0.4 // quanto tempo no passado o movimento lateral copiado reflete
 const HISTORY_MAX_AGE_S = DELAY_S + 0.3
 
@@ -57,7 +57,7 @@ export function updateReplicaMovement(enemy, dt, rail, frame) {
     delayed = sample
   }
 
-  enemy.alongDistance += (STANDOFF - enemy.alongDistance) * Math.min(1, STANDOFF_EASE_RATE)
+  enemy.alongDistance += (STANDOFF - enemy.alongDistance) * Math.min(1, STANDOFF_EASE_RATE * dt)
   enemy.mesh.position.copy(frame.position)
     .addScaledVector(frame.right, delayed.x)
     .addScaledVector(frame.up, delayed.y)

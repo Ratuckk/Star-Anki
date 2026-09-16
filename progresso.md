@@ -1,3 +1,52 @@
+## Caçada Ampla por Bugs em Inimigos: Spawns, Disparos, Física, Hitboxes e Ciclo de Vida — v0.58.0
+
+Contexto e pedidos do usuário:
+1. *"faça uma caçada ampla por bugs envolvendo inimigos, a forma como surgem, disparos, movimento, tudo relacionado a eles"*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Fix Crítico da Morte do Chefe Dourado (`src/enemies/golden.js`)**:
+   - Em `resolveHit`, o bloco `else` englobava a declaração de `return` de colisão (linhas 294 a 320). Quando `killed === true`, a função terminava sem passar pelo `return` (retornando `undefined`).
+   - O orquestrador recebia `undefined`, anulando o registro de kill do chefe dourado no loop principal por disparos regulares ou teleguiados.
+   - Bloco `else` devidamente fechado antes do `return`, garantindo o retorno com `goldenSpecialHit: true` e `killed: true`.
+
+2. **Fix do Leque de Projéteis do Boss Vermelho (`src/enemies/index.js` & `src/enemies/boss.js`)**:
+   - `fireBossVolley` calculava e passava o ângulo `angleRad` como 3º argumento para `ctx.fireEnemyProjectile(enemy, playerPosition, angleRad)`.
+   - Em `src/enemies/index.js`, a função recebia apenas 2 parâmetros e ignorava o ângulo, empilhando todos os tiros das fases 2 e 3 em uma única linha reta.
+   - Corrigido com suporte a `extraAngleRad = 0` rotacionando o vetor `direction` no eixo Y mundial (`applyAxisAngle(WORLD_UP_AXIS, extraAngleRad)`).
+
+3. **Fix do Limite de Inimigos / Spawns Infinitos (`src/enemies/index.js`)**:
+   - `getEnemyCount()` calculava apenas contagem de `BLASTER_KIND`, ignorando Fragatas, Sentinelas, Vermes, Réplicas e Sussurros.
+   - Isso fazia com que `combat.getEnemyCount() < progression.currentEnemyCap()` no game loop continuasse retornando `true`, gerando spawns sobrepostos infinitos na arena e no trilho.
+   - Atualizado para contabilizar todos os inimigos vivos combatentes (`!e.dying && e.kind !== DETRITO_KIND && e.kind !== IMA_KIND`).
+
+4. **Fix da Destruição de Escala no Spawn (`src/enemies/index.js`)**:
+   - Animação de entrada no trilho forçava `scale.setScalar(0.2)` e interpolava para `1.0` fixo, esmagando Mini-Swarm (0.7), Tanques (1.6) e Asteroides/Detritos (0.7 a 15.0).
+   - Corrigido para preservar `enemy.targetScale`, interpolando de `targetScale * 0.2` a `targetScale`, e isolando detritos de distorções de escala ou condensação de naves.
+
+5. **Fix de Splice com Índice Negativo (`src/enemies/index.js`)**:
+   - `removeEnemy`, `removeEnemyProjectile`, `removeEnemyLaser` e `removeEnemyGate` chamavam `splice(indexOf, 1)` sem checar se `idx !== -1`. Caso o elemento já tivesse sido removido ou não estivesse no array, `splice(-1, 1)` deletava o último elemento ativo do jogo.
+   - Adicionada guarda `if (idx !== -1)` em todos os métodos de remoção.
+
+6. **Fix da Detecção de Colisão dos Portais da Sentinela (`src/enemies/index.js`)**:
+   - A colisão do portal da sentinela esperava `gate.traveled >= gate.targetDistance`. Como o jogador avança no trilho de encontro ao portal, eles se cruzavam muito antes (~50% do percurso), fazendo o dano ocorrer 60+ unidades atrás da nave.
+   - Atualizado para detectar o cruzamento no plano do jogador (`alongDir <= 0`), resolvendo o dano e removendo o portal no momento exato do encontro.
+
+7. **Fix de Orfandade e Nós Congelados do Verme-Corrente (`src/enemies/index.js`)**:
+   - `severChainAt` só era invocado na destruição por tiro ou colisão. Se a cabeça ou elo anterior passasse para trás da câmera e fosse removido no trilho (`pass-behind`), os elos seguintes continuavam com `followTarget` apontando para o elo removido.
+   - Integrada a chamada `severChainAt` diretamente em `removeEnemy` para qualquer remoção de `VERME_KIND`.
+
+8. **Fix de Dependência de Framerate na Réplica (`src/enemies/replica.js`)**:
+   - O standoff da réplica convergia com `Math.min(1, STANDOFF_EASE_RATE)` sem multiplicar por `dt`, gerando teleporte quase instantâneo em 60fps/144fps.
+   - Corrigido para taxa física contínua `STANDOFF_EASE_RATE * dt` (`2.5 * dt`).
+
+9. **Fix da Mira Normal e Patrulha dos Caças Aliados no Dourado (`src/combat/lockon.js` & `src/combat/wingmen.js`)**:
+   - `isAimingAtEnemy` em `lockon.js` agora inclui alvos do chefe dourado para hint visual no crosshair do HUD.
+   - A rotina de combate autônomo dos caças aliados em `wingmen.js` agora invoca `getAliveEnemies()`, fazendo os aliados engajarem no chefe dourado também em patrulha livre.
+
+**Testado**: `node --check` em todos os arquivos JS e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.57.0 → v0.58.0.
+
 ## Evento Ambiental de Chuva/Tempestade de Detritos, Asteroides Titânicos Colossais, Física de Deriva e Alertas Holográficos com Reversibilidade Modular — v0.57.0
 
 Contexto e pedidos do usuário:

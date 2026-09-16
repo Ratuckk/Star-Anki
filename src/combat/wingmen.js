@@ -561,8 +561,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
 
         // Checa se há inimigos para atacar (DOGFIGHT)
-        if (w.fireCooldown <= 0 && enemies && enemies.getAlive) {
-          const alive = enemies.getAlive().filter((e) => !e.dying && e.mesh)
+        if (w.fireCooldown <= 0) {
+          const alive = getAliveEnemies()
           if (alive.length > 0) {
             const candidates = alive.filter((e) => {
               const rel = e.mesh.position.clone().sub(w.mesh.position)

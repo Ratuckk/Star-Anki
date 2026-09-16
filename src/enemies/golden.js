@@ -301,17 +301,18 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           if (effects) effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 0.6)
         }
         if (goldenHit.teleportCooldownTimer <= 0) {
-        // pedido do usuário: teleporta 1x a cada 10s quando atingido — reaproveita o mesmo
-        // espalhamento em torno do centro da arena usado pelo spawn do chefe
-        const oldPos = goldenHit.mesh.position.clone()
-        const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax)
-        goldenHit.mesh.position.copy(newPos)
-        goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
-        if (effects) {
-          effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)
-          effects.explosion(oldPos, GOLDEN_COLOR, 1.0, { rings: true })
-          effects.shockwave(newPos, GOLDEN_COLOR, 1.2)
-          effects.explosion(newPos, GOLDEN_COLOR, 1.0, { rings: true })
+          // pedido do usuário: teleporta 1x a cada 10s quando atingido — reaproveita o mesmo
+          // espalhamento em torno do centro da arena usado pelo spawn do chefe
+          const oldPos = goldenHit.mesh.position.clone()
+          const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax)
+          goldenHit.mesh.position.copy(newPos)
+          goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
+          if (effects) {
+            effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)
+            effects.explosion(oldPos, GOLDEN_COLOR, 1.0, { rings: true })
+            effects.shockwave(newPos, GOLDEN_COLOR, 1.2)
+            effects.explosion(newPos, GOLDEN_COLOR, 1.0, { rings: true })
+          }
         }
       }
       return {
