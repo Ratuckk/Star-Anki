@@ -3,6 +3,23 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Sistema de Comandos do Esquadrão (Tecla D), Dourado Boss (+20 HP, Multi-lock, IA Minions), Knockback com Tumble Spin e Fix dos Aliados — v0.55.0
+
+Contexto e pedidos do usuário:
+1. *"era pros aliados sumirem depois de um tempo? (invocando pelo debug)"*
+2. *"trate o inimigo dourado como um boss, de +20 de vida a ele, faça com que ele desvie mais do jogador e também melhore a IA das naves que ele invoca, inclusive, permita que a mira do tiro teleguiado o mire múltiplas vezes que nem com o boss vermelho."*
+3. *"faça a nave ser jogada para longe ao colidir com o inimigo dourado ou com o boss vermelho, girando como se tivesse perdendo o controle"*
+4. *"Além disso adicione um sistema de comandos aos aliados. Ao apertar D, aparece uma notificação acima da nave do jogador avisando pros aliados focarem no inimigo mais próximo do jogador ou no inimigo com maior foco do jogador (decidido pelo tiro carregado). Caso aja mais do que um inimigo mirado, cada aliado mira em um inimigo aleatório entre os mirados. E ao apertar novamente, os aliados voltam a realizar seus ataques em alvos aleatórios."*
+
+**O que mudou e detalhes técnicos:**
+1. **Fix dos Aliados Sumindo**: `player.setWingmanCount` sincronizado em `player.js` e em todas as ações de debug; remoção de teleport do rasante `flyby`; aceleração e boost de aproximação (`+48 u/s` cruzeiro, `+32 u/s` catch-up) no trilho para nunca serem deixados para trás.
+2. **Dourado como Boss**: HP 40 (`+20 HP`); `kind: GOLDEN_KIND` e `radius` implementados para habilitar múltiplos lock-ons idêntico ao Boss vermelho; dash lateral mais frequente (cooldown 1.6s, trigger 46u, velocidade 72u/s), movimentação evasiva senoidal em ziguezague e dash reativo a tiros recebidos; IA dos minions com curva senoidal predatória (`flankOffset` e `weave`), mergulho acelerado e banking nas curvas.
+3. **Knockback e Tumble Spin na colisão com Bosses**: método `rail.triggerBossCollisionTumble(impactOrigin)` aplicando repulsão física para longe (em arena e trilho), recuo forte e rotação rápida descontrolada em roll (0.85s com oscilações em pitch/yaw) antes de estabilizar suavemente no wobble físico.
+4. **Comandos de Esquadrão na Tecla [D]**: liberada a tecla D de movimento para a nova ação `squadronCommand`; máquina de comando nos caças alternando entre Foco (alvos travados ou mais próximo) e Ataque Livre/Dispersão; banner holográfico 3D projetado acima da nave (`playerPos + up * 3.2`) com atualização em tempo real e fade-out.
+
+**Testado**: `node --check` em todos os 13 arquivos tocados e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.54.1 → v0.55.0.
+
 ## Bug do inimigo nascendo sempre do lado errado: investigação, correção, regressão e revert cirúrgico pra v0.48 — v0.51.9
 
 Pedido do usuário: *"ajeita o insuportável problema dos inimigo ficarem só sendo invocado muito

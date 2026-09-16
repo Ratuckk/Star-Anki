@@ -60,6 +60,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearSquadron: () => squadron.clearSquadron(),
     getWingmanPositions: () => squadron.getWingmanPositions(),
     getActiveWingmen: () => squadron.getActiveMembers(),
+    getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
+    toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
 
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnMiniSwarm: () => enemies.spawnMiniSwarm(),
@@ -136,6 +138,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       let ramBossWorldPos = null
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
+      let bossCollisionWorldPos = null
       if (enemiesActive) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
@@ -147,6 +150,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramBossWorldPos = enemyResult.ramBossWorldPos
         ramGoldenDefeated = enemyResult.ramGoldenDefeated
         ramGoldenWorldPos = enemyResult.ramGoldenWorldPos
+        bossCollisionWorldPos = enemyResult.bossCollisionWorldPos || null
         const projResult = enemies.updateProjectiles(dt, playerPosition)
         enemyHits += projResult.hits
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
@@ -171,6 +175,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bossDefeatedIsHoming,
         bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || null,
         bossOrbHit,
+        bossCollisionWorldPos,
         hitsLog,
       }
     },

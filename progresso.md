@@ -1,3 +1,44 @@
+## Sistema de Comandos do Esquadrão (Tecla D), Dourado Boss (+20 HP, Multi-lock, IA Minions), Knockback com Tumble Spin e Fix dos Aliados — v0.55.0
+
+Contexto e pedidos do usuário:
+1. *"era pros aliados sumirem depois de um tempo? (invocando pelo debug)"*
+2. *"trate o inimigo dourado como um boss, de +20 de vida a ele, faça com que ele desvie mais do jogador e também melhore a IA das naves que ele invoca, inclusive, permita que a mira do tiro teleguiado o mire múltiplas vezes que nem com o boss vermelho."*
+3. *"faça a nave ser jogada para longe ao colidir com o inimigo dourado ou com o boss vermelho, girando como se tivesse perdendo o controle"*
+4. *"Além disso adicione um sistema de comandos aos aliados. Ao apertar D, aparece uma notificação acima da nave do jogador avisando pros aliados focarem no inimigo mais próximo do jogador ou no inimigo com maior foco do jogador (decidido pelo tiro carregado). Caso aja mais do que um inimigo mirado, cada aliado mira em um inimigo aleatório entre os mirados. E ao apertar novamente, os aliados voltam a realizar seus ataques em alvos aleatórios."*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Correção do sumiço dos aliados (Wingmen) no Debug e modo Rail:**
+   - **Causa Raiz 1 (Dessincronização de Estado)**: Ao invocar caças pelo debug (`spawnWingman1..4`), `player.getWingmanCount()` continuava `0`. Ao responder perguntas normais ou escolher cartas roguelike, `flow-question.js` executava `combat.setWingmanCount(player.getWingmanCount())`, zerando o esquadrão silenciosamente. Corrigido: adicionado `player.setWingmanCount(count)` em `player.js` e sincronizado em todas as ações de debug (`spawnWingman1..4`, `clearWingmen`).
+   - **Causa Raiz 2 (Teleport no rasante flyby)**: `flyby` usava `w.mesh.position.copy(playerPos)...`, o que teletransportava o caça abruptamente pela tela. Corrigido para navegação suave partindo da posição atual acelerando pro lado oposto.
+   - **Causa Raiz 3 (Velocidade de avanço no Rail)**: No modo rail a nave do jogador viaja a 50-90 u/s; se o aliado ficasse em `regroup` ou combate, sua velocidade base (36-45 u/s) ficava para trás da tela. Corrigido adicionando compensação de cruzeiro no rail (`+48 u/s`) e boost agressivo de recuperação (`+32 u/s`) para nunca ser deixado para trás.
+
+2. **Dourado tratado como Boss Completo:**
+   - **HP**: aumentado de 20 para 40 (`GOLDEN_HP = 40`, +20 de vida).
+   - **Multi-Lockon**: adicionado `kind: GOLDEN_KIND` e `radius: GOLDEN_HIT_RADIUS` no objeto instanciado em `goldenTargets`. Com isso, `isBigLockTarget(e)` em `lockon.js` reconhece o Dourado como alvo grande, permitindo travar múltiplos retículos orbitais em anel idêntico ao Boss vermelho (e disparar múltiplos teleguiados simultâneos nele).
+   - **Evasão aprimorada**: `GOLDEN_DASH_COOLDOWN_S` reduzido de 3.0s para 1.6s; raio de trigger ampliado para 46u; velocidade do dash aumentada para 72u/s. Durante o combate normal, adota movimentação evasiva senoidal em ziguezague (`weaving`) em vez de avançar em linha reta. Ao receber tiros, executa dash evasivo lateral reativo se o cooldown estiver baixo.
+   - **IA das naves invocadas (minions)**: taxa de curva aumentada de 2.5 para 4.2 rad/s; voo com curva senoidal predatória (`flankOffset` e `weave`), mergulho acelerado em proximidade (<30u) e rotação dinâmica em roll (banking) ao curvar.
+
+3. **Knockback e perda de controle (Tumble Spin) na colisão com Bosses:**
+   - Implementado `rail.triggerBossCollisionTumble(impactOrigin)` em `rail.js`:
+     - **Arena (`all-range`)**: calcula vetor de repulsão a partir do ponto de impacto (`impactOrigin`), aplicando recuo físico imediato na posição (`+16u`) e impulso de repulsão com amortecimento exponencial (`tumbleKnockbackVel`, ~35u/s).
+     - **Trilho (`rail`)**: deflete `playerX` e `playerY` bruscamente para o lado oposto, injeta velocidade lateral de ricochete e aplica recuo para trás (`recoilOffset += 7.5`).
+     - **Giro descontrolado (Tumble Spin)**: duração de 0.85s com rotação rápida em roll (`Math.PI * 9.5 * dt`), oscilações combinadas em pitch (`rotateX`) e yaw (`rotateY`), desembocando na mola física `wobbleVel` ao recuperar o controle, acompanhado de faíscas e shockwave.
+   - Detectado e acionado em `game-loop.js` tanto para o Boss vermelho (`BOSS_KIND`) quanto para o Dourado (`GOLDEN_KIND`), inclusive com dano de aríete.
+
+4. **Sistema de Comandos de Esquadrão na tecla [D] com Notificação Holográfica:**
+   - `keybindings.js`: liberada a tecla `KeyD` de `moveRight` (movimento lateral nas setas), mapeando `KeyD` para a nova ação `squadronCommand` (com suporte a gamepad no botão 3 e detecção de borda `edgeCodes`).
+   - `wingmen.js`: novo modo tático `toggleCommand(lockedTargets, playerPos)`:
+     - **Modo Foco (`focus`)**: se houver alvos travados pelo tiro carregado, os aliados distribuem-se entre eles (ou convergem todos se for 1 só); se não houver trava, todos convergem para o inimigo vivo mais próximo da nave do jogador, entrando em perseguição de combate imediata.
+     - **Modo Livre / Dispersão (`free`)**: aliados soltam os alvos fixados e retomam patrulha descentralizada e combate autônomo.
+   - `hud-game.js` e `hud-styles.js`: novo banner holográfico flutuante 3D projetado acima da nave do jogador (`playerPos + up * 3.2`):
+     - `🎯 ESQUADRÃO: CONCENTRAR FOGO!` / `ESQUADRÃO: FOCO NO ALVO TRAVADO!` com subtexto `[D] Dispersar`.
+     - `🚀 ESQUADRÃO: DISPERSÃO / ATAQUE LIVRE` com subtexto `[D] Focar Alvos`.
+     - Acompanha o movimento em tempo real e esmaece após 2.2s.
+
+**Testado**: `node --check` em todos os 13 arquivos tocados e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.54.1 → v0.55.0.
+
 ## Reveal espetacular do modal de pergunta + bug real de sintaxe encontrado e corrigido — v0.44.0
 
 Contexto: conversamos sobre os 12 princípios clássicos de animação (Disney/Thomas & Johnston) e quais valem a pena pra efeitos de HUD 2D (Slow In/Out, Anticipation, Follow Through/Overlapping, Exaggeration, Secondary Action, Staging — descartando Squash&Stretch, Arcs, Solid Drawing, Straight-Ahead-vs-Pose-to-Pose por não se aplicarem bem a UI plana). Pedido do usuário em cima disso, literal: *"gostei destes, quanto ao efeito que faz a pergunta aparecer, queria que fosse mais espetacular do que instantâneo"*.

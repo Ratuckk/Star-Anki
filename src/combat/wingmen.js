@@ -358,7 +358,73 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
+  let squadronCommandMode = 'free' // 'free' | 'focus'
+  let squadronFocusTargets = []
+
+  function getAliveEnemies() {
+    const alive = []
+    if (enemies && enemies.getAlive) {
+      for (const e of enemies.getAlive()) if (!e.dying && e.mesh) alive.push(e)
+    }
+    if (enemies && enemies.getGoldenAlive) {
+      for (const g of enemies.getGoldenAlive()) if (!g.dying && g.mesh) alive.push(g)
+    }
+    return alive
+  }
+
+  function toggleCommand(lockedTargets = [], playerPos) {
+    if (squadronCommandMode === 'free') {
+      squadronCommandMode = 'focus'
+      const validLocked = Array.isArray(lockedTargets) ? lockedTargets.filter((e) => e && !e.dying && e.mesh) : []
+
+      if (validLocked.length > 0) {
+        squadronFocusTargets = validLocked
+      } else {
+        const alive = getAliveEnemies()
+        if (alive.length > 0 && playerPos) {
+          alive.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+          squadronFocusTargets = [alive[0]]
+        } else {
+          squadronFocusTargets = []
+        }
+      }
+
+      // Atribui alvos imediatamente para todos os caças ativos
+      for (let i = 0; i < activeWingmen.length; i++) {
+        const w = activeWingmen[i]
+        if (squadronFocusTargets.length > 0) {
+          const chosen = squadronFocusTargets.length === 1
+            ? squadronFocusTargets[0]
+            : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
+          w.targetEnemy = chosen
+          w.state = 'dogfight'
+          w.stateTimer = 0
+          w.burstRemaining = w.profile.burstCount * 2
+          w.burstTimer = 0
+          w.fireCooldown = 0
+        }
+      }
+
+      return {
+        mode: 'focus',
+        targetCount: squadronFocusTargets.length,
+        hasLocked: validLocked.length > 0,
+      }
+    } else {
+      squadronCommandMode = 'free'
+      squadronFocusTargets = []
+      for (const w of activeWingmen) {
+        w.state = 'patrol'
+        w.stateTimer = 0
+        w.targetEnemy = null
+        w.nextWaypointTimer = 0.4
+      }
+      return { mode: 'free' }
+    }
+  }
+
   function clearSquadron() {
+    squadronFocusTargets = []
     while (activeWingmen.length > 0) {
       const w = activeWingmen.pop()
       scene.remove(w.mesh)
@@ -432,25 +498,41 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.nextWaypointTimer = 0
         }
       } else if (w.state === 'patrol') {
+        // Se estiver em modo foco, prioriza os alvos táticos imediatamente
+        if (squadronCommandMode === 'focus') {
+          squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
+          if (squadronFocusTargets.length === 0) {
+            const alive = getAliveEnemies()
+            if (alive.length > 0 && playerPos) {
+              alive.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+              squadronFocusTargets = [alive[0]]
+            }
+          }
+          if (squadronFocusTargets.length > 0) {
+            w.targetEnemy = squadronFocusTargets.length === 1
+              ? squadronFocusTargets[0]
+              : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
+            w.state = 'dogfight'
+            w.stateTimer = 0
+            w.burstRemaining = w.profile.burstCount * 2
+            w.burstTimer = 0
+          }
+        }
+
         // ============ VOO LIVRE E PATRULHA ============
         w.nextWaypointTimer -= dt
 
-        // Chance periódica de FLY-BY rasante cinematográfico na frente da câmera (no modo rail)
-        if (!inArena && w.flybyCooldown <= 0 && Math.random() < 0.25) {
+        // Chance periódica de FLY-BY rasante na frente da câmera (somente se não estiver em comando de foco)
+        if (!inArena && squadronCommandMode === 'free' && w.flybyCooldown <= 0 && Math.random() < 0.25) {
           w.state = 'flyby'
           w.stateTimer = 0
           w.flybyCooldown = 7.0 + Math.random() * 6.0
-          // Corta diagonalmente a tela de um lado pro outro (+14u à frente da câmera)
-          const startSide = w.profile.homeSide * 18
-          const destSide = -startSide * 1.1
-          w.mesh.position.copy(playerPos)
-            .addScaledVector(frame.right, startSide)
-            .addScaledVector(frame.up, (Math.random() * 2 - 1) * 3)
-            .addScaledVector(frame.forward, 8)
+          // Corta diagonalmente a tela SEM teleport (parte da posição atual acelerando pro lado oposto)
+          const destSide = -w.profile.homeSide * 18
           w.patrolTarget.copy(playerPos)
             .addScaledVector(frame.right, destSide)
-            .addScaledVector(frame.up, 4)
-            .addScaledVector(frame.forward, 38)
+            .addScaledVector(frame.up, (Math.random() * 2 - 1) * 3 + 3)
+            .addScaledVector(frame.forward, 36)
         } else if (w.nextWaypointTimer <= 0) {
           // Novo waypoint autônomo na zona de patrulha
           if (!inArena) {
@@ -515,8 +597,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.state = 'patrol'
           w.stateTimer = 0
           w.targetEnemy = null
-          w.fireCooldown = w.profile.fireInterval + Math.random() * 0.4
+          w.fireCooldown = squadronCommandMode === 'focus' ? 0.2 : w.profile.fireInterval + Math.random() * 0.4
           w.nextWaypointTimer = 0
+          if (squadronCommandMode === 'focus') {
+            squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
+          }
         } else {
           // Persegue o inimigo em curva de interceptação
           const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
@@ -528,7 +613,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
           // Disparo da rajada
           w.burstTimer -= dt
-          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 110) {
+          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 120) {
             w.burstRemaining -= 1
             w.burstTimer = w.profile.burstDelay || 0.14
             const muzzleOffset = w.mesh.position.clone().addScaledVector(aimDir, 1.3)
@@ -539,8 +624,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             // Break-turn de combate após disparar: curva evasiva antes de voltar à patrulha
             w.state = 'patrol'
             w.stateTimer = 0
-            w.fireCooldown = w.profile.fireInterval + Math.random() * 0.5
-            w.nextWaypointTimer = 1.0
+            w.fireCooldown = squadronCommandMode === 'focus' ? 0.3 : w.profile.fireInterval + Math.random() * 0.5
+            w.nextWaypointTimer = squadronCommandMode === 'focus' ? 0.2 : 1.0
             // Evasão lateral
             w.patrolTarget.copy(w.mesh.position)
               .addScaledVector(frame.right, w.breakTurnAngle * 14)
@@ -559,8 +644,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       // Velocidade de cruzeiro modulada pelo estado e por boost
       let cruiseSpeed = w.profile.speed
+      if (!inArena) {
+        // No rail, compensa a velocidade de avanço do mundo (+48u/s) e acelera se ficar para trás
+        cruiseSpeed += 48
+        if (w.state === 'regroup' || distToPlayer > 35) cruiseSpeed += 32
+      }
       if (boostActive || w.state === 'flyby') cruiseSpeed *= 1.65
-      else if (w.state === 'dogfight') cruiseSpeed *= 1.25
+      else if (w.state === 'dogfight') cruiseSpeed *= 1.3
 
       const desiredVelocity = targetDir.multiplyScalar(cruiseSpeed)
 
@@ -655,6 +745,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     spawnMember,
     removeMember,
     clearSquadron,
+    toggleCommand,
+    getCommandMode: () => squadronCommandMode,
     getWingmanPositions: () => activeWingmen.map((w) => w.mesh.position.clone()),
     getWingmanCount: () => activeWingmen.length,
     getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),

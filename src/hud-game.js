@@ -69,6 +69,19 @@ export function createGameHud() {
 
   let hitMarkerTimeout = null
 
+  // ============ NOTIFICAÇÃO DE COMANDO DO ESQUADRÃO (TECLA D) ============
+  const squadronNotice = document.createElement('div')
+  squadronNotice.className = 'hud-squadron-notice'
+  squadronNotice.innerHTML = `
+    <div class="hud-squadron-notice-pill">
+      <span class="hud-squadron-notice-icon">🎯</span>
+      <span class="hud-squadron-notice-text">ESQUADRÃO: CONCENTRAR FOGO!</span>
+    </div>
+    <div class="hud-squadron-notice-sub">[D] Dispersão</div>
+  `
+  root.appendChild(squadronNotice)
+  let squadronNoticeTimeout = null
+
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
   // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
   // beam, focus collapse, error float. `unmount()` limpa em bloco. `focusCollapse` precisa de
@@ -1100,6 +1113,40 @@ export function createGameHud() {
       }
     },
 
+    showSquadronNotice({ mode, targetCount = 1, hasLocked = false, xFrac = 0.5, yFrac = 0.5 }) {
+      cancelTimeout(squadronNoticeTimeout)
+      squadronNotice.classList.remove('active', 'focus')
+      
+      const icon = squadronNotice.querySelector('.hud-squadron-notice-icon')
+      const text = squadronNotice.querySelector('.hud-squadron-notice-text')
+      const sub = squadronNotice.querySelector('.hud-squadron-notice-sub')
+
+      if (mode === 'focus') {
+        squadronNotice.classList.add('focus')
+        if (icon) icon.textContent = '🎯'
+        if (text) text.textContent = hasLocked ? 'ESQUADRÃO: FOCO NO ALVO TRAVADO!' : 'ESQUADRÃO: CONCENTRAR FOGO!'
+        if (sub) sub.textContent = '[D] Dispersar / Ataque Livre'
+      } else {
+        if (icon) icon.textContent = '🚀'
+        if (text) text.textContent = 'ESQUADRÃO: DISPERSÃO / ATAQUE LIVRE'
+        if (sub) sub.textContent = '[D] Focar Alvos'
+      }
+
+      squadronNotice.style.left = `${(xFrac * 100).toFixed(1)}%`
+      squadronNotice.style.top = `${(yFrac * 100).toFixed(1)}%`
+      squadronNotice.classList.add('active')
+
+      squadronNoticeTimeout = scheduleTimeout(() => {
+        squadronNotice.classList.remove('active')
+      }, 2200)
+    },
+
+    updateSquadronNoticePosition(xFrac, yFrac) {
+      if (!squadronNotice.classList.contains('active')) return
+      squadronNotice.style.left = `${(xFrac * 100).toFixed(1)}%`
+      squadronNotice.style.top = `${(yFrac * 100).toFixed(1)}%`
+    },
+
     debug: {
       setVisible(v) { debugPanel.hidden = !v },
       bind(handlers) {
@@ -1119,6 +1166,9 @@ export function createGameHud() {
       // callbacks em nós já desanexados do DOM — não quebrava nada, mas era exatamente o
       // tipo de vazamento silencioso que aparece como bug intermitente depois de N partidas.
       cancelFocusCollapse()
+      cancelTimeout(squadronNoticeTimeout)
+      squadronNoticeTimeout = null
+      squadronNotice.classList.remove('active')
       for (const id of pendingTimeouts) clearTimeout(id)
       pendingTimeouts.clear()
       hitMarkerTimeout = null

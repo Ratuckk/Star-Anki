@@ -16,14 +16,14 @@ export const ACTIONS = [
   { id: 'quizSlot2', label: 'Resposta 2' },
   { id: 'quizSlot3', label: 'Resposta 3' },
   { id: 'quizSlot4', label: 'Resposta 4' },
+  { id: 'squadronCommand', label: 'Comando do esquadrão (Foco / Ataque livre)' },
 ]
 
-// A e S deixaram de ser alternativas de movimento (eram WASD ao lado das setas) — o pedido de
-// propulsor(A)/repulsor(S) usa essas mesmas teclas físicas, então movimento ficou só nas setas
-// (W/D continuam livres pra cima/direita) pra não ativar propulsão/repulsão sem querer ao mover
+// A e S viraram propulsor/repulsor; D virou comando tático de esquadrão (Star Fox).
+// Movimento lateral usa ArrowLeft/ArrowRight (W continua pra cima junto com ArrowUp).
 const DEFAULT_ACTIONS = {
   moveLeft: ['ArrowLeft'],
-  moveRight: ['ArrowRight', 'KeyD'],
+  moveRight: ['ArrowRight'],
   moveUp: ['ArrowUp', 'KeyW'],
   moveDown: ['ArrowDown'],
   fire: ['KeyX'],
@@ -31,6 +31,7 @@ const DEFAULT_ACTIONS = {
   dodgeRight: ['KeyC'],
   propulsion: ['KeyA'],
   repulsion: ['KeyS'],
+  squadronCommand: ['KeyD'],
   pause: ['Escape', 'KeyP'],
   debugToggle: ['Backquote'],
   quizSlot1: ['Digit1'],
@@ -42,7 +43,7 @@ const DEFAULT_ACTIONS = {
 // Ações mapeáveis a um botão físico de controle — movimento fica de fora de propósito (usa os
 // eixos analógicos configurados abaixo, não faz sentido "botão = direção" com um analógico à mão)
 export const GAMEPAD_ACTIONS = [
-  'fire', 'dodgeLeft', 'dodgeRight', 'propulsion', 'repulsion',
+  'fire', 'dodgeLeft', 'dodgeRight', 'propulsion', 'repulsion', 'squadronCommand',
   'pause', 'debugToggle', 'quizSlot1', 'quizSlot2', 'quizSlot3', 'quizSlot4',
 ]
 
@@ -61,6 +62,7 @@ const DEFAULT_GAMEPAD = {
     dodgeRight: [5],
     propulsion: [],
     repulsion: [],
+    squadronCommand: [3],
     pause: [9],
     debugToggle: [8],
     quizSlot1: [],

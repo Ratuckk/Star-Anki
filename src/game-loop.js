@@ -237,6 +237,23 @@ export function createGameLoop(deps) {
       }
     }
 
+    if (isActionPressed(bindings, inputState.pressed, 'squadronCommand')) {
+      const res = combat.toggleSquadronCommand(playerPos)
+      if (res && hud && hud.showSquadronNotice) {
+        const shipAbove = playerPos.clone().addScaledVector(noseFrame.up, 3.2)
+        const ndcAbove = shipAbove.project(camera)
+        const xFrac = THREE.MathUtils.clamp((ndcAbove.x + 1) / 2, 0.05, 0.95)
+        const yFrac = THREE.MathUtils.clamp((1 - ndcAbove.y) / 2, 0.05, 0.95)
+        hud.showSquadronNotice({
+          mode: res.mode,
+          targetCount: res.targetCount,
+          hasLocked: res.hasLocked,
+          xFrac,
+          yFrac,
+        })
+      }
+    }
+
     rail.setSpeedMultiplier(state.speedMultiplier * player.getBoostSpeedFactor())
     hud.setBoost(player.getBoostCharge(), player.isPropulsionActive() || player.isRepulsionActive())
 
@@ -336,6 +353,15 @@ export function createGameLoop(deps) {
       THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
     )
 
+    if (hud.updateSquadronNoticePosition) {
+      const shipAbove = playerPos.clone().addScaledVector(noseFrame.up, 3.2)
+      const ndcAbove = shipAbove.project(camera)
+      hud.updateSquadronNoticePosition(
+        THREE.MathUtils.clamp((ndcAbove.x + 1) / 2, 0.05, 0.95),
+        THREE.MathUtils.clamp((1 - ndcAbove.y) / 2, 0.05, 0.95),
+      )
+    }
+
     if (showEnemyHealthBars) {
       const bars = combat.getEnemySnapshots().map((s) => {
         const ndcE = s.worldPos.project(camera)
@@ -388,6 +414,16 @@ export function createGameLoop(deps) {
     // original, antes dos branches de fase), preservando a estrutura original.
     if (events.bossDefeated && state.phase === 'bossFight') {
       bossFlow.handleBossDefeated(events.bossHitWorldPos || playerPos)
+    }
+
+    // ============ COLISÃO FÍSICA COM BOSS / DOURADO (KNOCKBACK + TUMBLE SPIN) ============
+    if (events.bossCollisionWorldPos) {
+      rail.triggerBossCollisionTumble(events.bossCollisionWorldPos)
+      state.hitShakeTimer = Math.max(state.hitShakeTimer, 450)
+      if (effects) {
+        effects.hitSpark(playerPos, 0xffbb22)
+        effects.shockwave(playerPos, 0xffaa00, 1.0)
+      }
     }
 
     // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============

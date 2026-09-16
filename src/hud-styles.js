@@ -969,6 +969,59 @@ export function injectHudExtraStyles() {
   letter-spacing: 0.12em;
   text-shadow: 0 0 8px rgba(255, 100, 100, 0.7);
 }
+
+/* ============ NOTIFICAÇÃO DE COMANDO DO ESQUADRÃO (TECLA D) ============ */
+.hud-squadron-notice {
+  position: absolute;
+  transform: translate(-50%, -100%) scale(0.85);
+  pointer-events: none;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 140ms ease-out, transform 160ms cubic-bezier(0.18, 0.9, 0.3, 1.2);
+  will-change: transform, opacity, left, top;
+}
+.hud-squadron-notice.active {
+  opacity: 1;
+  transform: translate(-50%, -100%) scale(1);
+}
+.hud-squadron-notice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 15, 28, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35), 0 4px 12px rgba(0, 0, 0, 0.6);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #e0f2fe;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.hud-squadron-notice.focus .hud-squadron-notice-pill {
+  border-color: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
+  color: #fecaca;
+}
+.hud-squadron-notice-icon {
+  font-size: 14px;
+}
+.hud-squadron-notice-sub {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  letter-spacing: 0.03em;
+}
 `
   document.head.appendChild(style)
 }

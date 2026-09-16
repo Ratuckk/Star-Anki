@@ -70,8 +70,8 @@ const ENEMY_AIM_ERROR_DEG = 5
 const ARENA_PREVIEW_DISTANCE = 220
 const ARENA_PREVIEW_SCALE = { boss: BOSS_HIT_RADIUS * 2 * 2.4, golden: 3.2 }
 
-const GOLDEN_MINION_TURN_RATE = 2.5
-const GOLDEN_MINION_SPEED = 16
+const GOLDEN_MINION_TURN_RATE = 4.2
+const GOLDEN_MINION_SPEED = 18
 
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
@@ -256,6 +256,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let ramKillPoints = 0
     let ramBossDefeated = false
     let ramBossWorldPos = null
+    let bossCollisionWorldPos = null
     for (const enemy of [...enemies]) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
@@ -272,6 +273,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const collisionRadius = hitRadius + (ramDamage > 0 ? 5.5 : 0)
       if (playerPosition.distanceTo(enemy.mesh.position) <= collisionRadius) {
         hits += 1
+        if (enemy.kind === BOSS_KIND) {
+          bossCollisionWorldPos = enemy.mesh.position.clone()
+        }
         if (ramDamage > 0) {
           // BUG corrigido: aplicava `ramDamage` A CADA FRAME de sobreposição — pro chefe (hp
           // alto, fica vários frames dentro do raio) isso multiplicava o dano de verdade muito
@@ -432,7 +436,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       if (enemy.kind === BOSS_KIND) updateBossLaser(scene, enemy, dt, playerPosition, effects, bossLaserCtx)
     }
-    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos }
+    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos }
   }
 
   function updateEnemyProjectiles(dt, playerPosition) {
@@ -440,12 +444,24 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let damage = 1
     for (const projectile of [...enemyProjectiles]) {
       if (projectile.homing) {
-        const desired = playerPosition.clone().sub(projectile.mesh.position).normalize()
+        const toPlayer = playerPosition.clone().sub(projectile.mesh.position)
+        const dist = toPlayer.length()
+        const desired = toPlayer.normalize()
+        if (dist > 16 && projectile.flankOffset) {
+          const up = new THREE.Vector3(0, 1, 0)
+          const side = new THREE.Vector3().crossVectors(desired, up).normalize()
+          const weave = Math.sin((projectile.traveled || 0) * 0.18) * projectile.flankOffset * Math.min(1, dist / 40)
+          desired.addScaledVector(side, weave * 0.15).normalize()
+        }
         const current = projectile.velocity.clone().normalize()
-        current.lerp(desired, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
+        const turnRate = dist < 30 ? GOLDEN_MINION_TURN_RATE * 1.6 : GOLDEN_MINION_TURN_RATE
+        current.lerp(desired, Math.min(1, turnRate * dt))
         if (current.lengthSq() > 1e-6) {
-          projectile.velocity.copy(current.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
+          const speed = dist < 30 ? GOLDEN_MINION_SPEED * 1.35 : GOLDEN_MINION_SPEED
+          projectile.velocity.copy(current.normalize().multiplyScalar(speed))
           projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, current)
+          const rollBank = Math.sin((projectile.traveled || 0) * 0.25) * 0.6
+          projectile.mesh.rotateZ(rollBank)
         }
       }
 
@@ -630,10 +646,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const ramDamage = opts.ramDamage || 0
       const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage)
       const result = updateEnemies(dt, playerPosition, ramDamage)
+      const bossCollisionWorldPos = result.bossCollisionWorldPos || goldenRamResult?.bossCollisionWorldPos || null
       return {
         ...result,
+        hits: result.hits + (goldenRamResult?.goldenHits || 0),
         ramGoldenDefeated: goldenRamResult?.ramGoldenDefeated || false,
         ramGoldenWorldPos: goldenRamResult?.ramGoldenWorldPos || null,
+        bossCollisionWorldPos,
       }
     },
 

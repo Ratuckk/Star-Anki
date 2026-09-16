@@ -347,6 +347,13 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let fullSpinT = 1
   let fullSpinDir = 0
 
+  // Perda de controle por colisão com boss / dourado (Star Fox tumble spin)
+  const TUMBLE_DURATION = 0.85
+  let tumbleTimer = 0
+  let tumbleAngle = 0
+  let tumbleDir = 1
+  let tumbleKnockbackVel = new THREE.Vector3()
+
   const ship = buildShip(shipVisual)
   ship.position.copy(lastFrame.position)
   ship.up.copy(lastFrame.up)
@@ -507,6 +514,34 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     impactSquashT = 1
   }
 
+  // Colisão violenta com boss / dourado (Star Fox knockback + tumble spin)
+  function triggerBossCollisionTumble(impactOrigin) {
+    tumbleTimer = TUMBLE_DURATION
+    tumbleAngle = 0
+    tumbleDir = Math.random() < 0.5 ? -1 : 1
+    triggerImpactSquash()
+
+    if (mode === 'arena') {
+      const repelDir = impactOrigin ? arenaPos.clone().sub(impactOrigin) : new THREE.Vector3()
+      if (repelDir.lengthSq() < 0.001) {
+        repelDir.copy(lastFrame.forward).negate()
+      }
+      repelDir.normalize()
+      repelDir.y = Math.max(0.2, repelDir.y)
+      repelDir.normalize()
+      arenaPos.addScaledVector(repelDir, 16)
+      const off = arenaPos.clone().sub(arenaCenter)
+      if (off.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(off.normalize(), ARENA_RADIUS)
+      tumbleKnockbackVel.copy(repelDir).multiplyScalar(35)
+    } else {
+      const pushX = Math.sign(playerX || (Math.random() < 0.5 ? -1 : 1)) * 14
+      playerX = THREE.MathUtils.clamp(playerX + pushX, -BOX_X, BOX_X)
+      velX = pushX * 2.4
+      velY = 16
+      recoilOffset += 7.5
+    }
+  }
+
   function forwardFromYawPitch(yaw, pitch) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'))
     return new THREE.Vector3(0, 0, -1).applyQuaternion(q)
@@ -530,7 +565,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     mode = 'rail'
   }
 
-  function updateArena(dt, input, fullSpinAngle = 0) {
+  function updateArena(dt, input, fullSpinAngle = 0, tumbleState = null) {
     const summersaultFlip = updateSummersault(dt)
     const inSummersault = summersaultT < 1
 
@@ -570,6 +605,11 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     const brakeFactor = emergencyBrakeTimer > 0 ? EMERGENCY_BRAKE_SPEED_MULT : 1
     arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * brakeFactor * dt)
 
+    if (tumbleKnockbackVel.lengthSq() > 0.01) {
+      arenaPos.addScaledVector(tumbleKnockbackVel, dt)
+      tumbleKnockbackVel.multiplyScalar(Math.exp(-4.2 * dt))
+    }
+
     const offset = arenaPos.clone().sub(arenaCenter)
     if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
 
@@ -583,6 +623,11 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     ship.rotateZ(dodgeRoll)
     ship.rotateZ(fullSpinAngle)
     ship.rotateZ(wobbleOffset)
+    if (tumbleState) {
+      ship.rotateZ(tumbleState.spin)
+      if (tumbleState.pitch) ship.rotateX(tumbleState.pitch)
+      if (tumbleState.yaw) ship.rotateY(tumbleState.yaw)
+    }
     if (summersaultFlip) ship.rotateX(summersaultFlip)
     applyWeightScale()
     applyImpulseOffsets(forward, up)
@@ -625,8 +670,25 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       camera.updateProjectionMatrix()
     }
 
+    let tumbleSpin = 0
+    let tumblePitchWobble = 0
+    let tumbleYawWobble = 0
+    if (tumbleTimer > 0) {
+      const tNorm = tumbleTimer / TUMBLE_DURATION
+      const spinSpeed = Math.PI * 9.5 * tNorm * tumbleDir
+      tumbleAngle += spinSpeed * dt
+      tumbleSpin = tumbleAngle
+      tumblePitchWobble = Math.sin((1 - tNorm) * Math.PI * 4) * 0.35
+      tumbleYawWobble = Math.cos((1 - tNorm) * Math.PI * 3) * 0.25
+      tumbleTimer -= dt
+      if (tumbleTimer <= 0) {
+        wobbleVel += WOBBLE_KICK * 2.2 * tumbleDir
+      }
+    }
+    const tumbleState = { spin: tumbleSpin, pitch: tumblePitchWobble, yaw: tumbleYawWobble }
+
     if (mode === 'arena') {
-      updateArena(dt, input, fullSpinAngle)
+      updateArena(dt, input, fullSpinAngle, tumbleState)
       return
     }
 
@@ -687,6 +749,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     ship.rotateZ(dodgeRoll)
     ship.rotateZ(fullSpinAngle)
     ship.rotateZ(wobbleOffset)
+    if (tumbleState.spin) ship.rotateZ(tumbleState.spin)
+    if (tumbleState.pitch) ship.rotateX(tumbleState.pitch)
+    if (tumbleState.yaw) ship.rotateY(tumbleState.yaw)
     applyWeightScale()
     applyImpulseOffsets(frame.forward, frame.up)
     applyShakeJitter()
@@ -798,6 +863,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerArenaLateralDash,
     triggerArenaSummersault,
     triggerEmergencyBrake,
+    triggerBossCollisionTumble,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
     triggerRecoil,
     triggerImpactSquash,

@@ -13,25 +13,24 @@ export const GOLDEN_HIT_RADIUS = 2.2
 const GOLDEN_DEATH_DURATION = 0.25
 const GOLDEN_PULSE_SPEED = 4
 const GOLDEN_PULSE_AMOUNT = 0.18
-const GOLDEN_HP = 20
-const GOLDEN_CHASE_SPEED = 9
+const GOLDEN_HP = 40
+const GOLDEN_CHASE_SPEED = 10
 // pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for atingido por
 // disparos" — cooldown próprio, reiniciado a cada teleporte de verdade (não a cada hit)
 const GOLDEN_TELEPORT_COOLDOWN_S = 10
-// pedido do usuário: "Dourado com dash lateral longo quando o jogador chega perto, 1x a cada 3s"
-const GOLDEN_DASH_TRIGGER_DIST = 38
-const GOLDEN_DASH_COOLDOWN_S = 3.0
-const GOLDEN_DASH_DURATION_S = 0.35
-const GOLDEN_DASH_SPEED = 62
-const GOLDEN_FIRE_INTERVAL_MIN = 1200
-const GOLDEN_FIRE_INTERVAL_MAX = 2400
-// solta mini-naves amarelas perseguidoras — reaproveita o array de projéteis inimigos
-// compartilhado (ctx.pushProjectile), então colide/deflete igual qualquer outro tiro inimigo
-const MINION_INTERVAL_MIN = 2.4
-const MINION_INTERVAL_MAX = 3.6
-const MINION_SPEED = 16
-const MINION_HIT_RADIUS = 0.9
-const MINION_MAX_RANGE = 140
+// pedido do usuário: "trate o inimigo dourado como um boss, de +20 de vida a ele, faça com que ele desvie mais do jogador"
+const GOLDEN_DASH_TRIGGER_DIST = 46
+const GOLDEN_DASH_COOLDOWN_S = 1.6
+const GOLDEN_DASH_DURATION_S = 0.38
+const GOLDEN_DASH_SPEED = 72
+const GOLDEN_FIRE_INTERVAL_MIN = 1100
+const GOLDEN_FIRE_INTERVAL_MAX = 2200
+// solta mini-naves amarelas com IA de perseguição curva e mergulho
+const MINION_INTERVAL_MIN = 2.2
+const MINION_INTERVAL_MAX = 3.2
+const MINION_SPEED = 18
+const MINION_HIT_RADIUS = 1.0
+const MINION_MAX_RANGE = 150
 const MINION_COLOR = 0xffe066
 
 // ============ LASER GRANDE DO DOURADO ============
@@ -128,10 +127,10 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       scene.add(mesh)
       goldenTargets.push({
         id: nextId(), mesh, dying: false, deathT: 0,
+        kind: GOLDEN_KIND,
+        radius: GOLDEN_HIT_RADIUS,
         hp: GOLDEN_HP, maxHp: GOLDEN_HP, fireTimer: randomGoldenFireInterval(),
         minionTimer: MINION_INTERVAL_MIN + Math.random() * (MINION_INTERVAL_MAX - MINION_INTERVAL_MIN),
-        // laser grande — cooldown inicial aleatório pra não disparar em uníssono se houver
-        // mais de um dourado em tela; telegraph e target começam zerados
         laserCooldown: GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
         laserTelegraphTimer: 0,
         laserTargetPos: null,
@@ -140,20 +139,18 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         dashTimer: 0,
         dashDir: new THREE.Vector3(),
         ramHitActive: false,
+        bodyHitActive: false,
       })
     },
 
     // ctx = { fireEnemyProjectile, pushProjectile, pushLaser }
-    // ramDamage > 0: carta roguelike "impulso aríete" ativa — pedido do usuário: antes o dourado
-    // não tomava dano NENHUM de ram, só deixava o jogador atravessar por dentro. Igual ao chefe,
-    // colisão com ram ativo vira dano de verdade (`ramGoldenDefeated`/`ramGoldenWorldPos`
-    // devolvidos pra `index.js` poder alimentar o mesmo `goldenSpecialHit` que o hit por
-    // projétil usa — sem isso a fase 'goldenArena' nunca saberia que o alvo morreu e travaria).
     update(dt, playerPosition, ctx, ramDamage = 0) {
       elapsed += dt
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
+      let bossCollisionWorldPos = null
+      let goldenHits = 0
       for (const g of [...goldenTargets]) {
         if (g.dying) {
           g.deathT += dt / GOLDEN_DEATH_DURATION
@@ -162,37 +159,43 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           continue
         }
 
-        // BUG corrigido: aplicava `ramDamage` A CADA FRAME enquanto o jogador ficasse
-        // sobreposto (a 60fps, RAM_DAMAGE=5 vira ~300 hp/s — matava os 20 hp do dourado no
-        // primeiro encostão, bem mais forte que o pretendido). `ramHitActive` só deixa aplicar
-        // dano na BORDA DE SUBIDA (quando entra no raio vindo de fora) — um hit por encostada,
-        // igual bate/some. Continua "congelado" (sem mover/atirar) enquanto durar a sobreposição,
-        // e o flag reresta assim que o jogador sai do raio, liberando um novo hit na próxima vez.
+        // Colisão com o Boss Dourado (aríete com dano E choque de fuselagem com knockback/tumble)
         const ramRadius = GOLDEN_HIT_RADIUS + 5.0
+        const bodyRadius = GOLDEN_HIT_RADIUS + 2.5
         const inRamRange = ramDamage > 0 && playerPosition && playerPosition.distanceTo(g.mesh.position) <= ramRadius
-        if (inRamRange) {
-          if (!g.ramHitActive) {
-            g.ramHitActive = true
-            g.hp -= ramDamage
-            if (effects) effects.flashMesh(g.mesh)
-            if (g.hp <= 0) {
-              g.dying = true
-              g.deathT = 0
-              ramGoldenDefeated = true
-              ramGoldenWorldPos = g.mesh.position.clone()
-              if (effects) {
-                effects.explosion(g.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
-                effects.shockwave(g.mesh.position, GOLDEN_COLOR, 1.1)
+        const inBodyRange = playerPosition && playerPosition.distanceTo(g.mesh.position) <= bodyRadius
+
+        if (inRamRange || inBodyRange) {
+          if (!g.ramHitActive && !g.bodyHitActive) {
+            g.ramHitActive = inRamRange
+            g.bodyHitActive = inBodyRange
+            bossCollisionWorldPos = g.mesh.position.clone()
+
+            if (inRamRange) {
+              g.hp -= ramDamage
+              if (effects) effects.flashMesh(g.mesh)
+              if (g.hp <= 0) {
+                g.dying = true
+                g.deathT = 0
+                ramGoldenDefeated = true
+                ramGoldenWorldPos = g.mesh.position.clone()
+                if (effects) {
+                  effects.explosion(g.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
+                  effects.shockwave(g.mesh.position, GOLDEN_COLOR, 1.1)
+                }
               }
+            } else if (inBodyRange) {
+              goldenHits += 1
             }
           }
           continue
         }
         g.ramHitActive = false
+        g.bodyHitActive = false
 
         g.mesh.scale.setScalar(pulse)
-        g.mesh.rotation.y += dt * 0.6
-        g.mesh.rotation.x += dt * 0.3
+        g.mesh.rotation.y += dt * 0.8
+        g.mesh.rotation.x += dt * 0.4
         g.teleportCooldownTimer = Math.max(0, g.teleportCooldownTimer - dt)
         g.dashCooldownTimer = Math.max(0, g.dashCooldownTimer - dt)
 
@@ -200,11 +203,11 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         const toPlayer = playerPosition.clone().sub(g.mesh.position)
         const distToPlayer = toPlayer.length()
 
-        // dash lateral evasivo: quando o jogador se aproxima (<28u), arranca lateralmente a cada 3s
+        // Dash lateral evasivo: quando o jogador se aproxima ou foca nele
         if (g.dashTimer > 0) {
           g.dashTimer -= dt
           g.mesh.position.addScaledVector(g.dashDir, GOLDEN_DASH_SPEED * dt)
-          g.mesh.rotation.z += dt * 8
+          g.mesh.rotation.z += dt * 12
         } else {
           if (distToPlayer <= GOLDEN_DASH_TRIGGER_DIST && g.dashCooldownTimer <= 0 && distToPlayer > 1e-4) {
             g.dashCooldownTimer = GOLDEN_DASH_COOLDOWN_S
@@ -223,7 +226,13 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
               }
             }
           } else if (distToPlayer > 1e-4) {
-            g.mesh.position.addScaledVector(toPlayer.normalize(), GOLDEN_CHASE_SPEED * dt)
+            // Perseguição com manobras evasivas em ziguezague/weaving
+            const dirNorm = toPlayer.clone().normalize()
+            const up = new THREE.Vector3(0, 1, 0)
+            let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
+            const weave = Math.sin(elapsed * 3.2) * 12
+            g.mesh.position.addScaledVector(dirNorm, GOLDEN_CHASE_SPEED * dt)
+            g.mesh.position.addScaledVector(lateral, weave * dt)
           }
         }
 
@@ -262,7 +271,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           }
         }
       }
-      return { ramGoldenDefeated, ramGoldenWorldPos }
+      return { ramGoldenDefeated, ramGoldenWorldPos, bossCollisionWorldPos, goldenHits }
     },
 
     resolveHit(prevPos, currPos, damage, isHoming, hitBuffer, effects) {
@@ -282,7 +291,16 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           effects.explosion(goldenHit.mesh.position, killColor, 2.8, { rings: true })
           effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 1.1)
         }
-      } else if (goldenHit.teleportCooldownTimer <= 0) {
+      } else {
+        // Dash evasivo reativo a tiros recebidos
+        if (goldenHit.dashCooldownTimer <= 0.6) {
+          goldenHit.dashCooldownTimer = GOLDEN_DASH_COOLDOWN_S
+          goldenHit.dashTimer = GOLDEN_DASH_DURATION_S
+          const lateral = new THREE.Vector3(Math.random() < 0.5 ? -1 : 1, (Math.random() - 0.5) * 0.4, 0).normalize()
+          goldenHit.dashDir.copy(lateral)
+          if (effects) effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 0.6)
+        }
+        if (goldenHit.teleportCooldownTimer <= 0) {
         // pedido do usuário: teleporta 1x a cada 10s quando atingido — reaproveita o mesmo
         // espalhamento em torno do centro da arena usado pelo spawn do chefe
         const oldPos = goldenHit.mesh.position.clone()

@@ -130,6 +130,7 @@ export function createLockOnSystem(rail, enemies) {
       return targets
     },
 
+    getLockedEntities: () => lockedEnemies.filter((rec) => !rec.entity.dying).map((rec) => rec.entity),
     clearLockedEnemies() { lockedEnemies = [] },
 
     // ============ SNAPSHOTS — âncora + layout, sem estado ============

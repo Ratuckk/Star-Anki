@@ -149,6 +149,7 @@ export function createPlayerSystem(session) {
     isDeflectActive: () => deflectCardActive,
     isRamCardActive: () => ramCardActive,
     getWingmanCount: () => wingmanCount,
+    setWingmanCount: (count) => { wingmanCount = Math.max(0, Math.min(WINGMAN_CAP, count || 0)) },
 
     getBoostCharge: () => boostCharge,
     isPropulsionActive: () => propulsionActiveTimer > 0,
