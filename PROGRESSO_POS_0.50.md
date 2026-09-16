@@ -3,6 +3,23 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Ambiente Cósmico Vivo (SkyDome Procedural, Corpos Celestes, Starfield Twinkle/Warp, Bolsões de Névoa, Relâmpagos Iônicos, Meteoros e Grid Energizado) com Reversibilidade Modular Total — v0.56.0
+
+Contexto e pedidos do usuário:
+1. *"me diz todas mudanças e novidades que pode fazer no background, na nevoa e no skybox em si do jogo para deixar ele mais vivo"*
+2. *"implemente tudo, mas deixe preparado caso eu queira voltar atrás com algum"*
+
+**O que mudou e detalhes técnicos:**
+1. **Arquitetura 100% Modular e Reversível (`src/environment-config.js` e Debug Menu)**: Dicionário `ENVIRONMENT_CONFIG` com 8 flags booleanas (`enableSkyDome`, `enableCelestialBodies`, `enableMultiLayerStars`, `enableWarpStreaks`, `enableNebulaPockets`, `enableIonStorms`, `enableShootingStars`, `enableEnergizedGrid`). Todas podem ser desligadas/ligadas individualmente a qualquer momento no arquivo ou em tempo de execução via menu de debug (onde começam sincronizadas como ativas).
+2. **Cúpula Cósmica Procedural (SkyDome com Nebulosa Orgânica)**: Domo invertido `SphereGeometry(380)` com textura procedural de tela gerando nuvens coloridas em gradientes cósmicos (roxo, ciano, magenta, esmeralda e âmbar), rotação contínua e respiração sutil de opacidade.
+3. **Corpos Celestes em Paralaxe**: Gigante gasoso com bandas atmosféricas geradas proceduralmente, rim-glow de atmosfera externa (halo aditivo), anéis duplos de poeira inclinados e lua orbital em movimento elíptico.
+4. **Starfield Multicamadas com Twinkle e Warp Streaks**: 900 estrelas profundas com cintilação senoidal e efeito clássico de dobra espacial/hiperespaço (esticamento no eixo Z e aumento de brilho) durante o acionamento do boost de propulsão.
+5. **Bolsões de Névoa e Relâmpagos Iônicos**: Variação periódica da densidade da névoa no trilho ao cruzar bolsões cósmicos e clarões iônicos difusos esporádicos (90ms) iluminando o horizonte.
+6. **Meteoros e Grid Energizado**: Estrelas cadentes em feixes aditivos cortando o céu e pulsos neon luminosos percorrendo o grid de solo no sentido do voo.
+
+**Testado**: `node --check` em todos os arquivos tocados e criados; `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.55.0 → v0.56.0.
+
 ## Sistema de Comandos do Esquadrão (Tecla D), Dourado Boss (+20 HP, Multi-lock, IA Minions), Knockback com Tumble Spin e Fix dos Aliados — v0.55.0
 
 Contexto e pedidos do usuário:

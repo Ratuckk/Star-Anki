@@ -38,6 +38,7 @@ export function createGameLoop(deps) {
     state, session, bindings, showEnemyHealthBars,
     hud, scene, camera, renderer, rail, effects, player, combat, input,
     progression, cutscenes, bossFlow, questionFlow,
+    environment,
     enterCombat, applyHealthLoss, endSector,
   } = deps
 
@@ -388,6 +389,12 @@ export function createGameLoop(deps) {
       rollActive: player.isRollIframeActive(),
     })
     effects.spawnContrailTick(combat.getWingmanPositions(), dt)
+
+    if (environment) {
+      environment.update(dt, playerPos, {
+        boostActive: player.isPropulsionActive(),
+      })
+    }
 
     // ============ NEBLINA VIVA (deriva suave de cor no trilho) ============
     if (scene.fog && state.phase === 'combat' && !rail.isArena()) {

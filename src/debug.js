@@ -50,4 +50,12 @@ export const DEBUG_ACTIONS = [
   { id: 'spawnWingman3', label: '+ Wingman 3 (Slippy / Scout)' },
   { id: 'spawnWingman4', label: '+ Wingman 4 (Phantom / Stealth)' },
   { id: 'clearWingmen', label: 'Dispensar Esquadrão' },
+  { id: 'toggleSkyDome', label: 'Ambiente: Cúpula Nebulosa (SkyDome)', toggle: true },
+  { id: 'toggleCelestialBodies', label: 'Ambiente: Gigante Gasoso e Lua', toggle: true },
+  { id: 'toggleMultiLayerStars', label: 'Ambiente: Estrelas Cintilantes', toggle: true },
+  { id: 'toggleWarpStreaks', label: 'Ambiente: Dobra no Boost (Warp)', toggle: true },
+  { id: 'toggleNebulaPockets', label: 'Ambiente: Bolsões de Névoa', toggle: true },
+  { id: 'toggleIonStorms', label: 'Ambiente: Relâmpagos Iônicos', toggle: true },
+  { id: 'toggleShootingStars', label: 'Ambiente: Meteoros / Cadentes', toggle: true },
+  { id: 'toggleEnergizedGrid', label: 'Ambiente: Grid Energizado', toggle: true },
 ]

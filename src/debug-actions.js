@@ -5,6 +5,7 @@
 export function createDebugActions(deps) {
   const {
     combat, session, player, rail, effects, hud, enemies,
+    environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
     debugFlags, getPhase, resetBossHealthBonus,
     applyHealthLoss, endSector, forceAnswerOutcome,
@@ -12,6 +13,18 @@ export function createDebugActions(deps) {
     enterCardChoice, enterCombat,
     restartSector, nextSector, prevSector, exitArenaNow,
   } = deps
+
+  if (environment && hud?.debug?.setToggleActive) {
+    const cfg = environment.getConfig()
+    hud.debug.setToggleActive('toggleSkyDome', cfg.enableSkyDome)
+    hud.debug.setToggleActive('toggleCelestialBodies', cfg.enableCelestialBodies)
+    hud.debug.setToggleActive('toggleMultiLayerStars', cfg.enableMultiLayerStars)
+    hud.debug.setToggleActive('toggleWarpStreaks', cfg.enableWarpStreaks)
+    hud.debug.setToggleActive('toggleNebulaPockets', cfg.enableNebulaPockets)
+    hud.debug.setToggleActive('toggleIonStorms', cfg.enableIonStorms)
+    hud.debug.setToggleActive('toggleShootingStars', cfg.enableShootingStars)
+    hud.debug.setToggleActive('toggleEnergizedGrid', cfg.enableEnergizedGrid)
+  }
 
   return {
     restartSector: () => {
@@ -163,5 +176,53 @@ export function createDebugActions(deps) {
     spawnWingman3: () => { combat.spawnSpecificWingman(2); player.setWingmanCount(combat.getWingmanCount()) },
     spawnWingman4: () => { combat.spawnSpecificWingman(3); player.setWingmanCount(combat.getWingmanCount()) },
     clearWingmen: () => { combat.clearSquadron(); player.setWingmanCount(0) },
+    toggleSkyDome: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableSkyDome')
+        hud.debug.setToggleActive('toggleSkyDome', active)
+      }
+    },
+    toggleCelestialBodies: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableCelestialBodies')
+        hud.debug.setToggleActive('toggleCelestialBodies', active)
+      }
+    },
+    toggleMultiLayerStars: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableMultiLayerStars')
+        hud.debug.setToggleActive('toggleMultiLayerStars', active)
+      }
+    },
+    toggleWarpStreaks: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableWarpStreaks')
+        hud.debug.setToggleActive('toggleWarpStreaks', active)
+      }
+    },
+    toggleNebulaPockets: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableNebulaPockets')
+        hud.debug.setToggleActive('toggleNebulaPockets', active)
+      }
+    },
+    toggleIonStorms: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableIonStorms')
+        hud.debug.setToggleActive('toggleIonStorms', active)
+      }
+    },
+    toggleShootingStars: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableShootingStars')
+        hud.debug.setToggleActive('toggleShootingStars', active)
+      }
+    },
+    toggleEnergizedGrid: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableEnergizedGrid')
+        hud.debug.setToggleActive('toggleEnergizedGrid', active)
+      }
+    },
   }
 }

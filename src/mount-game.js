@@ -28,6 +28,7 @@ import { createCutscenesSystem } from './cutscenes.js'
 import { createBossFlow } from './flow-boss.js'
 import { createQuestionFlow } from './flow-question.js'
 import { createProgressionFlow } from './flow-progression.js'
+import { createEnvironmentSystem } from './environment.js'
 import { createGameLoop } from './game-loop.js'
 import {
   GROUND_Y,
@@ -80,6 +81,7 @@ export function mountGame(session, deck, menu) {
   const rail = createRailController(camera, scene, getSettings().shipVisual)
   // Fase 9 (ideia all-range, item 5): sensibilidade de giro configurável em Configurações
   rail.setTurnSensitivity(getSettings().arenaTurnSensitivity)
+  const environment = createEnvironmentSystem(scene, camera, rail, { grid, sun })
   const effects = createEffectsSystem(scene, { grid })
   const enemies = createEnemiesSystem(scene, rail, effects)
   const player = createPlayerSystem(session)
@@ -276,6 +278,7 @@ export function mountGame(session, deck, menu) {
     }
     window.removeEventListener('resize', onResize)
     input.dispose()
+    environment.dispose()
     effects.dispose()
     combat.dispose()
     renderer.dispose()
@@ -291,6 +294,7 @@ export function mountGame(session, deck, menu) {
     state, session, bindings, showEnemyHealthBars,
     hud, scene, camera, renderer, rail, effects, player, combat, input,
     progression, cutscenes, bossFlow, questionFlow,
+    environment,
     enterCombat, applyHealthLoss, endSector,
   })
 
@@ -355,6 +359,7 @@ export function mountGame(session, deck, menu) {
   // ============ DEBUG PANEL ============
   hud.debug.bind(createDebugActions({
     combat, session, player, rail, effects, hud, enemies,
+    environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
     debugFlags: state.debugFlags,
     getPhase: () => state.phase,

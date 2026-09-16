@@ -1,3 +1,58 @@
+## Ambiente Cósmico Vivo (SkyDome Procedural, Corpos Celestes, Starfield Twinkle/Warp, Bolsões de Névoa, Relâmpagos Iônicos, Meteoros e Grid Energizado) com Reversibilidade Modular Total — v0.56.0
+
+Contexto e pedidos do usuário:
+1. *"me diz todas mudanças e novidades que pode fazer no background, na nevoa e no skybox em si do jogo para deixar ele mais vivo"*
+2. *"implemente tudo, mas deixe preparado caso eu queira voltar atrás com algum"*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Arquitetura 100% Modular e Reversível (`src/environment-config.js` e Debug Menu)**:
+   - Criado dicionário central de configuração `ENVIRONMENT_CONFIG` com 8 flags booleanas independentes:
+     - `enableSkyDome: true` (Cúpula cósmica procedural com gradientes de nebulosa orgânica)
+     - `enableCelestialBodies: true` (Gigante gasoso com anéis de poeira e lua orbital com paralaxe suave)
+     - `enableMultiLayerStars: true` (Estrelas multicamadas com cintilação senoidal suave)
+     - `enableWarpStreaks: true` (Efeito esticamento / dobra espacial nas estrelas durante o boost de propulsão)
+     - `enableNebulaPockets: true` (Bolsões volumétricos no percurso do trilho com aumento dinâmico de densidade de névoa)
+     - `enableIonStorms: true` (Tempestades cósmicas esporádicas com clarões elétricos iônicos de 90ms no horizonte)
+     - `enableShootingStars: true` (Meteoros / estrelas cadentes periódicas cortando o quadrante superior do céu)
+     - `enableEnergizedGrid: true` (Ondas luminosas de neon viajando pelo grid de solo acompanhando o avanço)
+   - Qualquer elemento pode ser ligado/desligado individualmente a qualquer momento via código em `src/environment-config.js` ou em tempo de execução através do painel de Debug (`hud.debug`).
+   - O painel de debug sincroniza os botões de toggle no momento do bind, indicando visualmente (`.active`) o status ligado/desligado de cada um.
+
+2. **Cúpula Cósmica Procedural (SkyDome com Nebulosa Orgânica)**:
+   - Em vez de uma cor sólida plana e estática de fundo, foi criado um domo esférico gigante invertido (`SphereGeometry(380, 32, 18)` com `THREE.BackSide`, `depthWrite: false` e `transparent: true`).
+   - Textura de nebulosa gerada dinamicamente via canvas de alta resolução contendo sobreposição de vórtices de gás interestelar (roxo cósmico, ciano profundo, magenta estelar, esmeralda cósmico e âmbar espacial).
+   - Rotação contínua muito lenta e "respiração cósmica" de opacidade senoidal (`Math.sin(elapsed * 0.2)`), dando a sensação de um universo vivo e em expansão contínua.
+   - Posicionamento ancorado à câmera a cada frame (`skyDome.position.copy(camera.position)`), mantendo a ilusão perfeita de distância infinita sem colidir com nenhum objeto jogável.
+
+3. **Corpos Celestes no Horizonte com Paralaxe de Profundidade**:
+   - **Planeta Gigante Gasoso**: esfera com textura procedural de faixas atmosféricas coloridas em bandas harmônicas HSL.
+   - **Atmospheric Rim Glow (Halo)**: camada esférica externa com material aditivo ciano translúcido gerando halo luminoso no contorno do planeta.
+   - **Sistema de Anéis Planetários**: anel em disco duplo com textura senoidal de poeira e rochas e inclinação axial.
+   - **Lua Orbital**: corpo rochoso craterado orbitando o gigante em trajeto elíptico senoidal lento.
+   - Fator de paralaxe sutil (`multiplyScalar(0.08)` em relação à posição da câmera), garantindo escala colossal de imersão de simulador espacial.
+
+4. **Starfield Multicamadas com Twinkle e Dobra Espacial (Warp Streaks)**:
+   - 900 estrelas profundas em coordenadas esféricas distribuídas com espectro estelar variado (azul quente, branco puro e amarelo suave).
+   - Cintilação suave orgânica (`twinkle`) modulando o tamanho dos pontos ao longo do tempo.
+   - Integração com o propulsor do jogador (`player.isPropulsionActive()`): ao acionar o boost, as estrelas esticam no eixo Z (`scale.set(1.0, 1.0, 2.2)`) e expandem seu brilho, criando o visual clássico de entrada em velocidade de dobra (hiperespaço). Ao soltar, desacelera suavemente de volta à escala normal via interpolação exponencial.
+
+5. **Bolsões de Névoa Atmosférica Dinâmica e Tempestades Iônicas**:
+   - No modo trilho, a densidade da neblina da cena (`scene.fog.density`) é modulada conforme a distância percorrida pelo rail (`rail.getDistance()`). A nave entra e sai periodicamente de bolsões densos de poeira e gás cósmico (`0.004 → 0.0085`).
+   - Relâmpagos Iônicos: a cada 16-35 segundos, uma descarga difusa ilumina o horizonte por 90ms com um clarão azul elétrico que se soma ao fog existente (`scene.fog.color.add(...)`), criando atmosfera dramática de tempestade cósmica.
+
+6. **Estrelas Cadentes / Meteoros Cortando o Céu**:
+   - Sistema de feixes luminosos em linha aditiva com desvanecimento suave (`opacity: fade * 0.85`) que cruzam a atmosfera superior periodicamente em trajetórias descendentes angulares.
+
+7. **Grid de Solo Energizado**:
+   - Feixe de energia neon ciano que corre ao longo do grid de solo no sentido do movimento da nave, enfatizando a sensação de velocidade e profundidade de terreno.
+
+**Testado**:
+- `node --check` aprovado em todos os 7 arquivos tocados e criados.
+- `node src/selftest.mjs` aprovado com 100% de sucesso.
+- Verificação de controle e reversibilidade em tempo de execução via debug panel.
+**Versão**: v0.55.0 → v0.56.0.
+
 ## Sistema de Comandos do Esquadrão (Tecla D), Dourado Boss (+20 HP, Multi-lock, IA Minions), Knockback com Tumble Spin e Fix dos Aliados — v0.55.0
 
 Contexto e pedidos do usuário:
