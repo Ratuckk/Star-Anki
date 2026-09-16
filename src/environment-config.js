@@ -13,6 +13,7 @@ export const ENVIRONMENT_CONFIG = {
   enableIonStorms: true,        // Relâmpagos cósmicos difusos esporádicos no horizonte
   enableShootingStars: true,    // Meteoros / estrelas cadentes periódicas cortando o céu
   enableEnergizedGrid: true,    // Ondas de pulso neon viajando no grid de solo
+  enableDebrisStormEvent: true, // Mini-evento ambiental: tempestade intensa de detritos e asteroides titânicos
 }
 
 export function setEnvironmentFeature(feature, enabled) {

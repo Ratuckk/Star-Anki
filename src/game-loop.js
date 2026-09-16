@@ -15,6 +15,7 @@
 
 import * as THREE from 'three'
 import { isActionPressed } from './keybindings.js'
+import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import {
   ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
   INVINCIBILITY_FLICKER_MS,
@@ -41,6 +42,21 @@ export function createGameLoop(deps) {
     environment,
     enterCombat, applyHealthLoss, endSector,
   } = deps
+
+  function triggerDebrisStorm(durationMs = 15000) {
+    if (!ENVIRONMENT_CONFIG.enableDebrisStormEvent) return
+    state.debrisStormActive = true
+    state.debrisStormTimer = durationMs
+    state.debrisStormSpawnTimer = 300 // primeiro spawn rápido
+    if (hud?.showDebrisStormNotice) {
+      hud.showDebrisStormNotice({
+        active: true,
+        title: 'TEMPESTADE DE DETRITOS DETECTADA',
+        sub: 'CAMPO DENSO DE ASTEROIDES // MANOBRAS EVASIVAS',
+      })
+    }
+  }
+  state.triggerDebrisStorm = triggerDebrisStorm
 
   // tiro carregado: quantos alvos podem estar travados NESTE instante do carregamento — 1 no
   // início, +1 progressivo conforme a carga avança até o ápice (escala proporcionalmente
@@ -294,6 +310,46 @@ export function createGameLoop(deps) {
       if (state.imaTimer <= 0) {
         combat.spawnImaSwarm()
         state.imaTimer = progression.randomImaInterval()
+      }
+
+      // ============ EVENTO: TEMPESTADE / CHUVA INTENSA DE DETRITOS (v0.57.0) ============
+      if (ENVIRONMENT_CONFIG.enableDebrisStormEvent) {
+        if (!state.debrisStormActive) {
+          state.nextDebrisStormTimer -= dt * 1000
+          if (state.nextDebrisStormTimer <= 0) {
+            triggerDebrisStorm(15000)
+          }
+        } else {
+          state.debrisStormTimer -= dt * 1000
+          state.debrisStormSpawnTimer -= dt * 1000
+
+          // Durante a tempestade, spawna levas rápidas a cada 0.8s a 1.25s
+          if (state.debrisStormSpawnTimer <= 0) {
+            state.debrisStormSpawnTimer = 800 + Math.random() * 450
+            const stormCount = Math.floor(Math.random() * 4) + 3 // 3 a 6 por salva
+            combat.spawnDetrito(stormCount, { drift: true })
+
+            // 35% de chance de surgir um detrito TITÂNICO colossal!
+            if (Math.random() < 0.35) {
+              combat.spawnTitanicDetrito({ drift: true })
+            }
+          }
+
+          if (state.debrisStormTimer <= 0) {
+            state.debrisStormActive = false
+            state.nextDebrisStormTimer = 55000 + Math.random() * 35000 // próxima em 55-90s
+            if (hud?.showDebrisStormNotice) {
+              hud.showDebrisStormNotice({
+                active: false,
+                cleared: true,
+                title: 'CAMPO DE DETRITOS SUPERADO',
+                sub: 'TURBULÊNCIA CESSADA // ROTA LIVRE',
+              })
+            }
+          }
+        }
+      } else if (state.debrisStormActive) {
+        state.debrisStormActive = false
       }
     }
 

@@ -1022,6 +1022,75 @@ export function injectHudExtraStyles() {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   letter-spacing: 0.03em;
 }
+
+/* ============ ALERTA DE EVENTO AMBIENTAL: TEMPESTADE DE DETRITOS ============ */
+.hud-storm-warning {
+  position: absolute;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px) scale(0.92);
+  pointer-events: none;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 220ms ease-out, transform 260ms cubic-bezier(0.18, 0.9, 0.3, 1.25);
+  will-change: transform, opacity;
+}
+.hud-storm-warning.active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+.hud-storm-warning-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 22px;
+  border-radius: 999px;
+  background: rgba(18, 12, 8, 0.92);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(245, 158, 11, 0.85);
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.45), 0 4px 16px rgba(0, 0, 0, 0.7);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+.hud-storm-warning.cleared .hud-storm-warning-pill {
+  border-color: rgba(34, 197, 94, 0.85);
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.45), 0 4px 16px rgba(0, 0, 0, 0.7);
+  background: rgba(6, 20, 12, 0.92);
+}
+.hud-storm-warning-icon {
+  font-size: 20px;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.8));
+}
+.hud-storm-warning.cleared .hud-storm-warning-icon {
+  filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.8));
+}
+.hud-storm-warning-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.hud-storm-warning-title {
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  color: #fef3c7;
+  text-transform: uppercase;
+}
+.hud-storm-warning.cleared .hud-storm-warning-title {
+  color: #dcfce7;
+}
+.hud-storm-warning-sub {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(254, 243, 199, 0.8);
+}
+.hud-storm-warning.cleared .hud-storm-warning-sub {
+  color: rgba(220, 252, 231, 0.8);
+}
 `
   document.head.appendChild(style)
 }

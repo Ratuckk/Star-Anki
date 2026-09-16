@@ -186,6 +186,11 @@ export function mountGame(session, deck, menu) {
     detritoTimer: 0, // valor real logo abaixo (progression.randomDetritoInterval)
     imaTimer: 0, // valor real logo abaixo (progression.randomImaInterval)
     bonusTimer: 0, // valor real logo abaixo (progression.randomBonusInterval)
+    // ============ evento de tempestade/chuva de detritos (v0.57.0) ============
+    debrisStormActive: false,
+    debrisStormTimer: 0,
+    debrisStormSpawnTimer: 0,
+    nextDebrisStormTimer: 32000 + Math.random() * 28000,
   }
 
   // ============ PROGRESSÃO (etapa 6 do overhaul) ============
@@ -362,6 +367,7 @@ export function mountGame(session, deck, menu) {
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
     debugFlags: state.debugFlags,
+    triggerDebrisStorm: (dur) => state.triggerDebrisStorm?.(dur),
     getPhase: () => state.phase,
     resetBossHealthBonus: () => { state.bossHealthBonus = 0 },
     applyHealthLoss, endSector, forceAnswerOutcome,

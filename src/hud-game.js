@@ -82,6 +82,21 @@ export function createGameHud() {
   root.appendChild(squadronNotice)
   let squadronNoticeTimeout = null
 
+  // ============ ALERTA DE TEMPESTADE DE DETRITOS (v0.57.0) ============
+  const stormWarning = document.createElement('div')
+  stormWarning.className = 'hud-storm-warning'
+  stormWarning.innerHTML = `
+    <div class="hud-storm-warning-pill">
+      <span class="hud-storm-warning-icon">⚠️</span>
+      <div class="hud-storm-warning-content">
+        <span class="hud-storm-warning-title">TEMPESTADE DE DETRITOS DETECTADA</span>
+        <span class="hud-storm-warning-sub">CAMPO DENSO DE ASTEROIDES // MANOBRAS EVASIVAS</span>
+      </div>
+    </div>
+  `
+  root.appendChild(stormWarning)
+  let stormWarningTimeout = null
+
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
   // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
   // beam, focus collapse, error float. `unmount()` limpa em bloco. `focusCollapse` precisa de
@@ -1147,6 +1162,32 @@ export function createGameHud() {
       squadronNotice.style.top = `${(yFrac * 100).toFixed(1)}%`
     },
 
+    showDebrisStormNotice({ active = true, cleared = false, title, sub } = {}) {
+      cancelTimeout(stormWarningTimeout)
+      stormWarning.classList.remove('active', 'cleared')
+
+      const icon = stormWarning.querySelector('.hud-storm-warning-icon')
+      const titleEl = stormWarning.querySelector('.hud-storm-warning-title')
+      const subEl = stormWarning.querySelector('.hud-storm-warning-sub')
+
+      if (cleared) {
+        stormWarning.classList.add('cleared')
+        if (icon) icon.textContent = '✅'
+        if (titleEl) titleEl.textContent = title || 'CAMPO DE DETRITOS SUPERADO'
+        if (subEl) subEl.textContent = sub || 'TURBULÊNCIA CESSADA // ROTA LIVRE'
+      } else {
+        if (icon) icon.textContent = '⚠️'
+        if (titleEl) titleEl.textContent = title || 'TEMPESTADE DE DETRITOS DETECTADA'
+        if (subEl) subEl.textContent = sub || 'CAMPO DENSO DE ASTEROIDES // MANOBRAS EVASIVAS'
+      }
+
+      stormWarning.classList.add('active')
+      const duration = cleared ? 2500 : 3600
+      stormWarningTimeout = scheduleTimeout(() => {
+        stormWarning.classList.remove('active')
+      }, duration)
+    },
+
     debug: {
       setVisible(v) { debugPanel.hidden = !v },
       bind(handlers) {
@@ -1169,6 +1210,9 @@ export function createGameHud() {
       cancelTimeout(squadronNoticeTimeout)
       squadronNoticeTimeout = null
       squadronNotice.classList.remove('active')
+      cancelTimeout(stormWarningTimeout)
+      stormWarningTimeout = null
+      stormWarning.classList.remove('active')
       for (const id of pendingTimeouts) clearTimeout(id)
       pendingTimeouts.clear()
       hitMarkerTimeout = null

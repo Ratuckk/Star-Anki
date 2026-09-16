@@ -1,3 +1,45 @@
+## Evento Ambiental de Chuva/Tempestade de Detritos, Asteroides Titânicos Colossais, Física de Deriva e Alertas Holográficos com Reversibilidade Modular — v0.57.0
+
+Contexto e pedidos do usuário:
+1. *"eu tinha te dado a ideia de criar um evento de chuva de detritos onde invoca-se mais detritos com alguns ficando ainda maiores, além disso eu também tinha te falado sobre ter mais tamanhos de detritos, você fez a segunda ideia? a primeira eu sei que ainda não te dei permissão"*
+2. *"implemente"*
+
+**O que mudou e detalhes técnicos:**
+
+1. **Mini-Evento Ambiental: Tempestade / Chuva Intensa de Detritos**:
+   - Criado estado cíclico de evento (`state.debrisStormActive`, `state.debrisStormTimer`, `state.nextDebrisStormTimer`):
+     - Dispara automaticamente a cada 55-90 segundos durante a fase de combate (ou via acionamento instantâneo no Debug).
+     - Duração de 15 segundos (`15000ms`).
+     - Durante a tempestade, o spawn normal dá lugar a rajadas ultrarrápidas a cada 0.8s - 1.25s, gerando salvas de 3 a 6 detritos com trajetórias de deriva física.
+     - **35% de chance** em cada salva de gerar um **Asteroide Titânico Colossal**.
+   - Ao término dos 15 segundos, o estado é desativado e o HUD sinaliza a superação do campo de asteroides, agendando a próxima tempestade.
+
+2. **Detritos Titânicos Colossais (Tier Titânico: escalas 11.0 a 15.0)**:
+   - `src/enemies/detrito.js`: adicionada nova categoria `TITANIC_SIZE_TIERS = [11.0, 13.2, 15.0]` (quase o dobro do maior mega-asteroide anterior de 8.2).
+   - Material rochoso denso diferenciado com tonalidade mineral escura (`titanicMaterial`, `0x6e615a`).
+   - Vida reforçada proporcional ao volume colossal (~64 a ~74 HP) e raio de colisão ampliado (`detritoHitRadius` escala de 20u a 28u de envergadura física).
+   - Rotação inercial mais pesada e lenta (`spinRate * 0.4`).
+   - Função dedicada `spawnTitanicDetrito(scene, rail, id, opts)`.
+
+3. **Física de Deriva Espacial (Drift Velocity)**:
+   - Detritos gerados durante a tempestade (e titânicos) ganham vetor de velocidade `driftVel`.
+   - Em `src/enemies/index.js`, durante a atualização de detritos, se houver `driftVel`, a posição é deslocada em tempo real no espaço (`position.addScaledVector(driftVel, dt)`), fazendo com que as rochas não fiquem apenas paradas no espaço, mas cruzem a tela em trajetórias diagonais/frontais dinâmicas, criando um autêntico campo caótico de tempestade espacial.
+
+4. **Alertas Holográficos no HUD (`hud-styles.js` e `hud-game.js`)**:
+   - Banner de entrada: `⚠️ TEMPESTADE DE DETRITOS DETECTADA // CAMPO DENSO DE ASTEROIDES // MANOBRAS EVASIVAS` com borda e sombra âmbar neon pulsante (`rgba(245, 158, 11, 0.85)`).
+   - Banner de superação: `✅ CAMPO DE DETRITOS SUPERADO // TURBULÊNCIA CESSADA // ROTA LIVRE` com brilho esmeralda neon (`rgba(34, 197, 94, 0.85)`).
+   - Desliza suavemente no topo central da tela sem atrapalhar a visão da mira.
+
+5. **Reversibilidade Modular Total & Debug**:
+   - Flag `enableDebrisStormEvent: true` adicionada em `src/environment-config.js`. Caso definida como `false`, o evento nunca ocorre (e qualquer tempestade em andamento é cancelada imediatamente).
+   - Controles no painel de debug:
+     - `[Ação] Evento: Iniciar Tempestade de Detritos` (`triggerDebrisStorm`): força o início do evento imediatamente para teste.
+     - `[Toggle] Evento: Chuva de Detritos (Auto)` (`toggleDebrisStorm`): liga/desliga a ocorrência automática do evento em tempo de execução com sincronização visual.
+     - `[Ação] Spawnar Detrito Titânico (Colossal)` (`spawnTitanic`): invoca um asteroide colossal individualmente.
+
+**Testado**: `node --check` em todos os 11 arquivos tocados e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.56.0 → v0.57.0.
+
 ## Ambiente Cósmico Vivo (SkyDome Procedural, Corpos Celestes, Starfield Twinkle/Warp, Bolsões de Névoa, Relâmpagos Iônicos, Meteoros e Grid Energizado) com Reversibilidade Modular Total — v0.56.0
 
 Contexto e pedidos do usuário:

@@ -3,6 +3,22 @@
 Continuação do [PROGRESSO_POS_0.30.md](PROGRESSO_POS_0.30.md) (histórico v0.34.0 → v0.50.0, agora
 congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
 
+## Evento Ambiental de Chuva/Tempestade de Detritos, Asteroides Titânicos Colossais, Física de Deriva e Alertas Holográficos com Reversibilidade Modular — v0.57.0
+
+Contexto e pedidos do usuário:
+1. *"eu tinha te dado a ideia de criar um evento de chuva de detritos onde invoca-se mais detritos com alguns ficando ainda maiores, além disso eu também tinha te falado sobre ter mais tamanhos de detritos, você fez a segunda ideia? a primeira eu sei que ainda não te dei permissão"*
+2. *"implemente"*
+
+**O que mudou e detalhes técnicos:**
+1. **Mini-Evento Ambiental de Chuva/Tempestade**: Ciclo automático ocorrendo a cada 55-90s durante combate, com duração de 15s. Spawns rápidos em levas a cada 0.8-1.25s (3 a 6 detritos por salva) com física de deriva angular e 35% de chance de asteroide titânico por salva.
+2. **Detritos Titânicos Colossais (Escalas 11.0 a 15.0)**: Nova categoria `TITANIC_SIZE_TIERS` com material mineral escuro diferenciado (`titanicMaterial`), vida massiva (~64 a ~74 HP), rotação pesada e hitbox colossal ampliada de 20u a 28u.
+3. **Física de Deriva Espacial (Drift Velocity)**: Detritos gerados durante tempestades cruzam a tela em trajetórias diagonais/frontais via `driftVel` em tempo real.
+4. **Alertas Holográficos no HUD**: Banner neon âmbar pulsante na detecção da tempestade (`⚠️ TEMPESTADE DE DETRITOS DETECTADA`) e banner neon verde na superação (`✅ CAMPO DE DETRITOS SUPERADO`).
+5. **Reversibilidade Modular Total & Debug**: Flag `enableDebrisStormEvent` em `src/environment-config.js` e 3 novos controles no menu de debug (`triggerDebrisStorm`, `toggleDebrisStorm`, `spawnTitanic`).
+
+**Testado**: `node --check` em todos os 11 arquivos tocados e `node src/selftest.mjs` com 100% de sucesso.
+**Versão**: v0.56.0 → v0.57.0.
+
 ## Ambiente Cósmico Vivo (SkyDome Procedural, Corpos Celestes, Starfield Twinkle/Warp, Bolsões de Névoa, Relâmpagos Iônicos, Meteoros e Grid Energizado) com Reversibilidade Modular Total — v0.56.0
 
 Contexto e pedidos do usuário:

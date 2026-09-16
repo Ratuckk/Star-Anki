@@ -58,4 +58,7 @@ export const DEBUG_ACTIONS = [
   { id: 'toggleIonStorms', label: 'Ambiente: Relâmpagos Iônicos', toggle: true },
   { id: 'toggleShootingStars', label: 'Ambiente: Meteoros / Cadentes', toggle: true },
   { id: 'toggleEnergizedGrid', label: 'Ambiente: Grid Energizado', toggle: true },
+  { id: 'triggerDebrisStorm', label: 'Evento: Iniciar Tempestade de Detritos' },
+  { id: 'toggleDebrisStorm', label: 'Evento: Chuva de Detritos (Auto)', toggle: true },
+  { id: 'spawnTitanic', label: 'Spawnar Detrito Titânico (Colossal)' },
 ]

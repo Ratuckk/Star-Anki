@@ -19,7 +19,7 @@ import {
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
 import {
   DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS,
-  spawnDetrito, updateDetritoSpin, detritoHitRadius, disposeDetrito,
+  spawnDetrito, spawnTitanicDetrito, updateDetritoSpin, detritoHitRadius, disposeDetrito,
 } from './detrito.js'
 import {
   SENTINELA_KIND, SENTINELA_COLOR, SENTINELA_HIT_RADIUS, SENTINELA_DEATH_DURATION, SENTINELA_FIRE_INTERVAL,
@@ -341,8 +341,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // obstáculo estático: sem chase, só gira por vida visual. Em trilho ainda passa pra trás
         // e some (senão acumularia pra sempre); em arena, persiste até morrer, igual todo outro
         // kind lá. Enxame-ímã reaproveita 100% esse comportamento — só muda o giro visual.
-        if (isDetrito) updateDetritoSpin(enemy, dt)
-        else updateImaSpin(enemy, dt)
+        if (isDetrito) {
+          updateDetritoSpin(enemy, dt)
+          if (enemy.driftVel) {
+            enemy.mesh.position.addScaledVector(enemy.driftVel, dt)
+          }
+        } else updateImaSpin(enemy, dt)
         if (!inArena) {
           const relative = enemy.mesh.position.clone().sub(frame.position)
           const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
@@ -585,12 +589,21 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       registerSpawn(enemy)
     },
 
-    spawnDetrito(count = 1) {
-      const n = Math.max(1, Math.min(12, count))
+    spawnTitanicDetrito(opts = {}) {
+      const enemy = spawnTitanicDetrito(scene, rail, nextEnemyId++, opts)
+      registerSpawn(enemy)
+      return enemy
+    },
+
+    spawnDetrito(count = 1, opts = {}) {
+      const n = Math.max(1, Math.min(15, count))
+      const spawned = []
       for (let i = 0; i < n; i++) {
-        const enemy = spawnDetrito(scene, rail, nextEnemyId++)
+        const enemy = spawnDetrito(scene, rail, nextEnemyId++, opts)
         registerSpawn(enemy)
+        spawned.push(enemy)
       }
+      return spawned
     },
 
     spawnSentinela() {

@@ -26,38 +26,67 @@ const BOX_Y = 8
 const SPIN_RATE_MIN = 0.12
 const SPIN_RATE_MAX = 0.55
 
-// ============ 6 TIERS DE TAMANHO (v0.54.0) ============
-// 6 categorias bem distintas: microfragmento (0.7), pequeno (1.4), médio (2.5),
+// ============ 6 TIERS DE TAMANHO (v0.54.0) + TIERS TITÂNICOS (v0.57.0) ============
+// 6 categorias normais: microfragmento (0.7), pequeno (1.4), médio (2.5),
 // grande (4.0), enorme (5.8) e mega-asteroide (8.2), com jitter de ±10%.
+// Categoria Titânica para tempestades de detritos: colossos de 11.0 a 15.0!
 const DETRITO_SIZE_TIERS = [0.7, 1.4, 2.5, 4.0, 5.8, 8.2]
+const TITANIC_SIZE_TIERS = [11.0, 13.2, 15.0]
 const DETRITO_TIER_JITTER = 0.1
 
-function rollDetritoScale() {
-  const base = DETRITO_SIZE_TIERS[Math.floor(Math.random() * DETRITO_SIZE_TIERS.length)]
+function rollDetritoScale(isTitanic = false) {
+  const tiers = isTitanic ? TITANIC_SIZE_TIERS : DETRITO_SIZE_TIERS
+  const base = tiers[Math.floor(Math.random() * tiers.length)]
   return base * (1 - DETRITO_TIER_JITTER + Math.random() * DETRITO_TIER_JITTER * 2)
 }
 
 const geometry = new THREE.IcosahedronGeometry(1.3, 0)
 const material = new THREE.MeshPhongMaterial({ color: DETRITO_COLOR, flatShading: true })
+const titanicMaterial = new THREE.MeshPhongMaterial({ color: 0x6e615a, flatShading: true, shininess: 6 })
 
-export function spawnDetrito(scene, rail, id) {
-  const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
-  const mesh = new THREE.Mesh(geometry, material)
+export function spawnDetrito(scene, rail, id, opts = {}) {
+  const isTitanic = !!opts.titanic
+  const boxX = isTitanic ? BOX_X * 1.4 : BOX_X
+  const boxY = isTitanic ? BOX_Y * 1.4 : BOX_Y
+  const position = opts.position || spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, boxX, boxY)
+  const mesh = new THREE.Mesh(geometry, isTitanic ? titanicMaterial : material)
   mesh.position.copy(position)
-  // tamanho variável por spawn — cada detrito tem seu próprio tamanho entre os 6 tiers
-  const scale = rollDetritoScale()
+  // tamanho variável por spawn — cada detrito tem seu próprio tamanho entre os tiers
+  const scale = opts.scale || rollDetritoScale(isTitanic)
   mesh.scale.setScalar(scale)
   // HP escala proporcionalmente com o tamanho do asteroide
-  const hp = Math.max(3, Math.round(3 + scale * 3.2))
+  const hp = isTitanic
+    ? Math.round(38 + scale * 2.4) // ~64 a ~74 HP para titânicos
+    : Math.max(3, Math.round(3 + scale * 3.2))
   // rotação inicial aleatória — cada detrito nasce virado diferente
   mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
   scene.add(mesh)
+
+  // Velocidade de deriva (física de chuva/tempestade)
+  let driftVel = null
+  if (opts.driftVel) {
+    driftVel = opts.driftVel.clone()
+  } else if (opts.drift) {
+    const forward = rail.getFrameAt(0).forward
+    const right = rail.getFrameAt(0).right
+    const up = rail.getFrameAt(0).up
+    driftVel = right.clone().multiplyScalar((Math.random() - 0.5) * 16)
+      .addScaledVector(up, (Math.random() - 0.5) * 12)
+      .addScaledVector(forward, isTitanic ? -5 : (Math.random() - 0.5) * 10)
+  }
+
   return {
     id, mesh, kind: DETRITO_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: Infinity,
     scale, // guardado pra hitbox e animação de morte escalarem junto
+    isTitanic,
+    driftVel,
     spinAxis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
-    spinRate: SPIN_RATE_MIN + Math.random() * (SPIN_RATE_MAX - SPIN_RATE_MIN),
+    spinRate: (SPIN_RATE_MIN + Math.random() * (SPIN_RATE_MAX - SPIN_RATE_MIN)) * (isTitanic ? 0.4 : 1.0),
   }
+}
+
+export function spawnTitanicDetrito(scene, rail, id, opts = {}) {
+  return spawnDetrito(scene, rail, id, { ...opts, titanic: true })
 }
 
 // hitbox acompanha o tamanho real do mesh (escala multiplica o raio base)
@@ -74,4 +103,5 @@ export function updateDetritoSpin(enemy, dt) {
 export function disposeDetrito() {
   geometry.dispose()
   material.dispose()
+  titanicMaterial.dispose()
 }

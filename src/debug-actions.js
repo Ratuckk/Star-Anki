@@ -7,7 +7,7 @@ export function createDebugActions(deps) {
     combat, session, player, rail, effects, hud, enemies,
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
-    debugFlags, getPhase, resetBossHealthBonus,
+    debugFlags, triggerDebrisStorm, getPhase, resetBossHealthBonus,
     applyHealthLoss, endSector, forceAnswerOutcome,
     startArenaCutscene, enterBossBuildup, finishBossHunt, enterBossFight, enterGoldenArena,
     enterCardChoice, enterCombat,
@@ -24,6 +24,7 @@ export function createDebugActions(deps) {
     hud.debug.setToggleActive('toggleIonStorms', cfg.enableIonStorms)
     hud.debug.setToggleActive('toggleShootingStars', cfg.enableShootingStars)
     hud.debug.setToggleActive('toggleEnergizedGrid', cfg.enableEnergizedGrid)
+    hud.debug.setToggleActive('toggleDebrisStorm', cfg.enableDebrisStormEvent)
   }
 
   return {
@@ -224,5 +225,15 @@ export function createDebugActions(deps) {
         hud.debug.setToggleActive('toggleEnergizedGrid', active)
       }
     },
+    triggerDebrisStorm: () => {
+      if (triggerDebrisStorm) triggerDebrisStorm(15000)
+    },
+    toggleDebrisStorm: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableDebrisStormEvent')
+        hud.debug.setToggleActive('toggleDebrisStorm', active)
+      }
+    },
+    spawnTitanic: () => combat.spawnTitanicDetrito({ drift: true }),
   }
 }
