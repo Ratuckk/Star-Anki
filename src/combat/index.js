@@ -53,11 +53,24 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     tryFire(origin, direction) {
       if (!projectiles.tryFire(origin, direction, { isFrenzy: focusFrenzyTimer > 0 })) return false
       squadron.tryFireSupport(direction)
+      player.getTelemetry?.()?.recordEvent('fire', `Laser primário disparado (${player.getProjectileCount?.() || 1}x)`, { pos: origin })
       return true
     },
 
-    fireHomingShot: (origin, maxTargets, isMaxCharge) => projectiles.fireHomingShot(origin, maxTargets, isMaxCharge),
-    deflectNearbyProjectiles: (playerPos, radius) => projectiles.deflectNearbyProjectiles(playerPos, radius),
+    fireHomingShot: (origin, maxTargets, isMaxCharge) => {
+      const fired = projectiles.fireHomingShot(origin, maxTargets, isMaxCharge)
+      if (fired) {
+        player.getTelemetry?.()?.recordEvent('homing', `Tiro teleguiado disparado! Carga máx: ${isMaxCharge}, Alvos: ${maxTargets}`, { isMaxCharge, maxTargets })
+      }
+      return fired
+    },
+    deflectNearbyProjectiles: (playerPos, radius) => {
+      const count = projectiles.deflectNearbyProjectiles(playerPos, radius)
+      if (count > 0) {
+        player.getTelemetry?.()?.recordEvent('deflect', `${count} projétil(eis) hostil(is) defletido(s)!`, { count, radius })
+      }
+      return count
+    },
 
     setWingmanCount: (n) => squadron.setWingmanCount(n),
     getWingmanCount: () => squadron.getWingmanCount(),
@@ -72,6 +85,44 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
     getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets() : 0,
+
+    // Telemetria da Esquadrilha
+    getWingmanTelemetry: () => (squadron.getTelemetry ? squadron.getTelemetry() : null),
+    getWingmanFlightLog: (limit) => (squadron.getFlightLog ? squadron.getFlightLog(limit) : []),
+    dumpWingmanTelemetry: () => (squadron.dumpTelemetry ? squadron.dumpTelemetry() : null),
+    copyWingmanFlightLog: () => (squadron.copyFlightLog ? squadron.copyFlightLog() : ''),
+    getWingmanTelemetryText: () => (squadron.getTelemetryText ? squadron.getTelemetryText() : ''),
+    clearWingmanFlightLog: () => { squadron.clearFlightLog?.() },
+
+    // Telemetria do Jogador
+    getPlayerTelemetry: () => player.getTelemetry?.()?.getSnapshot(),
+    getPlayerFlightLog: (limit) => player.getTelemetry?.()?.getFlightLog(limit),
+    dumpPlayerTelemetry: () => player.getTelemetry?.()?.dumpToConsole(),
+    copyPlayerFlightLog: () => player.getTelemetry?.()?.copyToClipboard(),
+    getPlayerTelemetryText: () => player.getTelemetry?.()?.getFormattedText(),
+    clearPlayerFlightLog: () => player.getTelemetry?.()?.clearLog(),
+
+    // Telemetria dos Inimigos
+    getEnemyTelemetry: () => enemies.getTelemetry?.(),
+    getEnemyCombatLog: (limit) => enemies.getCombatLog?.(limit),
+    dumpEnemyTelemetry: () => enemies.dumpTelemetry?.(),
+    copyEnemyCombatLog: () => enemies.copyCombatLog?.(),
+    getEnemyTelemetryText: () => enemies.getTelemetryText?.(),
+    clearEnemyCombatLog: () => enemies.clearCombatLog?.(),
+
+    // Telemetria Global Integrada de Combate
+    getCombatTelemetry: () => ({
+      player: player.getTelemetry?.()?.getSnapshot(),
+      wingmen: squadron.getTelemetry?.(),
+      enemies: enemies.getTelemetry?.(),
+    }),
+    dumpCombatTelemetry: () => {
+      console.log('%c==================== TELEMETRIA GERAL DE COMBATE ====================', 'color: #ffd700; font-size: 14px; font-weight: bold;')
+      player.getTelemetry?.()?.dumpToConsole()
+      squadron.dumpTelemetry?.()
+      enemies.dumpTelemetry?.()
+      console.log('%c======================================================================', 'color: #ffd700; font-size: 14px; font-weight: bold;')
+    },
 
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnSquadron: (formationType) => enemies.spawnSquadron ? enemies.spawnSquadron(formationType) : null,

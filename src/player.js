@@ -93,6 +93,8 @@ export function createPlayerSystem(session) {
   let projectileCount = PROJECTILE_COUNT_START
   const collectedCards = new Map()
 
+  let telemetry = null
+
   // QoL (v0.29.4): única fonte de verdade de "pode usar boost?" — antes a checagem estava
   // copiada dentro de activatePropulsion/activateRepulsion, e canUseBoost() existia na API
   // pública mas era código morto (nunca chamado). Agora os três pontos (público + os dois
@@ -124,7 +126,7 @@ export function createPlayerSystem(session) {
   }
 
   return {
-    // objeto mutável que combat.js (Fase 3) e main.js leem direto, sem setters
+    // objeto mutável que combat.js, game-loop.js e main.js leem direto
     config: {
       get projectileCount() { return projectileCount },
       get fireCooldown() { return fireCooldown },
@@ -133,11 +135,16 @@ export function createPlayerSystem(session) {
       get homingChargeMaxMs() { return homingChargeMaxMs },
       get ricochetCount() { return ricochetCount },
     },
+    get stats() { return this.config },
 
+    setTelemetry: (t) => { telemetry = t },
+    getTelemetry: () => telemetry,
     getMaxHealth: () => maxHealth,
     getMaxLives: () => maxLives,
     getShieldValue: () => shieldValue,
     getShieldMax: () => shieldMax,
+    getShieldRegenDelayTimer: () => shieldRegenDelayTimer,
+    getShieldRegenRate: () => shieldRegenRate,
     setWrongCount(count) { wrongAnswerCount = Math.max(0, count || 0) },
     getWrongCount: () => wrongAnswerCount,
     isInvincible: () => invincibleTimer > 0,
@@ -145,7 +152,12 @@ export function createPlayerSystem(session) {
     // flicker padrão de invencibilidade e mostrar afterimage no lugar só nessa janela
     isRollIframeActive: () => rollIframeTimer > 0,
     getInvincibleRemainingMs: () => invincibleTimer,
+    getRollIframeTimer: () => rollIframeTimer,
     isFullSpinOnCooldown: () => fullSpinCooldownTimer > 0,
+    getFullSpinCooldownTimer: () => fullSpinCooldownTimer,
+    getFireCooldown: () => fireCooldown,
+    getProjectileCount: () => projectileCount,
+    getHomingMaxTargets: () => homingMaxTargets,
     isDeflectActive: () => deflectCardActive,
     isRamCardActive: () => ramCardActive,
     setWingmanCount: (count) => {
@@ -159,6 +171,7 @@ export function createPlayerSystem(session) {
     isPropulsionActive: () => propulsionActiveTimer > 0,
     isRepulsionActive: () => repulsionActiveTimer > 0,
     getPropulsionActiveTimer: () => propulsionActiveTimer,
+    getRepulsionActiveTimer: () => repulsionActiveTimer,
 
     getLowHealthIntensity(thresholdFrac) {
       // QoL (v0.29.4): clamp de thresholdFrac em (0, 1] — antes, passar 0 desligava a vignette
@@ -243,6 +256,7 @@ export function createPlayerSystem(session) {
           return false
       }
       collectedCards.set(card.id, (collectedCards.get(card.id) || 0) + 1)
+      telemetry?.recordEvent('card', `Carta adquirida: ${card.title || card.id} (total: ${collectedCards.get(card.id)}x)`, { cardId: card.id, count: collectedCards.get(card.id) })
       return true
     },
 
@@ -319,6 +333,9 @@ export function createPlayerSystem(session) {
         session.health = Math.max(0, session.health - remaining)
         outOfLives = applyHealthLoss()
       }
+      telemetry?.recordEvent('damage', `Dano sofrido: ${amount} (Escudo: ${absorbedByShield ? 'absorveu' : 'vazio'}, HP restante: ${session.health}, Vidas: ${session.lives})`, {
+        amount, absorbedByShield, shieldBroke, outOfLives, health: session.health, lives: session.lives,
+      })
       return { absorbedByShield, shieldBroke, outOfLives }
     },
 
@@ -337,6 +354,7 @@ export function createPlayerSystem(session) {
       fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
       invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
       rollIframeTimer = fullSpinIframeMs
+      telemetry?.recordEvent('roll', `Giro completo efetuado! I-frames ativados por ${fullSpinIframeMs}ms`, { iframeMs: fullSpinIframeMs })
       return true
     },
 
@@ -346,12 +364,14 @@ export function createPlayerSystem(session) {
       if (!boostReady()) return false
       propulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
+      telemetry?.recordEvent('boost', `Propulsor ativado (velocidade ${PROPULSION_SPEED_MULT}x)`, { factor: PROPULSION_SPEED_MULT })
       return true
     },
     activateRepulsion() {
       if (!boostReady()) return false
       repulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
+      telemetry?.recordEvent('boost', `Repulsor/Freio ativado (velocidade ${REPULSION_SPEED_MULT}x)`, { factor: REPULSION_SPEED_MULT })
       return true
     },
 
@@ -371,7 +391,11 @@ export function createPlayerSystem(session) {
       if (!Number.isFinite(amount) || amount <= 0) return 0
       const before = session.health
       session.health = Math.min(maxHealth, session.health + amount)
-      return session.health - before
+      const healed = session.health - before
+      if (healed > 0) {
+        telemetry?.recordEvent('heal', `Cura recebida: +${healed} HP (${session.health}/${maxHealth})`, { healed, health: session.health })
+      }
+      return healed
     },
 
     // QoL (v0.29.4): devolve quanto restaurou de fato (paralelo a heal()), permitindo o debug/
@@ -381,6 +405,7 @@ export function createPlayerSystem(session) {
       const before = shieldValue
       shieldValue = shieldMax
       shieldRegenDelayTimer = 0
+      telemetry?.recordEvent('shield', `Escudo totalmente restaurado para ${shieldMax}`, { shield: shieldMax })
       return shieldMax - before
     },
 
@@ -391,7 +416,11 @@ export function createPlayerSystem(session) {
       if (!Number.isFinite(amount) || amount <= 0) return 0
       const before = shieldValue
       shieldValue = Math.min(shieldMax, shieldValue + amount)
-      return shieldValue - before
+      const granted = shieldValue - before
+      if (granted > 0) {
+        telemetry?.recordEvent('shield', `Guarda aliada concedeu +${granted} carga de escudo (${shieldValue.toFixed(1)}/${shieldMax})`, { granted, shield: shieldValue })
+      }
+      return granted
     },
 
     // debug "Aplicar buffs máximos": pula direto pro teto, ignorando o ganho gradual por carta.

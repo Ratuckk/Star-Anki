@@ -230,17 +230,22 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx, frame) {
 }
 
 export function updateGateFlight(gate, dt, rail) {
-  const frame = rail.getFrameAt(0)
-  const targetNow = frame.position.clone()
-    .addScaledVector(frame.forward, gate.targetLocal.depth)
-    .addScaledVector(frame.right, gate.targetLocal.right)
-    .addScaledVector(frame.up, gate.targetLocal.up)
-  const toTarget = targetNow.sub(gate.originPos)
-  if (toTarget.lengthSq() > 1e-6) {
-    gate.dir = toTarget.normalize()
-    gate.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, gate.dir)
-    gate.right.set(1, 0, 0).applyQuaternion(gate.mesh.quaternion)
-    gate.up.set(0, 1, 0).applyQuaternion(gate.mesh.quaternion)
+  // Antes de cruzar o jogador, alinha a direção ao alvo em voo.
+  // Após cruzar (hitResolved === true), mantém a direção cravada para ultrapassar
+  // a nave e a câmera em linha reta contínua sem inverter rumo.
+  if (!gate.hitResolved) {
+    const frame = rail.getFrameAt(0)
+    const targetNow = frame.position.clone()
+      .addScaledVector(frame.forward, gate.targetLocal.depth)
+      .addScaledVector(frame.right, gate.targetLocal.right)
+      .addScaledVector(frame.up, gate.targetLocal.up)
+    const toTarget = targetNow.sub(gate.originPos)
+    if (toTarget.lengthSq() > 1e-6) {
+      gate.dir = toTarget.normalize()
+      gate.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, gate.dir)
+      gate.right.set(1, 0, 0).applyQuaternion(gate.mesh.quaternion)
+      gate.up.set(0, 1, 0).applyQuaternion(gate.mesh.quaternion)
+    }
   }
   gate.traveled += GATE_SPEED * dt
   gate.age += dt

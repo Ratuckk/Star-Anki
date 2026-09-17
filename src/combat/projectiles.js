@@ -252,7 +252,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         if (hit.kind !== 'golden') {
           hitsLog.push({
             worldPos: hit.worldPos, damage: projectile.damage ?? 1, killed: hit.killed,
-            isHoming: !!projectile.isHoming, meshRef: hit.meshRef,
+            isHoming: !!projectile.isHoming, meshRef: hit.meshRef, points: hit.enemyKillPoints || 0,
           })
           if (hit.killed) {
             if (hit.bossDefeated) {

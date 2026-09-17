@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR } from './shared.js'
+import { createEnemyTelemetry } from './enemy-telemetry.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
@@ -92,6 +93,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   let bossDefeatedWorldPos = null
 
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
+  const telemetry = createEnemyTelemetry()
 
   // material/geometria do projétil comum — compartilhado por blaster/tank/time-normal/chefe
   const enemyProjectileGeometry = new THREE.ConeGeometry(0.35, 1.4, 6)
@@ -123,6 +125,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
   function removeEnemy(e) {
     e.dying = true
+    telemetry.recordEvent(e.id, e.kind, 'despawn', `Inimigo ${e.kind} #${e.id} removido da cena`, { reason: e.deathT >= 1 ? 'destruído' : 'despawn' })
     if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
     if (e.kind === SUSSURRO_KIND && e.mesh && e.mesh.material) {
       e.mesh.material.dispose()
@@ -585,9 +588,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
-  // ao cruzar o plano do jogador ou chegar na distância travada, resolve uma vez e remove.
-  // updateGateFlight ANTES de updateGateAnimation: a escala depende de `gate.traveled`, que só
-  // fica correto pra este frame depois do voo ser atualizado (ver comentário em sentinela.js).
+  // ao cruzar o plano do jogador resolve o dano uma única vez, mas deixa a moldura continuar voando
+  // e ultrapassar a nave/câmera por completo antes do despawn (não sumir na cara do jogador).
   function updateEnemyGates(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
@@ -598,9 +600,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const rel = playerPosition.clone().sub(gate.mesh.position)
       const alongDir = rel.dot(gate.dir)
 
-      if (alongDir <= 0 || gate.traveled >= gate.targetDistance + 25) {
+      // Resolve colisão no instante da passagem pelo plano do jogador (uma única vez)
+      if (alongDir <= 0 && !gate.hitResolved) {
+        gate.hitResolved = true
         const { hit } = resolveGateHit(gate, playerPosition, opts)
-        if (hit) { hits += 1; damage = Math.max(damage, gate.shieldDamage ?? 1) }
+        if (hit) {
+          hits += 1
+          damage = Math.max(damage, gate.shieldDamage ?? 1)
+        }
+      }
+
+      // Despawn apenas após ultrapassar com folga segura o jogador e a câmera
+      if (alongDir <= -25 || gate.traveled >= gate.targetDistance + 45) {
         removeEnemyGate(gate)
       }
     }
@@ -624,6 +635,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
     }
     enemies.push(enemy)
+    telemetry.recordEvent(enemy.id, enemy.kind, 'spawn', `Inimigo ${enemy.kind} #${enemy.id} surgiu em cena`, {
+      pos: { x: enemy.mesh?.position?.x || 0, y: enemy.mesh?.position?.y || 0, z: enemy.mesh?.position?.z || 0 },
+      hp: enemy.hp,
+    })
     return enemy
   }
 
@@ -810,7 +825,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       .map((e) => ({ position: e.mesh.position.clone(), radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })),
 
     spawnBossEnemy(hp) {
-      enemies.push(spawnBossEnemy(scene, rail, nextEnemyId++, hp))
+      const boss = spawnBossEnemy(scene, rail, nextEnemyId++, hp)
+      enemies.push(boss)
+      telemetry.recordEvent(boss.id, boss.kind, 'spawn', `CHEFE entrou em combate com ${boss.hp} HP!`, { hp: boss.hp, maxHp: boss.maxHp })
     },
 
     spawnGoldenSpecial(opts = {}) {
@@ -827,6 +844,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage, opts)
       const result = updateEnemies(dt, playerPosition, ramDamage, opts)
       const bossCollisionWorldPos = result.bossCollisionWorldPos || goldenRamResult?.bossCollisionWorldPos || null
+
+      telemetry.update({
+        enemies,
+        enemyProjectiles,
+        enemyLasers,
+        enemyGates,
+        golden,
+        playerPos: playerPosition,
+        frame: rail.getFrameAt(0),
+        elapsed,
+      })
+
       return {
         ...result,
         hits: result.hits + (goldenRamResult?.goldenHits || 0),
@@ -860,7 +889,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (e.kind === BOSS_KIND && e.isShieldActive) continue
         e.hp -= damage
         const killed = e.hp <= 0
-        hitsLog.push({ worldPos: e.mesh.position.clone(), damage, killed, isHoming: true, meshRef: e.mesh })
+        const points = (killed && e.kind !== BOSS_KIND) ? killPointsFor(e.kind) : 0
+        hitsLog.push({ worldPos: e.mesh.position.clone(), damage, killed, isHoming: true, meshRef: e.mesh, points })
         if (killed) {
           e.dying = true
           e.deathT = 0
@@ -872,7 +902,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             if (e.shieldMesh) e.shieldMesh.visible = false
             if (effects) explodeBoss(effects, e.mesh.position, false)
           } else {
-            enemyKillPoints += killPointsFor(e.kind)
+            enemyKillPoints += points
             if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
             if (effects) effects.explosion(e.mesh.position, colorFor(e), 1.6, { rings: true })
             enemyKills += 1
@@ -928,6 +958,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
         enemyHit.hp -= damage
+        telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${damage} de dano (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage, hp: enemyHit.hp })
         if (isHoming && effects) effects.explosion(enemyHit.mesh.position, HOMING_EXPLOSION_COLOR, 0.5)
         if (enemyHit.kind === BOSS_KIND && effects) {
           effects.bossImpactRing(enemyHit.mesh.position, 1)
@@ -943,6 +974,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (killed) {
           enemyHit.dying = true
           enemyHit.deathT = 0
+          telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'death', `Inimigo ${enemyHit.kind} #${enemyHit.id} abatido!`, { hp: 0 })
           if (enemyHit.kind === BOSS_KIND) {
             bossDefeated = true
             bossDefeatedPending = true
@@ -1095,6 +1127,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const b = enemies.find((e) => e.kind === BOSS_KIND)
       return b ? b.mesh.position.clone() : null
     },
+
+    getTelemetry: () => telemetry.getSnapshot(),
+    getCombatLog: (limit) => telemetry.getCombatLog(limit),
+    getTelemetryText: () => telemetry.getFormattedText(),
+    dumpTelemetry: () => telemetry.dumpToConsole(),
+    copyCombatLog: () => telemetry.copyToClipboard(),
+    clearCombatLog: () => telemetry.clearLog(),
+    recordTelemetryEvent: (id, kind, cat, msg, meta) => telemetry.recordEvent(id, kind, cat, msg, meta),
 
     dispose() {
       for (const e of [...enemies]) removeEnemy(e)

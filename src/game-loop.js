@@ -35,6 +35,9 @@ import {
   LEVEL_BACKGROUNDS,
 } from './main-constants.js'
 
+// Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
+const KILL_CHAIN_DECAY_S = 3.0
+
 // Temporários reutilizáveis para interpolação da neblina cósmica (evita 21.600 alocações/min no GC)
 const _cosmicTint1 = new THREE.Color(0x0c1626) // azul-petróleo
 const _cosmicTint2 = new THREE.Color(0x190d24) // roxo estelar
@@ -137,6 +140,7 @@ export function createGameLoop(deps) {
     rail.update(dt, inputState)
     // CRÍTICO: camera.updateMatrixWorld() — ver comentário no arquivo original
     camera.updateMatrixWorld()
+    player.getTelemetry?.()?.update({ player, rail, session, camera, elapsed: performance.now() / 1000, dt })
 
     const playerPos = rail.getPlayerPosition()
     const noseFrame = rail.getFrameAt(0)
@@ -433,6 +437,26 @@ export function createGameLoop(deps) {
         }
       }
     }
+    // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
+    // Sobe 1 a cada abate que rendeu pontos (h.points > 0, chefe não conta — ele tem seu próprio
+    // momento de K.O. logo abaixo) e zera sozinha depois de KILL_CHAIN_DECAY_S sem abate novo.
+    if (events.hitsLog && events.hitsLog.length > 0) {
+      for (const h of events.hitsLog) {
+        if (h.killed && h.points) {
+          state.killChainCount = (state.killChainCount || 0) + 1
+          state.killChainTimer = 0
+        }
+      }
+    }
+    if ((state.killChainCount || 0) > 0) {
+      state.killChainTimer = (state.killChainTimer || 0) + dt
+      if (state.killChainTimer >= KILL_CHAIN_DECAY_S) {
+        state.killChainCount = 0
+        state.killChainTimer = 0
+      }
+    }
+    hud.setKillChain(state.killChainCount || 0)
+
     if (events.timeReductionMs && events.timeReductionWorldPos) {
       const ndcT = events.timeReductionWorldPos.project(camera)
       const xFracT = THREE.MathUtils.clamp((ndcT.x + 1) / 2, 0, 1)

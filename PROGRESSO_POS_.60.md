@@ -42,6 +42,163 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Feedback de Combate "Arcade Neon" — Pontos por Abate, Cadeia de Abates e K.O. de Chefe — v0.73.0
+
+Atendendo ao pedido do usuário de um documento de design com 5 opções animadas para "mostrar a
+quantidade de pontos que obtém ao destruir inimigos, a fazer combos de destruição, e ao derrotar
+um boss" — o usuário escolheu a Opção 1 ("Arcade Neon": fonte pixel Press Start 2P, contorno preto
+grosso, pop de escala tipo carimbo, combo que sobe de cor). Implementado de verdade no jogo (não
+só o protótipo do documento de design):
+
+1. **Pontos por abate encanados até o popup (`src/combat/projectiles.js`, `src/enemies/index.js`)**:
+   - O hit principal (`hitsLog.push` em `projectiles.js`) e o dano em área do tiro carregado no
+     máximo (`applyAreaDamage` em `enemies/index.js`) agora incluem `points: <pontos do abate>` em
+     cada entrada — antes esse dado existia (`enemyKillPoints`) mas nunca chegava no popup de dano,
+     só no placar.
+2. **Popup de abate restilizado (`src/hud-styles.js`, classe `.hud-damage-number.points`)**:
+   - Fonte `Press Start 2P` (Google Fonts, link adicionado em `index.html`), contorno preto de 2px
+     (`-webkit-text-stroke`), animação `hud-points-punch` (pop de escala tipo carimbo) e uma
+     estrela `::before` com `clip-path` que estoura atrás do número (`hud-star-burst`). Mesmo timing
+     de remoção (950ms) que já existia em `spawnDamageNumber`.
+3. **Cadeia de abates (`src/hud-game.js`, `src/hud-styles.js`, `src/game-loop.js`, `src/mount-game.js`)**:
+   - Terceiro filho de `.hud-topbar-row` (ao lado do placar e dos emblemas de habilidade) — não
+     colide com o minimapa porque fica no canto oposto da tela. Contador "xN" + barra de 8
+     segmentos que sobe de cor a cada abate (verde → amarelo → laranja → vermelho, nos limiares
+     2/4/6) e zera sozinha depois de 3s sem abate novo (`KILL_CHAIN_DECAY_S`). Estado vive em
+     `state.killChainCount`/`state.killChainTimer`.
+4. **Momento de K.O. do chefe (`src/flow-boss.js`, `hud.showBossKO()`)**:
+   - Dispara IMEDIATAMENTE em `handleBossDefeated`, ANTES da cutscene de morte mais sedada que já
+     existia (que continua intacta, sem nenhuma mudança). Overlay de tela cheia com "K.O.!" em
+     carimbo torto (leve rotação de entrada), bônus em verde neon e chuva de 10 moedas pixeladas
+     voando em leque — 3.4s de duração total.
+5. **Testado ao vivo** usando a infraestrutura de manual-stepping do Antigravity
+   (`window.__starAnki.step()`) para contornar o throttling de rAF: confirmado via
+   `applyAreaDamage` direto que `hitsLog` carrega `points` corretamente, confirmado via disparo
+   real (`combat.tryFire` + `step()`) que um abate de verdade incrementa `state.killChainCount`,
+   atualiza a cor/segmentos da cadeia na HUD e spawna o popup `+30` com as classes `points big`
+   corretas — tudo visualmente conferido por screenshot.
+6. **Bug pré-existente corrigido de passagem (`src/player.js`)**: durante o teste, o jogo não
+   iniciava (`ReferenceError: telemetry is not defined`) porque o trabalho não commitado do
+   Antigravity em `player.js` referenciava a variável `telemetry` em `setTelemetry`/`getTelemetry`
+   sem nunca declará-la (`let telemetry = null` estava faltando). Não é uma regressão desta
+   entrega — a variável só existia como propriedade do objeto retornado, nunca no escopo da
+   closure — mas bloqueava qualquer teste, então foi corrigida junto.
+
+---
+
+### Tríade Completa de Telemetria e Caixa Preta (Jogador, Inimigos e Aliados) — v0.72.5
+
+Atendendo ao pedido do usuário ("crie um desses também para os inimigos e para o jogador, eu quero que todos parâmetros possiveis sejam levados em conta. Faça isso antes de iniciar as mudanças nos aliados"):
+
+1. **Utilitários Matemáticos de Telemetria Pura (`src/telemetry-utils.js`)**:
+   - Zero dependências de Three.js ou libs externas (100% JS puro): conversão precisa de quaternions para ângulos Euler (`quaternionToEulerDeg`), produtos escalares 3D, distâncias euclidianas e manipulação de clipboard com fallback.
+
+2. **Telemetria e Gravador de Voo do Jogador (`src/player-telemetry.js`)**:
+   - Captura frame a frame: coordenadas mundiais `(x, y, z)`, posição lateral na tela `(lateralX, lateralY)`, distância no trilho e da câmera.
+   - Vetores de velocidade, avanço longitudinal e multiplicadores.
+   - Atitude da nave: ângulos Euler Pitch/Yaw/Roll em graus, quaternion e inclinação lateral (banking).
+   - Vitais e defesas: HP, escudo contínuo e delay de recarga, vidas, i-frames normais e de rolamento.
+   - Propulsão: carga do boost (0 a 100%), status de turbo/freio e fatores multiplicadores.
+   - Combate: tiros paralelos, cooldowns de disparo primário e secundário, alvos travados e cartas ativas.
+   - Caixa preta: buffer circular dos últimos 200 eventos (`fire`, `homing`, `boost`, `roll`, `damage`, `heal`, `shield`, `card`).
+
+3. **Telemetria e Gravador de Combate dos Inimigos (`src/enemies/enemy-telemetry.js`)**:
+   - Resumo global: contagem de inimigos vivos, projéteis hostis, lasers de chefes, portais sentinela e presença de chefes/dourados.
+   - Perigos ao vivo: distância euclidiana do projétil hostil mais próximo do jogador calculada a cada frame.
+   - Telemetria individual de cada inimigo ativo em cena: ID, tipo, HP atual e porcentagem, posição mundial, distância frontal, lateral e vertical ao jogador, ângulos Euler Pitch/Yaw/Roll, estado da IA e timers de ataque (telegraph, fire, dying).
+   - Caixa preta: buffer circular de 200 eventos (`spawn`, `telegraph`, `fire`, `gate`, `damage`, `death`, `despawn`).
+
+4. **Integração Global e Acessos (`src/mount-game.js`, `src/debug.js`, `src/debug-actions.js`, `src/combat/index.js`)**:
+   - Atalhos no console: `window.__dumpCombatTelemetry()`, `window.__dumpPlayerTelemetry()`, `window.__dumpEnemyTelemetry()`, `window.__dumpWingmanTelemetry()`, `window.__playerFlightLog()`, `window.__enemyCombatLog()`, `window.__wingmanFlightLog()`.
+   - Botões no Debug Panel (`F1`): "Imprimir Telemetria do Jogador", "Copiar Log do Jogador", "Imprimir Telemetria dos Inimigos", "Copiar Log dos Inimigos", "Imprimir Telemetria Geral de Combate (Tudo)".
+
+---
+
+### Formação Tática Estilo Star Fox 64, Fim das Piruetas e Passagem da Moldura do Sentinela — v0.72.4
+
+Atendendo ao pedido enfático do usuário ("os aliados ainda fazem mil piruetas, me liste tudo relacionado a movimentação dos aliados", "os aliados continuam muito mas muito frenéticos, proponha mudanças bruscas", e "o quadrado do sentinela some antes de chegar ao jogador, é pra ele até mesmo ultrapassar o jogador"):
+
+1. **Eliminação Definitiva das Piruetas dos Companheiros (`src/combat/wingmen.js`)**:
+   - **Causa Raiz Identificada**: No Three.js, `Object3D.rotateZ(angle)` realiza uma multiplicação incremental de matriz (`quaternion.multiply(q)`). O código anterior chamava `w.mesh.rotateZ(w.smoothRoll)` a cada frame sobre um quaternion já ajustado por `rotateTowards`. Isso funcionava como um motor contínuo acelerando giros no eixo local Z a dezenas de radianos por segundo ("mil piruetas").
+   - **Solução Matemática**: `rotateZ` foi completamente removido. A orientação do caça agora é calculada através de uma base ortonormal 3D absoluta a cada frame:
+     `forward = desiredForward`, `right = up x forward`, `up = forward x right`, `bankedRight = right*cos(roll) + up*sin(roll)`, `bankedUp = forward x bankedRight`.
+     Em seguida `_rotMatrix.makeBasis(bankedRight, bankedUp, forward)` e `_targetQuat.setFromRotationMatrix(_rotMatrix)` determinam o quaternion exato.
+   - O roll de banking está matematicamente limitado a `[-0.38, 0.38]` radianos (máximo $\pm 21.7^\circ$). É impossível para a nave girar indefinidamente ou acumular rotação.
+
+2. **Mudanças Bruscas na IA: Formação Tática Estilo Star Fox 64 (`src/combat/wingmen.js`)**:
+   - **Fim da Fisiologia Hiperativa / Waypoints Randômicos**: Removida a lógica caótica que sorteava waypoints a cada 4.5s com perturbações senoidais de alta amplitude e rasantes (*fly-by*) repetitivos a cada 9s.
+   - **Vagas Dedicadas de Formação (`FORMATION_SLOTS`)**: Cada piloto possui sua posição fixa de escolta ao redor do jogador:
+     - *Falco (Ás Interceptor)*: Ala Esquerda Avançada (`[-11.0, 1.0, 14.0]`).
+     - *Peppy (Defensor Blindado)*: Ala Direita Retaguarda (`[12.5, -0.5, -3.0]`).
+     - *Slippy (Batedor Solar)*: Ala Esquerda Retaguarda (`[-12.5, -0.5, -5.0]`).
+     - *Phantom (Vanguarda Fantasma)*: Ala Direita Alta Avançada (`[11.0, 2.2, 16.0]`).
+   - **Flutuação Suave de Marcha Lenta**: Oscilação de baixa frequência ($\pm 0.5$u em ~4-5s) para dar vida orgânica sem quebrar a formação.
+   - **Disciplina de Engajamento em Combate**:
+     - No modo Livre (`free`), no máximo 1 companheiro sai em manobra de ataque por vez.
+     - O caça realiza uma corrida de ataque comprometida por 3.5 a 4.2 segundos disparando rajadas compassadas, em vez de espasmos de 0.28s.
+     - Ao concluir o ataque ou abater o alvo, retorna suavemente à formação com um cooldown de descanso de 5.0 a 8.5 segundos.
+   - **Amortecimento de Separação**: Repulsão violenta de até 60 u/s substituída por uma mola suave de amortecimento (máximo 1.8 u/s).
+
+3. **Passagem Real e Contínua da Moldura do Sentinela (`src/enemies/index.js`, `src/enemies/sentinela.js`)**:
+   - **Problema**: O despawn anterior ocorria assim que a moldura atingia o plano do jogador (`alongDir <= 0`), fazendo-a desaparecer abruptamente bem no nariz da nave.
+   - **Solução**:
+     - Desacoplamento de detecção de colisão e despawn: ao cruzar o plano do jogador (`alongDir <= 0`), `gate.hitResolved = true` resolve o dano uma única vez (centro seguro se aberta, dano se fechada/na borda).
+     - Trava de trajetória (`updateGateFlight`): uma vez cruzado o jogador (`hitResolved === true`), o vetor de direção do projétil é travado, evitando inversões quando o alvo em coordenadas de mundo fica para trás.
+     - A moldura continua voando em velocidade constante, atravessando a nave do jogador e a câmera em terceira pessoa, só sendo removida quando estiver a pelo menos 25 unidades atrás do jogador (`alongDir <= -25`), sumindo com elegância fora de cena.
+
+4. **Tabela Oficial de Atributos, Dano e Cadência dos Aliados (`src/combat/wingmen.js`)**:
+   - **Dano dos Lasers Comuns**: `1.5` por projétil (`WINGMAN_LASER_DAMAGE`).
+   - **Dano das Habilidades**:
+     - *Falco (Investida Aríete)*: `12` de dano direto em inimigos normais / `8` contra Chefes e Dourados.
+     - *Peppy (Guarda)*: Restaura instantaneamente `+1` unidade de Escudo quando o jogador é atingido.
+     - *Slippy (Reparo de Campo)*: Spawna micro-orbes de cura no impacto dos lasers que restauram `+1` HP ao serem coletados.
+     - *Phantom (Carga Compartilhada)*: Reduz em `50%` o tempo para carregar o tiro teleguiado e adiciona `+1` alvo travado extra.
+   - **Taxas de Disparo, Rajadas e Velocidades**:
+     - *Falco*: Intervalo de `1.7s`, rajadas de `2` tiros (`0.14s` delay), velocidade de cruzeiro `42` u/s.
+     - *Peppy*: Intervalo de `2.4s`, tiro único forte, velocidade de cruzeiro `36` u/s.
+     - *Slippy*: Intervalo de `1.9s`, rajadas de `2` tiros (`0.16s` delay), velocidade de cruzeiro `38` u/s.
+     - *Phantom*: Intervalo de `1.8s`, rajadas de `2` tiros (`0.12s` delay), velocidade de cruzeiro `45` u/s.
+   - **Cooldowns das Habilidades (Base / Piso Máximo por Cartas)**:
+     - *Falco (Aríete)*: Base `14s` / Piso `7s`.
+     - *Peppy (Guarda)*: Base `20s` / Piso `10s`.
+     - *Slippy (Reparo)*: Base `18s` / Piso `9s`.
+     - *Phantom (Carga)*: Base `16s` / Piso `8s`.
+   - **Disparo de Suporte Disciplinado**: Quando o líder (jogador) atira, cada companheiro em formação só acompanha com disparos se seu cooldown individual estiver pronto (`fireCooldown <= 0`), evitando spam e respeitando a personalidade de cada piloto.
+
+---
+
+### Stepper Determinístico de Frames no Loop e Debug de Testes — v0.72.3
+
+Motivado pela limitação recorrente do ambiente de teste (onde o `requestAnimationFrame` do navegador é throttled ou congela completamente quando a aba/painel perde o foco de SO, impedindo a observação de cutscenes, cooldowns ou movimentos contínuos).
+
+1. **Stepper Determinístico Integrado no Loop de Jogo (`src/game-loop.js`)**:
+   - `tick(now)` foi dividido em `runFrame(now, forcedRawDt)` e o agendador de RAF.
+   - Quando `manualStepActive` está ativado, o ciclo contínuo de `requestAnimationFrame` é cancelado (`cancelAnimationFrame(state.rafId)`), mantendo o jogo estático sem consumo desnecessário de ticks.
+   - Novo método `step(frames = 1, dtMs = 16.6667)` avança deterministamente `N` frames com passo de tempo fixo (padrão 60 FPS, ~16.67ms por frame), executando cutscenes, colisões, IA e chamando `renderer.render(scene, camera)` a cada frame. Se o jogo estiver em pausa (`state.paused`), `step` despausa automaticamente para avançar a simulação.
+   - Resolução suave ao retomar: ao desativar o modo passo a passo (`setManualStepping(false)`), `state.lastTime` é resetado para `performance.now()`, evitando saltos bruscos de delta time (`dt`).
+
+2. **5 Ações no Painel de Debug (`src/debug.js`, `src/debug-actions.js`, `src/hud-game.js`)**:
+   - Adicionadas à categoria `Testes & Visual`:
+     - `toggleManualStep`: "Passo a passo (Pausar Loop)" (toggle que alterna `manualStepActive`).
+     - `step1Frame`: "Avançar 1 frame (16.7ms)".
+     - `step10Frames`: "Avançar 10 frames (~167ms)".
+     - `step60Frames`: "Avançar 60 frames (1s)".
+     - `step180Frames`: "Avançar 180 frames (3s)".
+   - `hud.debug.refreshStats()` adicionado para atualizar instantaneamente o grid de estatísticas do painel (posição, HP, inimigos, flags) após cada passo manual. `setVisible(true)` também renderiza os stats de imediato ao abrir.
+
+3. **API Global para Scripts de Teste (`src/mount-game.js`)**:
+   - Expostos em `window`:
+     - `window.__starAnki = { state, gameLoop, step, setManualStepping, isManualStepping }`
+     - `window.__stepFrames = (frames, dtMs) => gameLoop.step(frames, dtMs)`
+   - Limpos no `teardown()` para não vazar entre sessões.
+   - Permite que qualquer script de teste, subagente ou inspeção no console avance o tempo da partida de forma 100% determinística sem precisar reimplementar monkey-patches de `requestAnimationFrame`.
+
+**Testado**: `node --check` em todos os arquivos modificados e `node src/selftest.mjs` 100% ok. Teste sintético de integração confirmou `DEBUG_ACTIONS`, bindings de debug, incremento de frames no `createGameLoop`, atualização de stats e alternância de estado.
+
+**Versão**: v0.72.2 → **v0.72.3**
+
+---
+
 ### Restaura o Alvo Extra de Phantom, Corrige Velocidade da Investida e Auditoria de Progresso — v0.72.2
 
 Pedido do usuário depois da auditoria de tudo que ficou pendente (ver entrada anterior): *"não

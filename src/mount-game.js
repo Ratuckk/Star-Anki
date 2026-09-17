@@ -17,6 +17,7 @@ import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat/index.js'
 import { createEnemiesSystem } from './enemies/index.js'
 import { createPlayerSystem } from './player.js'
+import { createPlayerTelemetry } from './player-telemetry.js'
 import { createEffectsSystem } from './effects.js'
 import { createInputState } from './input.js'
 import { createGameHud } from './hud.js'
@@ -81,6 +82,8 @@ export function mountGame(session, deck, menu) {
   const effects = createEffectsSystem(scene, { grid })
   const enemies = createEnemiesSystem(scene, rail, effects)
   const player = createPlayerSystem(session)
+  const playerTelemetry = createPlayerTelemetry()
+  player.setTelemetry(playerTelemetry)
   const combat = createCombatSystem(scene, rail, effects, enemies, player)
   const input = createInputState()
 
@@ -108,11 +111,12 @@ export function mountGame(session, deck, menu) {
   const state = {
     // ============ loop / debug ============
     debugVisible: false,
-    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false },
+    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false, manualStepActive: false },
     lastTime: performance.now(),
     rafId: null,
     stopped: false,
     paused: false,
+    manualStepActive: false,
 
     // ============ máquina de estados (phase) ============
     phase: null,
@@ -174,6 +178,9 @@ export function mountGame(session, deck, menu) {
     // cambalhota) dispara o freio de emergência — mesma janela de detecção do giro completo
     lastRepulsionTapAt: -Infinity,
     hitShakeTimer: 0,
+    // Cadeia de abates — "Arcade Neon" (v0.73.0), ver KILL_CHAIN_DECAY_S em game-loop.js
+    killChainCount: 0,
+    killChainTimer: 0,
 
     // ============ dificuldade (escalada por erro) ============
     enemyIntervalMin: enemyIntervalMinInit,
@@ -284,6 +291,8 @@ export function mountGame(session, deck, menu) {
     // gameLoop.stop() cobre state.stopped = true + cancelAnimationFrame(state.rafId) — antes
     // essas duas linhas ficavam aqui; agora o game-loop.js é dono do ciclo de vida do RAF.
     gameLoop.stop()
+    if (window.__starAnki) delete window.__starAnki
+    if (window.__stepFrames) delete window.__stepFrames
     if (state.bossFovTimeout) {
       clearTimeout(state.bossFovTimeout)
       state.bossFovTimeout = null
@@ -371,6 +380,7 @@ export function mountGame(session, deck, menu) {
   // ============ DEBUG PANEL ============
   hud.debug.bind(createDebugActions({
     state,
+    gameLoop,
     combat, session, player, rail, effects, hud, enemies,
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
@@ -396,6 +406,10 @@ export function mountGame(session, deck, menu) {
     const pos = rail.getPlayerPosition()
     const aliveEnemies = (enemies.getAlive ? enemies.getAlive().length : 0) +
       (enemies.getGoldenAlive ? enemies.getGoldenAlive().length : 0)
+    const tele = combat.getWingmanTelemetry ? combat.getWingmanTelemetry() : null
+    const wingmenDetail = tele && tele.wingmen && tele.wingmen.length > 0
+      ? tele.wingmen.map((w) => `${w.name[0]}:${w.state[0].toUpperCase()}(${w.relativeToPlayer.dist}u,${w.rotation.smoothRollDeg}°)`).join(' ')
+      : 'nenhum'
     return {
       phase: state.phase,
       sector: `${(session.pointer || 0) + 1}/${session.queue.length}`,
@@ -408,7 +422,7 @@ export function mountGame(session, deck, menu) {
       score: Math.round(session.score),
       combo: session.comboMultiplier,
       enemies: aliveEnemies,
-      wingmen: combat.getWingmanCount(),
+      wingmen: `${combat.getWingmanCount()} [${wingmenDetail}]`,
       position: `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`,
       flags: state.debugFlags,
     }
@@ -432,4 +446,57 @@ export function mountGame(session, deck, menu) {
   })
 
   gameLoop.start()
+
+  // Suporte a testes determinísticos, inspeção de tempo (stepper manual) e telemetria (jogador, esquadrão e inimigos)
+  window.__starAnki = {
+    state,
+    gameLoop,
+    combat,
+    player,
+    enemies,
+    rail,
+    step: (frames, dtMs) => gameLoop.step(frames, dtMs),
+    setManualStepping: (active) => gameLoop.setManualStepping(active),
+    isManualStepping: () => gameLoop.isManualStepping(),
+
+    // Telemetria da Esquadrilha (Aliados)
+    getWingmanTelemetry: () => combat.getWingmanTelemetry?.(),
+    dumpWingmanTelemetry: () => combat.dumpWingmanTelemetry?.(),
+    getWingmanFlightLog: (limit) => combat.getWingmanFlightLog?.(limit),
+    copyWingmanFlightLog: () => combat.copyWingmanFlightLog?.(),
+
+    // Telemetria do Jogador
+    getPlayerTelemetry: () => combat.getPlayerTelemetry?.(),
+    dumpPlayerTelemetry: () => combat.dumpPlayerTelemetry?.(),
+    getPlayerFlightLog: (limit) => combat.getPlayerFlightLog?.(limit),
+    copyPlayerFlightLog: () => combat.copyPlayerFlightLog?.(),
+
+    // Telemetria dos Inimigos
+    getEnemyTelemetry: () => combat.getEnemyTelemetry?.(),
+    dumpEnemyTelemetry: () => combat.dumpEnemyTelemetry?.(),
+    getEnemyCombatLog: (limit) => combat.getEnemyCombatLog?.(limit),
+    copyEnemyCombatLog: () => combat.copyEnemyCombatLog?.(),
+
+    // Telemetria Global Integrada
+    getCombatTelemetry: () => combat.getCombatTelemetry?.(),
+    dumpCombatTelemetry: () => combat.dumpCombatTelemetry?.(),
+  }
+
+  // Atalhos rápidos no escopo global do console
+  window.__stepFrames = (frames, dtMs) => gameLoop.step(frames, dtMs)
+
+  window.__getWingmanTelemetry = () => combat.getWingmanTelemetry?.()
+  window.__dumpWingmanTelemetry = () => combat.dumpWingmanTelemetry?.()
+  window.__wingmanFlightLog = (limit) => combat.getWingmanFlightLog?.(limit)
+
+  window.__getPlayerTelemetry = () => combat.getPlayerTelemetry?.()
+  window.__dumpPlayerTelemetry = () => combat.dumpPlayerTelemetry?.()
+  window.__playerFlightLog = (limit) => combat.getPlayerFlightLog?.(limit)
+
+  window.__getEnemyTelemetry = () => combat.getEnemyTelemetry?.()
+  window.__dumpEnemyTelemetry = () => combat.dumpEnemyTelemetry?.()
+  window.__enemyCombatLog = (limit) => combat.getEnemyCombatLog?.(limit)
+
+  window.__getCombatTelemetry = () => combat.getCombatTelemetry?.()
+  window.__dumpCombatTelemetry = () => combat.dumpCombatTelemetry?.()
 }

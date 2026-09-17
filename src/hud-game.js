@@ -170,6 +170,40 @@ export function createGameHud() {
   })
   let prevAbilitySignature = ''
 
+  // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
+  // Terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — ver
+  // documento de design de feedback de combate (opção 1 de 5, escolhida pelo usuário).
+  const KILL_CHAIN_MAX_SEGS = 8
+  const killChainRow = document.createElement('div')
+  killChainRow.className = 'hud-kill-chain'
+  killChainRow.innerHTML = `
+    <span class="hud-kill-chain-label">CADEIA</span>
+    <span class="hud-kill-chain-x">x0</span>
+    <div class="hud-kill-chain-segs"></div>
+  `
+  topbarRow.appendChild(killChainRow)
+  const killChainXEl = killChainRow.querySelector('.hud-kill-chain-x')
+  const killChainSegsEl = killChainRow.querySelector('.hud-kill-chain-segs')
+  const killChainSegEls = Array.from({ length: KILL_CHAIN_MAX_SEGS }, () => {
+    const seg = document.createElement('div')
+    seg.className = 'hud-kill-chain-seg'
+    killChainSegsEl.appendChild(seg)
+    return seg
+  })
+  let prevKillChainCount = 0
+
+  // ============ TELA DE K.O. DO CHEFE — "Arcade Neon" (v0.73.0) ============
+  const bossKoEl = document.createElement('div')
+  bossKoEl.className = 'hud-boss-ko'
+  bossKoEl.innerHTML = `
+    <div class="hud-boss-ko-text">K.O.!</div>
+    <div class="hud-boss-ko-bonus"></div>
+  `
+  root.appendChild(bossKoEl)
+  const bossKoTextEl = bossKoEl.querySelector('.hud-boss-ko-text')
+  const bossKoBonusEl = bossKoEl.querySelector('.hud-boss-ko-bonus')
+  let bossKoTimeout = null
+
   // ============ HORIZONTE ARTIFICIAL (Fase 9, ideia all-range 2) ============
   // só visível no modo all-range — ajuda a não perder a noção de "pra cima" (main.js chama
   // setHorizon(null) fora do all-range pra esconder). Linha de céu/chão que gira com o roll e
@@ -1424,6 +1458,55 @@ export function createGameHud() {
       scheduleTimeout(() => el.remove(), 950)
     },
 
+    setKillChain(count) {
+      const n = Math.max(0, count | 0)
+      if (n === prevKillChainCount) return
+      const grew = n > prevKillChainCount
+      prevKillChainCount = n
+      killChainXEl.textContent = `x${n}`
+      killChainXEl.classList.remove('tier2', 'tier3', 'tier4')
+      if (n >= 6) killChainXEl.classList.add('tier4')
+      else if (n >= 4) killChainXEl.classList.add('tier3')
+      else if (n >= 2) killChainXEl.classList.add('tier2')
+      if (grew) {
+        killChainXEl.classList.remove('pulse')
+        void killChainXEl.offsetWidth
+        killChainXEl.classList.add('pulse')
+      }
+      killChainSegEls.forEach((seg, i) => {
+        seg.classList.remove('on', 'tier2', 'tier3', 'tier4')
+        if (i < n) {
+          seg.classList.add('on')
+          if (n >= 6) seg.classList.add('tier4')
+          else if (n >= 4) seg.classList.add('tier3')
+          else if (n >= 2) seg.classList.add('tier2')
+        }
+      })
+    },
+
+    showBossKO(bonusPoints = 0) {
+      bossKoBonusEl.textContent = `+${bonusPoints} PTS`
+      const coins = []
+      for (let i = 0; i < 10; i++) {
+        const coin = document.createElement('div')
+        coin.className = 'hud-boss-ko-coin'
+        const ang = (Math.PI * 2 * i) / 10
+        coin.style.setProperty('--cx', `${Math.cos(ang) * 140}px`)
+        coin.style.setProperty('--cy', `${Math.sin(ang) * 90}px`)
+        bossKoEl.appendChild(coin)
+        coins.push(coin)
+      }
+      bossKoEl.classList.remove('go')
+      void bossKoEl.offsetWidth
+      bossKoEl.classList.add('go')
+      if (bossKoTimeout) cancelTimeout(bossKoTimeout)
+      bossKoTimeout = scheduleTimeout(() => {
+        bossKoTimeout = null
+        bossKoEl.classList.remove('go')
+        coins.forEach((c) => c.remove())
+      }, 3500)
+    },
+
     showErrorFloat(text = 'Errou!') {
       if (currentErrorFloat) {
         currentErrorFloat.remove()
@@ -1810,8 +1893,15 @@ export function createGameHud() {
     debug: {
       setVisible(v) {
         debugPanel.hidden = !v
-        if (v) startDebugStatsLoop()
-        else stopDebugStatsLoop()
+        if (v) {
+          renderDebugStats()
+          startDebugStatsLoop()
+        } else {
+          stopDebugStatsLoop()
+        }
+      },
+      refreshStats() {
+        renderDebugStats()
       },
       bind(handlers) {
         for (const [id, fn] of Object.entries(handlers)) {

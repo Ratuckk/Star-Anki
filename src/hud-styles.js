@@ -25,11 +25,46 @@ export function injectHudExtraStyles() {
   color: #2bff88;
   text-shadow: 0 0 10px rgba(43,255,136,0.85), 0 0 3px rgba(0,0,0,0.95);
 }
+/* Popup de pontos por abate — "Arcade Neon" (opção 1 de 5 escolhida pelo usuário no documento
+   de design de feedback de combate): fonte pixel de verdade, contorno preto grosso, pop de
+   escala tipo "carimbo" e uma estrela de fundo que estoura atrás do número. Some com o combo de
+   abates (hud-kill-chain) e a tela de K.O. do chefe (hud-boss-ko), ambos logo abaixo. */
 .hud-damage-number.points {
-  color: #ffd166;
-  text-shadow: 0 0 8px rgba(255,209,102,0.7), 0 0 2px rgba(0,0,0,0.95);
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 13px;
+  color: #ffe600;
+  -webkit-text-stroke: 2px #000;
+  paint-order: stroke fill;
+  text-shadow: none;
+  animation: hud-points-punch 950ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.hud-damage-number.points::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  background: #ffe600;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  transform: translate(-50%, -50%) scale(0);
+  z-index: -1;
+  animation: hud-star-burst 420ms ease-out forwards;
+}
+@keyframes hud-points-punch {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  12%  { transform: translate(-50%, -50%) scale(1.35); opacity: 1; }
+  22%  { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  75%  { transform: translate(-50%, calc(-50% - 26px)) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, calc(-50% - 40px)) scale(0.9); opacity: 0; }
+}
+@keyframes hud-star-burst {
+  0%   { transform: translate(-50%, -50%) scale(0) rotate(0deg); opacity: 0.9; }
+  60%  { transform: translate(-50%, -50%) scale(1.3) rotate(35deg); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1.6) rotate(50deg); opacity: 0; }
 }
 .hud-damage-number.big { font-size: 26px; }
+.hud-damage-number.points.big { font-size: 16px; }
 /* pedido do usuário: número roxo pequeno + ícone de ampulheta acima do redutor de tempo
    destruído, deixando claro quanto tempo aquele kill específico reduziu do ciclo */
 .hud-damage-number.time {
@@ -237,6 +272,134 @@ export function injectHudExtraStyles() {
 }
 .hud-ability-hex.active::before {
   box-shadow: inset 0 0 0 2.5px #fff;
+}
+
+/* ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============ */
+/* terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — evita
+   colidir com o minimapa (top:12px;right:12px) que ocupa o canto oposto da tela. Sobe de cor a
+   cada abate em cadeia (verde → amarelo → laranja → vermelho) e zera sozinha depois de um tempo
+   sem abates novos (ver KILL_CHAIN_DECAY_S em game-loop.js). */
+.hud-kill-chain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
+}
+.hud-kill-chain-label {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 7px;
+  color: #7fe0ff;
+  text-shadow: 2px 2px 0 #000;
+}
+.hud-kill-chain-x {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 15px;
+  color: #39ff6a;
+  text-shadow: 2px 2px 0 #000;
+  transform: scale(1);
+}
+.hud-kill-chain-x.pulse {
+  animation: hud-kill-chain-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes hud-kill-chain-pop {
+  0%   { transform: scale(0.6); }
+  55%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.hud-kill-chain-x.tier2 { color: #ffe600; }
+.hud-kill-chain-x.tier3 { color: #ff9a00; }
+.hud-kill-chain-x.tier4 { color: #ff3860; }
+.hud-kill-chain-segs { display: flex; gap: 2px; }
+.hud-kill-chain-seg {
+  width: 10px;
+  height: 6px;
+  background: #1c2030;
+  border: 1px solid #3a4258;
+}
+.hud-kill-chain-seg.on { background: #39ff6a; border-color: #39ff6a; box-shadow: 0 0 5px #39ff6a; }
+.hud-kill-chain-seg.on.tier2 { background: #ffe600; border-color: #ffe600; box-shadow: 0 0 5px #ffe600; }
+.hud-kill-chain-seg.on.tier3 { background: #ff9a00; border-color: #ff9a00; box-shadow: 0 0 5px #ff9a00; }
+.hud-kill-chain-seg.on.tier4 { background: #ff3860; border-color: #ff3860; box-shadow: 0 0 6px #ff3860; }
+
+/* ============ DERROTA DE CHEFE — TELA DE K.O. "Arcade Neon" (v0.73.0) ============ */
+/* disparada por hud.showBossKO() a partir de flow-boss.js, ANTES da cutscene de morte mais
+   sedada que já existe — um momento de impacto imediato e rápido (3.4s), não substitui nada. */
+.hud-boss-ko {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  opacity: 0;
+}
+.hud-boss-ko.go {
+  animation: hud-boss-ko-bg 3400ms ease forwards;
+}
+@keyframes hud-boss-ko-bg {
+  0%   { opacity: 0; background: rgba(0,0,0,0); }
+  5%   { opacity: 1; background: rgba(10,4,20,0.82); }
+  88%  { opacity: 1; background: rgba(10,4,20,0.82); }
+  100% { opacity: 0; background: rgba(10,4,20,0); }
+}
+.hud-boss-ko-text {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 0px;
+  color: #ffe600;
+  -webkit-text-stroke: 3px #000;
+  paint-order: stroke fill;
+  text-shadow: 5px 5px 0 #ff3860;
+  letter-spacing: 0.05em;
+}
+.hud-boss-ko.go .hud-boss-ko-text {
+  animation: hud-boss-ko-in 3400ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes hud-boss-ko-in {
+  0%   { font-size: 0px; transform: rotate(-8deg); }
+  8%   { font-size: 46px; transform: rotate(-8deg); }
+  16%  { font-size: 38px; transform: rotate(4deg); }
+  22%  { font-size: 42px; transform: rotate(0deg); }
+  85%  { font-size: 42px; opacity: 1; }
+  100% { font-size: 42px; opacity: 0; }
+}
+.hud-boss-ko-bonus {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 16px;
+  color: #39ff6a;
+  text-shadow: 3px 3px 0 #000;
+  opacity: 0;
+}
+.hud-boss-ko.go .hud-boss-ko-bonus {
+  animation: hud-boss-ko-bonus-in 3400ms ease forwards;
+}
+@keyframes hud-boss-ko-bonus-in {
+  0%, 25% { opacity: 0; }
+  30%     { opacity: 1; }
+  85%     { opacity: 1; }
+  100%    { opacity: 0; }
+}
+.hud-boss-ko-coin {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffe600;
+  border: 2px solid #000;
+  top: 50%;
+  left: 50%;
+  opacity: 0;
+}
+.hud-boss-ko.go .hud-boss-ko-coin {
+  animation: hud-boss-ko-coin-fly 900ms cubic-bezier(0.16, 0.9, 0.3, 1) forwards;
+  animation-delay: 280ms;
+}
+@keyframes hud-boss-ko-coin-fly {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--cx)), calc(-50% + var(--cy))) scale(0.4); }
 }
 
 /* ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============ */

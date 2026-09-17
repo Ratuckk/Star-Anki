@@ -5,6 +5,7 @@
 export function createDebugActions(deps) {
   const {
     state,
+    gameLoop,
     combat, session, player, rail, effects, hud, enemies,
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
@@ -215,11 +216,50 @@ export function createDebugActions(deps) {
       rail.debugForceBank(1, 1000)
     },
     fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),
+    toggleManualStep: () => {
+      if (gameLoop) {
+        const next = !gameLoop.isManualStepping()
+        gameLoop.setManualStepping(next)
+      }
+    },
+    step1Frame: () => { if (gameLoop) gameLoop.step(1) },
+    step10Frames: () => { if (gameLoop) gameLoop.step(10) },
+    step60Frames: () => { if (gameLoop) gameLoop.step(60) },
+    step180Frames: () => { if (gameLoop) gameLoop.step(180) },
     spawnWingman1: () => { combat.spawnSpecificWingman(0); player.setWingmanCount(combat.getWingmanCount()) },
     spawnWingman2: () => { combat.spawnSpecificWingman(1); player.setWingmanCount(combat.getWingmanCount()) },
     spawnWingman3: () => { combat.spawnSpecificWingman(2); player.setWingmanCount(combat.getWingmanCount()) },
     spawnWingman4: () => { combat.spawnSpecificWingman(3); player.setWingmanCount(combat.getWingmanCount()) },
     clearWingmen: () => { combat.clearSquadron(); player.setWingmanCount(0) },
+    dumpWingmanTelemetry: () => {
+      combat.dumpWingmanTelemetry?.()
+      hud?.debug?.refreshStats?.()
+    },
+    copyWingmanLog: () => {
+      combat.copyWingmanFlightLog?.()
+    },
+    clearWingmanLog: () => {
+      combat.clearWingmanFlightLog?.()
+      hud?.debug?.refreshStats?.()
+    },
+    dumpPlayerTelemetry: () => {
+      combat.dumpPlayerTelemetry?.()
+      hud?.debug?.refreshStats?.()
+    },
+    copyPlayerLog: () => {
+      combat.copyPlayerFlightLog?.()
+    },
+    dumpEnemyTelemetry: () => {
+      combat.dumpEnemyTelemetry?.()
+      hud?.debug?.refreshStats?.()
+    },
+    copyEnemyLog: () => {
+      combat.copyEnemyCombatLog?.()
+    },
+    dumpCombatTelemetry: () => {
+      combat.dumpCombatTelemetry?.()
+      hud?.debug?.refreshStats?.()
+    },
     toggleSkyDome: () => {
       if (environment) {
         const active = environment.toggleFeature('enableSkyDome')

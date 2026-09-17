@@ -871,6 +871,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     setBoostActive: (v) => { boostActive = !!v },
     setAdvancing: (v) => { advancing = v },
     setShipVisible: (v) => { ship.visible = v },
+    getShipMesh: () => ship,
+    getRollAngle: () => roll,
+    getDodgeRoll: () => dodgeRoll,
+    getFullSpinAngle: () => fullSpinAngle,
     setShakeIntensity: (m) => { shakeMagnitude = m },
     // Fase 9 (ideia all-range 5): multiplicador configurável em Configurações (0.5-2.0)
     setTurnSensitivity: (m) => { turnSensitivity = m },
