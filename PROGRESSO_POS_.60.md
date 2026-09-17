@@ -37,6 +37,27 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Esquadrão Menos Agressivo e Movimentação Cinematográfica (`src/combat/wingmen.js`) — v0.70.0
+
+Pedido do usuário: *"o esquadrão é meio overkill e perfeito demais em questão de ataques, faça com que eles ataquem menos e se movam mais pelo cenário, de forma cinemática e menos aleatória e estranha como fazem agora, quero que sejam mais suaves e 'humanos'"*.
+
+**Diagnóstico lendo o código real antes de mexer** (`createSquadronSystem` em `src/combat/wingmen.js`): a IA de voo livre dos wingmen (Falco/Peppy/Slippy/Slippy/Phantom) tinha dois problemas de origens distintas:
+1. **Ataque "perfeito demais"**: `fireInterval` curto (0.75–1.1s) + raio de detecção de alvo enorme (100–120u, quase a arena inteira) + entrada automática em `dogfight` sempre que `fireCooldown` zerava e havia QUALQUER inimigo no raio — resultado: os caças engajavam literalmente todo alvo que aparecia, com mira 100% exata (`aimDir` sem nenhum desvio) e rajadas de até 3 tiros. Lia como onisciente e sem falhas.
+2. **Movimento "estranho"**: waypoints de patrulha eram sorteados com `Math.random()` independente em cada eixo (lateral/vertical/frente) a cada 2.4–4.6s, sem nenhuma relação com o waypoint anterior — produzia reversões de rumo abruptas (zig-zag) em vez de trajetórias fluidas. O gatilho de fly-by (`Math.random() < 0.25` **avaliado a cada frame** enquanto o cooldown estava zerado) dava uma janela de ~4 frames até disparar — na prática, quase instantâneo e imprevisível, não um evento cinematográfico espaçado.
+
+**Correções** (`src/combat/wingmen.js`, tudo contido neste arquivo — nenhum outro módulo referencia essas constantes):
+- **Ataques mais raros e imperfeitos**: `fireInterval` de cada perfil ~2x maior (Falco 0.75→1.7s, Peppy 1.1→2.4s, Slippy 0.85→1.9s, Phantom 0.8→1.8s, `burstCount` de Phantom reduzido de 3→2), `fireCooldown` inicial maior (1.8–3.4s em vez de 0.5–1.0s), raio de detecção de alvo cortado de 100–120u para 65–70u, e nova `ENGAGEMENT_CHANCE = 0.45` — mesmo com alvo no alcance e cooldown pronto, só ~45% de chance de entrar em dogfight (senão volta a patrulhar por mais um tempo). Nova `AIM_SPREAD_RAD` aplica um desvio angular aleatório pequeno (~4.9°) na direção de cada tiro disparado em dogfight autônomo — tiros deixam de ser perfeitos. O modo de comando manual do jogador (`toggleCommand`/foco tático, tecla dedicada) não foi tocado — é ação intencional do jogador, não o "overkill autônomo" do pedido.
+- **Movimento fluido e cinematográfico**: novo waypoint de patrulha agora é um deslocamento LIMITADO a partir do waypoint anterior (±9u lateral, ±4u vertical, clampado ao volume de patrulha) em vez de um sorteio livre no volume inteiro — elimina as reversões bruscas de rumo. Intervalo entre waypoints aumentado de 2.4–4.6s para 4.5–7.5s (trajetórias mais longas e propositais, menos "nervosas"). Modo arena (all-range) segue o mesmo princípio: o próximo ângulo de órbita é um desvio de até ±81° do ângulo anterior, não mais um ângulo aleatório novo a cada troca. Fly-by agora dispara diretamente quando `flybyCooldown` zera (sem o sorteio por frame que o tornava quase-instantâneo), com cooldown maior (9–16s). Adicionado um leve ondular (*weave*) senoidal contínuo por wingman (`weavePhase`/`weaveFreq`/`weaveAmp`, únicos por instância) somado ao alvo de voo só durante a patrulha livre — dá uma trajetória levemente sinuosa e viva entre waypoints, em vez de retas mecânicas.
+- **Manobras menos "robóticas"**: taxa de mira em dogfight (`slerp` de rotação até o inimigo) reduzida de 8.5 para 5.5 e a aceleração de manobra em dogfight de 3.0 para 2.3 — o travamento de mira e as curvas de combate ficam visivelmente menos instantâneas/perfeitas, mais como um piloto reagindo do que um sistema de mira travada.
+
+**Testado**: `node --check src/combat/wingmen.js` limpo, `node src/selftest.mjs` 100% ok (não toca nada testado ali). **Testado ao vivo** (servidor `static` já em uso por outra sessão nesta porta — aberto uma aba nova apontando pro mesmo `localhost:8420`, arquivos em disco já refletiam a mudança): Modo Arcade com Esquadrão (4) completo desde a decolagem, cutscene e ~7s de combate observados sem nenhum erro de console; os 4 wingmen mantiveram formação fluida ao redor do jogador e se espalharam pelo campo de detritos sem nenhuma exceção.
+
+**Nota de repositório**: `src/player.js` tinha uma mudança não commitada (`getWingmanCount()`) de outra sessão concorrente usando esta mesma pasta — não foi tocada nem incluída neste commit, propositalmente, por não ser deste pedido.
+
+**Versão**: v0.69.0 → **v0.70.0**
+
+---
+
 ### Sentinela Refeita do Zero: Moldura Larga com Buraco que Pulsa (Abre/Fecha) de Verdade — v0.69.0
 
 Pedido do usuário, direto e frustrado com tentativas anteriores: *"eu quero que refaça o sentinela do zero, pelo que parece nenhuma IA consegue entender o conceito simples de um inimigo que atira um quadrado reto em direção ao jogador que fica se abrindo e fechando, causando dano caso o jogador esteja dentro quando ele se fecha, com tamanho de MOLDURA, não de QUADRADO largo (bordas pequenas mas largo)"*.

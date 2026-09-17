@@ -16,9 +16,9 @@ export const WINGMAN_PROFILES = [
     accentColor: 0x38bdf8, // ciano elétrico
     laserColor: 0x38bdf8,
     homeSide: -1, // viés de patrulha: ala esquerda
-    fireInterval: 0.75,
+    fireInterval: 1.7,
     burstCount: 2,
-    burstDelay: 0.12,
+    burstDelay: 0.14,
     speed: 42,
     modelType: 'interceptor',
   },
@@ -30,7 +30,7 @@ export const WINGMAN_PROFILES = [
     accentColor: 0xfbbf24, // ouro
     laserColor: 0x34d399,
     homeSide: 1, // viés de patrulha: ala direita
-    fireInterval: 1.1,
+    fireInterval: 2.4,
     burstCount: 1,
     burstDelay: 0,
     speed: 36,
@@ -44,9 +44,9 @@ export const WINGMAN_PROFILES = [
     accentColor: 0xfde047, // amarelo brilhante
     laserColor: 0xfbbf24,
     homeSide: -1,
-    fireInterval: 0.85,
+    fireInterval: 1.9,
     burstCount: 2,
-    burstDelay: 0.14,
+    burstDelay: 0.16,
     speed: 38,
     modelType: 'scout',
   },
@@ -58,13 +58,18 @@ export const WINGMAN_PROFILES = [
     accentColor: 0xf43f5e, // rosa neon
     laserColor: 0xe879f9,
     homeSide: 1,
-    fireInterval: 0.8,
-    burstCount: 3,
-    burstDelay: 0.1,
+    fireInterval: 1.8,
+    burstCount: 2,
+    burstDelay: 0.12,
     speed: 45,
     modelType: 'stealth',
   },
 ]
+
+// Chance de entrar em dogfight quando um alvo está ao alcance (evita a "perfeição" robótica de
+// engajar todo inimigo elegível na primeira oportunidade). Espalhamento de mira dá tiros imperfeitos.
+const ENGAGEMENT_CHANCE = 0.45
+const AIM_SPREAD_RAD = 0.085
 
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
@@ -321,13 +326,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       velocity: frame.forward.clone().multiplyScalar(profile.speed),
       smoothRoll: 0,
       patrolTarget: spawnPos.clone(),
-      nextWaypointTimer: 0.2 + Math.random() * 0.8,
-      flybyCooldown: 4.0 + Math.random() * 5.0,
+      nextWaypointTimer: 0.6 + Math.random() * 1.2,
+      flybyCooldown: 6.0 + Math.random() * 6.0,
       targetEnemy: null,
-      fireCooldown: 0.5 + Math.random() * 0.5,
+      fireCooldown: 1.8 + Math.random() * 1.6,
       burstRemaining: 0,
       burstTimer: 0,
       breakTurnAngle: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 0.5),
+      weavePhase: Math.random() * Math.PI * 2,
+      weaveFreq: 0.11 + Math.random() * 0.07,
+      weaveAmp: 2.6 + Math.random() * 1.8,
     }
 
     activeWingmen.push(wingman)
@@ -519,14 +527,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
         }
 
-        // ============ VOO LIVRE E PATRULHA ============
+        // ============ VOO LIVRE E PATRULHA (fluida e cinematográfica, sem saltos aleatórios) ============
         w.nextWaypointTimer -= dt
 
-        // Chance periódica de FLY-BY rasante na frente da câmera (somente se não estiver em comando de foco)
-        if (!inArena && squadronCommandMode === 'free' && w.flybyCooldown <= 0 && Math.random() < 0.25) {
+        // FLY-BY periódico rasante na frente da câmera: dispara direto quando o cooldown zera
+        // (sem sorteio por frame — evita o gatilho quase-instantâneo que lia como erro/estranho)
+        if (!inArena && squadronCommandMode === 'free' && w.flybyCooldown <= 0) {
           w.state = 'flyby'
           w.stateTimer = 0
-          w.flybyCooldown = 7.0 + Math.random() * 6.0
+          w.flybyCooldown = 9.0 + Math.random() * 7.0
           // Corta diagonalmente a tela SEM teleport (parte da posição atual acelerando pro lado oposto)
           const destSide = -w.profile.homeSide * 18
           w.patrolTarget.copy(playerPos)
@@ -534,21 +543,25 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             .addScaledVector(frame.up, (Math.random() * 2 - 1) * 3 + 3)
             .addScaledVector(frame.forward, 36)
         } else if (w.nextWaypointTimer <= 0) {
-          // Novo waypoint autônomo na zona de patrulha
+          // Novo waypoint por deslocamento LIMITADO a partir do alvo anterior (não um sorteio livre
+          // no volume inteiro) — produz trajetórias fluidas em curva, sem reversões bruscas de rumo.
           if (!inArena) {
-            // No modo rail: navega em um volume amplo à frente da nave (-16 a +16 lateral, -4 a +9 vertical, +12 a +42 frente)
-            const side = (Math.random() * 2 - 1) * 16
-            const vert = (Math.random() * 2 - 1) * 6.5 + 2.5
+            const prevSide = THREE.MathUtils.clamp(w.patrolTarget.clone().sub(playerPos).dot(frame.right), -16, 16)
+            const prevVert = THREE.MathUtils.clamp(w.patrolTarget.clone().sub(playerPos).dot(frame.up), -4, 9)
+            const side = THREE.MathUtils.clamp(prevSide + (Math.random() * 2 - 1) * 9, -16, 16)
+            const vert = THREE.MathUtils.clamp(prevVert + (Math.random() * 2 - 1) * 4, -4, 9)
             const ahead = 14 + Math.random() * 28
             w.patrolTarget.copy(playerPos)
               .addScaledVector(frame.right, side)
               .addScaledVector(frame.up, vert)
               .addScaledVector(frame.forward, ahead)
-            w.nextWaypointTimer = 2.4 + Math.random() * 2.2
+            w.nextWaypointTimer = 4.5 + Math.random() * 3.0
           } else {
-            // No modo all-range: voo 100% livre e independente pela arena
+            // No modo all-range: continua o arco de voo em vez de teleportar pra um ângulo aleatório novo
             const center = rail.getArenaCenter()
-            const angle = Math.random() * Math.PI * 2
+            const relPrev = w.patrolTarget.clone().sub(center)
+            const prevAngle = Math.atan2(relPrev.z, relPrev.x)
+            const angle = prevAngle + (Math.random() * 2 - 1) * (Math.PI * 0.45)
             const radius = 35 + Math.random() * 60
             const height = (Math.random() * 2 - 1) * 16
             w.patrolTarget.set(
@@ -556,18 +569,19 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               center.y + height,
               center.z + Math.sin(angle) * radius
             )
-            w.nextWaypointTimer = 3.0 + Math.random() * 2.5
+            w.nextWaypointTimer = 4.5 + Math.random() * 3.0
           }
         }
 
-        // Checa se há inimigos para atacar (DOGFIGHT)
+        // Checa se há inimigos para atacar (DOGFIGHT) — alcance menor e chance de engajar,
+        // pra não perseguir/abater tudo que aparece no radar com precisão robótica.
         if (w.fireCooldown <= 0) {
           const alive = getAliveEnemies()
-          if (alive.length > 0) {
+          if (alive.length > 0 && Math.random() < ENGAGEMENT_CHANCE) {
             const candidates = alive.filter((e) => {
               const rel = e.mesh.position.clone().sub(w.mesh.position)
               const dotForward = rel.clone().normalize().dot(frame.forward)
-              return inArena ? rel.length() < 100 : (dotForward > 0.15 && rel.length() < 120)
+              return inArena ? rel.length() < 65 : (dotForward > 0.25 && rel.length() < 70)
             })
             if (candidates.length > 0) {
               // Escolhe o alvo mais próximo do caça
@@ -577,7 +591,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               w.stateTimer = 0
               w.burstRemaining = w.profile.burstCount
               w.burstTimer = 0
+            } else {
+              w.fireCooldown = 0.6 + Math.random() * 0.6
             }
+          } else {
+            w.fireCooldown = 0.6 + Math.random() * 0.6
           }
         }
       } else if (w.state === 'flyby') {
@@ -611,13 +629,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           // Mira e aproxima-se mantendo standoff de combate
           w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(aimDir, -16)
 
-          // Disparo da rajada
+          // Disparo da rajada, com leve espalhamento de mira (tiros imperfeitos, não robóticos)
           w.burstTimer -= dt
-          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 120) {
+          if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 90) {
             w.burstRemaining -= 1
             w.burstTimer = w.profile.burstDelay || 0.14
-            const muzzleOffset = w.mesh.position.clone().addScaledVector(aimDir, 1.3)
-            fireWingmanLaser(w, muzzleOffset, aimDir)
+            const spreadDir = aimDir.clone()
+              .addScaledVector(frame.right, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
+              .addScaledVector(frame.up, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
+              .normalize()
+            const muzzleOffset = w.mesh.position.clone().addScaledVector(spreadDir, 1.3)
+            fireWingmanLaser(w, muzzleOffset, spreadDir)
           }
 
           if (w.burstRemaining <= 0) {
@@ -632,8 +654,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       // ============ FÍSICA DE VOO COM ACELERAÇÃO E ROLL (BANKING) ============
 
-      // Vetor de direção até o alvo atual
-      const toTarget = w.patrolTarget.clone().sub(w.mesh.position)
+      // Vetor de direção até o alvo atual, com um leve ondular contínuo (weave) só na patrulha
+      // livre — dá vida cinematográfica ao voo entre waypoints em vez de retas mecânicas.
+      const effectiveTarget = w.patrolTarget.clone()
+      if (w.state === 'patrol') {
+        const weave = Math.sin(elapsed * w.weaveFreq * Math.PI * 2 + w.weavePhase) * w.weaveAmp
+        effectiveTarget.addScaledVector(frame.right, weave * 0.6)
+        effectiveTarget.addScaledVector(frame.up, weave * 0.35)
+      }
+      const toTarget = effectiveTarget.sub(w.mesh.position)
       const targetDist = toTarget.length()
       const targetDir = targetDist > 1e-4 ? toTarget.clone().normalize() : frame.forward.clone()
 
@@ -662,7 +691,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       // Aceleração com inércia suave
-      const accelRate = w.state === 'flyby' ? 6.0 : (w.state === 'dogfight' ? 3.0 : 2.5)
+      const accelRate = w.state === 'flyby' ? 6.0 : (w.state === 'dogfight' ? 2.3 : 2.5)
       w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
@@ -671,7 +700,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
         if (toEnemy.lengthSq() > 1e-4) {
           const aimQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, toEnemy.normalize())
-          w.mesh.quaternion.slerp(aimQuat, 1 - Math.exp(-8.5 * dt))
+          w.mesh.quaternion.slerp(aimQuat, 1 - Math.exp(-5.5 * dt))
         }
         w.smoothRoll += (0 - w.smoothRoll) * (1 - Math.exp(-6.0 * dt))
         w.mesh.rotateZ(w.smoothRoll)
