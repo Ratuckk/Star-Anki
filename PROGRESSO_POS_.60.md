@@ -28,6 +28,13 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 - [x] **Decidir**: abrir explicação pausa mais ou é só painel sobreposto?
   → Painel sobreposto sem efeito extra no tempo. O jogo já está pausado pela tela de card/feedback. ✅ v0.61.0
 - [ ] **Perguntas de cenário** — testar aplicação prática, não só definição.
+- [ ] **Habilidades únicas por piloto do esquadrão** (Falco/Peppy/Slippy/Phantom) — investida em
+  aríete, proteção, item consumível de cura ao contato e assistência ao tiro carregado, cada uma
+  com cooldown de 10-20s reduzível por carta (só se aquele piloto estiver recrutado), com ícones
+  de cooldown no extremo topo-esquerdo da HUD. Planejado em detalhe (mapeamento de habilidades,
+  máquina de estados, integração por arquivo, novas cartas, reflow de HUD, decisões em aberto) em
+  [PLANO_HABILIDADES_ESQUADRAO.md](PLANO_HABILIDADES_ESQUADRAO.md) — **não implementado ainda**,
+  aguardando confirmação do usuário sobre as decisões em aberto (seção 9 do plano).
 
 ### P3 — Especulativo / requer decisão
 - [ ] **Bônus de pontos por abrir explicação em erros**.
