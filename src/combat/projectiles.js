@@ -65,6 +65,18 @@ const MAX_CHARGE_VISUAL_SCALE = 1.2
 // que qualquer hitRadius do jogo, garante que o próximo frame não recaia no alvo recém-atingido
 const RICOCHET_NUDGE_DISTANCE = 3
 
+const FRENZY_OFFSET_L = new THREE.Vector3(-0.8, 0, 0)
+const FRENZY_OFFSET_R = new THREE.Vector3(0.8, 0, 0)
+const _projOrigin = new THREE.Vector3()
+const _projPrevPos = new THREE.Vector3()
+const _projStep = new THREE.Vector3()
+const _projDeflect = new THREE.Vector3()
+const _projToSource = new THREE.Vector3()
+const _projDir = new THREE.Vector3()
+const _projDesired = new THREE.Vector3()
+const _projSteered = new THREE.Vector3()
+const _projRingPos = new THREE.Vector3()
+
 export function createProjectileSystem(scene, effects, player, enemies, targets, lockon) {
   const projectiles = []
   let cooldown = 0
@@ -135,44 +147,44 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     // atingido e números de dano flutuantes no HUD
     const hitsLog = []
 
-    for (const projectile of [...projectiles]) {
+    const magnetSources = enemies && enemies.getMagnetSources ? enemies.getMagnetSources() : null
+
+    for (let pIdx = projectiles.length - 1; pIdx >= 0; pIdx--) {
+      const projectile = projectiles[pIdx]
       // QoL (v0.29.4): checa .dying direto em vez de filtrar getAlive() por projétil por frame
       if (projectile.homingTarget) {
         if (projectile.homingTarget.dying) {
           projectile.homingTarget = null
         } else {
-          const desired = projectile.homingTarget.mesh.position.clone().sub(projectile.mesh.position).normalize()
+          _projDesired.copy(projectile.homingTarget.mesh.position).sub(projectile.mesh.position).normalize()
           const speed = projectile.isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
-          projectile.velocity.copy(desired.multiplyScalar(speed))
+          projectile.velocity.copy(_projDesired.multiplyScalar(speed))
         }
       } else if (aimDirection && !projectile.isHoming) {
         const speed = projectile.velocity.length()
-        const currentDir = projectile.velocity.clone().normalize()
+        _projDir.copy(projectile.velocity).normalize()
         const steerT = Math.min(1, PLAYER_PROJECTILE_STEER_RATE * dt)
-        const steeredDir = currentDir.lerp(aimDirection, steerT)
-        if (steeredDir.lengthSq() > 1e-6) projectile.velocity.copy(steeredDir.normalize().multiplyScalar(speed))
+        _projSteered.copy(_projDir).lerp(aimDirection, steerT)
+        if (_projSteered.lengthSq() > 1e-6) projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
       }
 
       // ============================================================
       // >>> BLOCO NOVO — Enxame-Ímã: curva o tiro NORMAL quando passa perto <<<
       // ============================================================
-      if (!projectile.isHoming) {
-        const magnetSources = enemies.getMagnetSources ? enemies.getMagnetSources() : []
-        if (magnetSources.length > 0) {
-          const speed = projectile.velocity.length()
-          const deflect = new THREE.Vector3()
-          for (const source of magnetSources) {
-            const toSource = source.position.clone().sub(projectile.mesh.position)
-            const dist = toSource.length()
-            if (dist > 1e-4 && dist < source.radius) {
-              const falloff = 1 - dist / source.radius
-              deflect.addScaledVector(toSource.normalize(), -source.strength * falloff * dt)
-            }
+      if (!projectile.isHoming && magnetSources && magnetSources.length > 0) {
+        const speed = projectile.velocity.length()
+        _projDeflect.set(0, 0, 0)
+        for (const source of magnetSources) {
+          _projToSource.copy(source.position).sub(projectile.mesh.position)
+          const dist = _projToSource.length()
+          if (dist > 1e-4 && dist < source.radius) {
+            const falloff = 1 - dist / source.radius
+            _projDeflect.addScaledVector(_projToSource.multiplyScalar(1 / dist), -source.strength * falloff * dt)
           }
-          if (deflect.lengthSq() > 1e-8) {
-            projectile.velocity.add(deflect)
-            if (projectile.velocity.lengthSq() > 1e-6) projectile.velocity.normalize().multiplyScalar(speed)
-          }
+        }
+        if (_projDeflect.lengthSq() > 1e-8) {
+          projectile.velocity.add(_projDeflect)
+          if (projectile.velocity.lengthSq() > 1e-6) projectile.velocity.normalize().multiplyScalar(speed)
         }
       }
       // ============================================================
@@ -184,12 +196,13 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         if (projectile.life <= 0) { removeProjectile(projectile); continue }
       }
 
-      const prevPos = projectile.mesh.position.clone()
-      const step = projectile.velocity.clone().multiplyScalar(dt)
-      projectile.mesh.position.add(step)
-      projectile.traveled += step.length()
+      _projPrevPos.copy(projectile.mesh.position)
+      _projStep.copy(projectile.velocity).multiplyScalar(dt)
+      projectile.mesh.position.add(_projStep)
+      projectile.traveled += _projStep.length()
       if (projectile.velocity.lengthSq() > 1e-6) {
-        projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, projectile.velocity.clone().normalize())
+        _projDir.copy(projectile.velocity).normalize()
+        projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _projDir)
       }
 
       if (projectile.isHoming && effects) {
@@ -202,22 +215,22 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           projectile.machRingTimer = (projectile.machRingTimer ?? 0) - dt
           if (projectile.machRingTimer <= 0) {
             projectile.machRingTimer = 0.08
-            const dir = projectile.velocity.clone().normalize()
-            const ringPos = projectile.mesh.position.clone().addScaledVector(dir, 1.2)
-            effects.machSpeedRing(ringPos, dir)
+            _projDir.copy(projectile.velocity).normalize()
+            _projRingPos.copy(projectile.mesh.position).addScaledVector(_projDir, 1.2)
+            effects.machSpeedRing(_projRingPos, _projDir)
           }
         }
       }
 
       const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER
-      const orbHit = allowBossOrbHit && !bossOrbHit ? targets.resolveBossOrbHit(prevPos, projectile.mesh.position, hitBuffer) : null
+      const orbHit = allowBossOrbHit && !bossOrbHit ? targets.resolveBossOrbHit(_projPrevPos, projectile.mesh.position, hitBuffer) : null
       if (orbHit) {
         bossOrbHit = true
         removeProjectile(projectile)
         continue
       }
 
-      const hit = enemies.resolveProjectileHit(prevPos, projectile.mesh.position, {
+      const hit = enemies.resolveProjectileHit(_projPrevPos, projectile.mesh.position, {
         damage: projectile.damage ?? 1,
         isHoming: !!projectile.isHoming,
         hitBuffer,
@@ -290,9 +303,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             // (é onde o hit resolveu) e `resolveProjectileHit` batia de novo no MESMO alvo
             // repetidas vezes seguidas em vez de viajar até o próximo (medido: 3 hits seguidos
             // no mesmo inimigo, todos na mesma posição exata).
-            const toNext = nextTarget.mesh.position.clone().sub(projectile.mesh.position)
-            if (toNext.lengthSq() > 1e-6) {
-              projectile.mesh.position.addScaledVector(toNext.normalize(), RICOCHET_NUDGE_DISTANCE)
+            _projToSource.copy(nextTarget.mesh.position).sub(projectile.mesh.position)
+            if (_projToSource.lengthSq() > 1e-6) {
+              projectile.mesh.position.addScaledVector(_projToSource.normalize(), RICOCHET_NUDGE_DISTANCE)
             }
             if (effects && effects.ricochetArc) {
               effects.ricochetArc(hit.worldPos, nextTarget.mesh.position)
@@ -306,7 +319,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         continue
       }
 
-      const bonusHit = targets.resolveBonusHit(prevPos, projectile.mesh.position, hitBuffer)
+      const bonusHit = targets.resolveBonusHit(_projPrevPos, projectile.mesh.position, hitBuffer)
       if (bonusHit) {
         bonusKillPoints += bonusHit.points
         removeProjectile(projectile)
@@ -331,8 +344,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       cooldown = isFrenzy ? fireCooldownDuration * 0.45 : fireCooldownDuration
       fire(origin, direction)
       if (isFrenzy) {
-        fire(origin.clone().add(new THREE.Vector3(-0.8, 0, 0)), direction)
-        fire(origin.clone().add(new THREE.Vector3(0.8, 0, 0)), direction)
+        _projOrigin.copy(origin).add(FRENZY_OFFSET_L)
+        fire(_projOrigin, direction)
+        _projOrigin.copy(origin).add(FRENZY_OFFSET_R)
+        fire(_projOrigin, direction)
       }
       return true
     },

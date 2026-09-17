@@ -55,6 +55,16 @@ export function createQuestionFlow(deps) {
     state.phase = 'cardChoice'
     hud.showCardChoice({
       cards,
+      stats: {
+        health: session.health,
+        maxHealth: player.getMaxHealth ? player.getMaxHealth() : 10,
+        shield: player.getShieldValue ? player.getShieldValue() : 3,
+        maxShield: player.getShieldMax ? player.getShieldMax() : 3,
+        projectileCount: player.config?.projectileCount || 1,
+        homingTargets: player.config?.homingMaxTargets || 1,
+        wingmanCount: player.getWingmanCount ? player.getWingmanCount() : 0,
+      },
+      collectedCards: player.getCollectedCards ? player.getCollectedCards() : new Map(),
       onPick: (card) => {
         applyRoguelikeCard(card)
         onDone()
@@ -95,6 +105,7 @@ export function createQuestionFlow(deps) {
       sourcesText: result.card.sourcesText,
       tags: result.card.tags,
       deck: result.card.deck,
+      isFastRetry: !!result.card?._isFastRetry,
       onPick: (slot) => {
         settleQuestion({
           type: slot === state.questionResult.correctSlot ? 'correct' : 'wrong',

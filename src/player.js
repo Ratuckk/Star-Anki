@@ -314,13 +314,18 @@ export function createPlayerSystem(session) {
       // Seção 3 do backlog (contrapeso do jogador): em patamares altos (wrongAnswerCount >= 3), atraso de +150ms na recarga do escudo
       shieldRegenDelayTimer = shieldRegenDelayMs + (wrongAnswerCount >= 3 ? 150 : 0)
       let remaining = Math.max(1, amount)
-      const absorbedByShield = shieldValue >= 1
+      const absorbedByShield = shieldValue > 0
       if (absorbedByShield) {
-        const absorbed = Math.min(shieldValue, remaining)
-        shieldValue -= absorbed
-        remaining -= absorbed
+        if (shieldValue >= remaining) {
+          shieldValue -= remaining
+          remaining = 0
+        } else {
+          // O escudo quebra: absorve o impacto até o limite inteiro (shield gate) e quebra
+          remaining = Math.max(0, Math.floor(remaining - shieldValue))
+          shieldValue = 0
+        }
       }
-      const shieldBroke = absorbedByShield && shieldValue < 1
+      const shieldBroke = absorbedByShield && shieldValue <= 0
       let outOfLives = false
       if (remaining > 0) {
         // pedido do usuário: a invencibilidade momentânea só existe quando o escudo está

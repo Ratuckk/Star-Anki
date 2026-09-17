@@ -287,6 +287,122 @@ export function injectHudExtraStyles() {
   box-shadow: inset 0 0 0 2.5px #fff;
 }
 
+/* ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============ */
+.hud-squad-command-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 7px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1.5px solid #334155;
+  border-radius: 6px;
+  min-width: 62px;
+  height: 32px;
+  box-sizing: border-box;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+.hud-squad-command-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.hud-cmd-key {
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 8px;
+  font-weight: 800;
+  color: #38bdf8;
+  line-height: 1.2;
+}
+.hud-cmd-label {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+.hud-cmd-meter {
+  width: 100%;
+  height: 3px;
+  background: rgba(30, 41, 59, 0.9);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 1px;
+}
+.hud-cmd-meter-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 2px;
+  transition: width 0.1s linear, background-color 0.2s ease;
+}
+.hud-cmd-timer {
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  line-height: 1;
+}
+
+/* Modificadores de Estado */
+.hud-squad-command-widget.ready {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.2);
+}
+.hud-squad-command-widget.ready .hud-cmd-key {
+  color: #38bdf8;
+  border-color: #0284c7;
+  box-shadow: 0 0 4px rgba(56, 189, 248, 0.5);
+}
+.hud-squad-command-widget.ready .hud-cmd-label { color: #38bdf8; }
+.hud-squad-command-widget.ready .hud-cmd-meter-fill {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+.hud-squad-command-widget.ready .hud-cmd-timer { color: #38bdf8; }
+
+.hud-squad-command-widget.active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+  animation: squad-cmd-active-pulse 1s infinite alternate;
+}
+@keyframes squad-cmd-active-pulse {
+  from { box-shadow: 0 0 6px rgba(245, 158, 11, 0.3); }
+  to   { box-shadow: 0 0 14px rgba(245, 158, 11, 0.7); }
+}
+.hud-squad-command-widget.active .hud-cmd-key {
+  color: #fff;
+  background: #d97706;
+  border-color: #f59e0b;
+}
+.hud-squad-command-widget.active .hud-cmd-label {
+  color: #fbbf24;
+  font-weight: 900;
+}
+.hud-squad-command-widget.active .hud-cmd-meter-fill {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
+.hud-squad-command-widget.active .hud-cmd-timer {
+  color: #fbbf24;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.hud-squad-command-widget.cooling {
+  border-color: #1e293b;
+  opacity: 0.85;
+}
+.hud-squad-command-widget.cooling .hud-cmd-key { color: #64748b; }
+.hud-squad-command-widget.cooling .hud-cmd-label { color: #64748b; }
+.hud-squad-command-widget.cooling .hud-cmd-meter-fill { background: #64748b; }
+.hud-squad-command-widget.cooling .hud-cmd-timer { color: #94a3b8; }
+
 /* ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============ */
 /* terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — evita
    colidir com o minimapa (top:12px;right:12px) que ocupa o canto oposto da tela. Sobe de cor a
@@ -821,6 +937,23 @@ export function injectHudExtraStyles() {
   text-transform: uppercase;
   text-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
   pointer-events: none;
+}
+.question-modal-retry-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  color: #fbbf24;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+  animation: retry-badge-pulse 1.8s ease-in-out infinite alternate;
+}
+@keyframes retry-badge-pulse {
+  from { opacity: 0.85; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1.03); }
 }
 .question-modal-title {
   margin: 0 0 1.2rem 0;
@@ -1825,6 +1958,45 @@ export function injectHudExtraStyles() {
   22%  { transform: translate(-50%, -50%) scale(1.0); }
   75%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
   100% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
+}
+
+/* ============ INDICADORES DE AMEAÇAS FORA DA TELA (Item 4 — QOL v0.76.0) ============ */
+.hud-offscreen-pointers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 12;
+}
+.cinematic-active .hud-offscreen-pointers {
+  display: none !important;
+}
+.hud-threat-pointer {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  pointer-events: none;
+  will-change: transform, opacity, left, top;
+}
+.hud-threat-chevron {
+  display: inline-block;
+  font-size: 20px;
+  color: #f59e0b;
+  text-shadow: 0 0 8px rgba(245, 158, 11, 0.8), 0 0 16px rgba(245, 158, 11, 0.4);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9));
+  transform-origin: center center;
+}
+.hud-threat-pointer.critical .hud-threat-chevron {
+  color: #ef4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 1), 0 0 20px rgba(239, 68, 68, 0.8);
+  animation: hud-threat-pulse 0.35s infinite alternate ease-in-out;
+}
+@keyframes hud-threat-pulse {
+  from { transform: scale(0.92); opacity: 0.85; }
+  to   { transform: scale(1.28); opacity: 1.0; }
 }
 `
   document.head.appendChild(style)

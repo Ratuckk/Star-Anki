@@ -59,6 +59,13 @@ const minionMaterial = new THREE.MeshPhongMaterial({
   flatShading: true,
 })
 
+const goldenLaserGeometry = new THREE.ConeGeometry(GOLDEN_LASER_RADIUS, GOLDEN_LASER_LENGTH, 8)
+goldenLaserGeometry.rotateX(Math.PI / 2)
+const goldenLaserMaterial = new THREE.MeshBasicMaterial({
+  color: GOLDEN_COLOR, transparent: true, opacity: 0.95,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+
 function randomGoldenFireInterval() {
   return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
 }
@@ -91,18 +98,12 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     const startPos = g.mesh.position.clone()
     const direction = targetPos.clone().sub(startPos).normalize()
 
-    const geo = new THREE.ConeGeometry(GOLDEN_LASER_RADIUS, GOLDEN_LASER_LENGTH, 8)
-    geo.rotateX(Math.PI / 2)
-    const mat = new THREE.MeshBasicMaterial({
-      color: GOLDEN_COLOR, transparent: true, opacity: 0.95,
-      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-    })
-    const mesh = new THREE.Mesh(geo, mat)
+    const mesh = new THREE.Mesh(goldenLaserGeometry, goldenLaserMaterial)
     mesh.position.copy(startPos)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
     scene.add(mesh)
     ctx.pushLaser({
-      mesh, geo, mat,
+      mesh,
       velocity: direction.multiplyScalar(GOLDEN_LASER_SPEED), traveled: 0,
       maxRange: GOLDEN_LASER_MAX_RANGE, hitRadius: GOLDEN_LASER_HIT_RADIUS,
       shieldDamage: 1,
@@ -256,7 +257,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           // pedido do usuário: o alvo continua "mirando" a posição ATUAL do jogador durante todo
           // o telegraph, não trava só no instante em que começou — senão dava pra sair de cima
           // a qualquer momento nos 2.5s e nunca precisar de fato desviar na hora do disparo.
-          g.laserTargetPos = playerPosition.clone()
+          if (!g.laserTargetPos) g.laserTargetPos = new THREE.Vector3()
+          g.laserTargetPos.copy(playerPosition)
           g.laserTelegraphTimer -= dt
           if (g.laserTelegraphTimer <= 0) {
             if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos, ctx)
@@ -338,6 +340,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       goldenMaterial.dispose()
       minionGeometry.dispose()
       minionMaterial.dispose()
+      goldenLaserGeometry.dispose()
+      goldenLaserMaterial.dispose()
     },
   }
 }

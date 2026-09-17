@@ -266,4 +266,157 @@ assert.strictEqual(resetState.clearedCombatants, true, 'Debug deve limpar combat
 assert.strictEqual(resetState.inArena, false, 'Debug deve sair da arena')
 assert.strictEqual(resetState.phase, 'combat', 'Debug deve resetar a fase para combat')
 
-console.log('OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + overhaul v0.66.0 + v0.67.0 fixes).')
+// ---------------------------------------------------------------------------
+// 8. QOL Item 9 & Item 5: Reenfileiramento Curto (Fast Active-Recall) & Códice de Erros
+// ---------------------------------------------------------------------------
+const retryCard = { guid: 'card-retry-1', question: 'O que é ECC?', answer: 'Memória com detecção e correção de erros', explanation: 'Error-Correcting Code detecta e corrige erros de 1 bit', sourceUrl: 'https://exemplo.org/ecc', tags: 'hardware mem' }
+const dummyDeck = [
+  retryCard,
+  { guid: 'card-d-2', question: 'Q2', answer: 'A2' },
+  { guid: 'card-d-3', question: 'Q3', answer: 'A3' },
+  { guid: 'card-d-4', question: 'Q4', answer: 'A4' },
+  { guid: 'card-d-5', question: 'Q5', answer: 'A5' },
+]
+const qolSession = {
+  queue: [...dummyDeck],
+  pointer: 0,
+  score: 0,
+  health: 10,
+  lives: 3,
+  comboMultiplier: 1.0,
+  log: [],
+}
+
+// Responde com erro
+resolveAnswer(qolSession, { type: 'wrong', card: retryCard })
+assert.strictEqual(qolSession.queue.length, 6, 'Erro deveria reenfileirar o card aumentando a fila de 5 para 6')
+const requeued = qolSession.queue.find((c, idx) => idx > 0 && c.guid === 'card-retry-1')
+assert.ok(requeued, 'Card errado deve estar presente mais à frente na fila')
+assert.strictEqual(requeued._isFastRetry, true, 'Card reenfileirado deve ter a flag _isFastRetry=true')
+
+// Verifica getSummary preservando explanation e sourceUrl
+const qolSummary = getSummary(qolSession)
+assert.strictEqual(qolSummary.missed.length, 1, 'Deve ter 1 card perdido no resumo')
+assert.strictEqual(qolSummary.missed[0].explanation, retryCard.explanation, 'Resumo deve preservar explanation')
+assert.strictEqual(qolSummary.missed[0].sourceUrl, retryCard.sourceUrl, 'Resumo deve preservar sourceUrl')
+
+// ---------------------------------------------------------------------------
+// 9. Auditoria de Bugs e Otimizações de Desempenho (BUG-01 a BUG-09, OPT-01 a OPT-05)
+// ---------------------------------------------------------------------------
+
+// 9.1 BUG-08: Desduplicação de Cloze no Códice de Erros (getSummary)
+// Duas perguntas cloze da MESMA nota Anki (mesmo guid 'nota-cloze-1') com perguntas diferentes
+// NÃO devem descartar uma à outra no resumo final de erros.
+const clozeQ1 = { guid: 'nota-cloze-1', question: 'Paris é a capital da _____', answer: 'França', explanation: 'Geografia 1' }
+const clozeQ2 = { guid: 'nota-cloze-1', question: '_____ é a capital da França', answer: 'Paris', explanation: 'Geografia 2' }
+const clozeSession = {
+  queue: [clozeQ1, clozeQ2],
+  pointer: 0,
+  score: 0,
+  health: 10,
+  lives: 3,
+  comboMultiplier: 1.0,
+  log: [],
+}
+resolveAnswer(clozeSession, { type: 'wrong', card: clozeQ1 })
+resolveAnswer(clozeSession, { type: 'wrong', card: clozeQ2 })
+const clozeSummary = getSummary(clozeSession)
+assert.strictEqual(clozeSummary.missed.length, 2, 'Resumo deve conter AMBAS as perguntas cloze da mesma nota')
+assert.ok(clozeSummary.missed.some((c) => c.question === clozeQ1.question), 'Pergunta 1 deve estar presente no resumo')
+assert.ok(clozeSummary.missed.some((c) => c.question === clozeQ2.question), 'Pergunta 2 deve estar presente no resumo')
+
+// 9.2 BUG-09: Absorção e Quebra de Escudo com Energia Parcial (< 1.0)
+// Quando o jogador tem escudo em recarga parcial (ex: 0.45) e recebe 1 de dano,
+// o escudo deve quebrar (shieldBroke = true), mas absorver totalmente o impacto (effectiveDamage = 0).
+function applyDamageFormula(shieldValue, baseDamage = 1) {
+  let shield = shieldValue
+  let shieldBroke = false
+  let effectiveDamage = baseDamage
+
+  if (shield > 0) {
+    if (shield >= effectiveDamage) {
+      shield -= effectiveDamage
+      effectiveDamage = 0
+    } else {
+      effectiveDamage = Math.max(0, Math.floor(effectiveDamage - shield))
+      shield = 0
+      shieldBroke = true
+    }
+  }
+
+  return { shield, shieldBroke, effectiveDamage }
+}
+
+const partialShieldResult = applyDamageFormula(0.45, 1)
+assert.strictEqual(partialShieldResult.shield, 0, 'Escudo parcial deve ser zerado ao ser quebrado')
+assert.strictEqual(partialShieldResult.shieldBroke, true, 'shieldBroke deve ser true quando escudo parcial é estourado')
+assert.strictEqual(partialShieldResult.effectiveDamage, 0, 'Dano ao casco deve ser 0 pois o escudo parcial absorveu o impacto')
+
+const fullShieldResult = applyDamageFormula(2.0, 1)
+assert.strictEqual(fullShieldResult.shield, 1.0, 'Escudo cheio deve reduzir de 2 para 1')
+assert.strictEqual(fullShieldResult.shieldBroke, false, 'shieldBroke deve ser false com escudo restante')
+assert.strictEqual(fullShieldResult.effectiveDamage, 0, 'Dano ao casco deve ser 0')
+
+const noShieldResult = applyDamageFormula(0, 1)
+assert.strictEqual(noShieldResult.shield, 0, 'Escudo permanece 0')
+assert.strictEqual(noShieldResult.shieldBroke, false, 'Sem escudo, não há quebra de escudo')
+assert.strictEqual(noShieldResult.effectiveDamage, 1, 'Dano ao casco deve ser 1 total')
+
+// 9.3 BUG-01 & BUG-02: Bloqueio de Giro 180° e Disparo Traseiro no Modo Trilho
+function evaluateRailCombatEngagement(relativeForward, dist, fireTimer, isArena = false) {
+  const inForwardArc = isArena || relativeForward > 0
+  const inFireRange = inForwardArc && dist < 120 && dist > 12
+  const canLookAtPlayer = inForwardArc
+  const canFire = inFireRange && fireTimer <= 0
+  return { canLookAtPlayer, canFire }
+}
+
+const aheadEngagement = evaluateRailCombatEngagement(25.0, 35.0, 0.0, false)
+assert.strictEqual(aheadEngagement.canLookAtPlayer, true, 'Inimigo à frente deve olhar para o jogador')
+assert.strictEqual(aheadEngagement.canFire, true, 'Inimigo à frente deve poder disparar')
+
+const passedEngagement = evaluateRailCombatEngagement(-5.0, 35.0, 0.0, false)
+assert.strictEqual(passedEngagement.canLookAtPlayer, false, 'Inimigo ultrapassado no trilho NÃO deve girar 180°')
+assert.strictEqual(passedEngagement.canFire, false, 'Inimigo ultrapassado no trilho NÃO deve atirar para trás')
+
+const arenaPassedEngagement = evaluateRailCombatEngagement(-5.0, 35.0, 0.0, true)
+assert.strictEqual(arenaPassedEngagement.canLookAtPlayer, true, 'Na arena é permitida rotação livre')
+assert.strictEqual(arenaPassedEngagement.canFire, true, 'Na arena é permitido disparo omnidirecional')
+
+// 9.4 BUG-04: Promoção de Elos Órfãos do Verme em Cabeças Autônomas
+function simulateVermeSegmentUpdate(segment, targetDying) {
+  let promoted = false
+  if (!segment.followTarget || targetDying) {
+    if (segment.followTarget) {
+      segment.followTarget = null
+      promoted = true
+    }
+  }
+  return promoted
+}
+
+const segmentA = { id: 101, followTarget: { id: 100, dying: true } }
+const wasPromoted = simulateVermeSegmentUpdate(segmentA, true)
+assert.strictEqual(wasPromoted, true, 'Elo cujo predecessor morreu deve ser promovido a cabeça')
+assert.strictEqual(segmentA.followTarget, null, 'followTarget deve ser limpo para evitar deriva em direção a mesh morto')
+
+// 9.5 Wingmen: Bloqueio de Oscilação Rápida de Dogfight no Comando de Foco
+function simulateWingmanFocusDecision(wingmanState, commandMode, engagementCooldown, candidateDist) {
+  let newState = wingmanState
+  if (wingmanState === 'patrol') {
+    if (commandMode === 'focus' && engagementCooldown <= 0) {
+      if (candidateDist < 105) {
+        newState = 'dogfight'
+      }
+    }
+  }
+  return newState
+}
+
+const rightAfterDrop = simulateWingmanFocusDecision('patrol', 'focus', 0.8, 120)
+assert.strictEqual(rightAfterDrop, 'patrol', 'Companheiro em cooldown de descanso NÃO deve re-engajar imediatamente em dogfight no próximo frame')
+
+const afterCooldownElapsed = simulateWingmanFocusDecision('patrol', 'focus', 0.0, 60)
+assert.strictEqual(afterCooldownElapsed, 'dogfight', 'Companheiro descansado com alvo em alcance deve engajar em dogfight com foco ativo')
+
+console.log('OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09).')

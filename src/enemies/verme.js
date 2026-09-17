@@ -71,18 +71,28 @@ export function spawnVerme(scene, rail, makeId) {
   return segments
 }
 
+const _vermeRel = new THREE.Vector3()
+
 export function updateVermeMovement(enemy, dt, rail) {
-  if (!enemy.followTarget) {
+  if (!enemy.followTarget || enemy.followTarget.dying || !enemy.followTarget.mesh) {
     // cabeça de verdade, ou virou cabeça de uma sub-cadeia nova após um corte no meio
+    if (enemy.followTarget) {
+      enemy.followTarget = null
+      const frame = rail.getSpawnFrame()
+      const rel = _vermeRel.copy(enemy.mesh.position).sub(frame.position)
+      enemy.depth = rel.dot(frame.forward)
+      enemy.screenX = rel.dot(frame.right)
+      enemy.screenY = rel.dot(frame.up)
+    }
     enemy.depth -= HEAD_SPEED * dt
     projectVermeHeadToWorld(enemy, rail)
     return
   }
   const target = enemy.followTarget.mesh.position
-  const toTarget = target.clone().sub(enemy.mesh.position)
-  const dist = toTarget.length()
+  _vermeRel.copy(target).sub(enemy.mesh.position)
+  const dist = _vermeRel.length()
   if (dist > SEGMENT_SPACING) {
-    enemy.mesh.position.addScaledVector(toTarget.normalize(), (dist - SEGMENT_SPACING) * Math.min(1, dt / FOLLOW_LAG))
+    enemy.mesh.position.addScaledVector(_vermeRel.normalize(), (dist - SEGMENT_SPACING) * Math.min(1, dt / FOLLOW_LAG))
   }
 }
 
@@ -100,7 +110,7 @@ export function severChainAt(deadSegment, allEnemies, rail) {
   if (next) {
     next.followTarget = null
     const frame = rail.getSpawnFrame()
-    const rel = next.mesh.position.clone().sub(frame.position)
+    const rel = _vermeRel.copy(next.mesh.position).sub(frame.position)
     next.depth = rel.dot(frame.forward)
     next.screenX = rel.dot(frame.right)
     next.screenY = rel.dot(frame.up)

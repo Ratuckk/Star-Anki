@@ -112,6 +112,19 @@ const _bankedUp = new THREE.Vector3()
 const _fwdVec = new THREE.Vector3()
 const _rightVec = new THREE.Vector3()
 const _upVec = new THREE.Vector3()
+const _UP_DIR = new THREE.Vector3(0, 1, 0)
+const _wmSlotPos = new THREE.Vector3()
+const _wmToTarget = new THREE.Vector3()
+const _wmDesiredVelocity = new THREE.Vector3()
+const _wmDiff = new THREE.Vector3()
+const _wmPush = new THREE.Vector3()
+const _wmToEnemy = new THREE.Vector3()
+const _wmAimDir = new THREE.Vector3()
+const _wmSpreadDir = new THREE.Vector3()
+const _wmLaserMuzzle = new THREE.Vector3()
+const _wmRel = new THREE.Vector3()
+const _wlPrevPos = new THREE.Vector3()
+const _wlStep = new THREE.Vector3()
 
 // Taxa máxima de giro (rad/s) usada por quaternion.rotateTowards
 const CRUISE_TURN_RATE = 2.2 // ~126°/s — cruzeiro em formação suave
@@ -486,11 +499,28 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return wingman
   }
 
+  function disposeWingmanMesh(mesh) {
+    if (!mesh) return
+    mesh.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose()
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose())
+          } else {
+            child.material.dispose()
+          }
+        }
+      }
+    })
+  }
+
   function removeMember(profileId) {
     const index = activeWingmen.findIndex((w) => w.profile.id === profileId)
     if (index === -1) return
     const w = activeWingmen.splice(index, 1)[0]
     scene.remove(w.mesh)
+    disposeWingmanMesh(w.mesh)
     w.laserMaterial.dispose()
     telemetry.recordEvent(w.profile.name, 'flight', `Caça ${w.profile.name} dispensado da formação`, { elapsed })
   }
@@ -597,6 +627,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     while (activeWingmen.length > 0) {
       const w = activeWingmen.pop()
       scene.remove(w.mesh)
+      disposeWingmanMesh(w.mesh)
       w.laserMaterial.dispose()
     }
   }
@@ -681,15 +712,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       const idleX = Math.sin(elapsed * 0.7 + w.profile.id * 1.6) * 0.55
       const idleY = Math.cos(elapsed * 0.5 + w.profile.id * 2.1) * 0.35
 
-      const formationSlotPos = inArena
-        ? playerPos.clone()
-            .addScaledVector(frame.right, slot.side * 1.3 + idleX)
-            .addScaledVector(frame.up, slot.up + idleY)
-            .addScaledVector(frame.forward, slot.forward * 0.8)
-        : playerPos.clone()
-            .addScaledVector(frame.right, slot.side + idleX)
-            .addScaledVector(frame.up, slot.up + idleY)
-            .addScaledVector(frame.forward, slot.forward)
+      _wmSlotPos.copy(playerPos)
+      if (inArena) {
+        _wmSlotPos
+          .addScaledVector(frame.right, slot.side * 1.3 + idleX)
+          .addScaledVector(frame.up, slot.up + idleY)
+          .addScaledVector(frame.forward, slot.forward * 0.8)
+      } else {
+        _wmSlotPos
+          .addScaledVector(frame.right, slot.side + idleX)
+          .addScaledVector(frame.up, slot.up + idleY)
+          .addScaledVector(frame.forward, slot.forward)
+      }
 
       // 1. Regroup se ficou longe demais do jogador
       const maxDistance = inArena ? 130 : 65
@@ -701,7 +735,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       if (w.state === 'regroup') {
-        w.patrolTarget.copy(formationSlotPos)
+        w.patrolTarget.copy(_wmSlotPos)
         if (distToPlayer < (inArena ? 50 : 35) || w.stateTimer > 3.0) {
           telemetry.recordEvent(w.profile.name, 'state', 'Retornou à vaga de formação após regroup', { elapsed })
           w.state = 'patrol'
@@ -713,7 +747,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         // cruiseSpeed abaixo) fazia a velocidade disparar e derrapar de volta em menos de 0.1s
         // ("chacoalhando"). Suaviza o PONTO perseguido, não só a velocidade, pra virar uma curva
         // larga e gradual (pedido do plano: "curva ampla e elegante de retorno à sua ala").
-        w.patrolTarget.lerp(formationSlotPos, 1 - Math.exp(-2.2 * dt))
+        w.patrolTarget.lerp(_wmSlotPos, 1 - Math.exp(-2.2 * dt))
 
         // Habilidades únicas de Peppy (Guarda) e Phantom (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
@@ -736,24 +770,31 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
 
         if (w.state === 'patrol') {
-          if (squadronCommandMode === 'focus') {
+          if (squadronCommandMode === 'focus' && w.engagementCooldown <= 0) {
             squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
             if (squadronFocusTargets.length === 0) {
               const alive = getAliveEnemies()
               if (alive.length > 0 && playerPos) {
-                alive.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
-                squadronFocusTargets = [alive[0]]
+                const reachable = alive.filter((e) => playerPos.distanceTo(e.mesh.position) < 120)
+                const pool = reachable.length > 0 ? reachable : alive
+                pool.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+                squadronFocusTargets = [pool[0]]
               }
             }
             if (squadronFocusTargets.length > 0) {
-              w.targetEnemy = squadronFocusTargets.length === 1
+              const candidate = squadronFocusTargets.length === 1
                 ? squadronFocusTargets[0]
                 : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
-              telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
-              w.state = 'dogfight'
-              w.stateTimer = 0
-              w.burstRemaining = 4
-              w.burstTimer = 0.2
+              if (candidate && candidate.mesh && w.mesh.position.distanceTo(candidate.mesh.position) < 105) {
+                w.targetEnemy = candidate
+                telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
+                w.state = 'dogfight'
+                w.stateTimer = 0
+                w.burstRemaining = 4
+                w.burstTimer = 0.2
+              } else {
+                w.engagementCooldown = 0.6
+              }
             }
           } else if (w.fireCooldown <= 0 && w.engagementCooldown <= 0) {
             // Disciplina de esquadrão: no máximo 1 companheiro sai em dogfight por vez
@@ -762,9 +803,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               const alive = getAliveEnemies()
               if (alive.length > 0 && Math.random() < 0.45) {
                 const candidates = alive.filter((e) => {
-                  const rel = e.mesh.position.clone().sub(w.mesh.position)
-                  const dotForward = rel.clone().normalize().dot(frame.forward)
-                  return inArena ? rel.length() < 60 : (dotForward > 0.2 && rel.length() < 65)
+                  _wmRel.copy(e.mesh.position).sub(w.mesh.position)
+                  const d = _wmRel.length()
+                  if (inArena) return d < 60
+                  const dotForward = d > 1e-4 ? (_wmRel.dot(frame.forward) / d) : 0
+                  return dotForward > 0.2 && d < 65
                 })
                 if (candidates.length > 0) {
                   candidates.sort((a, b) => w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position))
@@ -802,9 +845,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
           }
         } else {
-          const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
-          const dist = toEnemy.length()
-          const aimDir = toEnemy.clone().normalize()
+          _wmToEnemy.copy(w.targetEnemy.mesh.position).sub(w.mesh.position)
+          const dist = _wmToEnemy.length()
+          if (dist > 1e-4) _wmAimDir.copy(_wmToEnemy).multiplyScalar(1 / dist)
+          else _wmAimDir.copy(frame.forward)
 
           // Falco: investida em aríete
           if (w.profile.abilityId === 'ram' && !w.abilityActive && w.abilityCooldown <= 0 &&
@@ -815,18 +859,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.abilityActive = true
             w.abilityTimer = 0
           } else {
-            w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(aimDir, -16)
+            w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(_wmAimDir, -16)
 
             w.burstTimer -= dt
             if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 85) {
               w.burstRemaining -= 1
               w.burstTimer = 0.55
-              const spreadDir = aimDir.clone()
+              _wmSpreadDir.copy(_wmAimDir)
                 .addScaledVector(frame.right, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
                 .addScaledVector(frame.up, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
                 .normalize()
-              const muzzleOffset = w.mesh.position.clone().addScaledVector(spreadDir, 1.3)
-              fireWingmanLaser(w, muzzleOffset, spreadDir)
+              _wmLaserMuzzle.copy(w.mesh.position).addScaledVector(_wmSpreadDir, 1.3)
+              fireWingmanLaser(w, _wmLaserMuzzle, _wmSpreadDir)
             }
 
             if (w.burstRemaining <= 0 && w.stateTimer > 4.2) {
@@ -860,13 +904,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               const hit = enemies.resolveProjectileHit(w.mesh.position, target.mesh.position, {
                 damage: isBig ? RAM_DAMAGE_VS_BOSS : RAM_DAMAGE,
                 isHoming: false,
-                hitBuffer: RAM_HIT_RADIUS,
+                hitBuffer: 1.5,
               })
               if (hit) {
-                telemetry.recordEvent(w.profile.name, 'ability', 'Impacto de Aríete no alvo! Dano aplicado com sucesso', { elapsed })
-                if (effects && effects.hitSpark) effects.hitSpark(target.mesh.position, w.profile.laserColor)
-                if (effects && effects.shockwave) effects.shockwave(target.mesh.position, w.profile.laserColor, 0.6)
+                if (effects && effects.explosion) {
+                  effects.explosion(target.mesh.position, isBig ? 1.5 : 1.0)
+                }
                 if (hit.killed) {
+                  telemetry.recordEvent(w.profile.name, 'combat', `Investida Aríete DESTRUIU ${target.kind} #${target.id}!`, { elapsed })
                   enemyKills++
                   enemyKillPoints += (hit.enemyKillPoints || 0)
                 }
@@ -925,16 +970,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       // ============ FÍSICA DE VOO DISCIPLINADA E SUAVE ============
-      const toTarget = w.patrolTarget.clone().sub(w.mesh.position)
-      const targetDist = toTarget.length()
-      const targetDir = targetDist > 1e-4 ? toTarget.normalize() : frame.forward.clone()
+      _wmToTarget.copy(w.patrolTarget).sub(w.mesh.position)
+      const targetDist = _wmToTarget.length()
+      if (targetDist > 1e-4) _wmAimDir.copy(_wmToTarget).multiplyScalar(1 / targetDist)
+      else _wmAimDir.copy(frame.forward)
 
       let cruiseSpeed = w.profile.speed
       if (!inArena) {
         // No rail, compensa a velocidade do mundo (+48u/s)
         cruiseSpeed += 48
         // Modulação suave para manter a formação com serenidade
-        const alongSlot = toTarget.dot(frame.forward)
+        const alongSlot = _wmToTarget.dot(frame.forward)
         if (alongSlot > 4.0) cruiseSpeed += Math.min(22, alongSlot * 2.0)
         else if (alongSlot < -4.0) cruiseSpeed = Math.max(25, cruiseSpeed + alongSlot * 1.5)
       }
@@ -943,23 +989,23 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       else if (w.state === 'dogfight') cruiseSpeed *= 1.15
       else if (w.state === 'escort') cruiseSpeed *= 1.25
 
-      const desiredVelocity = targetDir.multiplyScalar(cruiseSpeed)
+      _wmDesiredVelocity.copy(_wmAimDir).multiplyScalar(cruiseSpeed)
 
       // Repulsão suave e amortecida (nunca explosiva)
       for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {
         if (otherIdx === idx) continue
         const other = activeWingmen[otherIdx]
-        const diff = w.mesh.position.clone().sub(other.mesh.position)
-        const distBetween = diff.length()
+        _wmDiff.copy(w.mesh.position).sub(other.mesh.position)
+        const distBetween = _wmDiff.length()
         if (distBetween > 0.01 && distBetween < 4.5) {
-          const push = diff.normalize().multiplyScalar((4.5 - distBetween) * 1.8)
-          desiredVelocity.add(push)
+          _wmPush.copy(_wmDiff).multiplyScalar((4.5 - distBetween) * 1.8 / distBetween)
+          _wmDesiredVelocity.add(_wmPush)
         }
       }
 
       // Aceleração com inércia estável
       const accelRate = w.state === 'ram' ? 5.5 : 3.0
-      w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
+      w.velocity.lerp(_wmDesiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
       // ============ ORIENTAÇÃO COM BASE ORTONORMAL (ZERO PIRUETAS) ============
@@ -967,16 +1013,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // e derivado diretamente da base ortonormal. Jamais usa rotateZ incremental.
       let desiredForward = null
       if ((w.state === 'dogfight' || w.state === 'ram') && w.targetEnemy && w.targetEnemy.mesh && !w.targetEnemy.dying) {
-        const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
-        if (toEnemy.lengthSq() > 1e-4) {
-          desiredForward = toEnemy.normalize()
+        _wmToEnemy.copy(w.targetEnemy.mesh.position).sub(w.mesh.position)
+        if (_wmToEnemy.lengthSq() > 1e-4) {
+          desiredForward = _wmToEnemy.normalize()
         }
       }
       if (!desiredForward) {
         if (w.velocity.lengthSq() > 1.0) {
-          desiredForward = w.velocity.clone().normalize()
+          desiredForward = _wmToEnemy.copy(w.velocity).normalize()
         } else {
-          desiredForward = frame.forward.clone()
+          desiredForward = frame.forward
         }
       }
 
@@ -989,7 +1035,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       _fwdVec.copy(desiredForward)
       _rightVec.crossVectors(frame.up, _fwdVec)
       if (_rightVec.lengthSq() < 1e-4) {
-        _rightVec.crossVectors(new THREE.Vector3(0, 1, 0), _fwdVec)
+        _rightVec.crossVectors(_UP_DIR, _fwdVec)
       }
       _rightVec.normalize()
       _upVec.crossVectors(_fwdVec, _rightVec).normalize()
@@ -1016,14 +1062,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         continue
       }
 
-      const prevPos = laser.mesh.position.clone()
-      const step = laser.velocity.clone().multiplyScalar(dt)
-      laser.mesh.position.add(step)
-      laser.traveled += step.length()
+      _wlPrevPos.copy(laser.mesh.position)
+      _wlStep.copy(laser.velocity).multiplyScalar(dt)
+      laser.mesh.position.add(_wlStep)
+      laser.traveled += _wlStep.length()
 
       // Checa colisão com inimigos
       if (enemies && enemies.resolveProjectileHit) {
-        const hit = enemies.resolveProjectileHit(prevPos, laser.mesh.position, {
+        const hit = enemies.resolveProjectileHit(_wlPrevPos, laser.mesh.position, {
           damage: laser.damage,
           isHoming: false,
           hitBuffer: 0.8,
@@ -1108,6 +1154,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     clearLasers,
     toggleCommand,
     getCommandMode: () => squadronCommandMode,
+    getCommandState: () => ({
+      mode: squadronCommandMode,
+      durationRemaining: Math.max(0, squadronCommandDurationTimer),
+      durationMax: SQUADRON_COMMAND_DURATION_S,
+      cooldownRemaining: Math.max(0, squadronCommandCooldownTimer),
+      cooldownMax: SQUADRON_COMMAND_COOLDOWN_S,
+    }),
     getWingmanPositions: () => activeWingmen.map((w) => w.mesh.position.clone()),
     getWingmanCount: () => activeWingmen.length,
     getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),

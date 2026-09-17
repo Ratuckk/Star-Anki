@@ -74,6 +74,15 @@ const ARENA_PREVIEW_SCALE = { boss: BOSS_HIT_RADIUS * 2 * 2.4, golden: 3.2 }
 const GOLDEN_MINION_TURN_RATE = 1.8
 const GOLDEN_MINION_SPEED = 12
 
+// Temporários reutilizáveis de módulo para evitar GC spikes em per-frame loops
+const _enemyRel = new THREE.Vector3()
+const _epStep = new THREE.Vector3()
+const _epToPlayer = new THREE.Vector3()
+const _epVelNorm = new THREE.Vector3()
+const _elStep = new THREE.Vector3()
+const _elPrevPos = new THREE.Vector3()
+const _egRel = new THREE.Vector3()
+
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
   const enemyProjectiles = []
@@ -126,6 +135,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function removeEnemy(e) {
     e.dying = true
     telemetry.recordEvent(e.id, e.kind, 'despawn', `Inimigo ${e.kind} #${e.id} removido da cena`, { reason: e.deathT >= 1 ? 'destruído' : 'despawn' })
+    if (e.squadronId && activeSquadrons.has(e.squadronId)) {
+      const sq = activeSquadrons.get(e.squadronId)
+      sq.remaining--
+      if (sq.remaining <= 0) {
+        activeSquadrons.delete(e.squadronId)
+      }
+    }
     if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
     if (e.kind === SUSSURRO_KIND && e.mesh && e.mesh.material) {
       e.mesh.material.dispose()
@@ -441,9 +457,19 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             }
           }
         }
-        // Réplica/Verme e inimigos em fuga/desengajamento não olham pro jogador (sem teleguiar)
+        const relative = _enemyRel.copy(enemy.mesh.position).sub(frame.position)
+        const relativeForward = relative.dot(frame.forward)
+
+        // Réplica/Verme e inimigos em fuga/desengajamento não olham pro jogador (sem teleguiar).
+        // Star Fox 64: Inimigos que já ultrapassaram o jogador no trilho (relativeForward <= 0) não giram 180° para trás!
         if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND && !enemy.disengaging) {
-          enemy.mesh.lookAt(playerPosition)
+          if (relativeForward > 0) {
+            const rollZ = enemy.kind === BLASTER_KIND ? enemy.mesh.rotation.z : null
+            enemy.mesh.lookAt(playerPosition)
+            if (rollZ !== null) {
+              enemy.mesh.rotateZ(rollZ)
+            }
+          }
         }
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
 
@@ -456,11 +482,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
 
-        const relative = enemy.mesh.position.clone().sub(frame.position)
         const passBehind = passBehindFor(enemy)
         const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
         const offScreenAbove = enemy.screenY != null && enemy.screenY > 11.0
-        if (relative.dot(frame.forward) < passBehind || passedDistance || offScreenAbove) { removeEnemy(enemy); continue }
+        if (relativeForward < passBehind || passedDistance || offScreenAbove) { removeEnemy(enemy); continue }
       }
 
       if (inArena && enemy.disengaging) {
@@ -468,11 +493,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (distToPlayer > 85) { removeEnemy(enemy); continue }
       }
 
-      const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+      const relativeForward = inArena ? 0 : _enemyRel.copy(enemy.mesh.position).sub(frame.position).dot(frame.forward)
       const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
       const inFireRange = distToPlayer > ENEMY_FIRE_MIN_DISTANCE && (
         inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE
-          : enemy.kind === BOSS_KIND || relativeForward < ENEMY_FIRE_RANGE
+          : enemy.kind === BOSS_KIND || (relativeForward > 0 && relativeForward < ENEMY_FIRE_RANGE)
       )
 
       // Estilo Star Fox 64: inimigos fora da zona visível de combate não queimam seu timer
@@ -514,10 +539,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let damage = 1
     for (const projectile of [...enemyProjectiles]) {
       if (projectile.homing) {
-        const toPlayer = playerPosition.clone().sub(projectile.mesh.position)
-        const dist = toPlayer.length()
-        const velNorm = projectile.velocity.clone().normalize()
-        const dotHeading = toPlayer.clone().normalize().dot(velNorm)
+        _epToPlayer.copy(playerPosition).sub(projectile.mesh.position)
+        const dist = _epToPlayer.length()
+        _epVelNorm.copy(projectile.velocity).normalize()
+        const dotHeading = _epToPlayer.clone().normalize().dot(_epVelNorm)
 
         // As mini-naves do Dourado avançam suavemente: ao chegar perto (< 14u),
         // cruzar pelo jogador (dotHeading < 0.2) ou voar por tempo suficiente,
@@ -525,21 +550,20 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (dist < 14 || dotHeading < 0.2 || (projectile.traveled || 0) > 55) {
           projectile.homing = false
         } else {
-          const desired = toPlayer.normalize()
-          const current = velNorm
-          current.lerp(desired, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
-          if (current.lengthSq() > 1e-6) {
-            projectile.velocity.copy(current.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
-            projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, current)
+          _epToPlayer.normalize()
+          _epVelNorm.lerp(_epToPlayer, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
+          if (_epVelNorm.lengthSq() > 1e-6) {
+            projectile.velocity.copy(_epVelNorm.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
+            projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _epVelNorm)
             const rollBank = Math.sin((projectile.traveled || 0) * 0.25) * 0.4
             projectile.mesh.rotateZ(rollBank)
           }
         }
       }
 
-      const step = projectile.velocity.clone().multiplyScalar(dt)
-      projectile.mesh.position.add(step)
-      projectile.traveled += step.length()
+      _epStep.copy(projectile.velocity).multiplyScalar(dt)
+      projectile.mesh.position.add(_epStep)
+      projectile.traveled += _epStep.length()
 
       const hitRadius = projectile.hitRadius ?? ENEMY_PROJECTILE_HIT_RADIUS
       const maxRange = projectile.maxRange ?? ENEMY_PROJECTILE_MAX_RANGE
@@ -562,10 +586,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let damage = 1
     const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
     for (const laser of [...enemyLasers]) {
-      const step = laser.velocity.clone().multiplyScalar(dt)
-      const prevPos = laser.mesh.position.clone()
-      laser.mesh.position.add(step)
-      laser.traveled += step.length()
+      _elStep.copy(laser.velocity).multiplyScalar(dt)
+      _elPrevPos.copy(laser.mesh.position)
+      laser.mesh.position.add(_elStep)
+      laser.traveled += _elStep.length()
 
       // Taper visual: começa largo e afunila/encolhe suavemente conforme viaja
       const maxR = laser.maxRange ?? 220
@@ -576,7 +600,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (laser.outerMat) laser.outerMat.opacity = Math.max(0.2, (1 - prog * 0.6) * 0.85)
 
       const hitRadius = (laser.hitRadius ?? BOSS_LASER_HIT_RADIUS) * Math.max(0.5, beamScale)
-      const laserHit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, prevPos, laser.mesh.position) <= hitRadius + pt.radius)
+      const laserHit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, _elPrevPos, laser.mesh.position) <= hitRadius + pt.radius)
       if (laserHit) {
         hits += 1
         damage = Math.max(damage, laser.shieldDamage ?? 1)
@@ -597,8 +621,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       updateGateFlight(gate, dt, rail)
       updateGateAnimation(gate)
 
-      const rel = playerPosition.clone().sub(gate.mesh.position)
-      const alongDir = rel.dot(gate.dir)
+      const alongDir = _egRel.copy(playerPosition).sub(gate.mesh.position).dot(gate.dir)
 
       // Resolve colisão no instante da passagem pelo plano do jogador (uma única vez)
       if (alongDir <= 0 && !gate.hitResolved) {
@@ -820,9 +843,16 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     // Fase de ideias de inimigos: fonte do campo magnético do Enxame-Ímã, consumida direto por
     // combat/projectiles.js (só o tiro NORMAL reage — o teleguiado ignora, ver comentário lá)
-    getMagnetSources: () => enemies
-      .filter((e) => e.kind === IMA_KIND && !e.dying)
-      .map((e) => ({ position: e.mesh.position.clone(), radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })),
+    getMagnetSources: () => {
+      const sources = []
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i]
+        if (e.kind === IMA_KIND && !e.dying && e.mesh) {
+          sources.push({ position: e.mesh.position, radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })
+        }
+      }
+      return sources
+    },
 
     spawnBossEnemy(hp) {
       const boss = spawnBossEnemy(scene, rail, nextEnemyId++, hp)
@@ -1086,6 +1116,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     clearEnemies() {
       bossDefeatedPending = false
       bossDefeatedWorldPos = null
+      activeSquadrons.clear()
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
       for (const l of [...enemyLasers]) removeEnemyLaser(l)
@@ -1099,6 +1130,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     // "quando um boss/inimigo dourado morre, todos inimigos e projéteis inimigos em tela devem
     // ser destruídos imediatamente também" — só poupa quem já está `dying:true`
     clearOtherEnemies() {
+      activeSquadrons.clear()
       for (const enemy of [...enemies]) if (!enemy.dying) removeEnemy(enemy)
       golden.clear()
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
@@ -1109,6 +1141,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     clearAll() {
       bossDefeatedPending = false
       bossDefeatedWorldPos = null
+      activeSquadrons.clear()
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
       for (const l of [...enemyLasers]) removeEnemyLaser(l)

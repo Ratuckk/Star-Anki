@@ -804,14 +804,20 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   // que precisam bater com a posição FÍSICA real do jogador no trilho, como a Sentinela
   // travando na lateral dele), isto lê direto da matriz mundial da câmera — right/up/forward
   // daqui SÃO literalmente esquerda/direita/frente na tela, sempre, por definição.
+  const _cachedSpawnFrame = {
+    position: new THREE.Vector3(),
+    right: new THREE.Vector3(),
+    up: new THREE.Vector3(),
+    forward: new THREE.Vector3(),
+  }
+
   function getSpawnFrame() {
     camera.updateMatrixWorld()
-    return {
-      position: camera.position.clone(),
-      right: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0),
-      up: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1),
-      forward: new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1),
-    }
+    _cachedSpawnFrame.position.copy(camera.position)
+    _cachedSpawnFrame.right.setFromMatrixColumn(camera.matrixWorld, 0)
+    _cachedSpawnFrame.up.setFromMatrixColumn(camera.matrixWorld, 1)
+    _cachedSpawnFrame.forward.setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-1)
+    return _cachedSpawnFrame
   }
 
   return {

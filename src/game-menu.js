@@ -106,13 +106,75 @@ export function createGameMenu(mountGameFn) {
 
   function renderEndScreen(summary) {
     const practiceAvailable = !painelDone && deck.painelCards && deck.painelCards.length > 0
+    const missedAvailable = summary.missed && summary.missed.length > 0
     showSectorEnd({
       summary,
       onPlayAgain: playAgain,
       practiceCount: practiceAvailable ? deck.painelCards.length : 0,
       onPractice: practiceAvailable ? () => startPainelPractice(summary) : null,
+      onPracticeMissed: missedAvailable ? () => startMissedPractice(summary) : null,
       onExportTags: downloadTagsExport,
     })
+  }
+
+  function startMissedPractice(summary) {
+    if (!summary.missed || summary.missed.length === 0) return
+    const missedGuids = new Set(summary.missed.map((m) => m.guid))
+    const cardsToPractice = deck.allCards.filter((c) => missedGuids.has(c.guid))
+    const list = cardsToPractice.length > 0 ? cardsToPractice : summary.missed
+    const session = createPainelSession(list)
+    let revealed = false
+
+    function onKeyDown(e) {
+      const card = nextPainelCard(session)
+      if (!card) return
+      if (!revealed && (e.code === 'Enter' || e.code === 'Space')) {
+        e.preventDefault()
+        reveal(card)
+      } else if (revealed && e.code === 'Digit1') {
+        assess(card, true)
+      } else if (revealed && e.code === 'Digit2') {
+        assess(card, false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+
+    function renderCard() {
+      const card = nextPainelCard(session)
+      if (!card) {
+        window.removeEventListener('keydown', onKeyDown)
+        renderEndScreen(summary)
+        return
+      }
+      revealed = false
+      showPainelCard({
+        index: session.pointer,
+        total: session.queue.length,
+        question: card.question,
+        onReveal: () => reveal(card),
+      })
+    }
+
+    function reveal(card) {
+      revealed = true
+      showPainelAnswer({
+        index: session.pointer,
+        total: session.queue.length,
+        question: card.question,
+        answer: card.answer,
+        onAssess: (correct) => assess(card, correct),
+      })
+    }
+
+    function assess(card, correct) {
+      history = recordResult(history, card.guid, correct)
+      saveHistory(history)
+      sessionResults.push({ guid: card.guid, correct })
+      resolvePainel(session, correct)
+      renderCard()
+    }
+
+    renderCard()
   }
 
   function startPainelPractice(summary) {

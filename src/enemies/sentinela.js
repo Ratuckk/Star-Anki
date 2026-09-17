@@ -114,11 +114,10 @@ function applyGateAperture(gate, apertureHalf) {
 
 function projectSentinelaToWorld(enemy, rail) {
   const frame = rail.getSpawnFrame()
-  const pos = frame.position.clone()
+  enemy.mesh.position.copy(frame.position)
     .addScaledVector(frame.forward, enemy.depth)
     .addScaledVector(frame.right, enemy.screenX)
     .addScaledVector(frame.up, enemy.screenY)
-  enemy.mesh.position.copy(pos)
 }
 
 export function spawnSentinela(scene, rail, id) {

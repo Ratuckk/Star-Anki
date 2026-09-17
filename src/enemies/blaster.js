@@ -80,11 +80,10 @@ function rerollJukeDir(enemy, frame) {
 
 function projectBlasterToWorld(enemy, rail) {
   const frame = rail.getSpawnFrame()
-  const pos = frame.position.clone()
+  enemy.mesh.position.copy(frame.position)
     .addScaledVector(frame.forward, enemy.depth + (enemy.recoilZ || 0))
     .addScaledVector(frame.right, enemy.screenX)
     .addScaledVector(frame.up, enemy.screenY)
-  enemy.mesh.position.copy(pos)
 }
 
 export function spawnBlaster(scene, rail, id, opts = {}) {

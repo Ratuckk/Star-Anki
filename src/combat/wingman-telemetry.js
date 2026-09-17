@@ -42,9 +42,20 @@ export function createWingmanTelemetry() {
     events.length = 0
   }
 
+  let _lastArgs = null
+  let _isDirty = true
+
   function update(activeWingmen, playerPos, frame, squadronCommandMode, elapsed) {
     if (!playerPos || !frame) return latestSnapshot
+    _lastArgs = { activeWingmen, playerPos, frame, squadronCommandMode, elapsed }
+    _isDirty = true
+    if (typeof elapsed === 'number') {
+      latestSnapshot.timestamp = Number(elapsed.toFixed(2))
+    }
+    return latestSnapshot
+  }
 
+  function _computeSnapshot(activeWingmen, playerPos, frame, squadronCommandMode, elapsed) {
     const wingmenStats = []
 
     for (let i = 0; i < activeWingmen.length; i++) {
@@ -144,8 +155,8 @@ export function createWingmanTelemetry() {
     }
 
     latestSnapshot = {
-      timestamp: Number(elapsed.toFixed(2)),
-      activeCount: activeWingmen.length,
+      timestamp: Number((elapsed || 0).toFixed(2)),
+      activeCount: wingmenStats.length,
       commandMode: squadronCommandMode,
       wingmen: wingmenStats,
       recentEvents: events.slice(-30),
@@ -155,6 +166,10 @@ export function createWingmanTelemetry() {
   }
 
   function getSnapshot() {
+    if (_isDirty && _lastArgs) {
+      _computeSnapshot(_lastArgs.activeWingmen, _lastArgs.playerPos, _lastArgs.frame, _lastArgs.squadronCommandMode, _lastArgs.elapsed)
+      _isDirty = false
+    }
     return latestSnapshot
   }
 
@@ -163,7 +178,7 @@ export function createWingmanTelemetry() {
   }
 
   function getFormattedText() {
-    const s = latestSnapshot
+    const s = getSnapshot()
     let out = `=== TELEMETRIA DOS ALIADOS (${s.timestamp}s) | Modo: ${s.commandMode.toUpperCase()} ===\n\n`
     out += `Caças ativos: ${s.activeCount}\n\n`
 
@@ -186,7 +201,7 @@ export function createWingmanTelemetry() {
   }
 
   function dumpToConsole() {
-    const s = latestSnapshot
+    const s = getSnapshot()
     if (typeof console !== 'undefined') {
       console.group(`🚀 [Star-Anki Telemetria dos Aliados] T=${s.timestamp}s | Modo: ${s.commandMode.toUpperCase()}`)
       console.log('--- RESUMO EM TEMPO REAL ---')

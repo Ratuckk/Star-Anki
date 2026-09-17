@@ -80,6 +80,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getWingmanPositions: () => squadron.getWingmanPositions(),
     getActiveWingmen: () => squadron.getActiveMembers(),
     getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
+    getSquadronCommandState: () => squadron.getCommandState ? squadron.getCommandState() : { mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 },
     toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
     getAbilityStates: () => squadron.getAbilityStates(),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),

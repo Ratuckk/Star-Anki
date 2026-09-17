@@ -130,6 +130,13 @@ export function updateMiniSwarm(enemy, dt, ctx) {
     return
   }
 
+const _swarmBehind = new THREE.Vector3()
+const _swarmToPlayer = new THREE.Vector3()
+const _swarmOffset = new THREE.Vector3()
+const _swarmPrevPos = new THREE.Vector3()
+const _swarmFacing = new THREE.Vector3()
+const _swarmRel = new THREE.Vector3()
+
   // base do mergulho anda na direção travada, mas essa direção CONTINUA virando levemente pra
   // seguir o jogador (MINI_SWARM_DIVE_TURN_RATE) — sem isso, o alvo travado no instante do
   // telegraph ficava desatualizado assim que o jogador (que está sempre avançando no trilho)
@@ -152,13 +159,13 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   // MINI_SWARM_DIVE_BEHIND_GRACE_S depois de cruzar (dá tempo do golpe final), só congela de
   // verdade passado isso.
   if (enemy.behindTimer == null) enemy.behindTimer = 0
-  const behindDot = enemy.diveCorePos.clone().sub(frame.position).dot(frame.forward)
+  const behindDot = _swarmBehind.copy(enemy.diveCorePos).sub(frame.position).dot(frame.forward)
   if (behindDot < 0) enemy.behindTimer += dt
-  const toPlayer = playerPosition.clone().sub(enemy.diveCorePos)
-  const distToPlayer = toPlayer.length()
+  _swarmToPlayer.copy(playerPosition).sub(enemy.diveCorePos)
+  const distToPlayer = _swarmToPlayer.length()
   if (enemy.behindTimer < MINI_SWARM_DIVE_BEHIND_GRACE_S && distToPlayer > 1e-4) {
-    toPlayer.normalize()
-    enemy.diveDir.lerp(toPlayer, Math.min(1, MINI_SWARM_DIVE_TURN_RATE * dt)).normalize()
+    _swarmToPlayer.normalize()
+    enemy.diveDir.lerp(_swarmToPlayer, Math.min(1, MINI_SWARM_DIVE_TURN_RATE * dt)).normalize()
   }
   enemy.diveCorePos.addScaledVector(enemy.diveDir, MINI_SWARM_DIVE_SPEED * dt)
 
@@ -167,21 +174,24 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   // zero bem na hora exata do impacto e o enxame nunca acerta de verdade. Assim ele ainda
   // serpenteia na aproximação (mais difícil de prever/abater), mas compromete o golpe no final.
   const fade = THREE.MathUtils.clamp(distToPlayer / MINI_SWARM_DIVE_OFFSET_FADE_DIST, 0, 1)
-  const offset = new THREE.Vector3()
+  _swarmOffset.set(0, 0, 0)
   if (enemy.variant === 'zigzag') {
     const lateral = Math.sin(enemy.diveAnglePhase + elapsed * ZIGZAG_FREQUENCY) * ZIGZAG_AMPLITUDE * fade
-    offset.addScaledVector(frame.right, lateral)
+    _swarmOffset.addScaledVector(frame.right, lateral)
   } else if (enemy.variant === 'spiral') {
     enemy.diveAnglePhase += SPIRAL_ANGULAR_SPEED * dt
-    offset.addScaledVector(frame.right, Math.cos(enemy.diveAnglePhase) * SPIRAL_RADIUS * fade)
-    offset.addScaledVector(frame.up, Math.sin(enemy.diveAnglePhase) * SPIRAL_RADIUS * fade)
+    _swarmOffset.addScaledVector(frame.right, Math.cos(enemy.diveAnglePhase) * SPIRAL_RADIUS * fade)
+    _swarmOffset.addScaledVector(frame.up, Math.sin(enemy.diveAnglePhase) * SPIRAL_RADIUS * fade)
   }
-  const prevPos = enemy.mesh.position.clone()
-  enemy.mesh.position.copy(enemy.diveCorePos).add(offset)
-  const facing = enemy.mesh.position.clone().sub(prevPos)
-  if (facing.lengthSq() > 1e-6) enemy.mesh.lookAt(enemy.mesh.position.clone().add(facing))
+  _swarmPrevPos.copy(enemy.mesh.position)
+  enemy.mesh.position.copy(enemy.diveCorePos).add(_swarmOffset)
+  _swarmFacing.copy(enemy.mesh.position).sub(_swarmPrevPos)
+  if (_swarmFacing.lengthSq() > 1e-6) {
+    _swarmFacing.add(enemy.mesh.position)
+    enemy.mesh.lookAt(_swarmFacing)
+  }
 
-  const relative = enemy.mesh.position.clone().sub(frame.position)
+  const relative = _swarmRel.copy(enemy.mesh.position).sub(frame.position)
   if (enemy.diveElapsed > MINI_SWARM_DIVE_MAX_S || relative.dot(frame.forward) < MINI_SWARM_DIVE_PASS_BEHIND) {
     removeEnemy(enemy)
   }

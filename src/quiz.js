@@ -116,6 +116,13 @@ export function resolveAnswer(session, outcome) {
     // >> AJUSTADO: erro/timeout não tira mais saúde do jogador — só quebra o combo e conta pra
     // estatística / sobe a dificuldade (main.js). A vida só é perdida por DANO DE INIMIGO. <<
     session.comboMultiplier = 1.0
+
+    // QOL (Item 9 — Fast Active-Recall): se o jogador errou, reenfileira o card ~3 posições à frente
+    // na fila da mesma sessão para reforço imediato do aprendizado (apenas se session.queue existir)
+    if (Array.isArray(session.queue) && session.pointer < session.queue.length) {
+      const requeueOffset = Math.min(session.queue.length, session.pointer + 3)
+      session.queue.splice(requeueOffset, 0, { ...card, _isFastRetry: true })
+    }
   }
 
   session.score += points
@@ -124,6 +131,11 @@ export function resolveAnswer(session, outcome) {
     guid: card.guid,
     question: card.question,
     answer: card.answer,
+    explanation: card.explanation || '',
+    sourceUrl: card.sourceUrl || '',
+    sourcesText: card.sourcesText || '',
+    tags: card.tags || '',
+    deck: card.deck || '',
     type,
     points,
   })
@@ -164,9 +176,28 @@ export function resolvePainel(session, correct) {
 export function getSummary(session) {
   const correctCount = session.log.filter((e) => e.type === 'correct').length
   const wrongCount = session.log.filter((e) => e.type !== 'correct').length
-  const missed = session.log
-    .filter((e) => e.type !== 'correct')
-    .map((e) => ({ guid: e.guid, question: e.question, answer: e.answer }))
+
+  // QOL (Item 5 / Auditoria): repassa explanation, sourceUrl, sourcesText, tags para o Códice de Fim de Jogo.
+  // Evita duplicatas pela combinação de guid + question caso o card reenfileirado tenha sido errado mais de uma vez,
+  // garantindo que lacunas cloze distintas originadas da mesma nota Anki (mesmo guid) não sejam descartadas.
+  const seenKeys = new Set()
+  const missed = []
+  for (const e of session.log) {
+    const cardKey = e.guid ? `${e.guid}::${e.question}` : e.question
+    if (e.type !== 'correct' && !seenKeys.has(cardKey)) {
+      seenKeys.add(cardKey)
+      missed.push({
+        guid: e.guid,
+        question: e.question,
+        answer: e.answer,
+        explanation: e.explanation || '',
+        sourceUrl: e.sourceUrl || '',
+        sourcesText: e.sourcesText || '',
+        tags: e.tags || '',
+        deck: e.deck || '',
+      })
+    }
+  }
 
   return { correctCount, wrongCount, totalScore: session.score, missed }
 }

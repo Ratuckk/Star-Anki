@@ -45,6 +45,12 @@ const _cosmicTint3 = new THREE.Color(0x0a1f18) // verde-abissal
 const _baseColor = new THREE.Color()
 const _blendedShift = new THREE.Color()
 const _finalColor = new THREE.Color()
+const _threatProj = new THREE.Vector3()
+const _threatCamDir = new THREE.Vector3()
+const _toThreat = new THREE.Vector3()
+const _reticleWorldPos = new THREE.Vector3()
+const _fireDirection = new THREE.Vector3()
+const _minimapRel = new THREE.Vector3()
 
 export function createGameLoop(deps) {
   const {
@@ -169,19 +175,19 @@ export function createGameLoop(deps) {
       state.reticleOffsetY = 0
     }
 
-    const reticleWorldPos = nosePos.clone()
+    _reticleWorldPos.copy(nosePos)
       .addScaledVector(noseFrame.right, reticleX)
       .addScaledVector(noseFrame.up, reticleY)
       .addScaledVector(noseFrame.forward, RETICLE_AHEAD)
 
-    const fireDirection = reticleWorldPos.clone().sub(nosePos).normalize()
+    _fireDirection.copy(_reticleWorldPos).sub(nosePos).normalize()
 
     // Fase 8 (VISUAL): mira normal acende quando há um inimigo vivo na frente dela
-    hud.setReticleAiming(combat.isAimingAtEnemy(nosePos, fireDirection))
+    hud.setReticleAiming(combat.isAimingAtEnemy(nosePos, _fireDirection))
 
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
-      if (!isCharging && combat.tryFire(nosePos, fireDirection)) rail.triggerRecoil()
+      if (!isCharging && combat.tryFire(nosePos, _fireDirection)) rail.triggerRecoil()
       // Phantom (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
       // tiro teleguiado. Lê o estado do frame ANTERIOR (squadron.update ainda não rodou neste
       // frame) — defasagem de ~16ms, imperceptível e sem dependência circular.
@@ -192,13 +198,13 @@ export function createGameLoop(deps) {
         if (atMax && !state.chargeMaxSignaled) {
           state.chargeMaxSignaled = true
           if (effects && effects.maxChargeReady) {
-            effects.maxChargeReady(nosePos, fireDirection)
+            effects.maxChargeReady(nosePos, _fireDirection)
           }
         }
         const chargeFrac = Math.min(1, (state.fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
-        effects.setChargeGlow(true, chargeFrac, nosePos, fireDirection)
+        effects.setChargeGlow(true, chargeFrac, nosePos, _fireDirection)
 
-        combat.sweepLockOn(nosePos, fireDirection, currentHomingAllowedTargets(state.fireHeldMs))
+        combat.sweepLockOn(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs))
         const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
           const ndcL = s.worldPos.project(camera)
           return {
@@ -755,6 +761,7 @@ export function createGameLoop(deps) {
     hud.setShield(player.getShieldValue(), player.getShieldMax())
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
+    if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())
 
     hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 
@@ -779,29 +786,89 @@ export function createGameLoop(deps) {
       const mapRadius = 190
       const alertRadius = 32
       let alert = false
-      const blips = combat.getMinimapBlips().map((b) => {
-        const r = b.worldPos.clone().sub(playerPos)
-        if (b.type !== 'golden' && r.length() < alertRadius) alert = true
+      const rawBlips = combat.getMinimapBlips ? combat.getMinimapBlips() : []
+      const blips = rawBlips.map((b) => {
+        _minimapRel.copy(b.worldPos).sub(playerPos)
+        if (b.type !== 'golden' && _minimapRel.length() < alertRadius) alert = true
         return {
           type: b.type,
           kind: b.kind,
-          xFrac: THREE.MathUtils.clamp(r.dot(noseFrame.right) / mapRadius, -1, 1),
-          yFrac: THREE.MathUtils.clamp(-r.dot(noseFrame.forward) / mapRadius, -1, 1),
+          xFrac: THREE.MathUtils.clamp(_minimapRel.dot(noseFrame.right) / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(-_minimapRel.dot(noseFrame.forward) / mapRadius, -1, 1),
         }
       })
       const wingmanPositions = combat.getWingmanPositions ? combat.getWingmanPositions() : []
       const wingmanMembers = combat.getActiveWingmen ? combat.getActiveWingmen() : []
       const allies = wingmanPositions.map((pos, i) => {
-        const r = pos.clone().sub(playerPos)
+        _minimapRel.copy(pos).sub(playerPos)
         const colorHex = typeof wingmanMembers[i]?.color === 'number'
           ? `#${wingmanMembers[i].color.toString(16).padStart(6, '0')}` : '#5ad1ff'
         return {
-          xFrac: THREE.MathUtils.clamp(r.dot(noseFrame.right) / mapRadius, -1, 1),
-          yFrac: THREE.MathUtils.clamp(-r.dot(noseFrame.forward) / mapRadius, -1, 1),
+          xFrac: THREE.MathUtils.clamp(_minimapRel.dot(noseFrame.right) / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(-_minimapRel.dot(noseFrame.forward) / mapRadius, -1, 1),
           color: colorHex,
         }
       })
       hud.setMinimap(true, { blips, allies, alert })
+
+      // ============ INDICADOR DIRECIONAL DE AMEAÇAS FORA DA TELA (Item 4 — QOL v0.76.0) ============
+      if (hud.setOffscreenThreats) {
+        camera.getWorldDirection(_threatCamDir)
+        const offscreenThreats = []
+        const MAX_THREAT_DIST = 70
+        const boundX = 0.90
+        const boundY = 0.88
+
+        for (const b of rawBlips) {
+          if (b.type === 'golden') continue
+          const dist = b.worldPos.distanceTo(playerPos)
+          if (dist > MAX_THREAT_DIST) continue
+
+          _toThreat.copy(b.worldPos).sub(camera.position)
+          const isBehind = _toThreat.dot(_threatCamDir) <= 0
+
+          _threatProj.copy(b.worldPos).project(camera)
+          let ndcX = _threatProj.x
+          let ndcY = _threatProj.y
+
+          if (isBehind) {
+            ndcX = -ndcX
+            ndcY = -ndcY
+          }
+
+          // Se estiver dentro da área visível da tela e na frente da câmera, não precisa de ponteiro
+          if (!isBehind && Math.abs(ndcX) <= boundX && Math.abs(ndcY) <= boundY) {
+            continue
+          }
+
+          // Projeção na borda do retângulo da tela
+          const m = ndcY / (ndcX || 0.0001)
+          let edgeX = ndcX
+          let edgeY = ndcY
+          if (Math.abs(ndcX) * boundY > Math.abs(ndcY) * boundX) {
+            edgeX = ndcX > 0 ? boundX : -boundX
+            edgeY = edgeX * m
+          } else {
+            edgeY = ndcY > 0 ? boundY : -boundY
+            edgeX = edgeY / m
+          }
+
+          const xPct = (edgeX * 0.5 + 0.5) * 100
+          const yPct = (-edgeY * 0.5 + 0.5) * 100
+          const rotDeg = Math.atan2(-edgeY, edgeX) * (180 / Math.PI)
+
+          offscreenThreats.push({
+            xPct,
+            yPct,
+            rotDeg,
+            dist,
+            isCritical: dist < alertRadius,
+          })
+        }
+
+        offscreenThreats.sort((a, b) => a.dist - b.dist)
+        hud.setOffscreenThreats(offscreenThreats.slice(0, 4))
+      }
     }
 
     if (state.hitShakeTimer > 0) {

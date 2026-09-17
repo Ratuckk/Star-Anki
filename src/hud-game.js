@@ -178,6 +178,23 @@ export function createGameHud() {
   })
   let prevAbilitySignature = ''
 
+  // ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============
+  const squadCommandWidget = document.createElement('div')
+  squadCommandWidget.className = 'hud-squad-command-widget ready'
+  squadCommandWidget.innerHTML = `
+    <div class="hud-squad-command-badge">
+      <span class="hud-cmd-key">D</span>
+      <span class="hud-cmd-label">FOCO</span>
+    </div>
+    <div class="hud-cmd-meter">
+      <div class="hud-cmd-meter-fill"></div>
+    </div>
+    <span class="hud-cmd-timer">PRONTO</span>
+  `
+  topbarRow.appendChild(squadCommandWidget)
+  const squadCmdFill = squadCommandWidget.querySelector('.hud-cmd-meter-fill')
+  const squadCmdTimer = squadCommandWidget.querySelector('.hud-cmd-timer')
+
   // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
   // Terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — ver
   // documento de design de feedback de combate (opção 1 de 5, escolhida pelo usuário).
@@ -634,6 +651,20 @@ export function createGameHud() {
   minimap.appendChild(minimapPlayer)
   const minimapBlipPool = new Map()
   const minimapAllyPool = new Map()
+
+  // ============ INDICADORES DE AMEAÇAS FORA DA TELA (Item 4 — QOL v0.76.0) ============
+  const threatPointersRoot = document.createElement('div')
+  threatPointersRoot.className = 'hud-offscreen-pointers'
+  root.appendChild(threatPointersRoot)
+
+  const threatPointerPool = [0, 1, 2, 3].map(() => {
+    const el = document.createElement('div')
+    el.className = 'hud-threat-pointer'
+    el.hidden = true
+    el.innerHTML = `<span class="hud-threat-chevron">►</span>`
+    threatPointersRoot.appendChild(el)
+    return el
+  })
   // Radar Tático: formato do blip por tipo de ameaça (ver kind em src/enemies/*.js), não só cor
   const MINIMAP_SHAPE_BY_KIND = {
     blaster: 'tri', time: 'tri', tank: 'tri', detrito: 'tri', replica: 'tri', ima: 'tri',
@@ -661,6 +692,10 @@ export function createGameHud() {
     <p class="card-choice-subtitle">Selecione um aprimoramento permanente para sua nave · Teclas <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></p>
   `
   cardChoiceOverlay.appendChild(cardChoiceHeader)
+
+  const cardChoiceInspector = document.createElement('div')
+  cardChoiceInspector.className = 'card-choice-inspector'
+  cardChoiceOverlay.appendChild(cardChoiceInspector)
 
   const cardChoiceList = document.createElement('div')
   cardChoiceList.className = 'card-choice-list'
@@ -961,8 +996,13 @@ export function createGameHud() {
 
   // corpo de verdade do modal de pergunta — chamado só depois do playFocusCollapse acima
   // terminar (ver showQuestionModal no objeto retornado). Suporta explicação densa e fontes no Códice lateral.
-  function revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }) {
+  function revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, isFastRetry, onPick }) {
     questionModalBurst()
+    if (isFastRetry) {
+      questionModalBadge.innerHTML = 'TERMINAL DE CONHECIMENTO // ANKI <span class="question-modal-retry-pill">⚡ REFORÇO DE MEMÓRIA</span>'
+    } else {
+      questionModalBadge.textContent = 'TERMINAL DE CONHECIMENTO // ANKI'
+    }
     questionModalTitle.textContent = question
     questionModalList.innerHTML = ''
 
@@ -1337,14 +1377,14 @@ export function createGameHud() {
     // desde a v0.29.2, também dá pra escolher pelos NÚMEROS 1–4 (reusa os binds quizSlot1..4,
     // padrão Digit1..Digit4) em vez de ter que clicar no card — quem remapeou os números nas
     // Configurações também funciona aqui, porque leio de getBindings() em vez de hardcodar.
-    showQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }) {
+    showQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, isFastRetry, onPick }) {
       // pedido do usuário (item 19, cutscene "5 — partículas convergindo pro centro"): em vez
       // do modal simplesmente dar snap, um burst de partículas nas bordas da tela voa pro
       // centro exato onde ele vai nascer, e só então o modal aparece de verdade. Puramente
       // DOM/CSS (mesmo padrão do cardAbsorbBeam) — o jogo já está em pausa total nesse ponto
       // (phase questionPause/bossQuestionPause), então um atraso visual de ~300ms aqui não
       // acumula com nada, é só o "beat" da cutscene.
-      playFocusCollapse(() => revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, onPick }))
+      playFocusCollapse(() => revealQuestionModal({ question, alternatives, explanation, sourceUrl, sourcesText, tags, deck, isFastRetry, onPick }))
     },
 
     hideQuestionModal() {
@@ -1674,13 +1714,99 @@ export function createGameHud() {
       }
     },
 
+    // QOL (Item 4 — Indicador Direcional de Ameaças Fora da Tela)
+    setOffscreenThreats(threats) {
+      const list = Array.isArray(threats) ? threats : []
+      threatPointerPool.forEach((el, i) => {
+        if (i < list.length) {
+          const t = list[i]
+          el.hidden = false
+          el.style.left = `${t.xPct}%`
+          el.style.top = `${t.yPct}%`
+          el.style.transform = `translate(-50%, -50%) rotate(${t.rotDeg}deg)`
+          el.classList.toggle('critical', !!t.isCritical)
+          const opacity = Math.max(0.4, Math.min(1.0, 1 - (t.dist / 70) * 0.6))
+          el.style.opacity = String(opacity)
+        } else {
+          el.hidden = true
+        }
+      })
+    },
+
     // pedido do usuário: selecionar as cartas de upgrade pelos NÚMEROS também, igual já
     // funciona no modal de pergunta — reusa os mesmos binds quizSlot1..4 (Digit1..4 por padrão).
-    showCardChoice({ cards, onPick }) {
+    showCardChoice({ cards, stats, collectedCards, onPick }) {
       cardChoiceList.innerHTML = ''
+      cardChoiceInspector.innerHTML = ''
       cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
+
+      // QOL (Item 2 — Inspetor de Build & Atributos)
+      if (stats) {
+        const statsRow = document.createElement('div')
+        statsRow.className = 'inspector-stats-row'
+        statsRow.innerHTML = `
+          <div class="inspector-stat-pill" title="Saúde Atual / Máxima">
+            <span class="stat-icon">❤️</span>
+            <span class="stat-lbl">HP</span>
+            <span class="stat-val">${stats.health}/${stats.maxHealth}</span>
+          </div>
+          <div class="inspector-stat-pill" title="Cargas de Escudo Atual / Máximo">
+            <span class="stat-icon">🛡️</span>
+            <span class="stat-lbl">Escudo</span>
+            <span class="stat-val">${stats.shield}/${stats.maxShield}</span>
+          </div>
+          <div class="inspector-stat-pill" title="Projéteis Disparados por Tiro">
+            <span class="stat-icon">🚀</span>
+            <span class="stat-lbl">Tiros</span>
+            <span class="stat-val">${stats.projectileCount}x</span>
+          </div>
+          <div class="inspector-stat-pill" title="Alvos Simultâneos da Carga Teleguiada">
+            <span class="stat-icon">🎯</span>
+            <span class="stat-lbl">Homing</span>
+            <span class="stat-val">${stats.homingTargets}</span>
+          </div>
+          <div class="inspector-stat-pill" title="Membros do Esquadrão Recrutados">
+            <span class="stat-icon">👥</span>
+            <span class="stat-lbl">Ala</span>
+            <span class="stat-val">${stats.wingmanCount}/4</span>
+          </div>
+        `
+        cardChoiceInspector.appendChild(statsRow)
+      }
+
+      if (collectedCards && collectedCards.size > 0) {
+        const entries = Array.from(collectedCards.entries()).filter(([_, count]) => count > 0)
+        if (entries.length > 0) {
+          const upgradesWrap = document.createElement('div')
+          upgradesWrap.className = 'inspector-upgrades-wrap'
+          const upgradesLabel = document.createElement('span')
+          upgradesLabel.className = 'inspector-upgrades-label'
+          upgradesLabel.textContent = 'Upgrades Instalados:'
+          upgradesWrap.appendChild(upgradesLabel)
+
+          const chipsRow = document.createElement('div')
+          chipsRow.className = 'inspector-chips-row'
+          for (const [id, count] of entries) {
+            const cardDef = CARD_MAP.get(id)
+            if (!cardDef) continue
+            const chip = document.createElement('div')
+            chip.className = `inspector-chip category-${cardDef.category}`
+            chip.title = `${cardDef.label} (x${count}): ${cardDef.description}`
+            chip.innerHTML = `
+              <span class="chip-icon">${cardDef.icon || '📦'}</span>
+              <span class="chip-name">${cardDef.label}</span>
+              <span class="chip-count">x${count}</span>
+            `
+            chipsRow.appendChild(chip)
+          }
+          upgradesWrap.appendChild(chipsRow)
+          cardChoiceInspector.appendChild(upgradesWrap)
+        }
+      }
+
       const close = () => {
         cardChoiceOverlay.hidden = true
+        cardChoiceInspector.innerHTML = ''
         cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
         closeExplDrawer()
         detachExplKeyHandler()
@@ -1848,6 +1974,29 @@ export function createGameHud() {
         slot.el.classList.toggle('cooling', s.recruited && !s.ready && !s.active)
         slot.el.classList.toggle('active', s.recruited && s.active)
       })
+    },
+
+    // QOL (Item 3 — Barra / Indicador de Recarga do Comando de Ofensiva [D])
+    setSquadronCommandState(cmdState) {
+      if (!cmdState) return
+      const { mode = 'free', durationRemaining = 0, durationMax = 6, cooldownRemaining = 0, cooldownMax = 10 } = cmdState
+      const isActive = mode === 'focus' && durationRemaining > 0
+      const isCooling = !isActive && cooldownRemaining > 0
+
+      squadCommandWidget.classList.toggle('active', isActive)
+      squadCommandWidget.classList.toggle('cooling', isCooling)
+      squadCommandWidget.classList.toggle('ready', !isActive && !isCooling)
+
+      if (isActive) {
+        squadCmdTimer.textContent = `${durationRemaining.toFixed(1)}s`
+        squadCmdFill.style.width = `${Math.max(0, Math.min(100, (durationRemaining / durationMax) * 100))}%`
+      } else if (isCooling) {
+        squadCmdTimer.textContent = `${Math.ceil(cooldownRemaining)}s`
+        squadCmdFill.style.width = `${Math.max(0, Math.min(100, ((cooldownMax - cooldownRemaining) / cooldownMax) * 100))}%`
+      } else {
+        squadCmdTimer.textContent = 'PRONTO'
+        squadCmdFill.style.width = '100%'
+      }
     },
 
     showSquadronNotice({ mode, targetCount = 1, hasLocked = false, remaining = 0, xFrac = 0.5, yFrac = 0.5 }) {

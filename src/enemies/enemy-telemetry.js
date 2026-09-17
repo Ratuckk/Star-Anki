@@ -53,7 +53,19 @@ export function createEnemyTelemetry() {
     events.length = 0
   }
 
-  function update({ enemies, enemyProjectiles, enemyLasers, enemyGates, golden, playerPos, frame, elapsed }) {
+  let _lastArgs = null
+  let _isDirty = true
+
+  function update(args) {
+    _lastArgs = args
+    _isDirty = true
+    if (args && typeof args.elapsed === 'number') {
+      latestSnapshot.timestamp = Number(args.elapsed.toFixed(2))
+    }
+    return latestSnapshot
+  }
+
+  function _computeSnapshot({ enemies, enemyProjectiles, enemyLasers, enemyGates, golden, playerPos, frame, elapsed }) {
     const now = typeof elapsed === 'number' ? elapsed : (performance.now() / 1000)
     const pPos = playerPos || { x: 0, y: 0, z: 0 }
     const fRight = frame?.right || { x: 1, y: 0, z: 0 }
@@ -182,6 +194,10 @@ export function createEnemyTelemetry() {
   }
 
   function getSnapshot() {
+    if (_isDirty && _lastArgs) {
+      _computeSnapshot(_lastArgs)
+      _isDirty = false
+    }
     return latestSnapshot
   }
 
@@ -191,7 +207,7 @@ export function createEnemyTelemetry() {
   }
 
   function getFormattedText() {
-    const s = latestSnapshot
+    const s = getSnapshot()
     const sum = s.summary
     const haz = s.hazards
 
@@ -223,7 +239,7 @@ export function createEnemyTelemetry() {
   }
 
   function dumpToConsole() {
-    const s = latestSnapshot
+    const s = getSnapshot()
     console.groupCollapsed(`%c[Telemetria Inimigos] t=${s.timestamp}s | Vivos: ${s.summary.activeEnemies} | Projéteis: ${s.summary.activeProjectiles} | Portais: ${s.summary.activeGates}`, 'color: #ff5a3d; font-weight: bold;')
     console.log('%c--- Resumo Geral de Ameaças ---', 'color: #f7768e; font-weight: bold;')
     console.table(s.summary)
