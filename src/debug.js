@@ -69,6 +69,8 @@ export const DEBUG_ACTIONS = [
   { id: 'giveCard', label: 'Escolher carta roguelike', category: 'Cartas & Buffs' },
   { id: 'triggerFullDodge', label: 'Testar giro/inclinação (1s)', category: 'Testes & Visual' },
   { id: 'fireHomingTest', label: 'Testar tiro teleguiado', category: 'Testes & Visual' },
+  { id: 'copyAIValidationLog', label: 'Copiar Log de Validação IA', category: 'Testes & Visual' },
+  { id: 'clearAIValidationLog', label: 'Limpar Log de Validação IA', category: 'Testes & Visual' },
   { id: 'toggleManualStep', label: 'Passo a passo (Pausar Loop)', toggle: true, category: 'Testes & Visual' },
   { id: 'step1Frame', label: 'Avançar 1 frame (16.7ms)', category: 'Testes & Visual' },
   { id: 'step10Frames', label: 'Avançar 10 frames (~167ms)', category: 'Testes & Visual' },

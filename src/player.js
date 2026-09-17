@@ -1,5 +1,6 @@
 import { DEFAULT_FIRE_COOLDOWN } from './combat/index.js'
 import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
+import { aiValidator } from './ai-validator.js'
 
 // ============ ESCUDO ============
 // camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
@@ -326,6 +327,13 @@ export function createPlayerSystem(session) {
           shieldValue = 0
         }
       }
+      // Exemplo de uso do Motor de Validação IA (ver FLUXO_VALIDACAO_IA.md): checa a própria
+      // suposição de que a absorção de escudo acima nunca deixa o valor fora de [0, shieldMax].
+      aiValidator.expect(
+        'Escudo do jogador nunca fica negativo nem passa do máximo após absorver dano',
+        () => shieldValue >= 0 && shieldValue <= shieldMax,
+        { shieldValue, shieldMax, damage: amount }
+      )
       const shieldBroke = absorbedByShield && shieldValue <= 0
       if (absorbedByShield) {
         if (shieldBroke) {

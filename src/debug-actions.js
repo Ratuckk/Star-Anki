@@ -14,6 +14,7 @@ export function createDebugActions(deps) {
     startArenaCutscene, enterBossBuildup, finishBossHunt, enterBossFight, enterGoldenArena,
     enterCardChoice, enterCombat,
     restartSector, nextSector, prevSector, exitArenaNow,
+    aiValidator,
   } = deps
 
   function resetEverythingForDebugEvent() {
@@ -255,6 +256,12 @@ export function createDebugActions(deps) {
     },
     copyEnemyLog: () => {
       combat.copyEnemyCombatLog?.()
+    },
+    copyAIValidationLog: () => {
+      aiValidator?.copyReport()
+    },
+    clearAIValidationLog: () => {
+      aiValidator?.reset()
     },
     dumpCombatTelemetry: () => {
       combat.dumpCombatTelemetry?.()

@@ -321,5 +321,33 @@ de progresso, em vez de espalhados soltos na raiz do projeto junto com planos/ch
    `progresso/`; a raiz fica só pra planejamento, checklists obrigatórios e docs de projeto
    (`README.md`, `CLAUDE.md`).
 
+### Motor de Validação Guiada por IA (`aiValidator`) + `FLUXO_VALIDACAO_IA.md`
+
+Pedido do usuário (inspirado num documento de outro projeto seu, "Magispelll", que **não** se
+aplica aqui — adaptado do zero pra arquitetura real do Star-Anki, não copiado). Objetivo: fechar
+o loop entre "a IA escreveu uma mecânica nova" e "funcionou de verdade quando um humano jogou",
+sem depender só de descrição verbal de bug.
+
+1. **Novo módulo [`src/ai-validator.js`](../src/ai-validator.js)**: factory `createAIValidator()`
+   (mesmo padrão de `createEnemyTelemetry()`/`createWingmanTelemetry()`) + singleton exportado
+   `aiValidator`. API: `expect(descrição, fnAvaliação, contexto)` registra uma suposição sobre
+   estado crítico (nunca lança exceção; só guarda `contexto` se falhar) e `logMechanic(nome,
+   ação, snapshot)` registra um passo de mecânica nova numa timeline circular (últimos 200).
+   `copyReport()` reusa `copyTextToClipboard` de `telemetry-utils.js`; `reset()` zera tudo.
+2. **Integrado ao painel de debug** (categoria "Testes & Visual"): botões "Copiar Log de
+   Validação IA" e "Limpar Log de Validação IA" em `debug.js`/`debug-actions.js`, `aiValidator`
+   injetado via `deps` em `mount-game.js` — mesmo padrão de injeção dos outros sistemas.
+3. **Exemplo real instrumentado** em `player.js` (`takeDamage`): expectativa de que o escudo
+   nunca fica negativo nem passa do máximo após absorver dano — serve de referência de uso.
+4. **Documento de fluxo**: [`FLUXO_VALIDACAO_IA.md`](../FLUXO_VALIDACAO_IA.md) (raiz — é
+   processo/checklist, não histórico) explica quando/como instrumentar, a regra de só usar em
+   eventos discretos (nunca dentro de `update(dt)` a 60fps) e o ciclo de feedback (IA instrumenta
+   → usuário joga → copia log → cola na conversa → IA lê `expectativas_falhas`). Referenciado a
+   partir de `CLAUDE.md`. Escopo é só features novas/alteradas — não retroativo ao código legado.
+5. **Validação**: testado via `window.__starAnki.player.takeDamage()` no browser (4 hits reais
+   quebrando o escudo 3→0, 4/4 expectativas registradas, 0 falhas) e `node src/selftest.mjs`
+   (100% aprovado, nenhuma regressão). Complementa selftest.mjs, não substitui — selftest cobre
+   cenário sintético pré-commit, `aiValidator` cobre comportamento emergente de sessão real.
+
 
 

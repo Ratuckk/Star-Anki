@@ -24,6 +24,7 @@ import { createGameHud } from './hud.js'
 import { getSettings } from './settings.js'
 import { getBindings } from './keybindings.js'
 import { createDebugActions } from './debug-actions.js'
+import { aiValidator } from './ai-validator.js'
 import { requestGameOrientation, releaseGameOrientation } from './mobile.js'
 import { createCutscenesSystem } from './cutscenes.js'
 import { createBossFlow } from './flow-boss.js'
@@ -400,6 +401,7 @@ export function mountGame(session, deck, menu) {
     enterGoldenArena: bossFlow.enterGoldenArena,
     enterCardChoice: questionFlow.enterCardChoice, enterCombat,
     restartSector, nextSector, prevSector, exitArenaNow,
+    aiValidator,
   }))
 
   // Snapshot plano pro overhaul do painel de debug (v0.68.0) — hud-game.js só chama isso e
