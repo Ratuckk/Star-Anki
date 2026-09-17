@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { spawnPositionForEnemy } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ ENXAME-ÍMÃ — campo estático que curva o tiro NORMAL, ambos os modos ============
 // pedido do usuário: pequenas esferas paradas (sem IA de perseguição nem tiro, igual o Detrito)
@@ -43,6 +44,7 @@ const material = new THREE.MeshPhongMaterial({
 export function spawnImaSwarm(scene, rail, makeId) {
   const count = GROUP_MIN + Math.floor(Math.random() * (GROUP_MAX - GROUP_MIN + 1))
   const base = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
+  triggerSoundCue(ENEMY_SOUND_CUES.ima_polar_pulse, { worldPos: base })
   const group = []
   for (let i = 0; i < count; i += 1) {
     const mesh = new THREE.Mesh(geometry, material)

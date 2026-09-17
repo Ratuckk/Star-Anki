@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { PASS_BEHIND, FORWARD_AXIS, randomSpawnPositionOnPath } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ SENTINELA — inimigo quadrado inédito, só modo trilho ============
 // v0.34.0: pedido do usuário — persegue o jogador mantendo distância (nunca passa por ele),
@@ -219,11 +220,13 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx, frame) {
   }
   applyGateAperture(gate, computeApertureHalf(0)) // nasce já na fase certa (aberta) do pulso
   ctx.pushGate(gate)
+  triggerSoundCue(ENEMY_SOUND_CUES.sentinela_gate_fire, { worldPos: originPos, shotsFired: enemy.shotsFired + 1 })
 
   enemy.shotsFired += 1
   if (enemy.shotsFired >= SENTINELA_SHOTS_TOTAL) {
     enemy.state = SENTINELA_STATE_LEAVING
     enemy.fireTimer = Infinity
+    triggerSoundCue(ENEMY_SOUND_CUES.sentinela_escape, { worldPos: enemy.mesh.position })
   }
   return true
 }
@@ -279,6 +282,7 @@ export function resolveGateHit(gate, playerPosition, opts = {}) {
     if (maxCoord > outer + pt.radius) continue // fora da moldura inteira
     if (maxCoord < aperture - pt.radius) continue // dentro do buraco aberto naquele instante
     hit = true
+    triggerSoundCue(ENEMY_SOUND_CUES.sentinela_crush, { worldPos: gate.mesh.position })
     break
   }
   return { hit }

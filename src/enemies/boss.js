@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { FORWARD_AXIS, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, ENEMY_ARENA_SPAWN_MAX } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ CHEFE — dodecaedro móvel + laser telegrafado, com 3 FASES por HP ============
 // Overhaul (v0.50.0): antes o chefe era igual em 100% e 5% de HP — perseguição linear, rajada
@@ -155,6 +156,7 @@ export function spawnBossEnemy(scene, rail, id, hp) {
   mesh.add(shieldMesh)
 
   scene.add(mesh)
+  triggerSoundCue(ENEMY_SOUND_CUES.boss_entrance, { worldPos: position, hp })
   return {
     id, mesh, kind: BOSS_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1,
     laserCooldown: randomLaserInterval(BOSS_PHASES[0]),
@@ -296,6 +298,7 @@ export function updateBossMovement(enemy, dt, playerPosition) {
 export function fireBossVolley(enemy, playerPosition, ctx) {
   const cfg = enemy.phaseConfig
   const count = cfg.volleyCount
+  triggerSoundCue(ENEMY_SOUND_CUES.boss_volley, { worldPos: enemy.mesh.position, count, phase: enemy.phase + 1 })
   if (!cfg.fanEnabled || count <= 1) {
     for (let i = 0; i < count; i += 1) ctx.fireEnemyProjectile(enemy, playerPosition)
     return
@@ -338,6 +341,8 @@ function fireBossLaser(scene, ctx, enemy, targetPos) {
   group.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
   scene.add(group)
 
+  triggerSoundCue(ENEMY_SOUND_CUES.boss_laser_fire, { worldPos: startPos, targetPos })
+
   ctx.pushLaser({
     mesh: group,
     outerMat,
@@ -363,6 +368,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
   // ============ FX DE TRANSIÇÃO DE FASE (pendente) ============
   if (enemy.phaseTransitionFxPending) {
     enemy.phaseTransitionFxPending = false
+    triggerSoundCue(ENEMY_SOUND_CUES.boss_phase_transition, { worldPos: enemy.mesh.position, newPhase: enemy.phase + 1 })
     if (effects) {
       effects.shockwave(enemy.mesh.position.clone(), cfg.color, 2.2)
       effects.explosion(enemy.mesh.position.clone(), cfg.color, 3.0, { rings: true, isBoss: true })
@@ -372,6 +378,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
   // ============ FX DE ATIVAÇÃO DO ESCUDO REFLETOR ============
   if (enemy.shieldActivationFxPending) {
     enemy.shieldActivationFxPending = false
+    triggerSoundCue(ENEMY_SOUND_CUES.boss_shield_activate, { worldPos: enemy.mesh.position })
     if (effects) {
       effects.shockwave(enemy.mesh.position.clone(), BOSS_SHIELD_COLOR, 1.6)
       effects.bloomSprite(enemy.mesh.position.clone(), BOSS_SHIELD_COLOR, 1.8)
@@ -418,6 +425,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
     if (enemy.laserCooldown <= 0) {
       enemy.laserTargetPos = playerPosition.clone()
       enemy.laserTelegraphTimer = cfg.laserTelegraphS
+      triggerSoundCue(ENEMY_SOUND_CUES.boss_laser_charge, { worldPos: enemy.mesh.position, phase: enemy.phase + 1 })
       if (effects) effects.chargeCircle(() => enemy.laserTargetPos, cfg.laserTelegraphS, cfg.color)
     }
   }
@@ -426,6 +434,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
 // explosão de kill do chefe — mantida idêntica à entrega anterior.
 export function explodeBoss(effects, position, isHoming = false) {
   const pos = position.clone()
+  triggerSoundCue(ENEMY_SOUND_CUES.boss_death_sequence, { worldPos: pos })
   const mainColor = isHoming ? HOMING_EXPLOSION_COLOR : BOSS_COLOR
   effects.explosion(pos, mainColor, 5.0, { rings: true, isBoss: true })
   effects.shockwave(pos, BOSS_COLOR, 1.6)

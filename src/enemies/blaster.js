@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { PASS_BEHIND } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ BLASTER — caças estelares genéricos ============
 // Modelos unificados em cone 4 faces (+10% maiores), diferenciados por cores saturadas e vibrantes.
@@ -190,6 +191,7 @@ export function breakBlasterWing(enemy) {
   enemy.wingBroken = true
   enemy.tumbleSpin = true
   enemy.tumbleRollSpeed = (Math.random() < 0.5 ? 1 : -1) * (3.5 + Math.random() * 2)
+  triggerSoundCue(ENEMY_SOUND_CUES.blaster_spin_damage, { worldPos: enemy.mesh.position.clone() })
   return { worldPos: enemy.mesh.position.clone(), color: blasterColor(enemy) }
 }
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ ESPECIAL DOURADO + mini-naves + laser ============
 // Array próprio (`goldenTargets`) e resolução de hit à parte de `enemies` — já era assim no
@@ -86,6 +87,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     const dir = playerPosition.clone().sub(originPos).normalize()
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
     scene.add(mesh)
+    triggerSoundCue(ENEMY_SOUND_CUES.golden_drone_launch, { worldPos: originPos })
     pushProjectile({
       mesh, velocity: dir.clone().multiplyScalar(MINION_SPEED), traveled: 0,
       homing: true, maxRange: MINION_MAX_RANGE, hitRadius: MINION_HIT_RADIUS,
@@ -102,6 +104,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     mesh.position.copy(startPos)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
     scene.add(mesh)
+    triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_fire, { worldPos: startPos, targetPos })
     ctx.pushLaser({
       mesh,
       velocity: direction.multiplyScalar(GOLDEN_LASER_SPEED), traveled: 0,
@@ -126,6 +129,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       const mesh = new THREE.Mesh(goldenGeometry, goldenMaterial)
       mesh.position.copy(frame.position.clone().add(offset))
       scene.add(mesh)
+      triggerSoundCue(ENEMY_SOUND_CUES.golden_entrance, { worldPos: mesh.position })
       goldenTargets.push({
         id: nextId(), mesh, dying: false, deathT: 0,
         kind: GOLDEN_KIND,
@@ -241,6 +245,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         if (g.fireTimer > 0.3 && g.fireTimer - dt <= 0.3 && effects) effects.telegraph(g.mesh.position, GOLDEN_COLOR)
         g.fireTimer -= dt
         if (g.fireTimer <= 0) {
+          triggerSoundCue(ENEMY_SOUND_CUES.golden_straight_volley, { worldPos: g.mesh.position })
           ctx.fireEnemyProjectile({ mesh: g.mesh }, playerPosition)
           g.fireTimer = randomGoldenFireInterval()
         }
@@ -289,6 +294,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       if (killed) {
         goldenHit.dying = true
         goldenHit.deathT = 0
+        triggerSoundCue(ENEMY_SOUND_CUES.golden_cataclysm_death, { worldPos: goldenHit.mesh.position })
         const killColor = isHoming ? HOMING_EXPLOSION_COLOR : GOLDEN_COLOR
         if (effects) {
           effects.explosion(goldenHit.mesh.position, killColor, 2.8, { rings: true })
@@ -310,6 +316,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax)
           goldenHit.mesh.position.copy(newPos)
           goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
+          triggerSoundCue(ENEMY_SOUND_CUES.golden_teleport, { oldPos, newPos })
           if (effects) {
             effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)
             effects.explosion(oldPos, GOLDEN_COLOR, 1.0, { rings: true })

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { FORWARD_AXIS, PASS_BEHIND, spawnPositionForEnemy } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ AMPULHETA (redutor de tempo) — normal + variante "mega" ============
 export const TIME_KIND = 'time'
@@ -59,6 +60,7 @@ export function spawnTimeEnemy(scene, rail, id) {
   const mesh = buildMesh(timeEnemyMaterial)
   mesh.position.copy(position)
   scene.add(mesh)
+  triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_time_dilation_field, { worldPos: position, variant: 'normal' })
   return {
     id, mesh, kind: TIME_KIND, dying: false, deathT: 0,
     hp: TIME_MAX_HP, maxHp: TIME_MAX_HP, fireTimer: null,
@@ -72,6 +74,7 @@ export function spawnTimeEnemyMega(scene, rail, id) {
   mesh.position.copy(position)
   mesh.scale.setScalar(TIME_MEGA_SCALE)
   scene.add(mesh)
+  triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_time_dilation_field, { worldPos: position, variant: 'mega' })
   return {
     id, mesh, kind: TIME_KIND, dying: false, deathT: 0,
     hp: TIME_MEGA_HP, maxHp: TIME_MEGA_HP, fireTimer: null,

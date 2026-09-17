@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { spawnPositionForEnemy } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ MINI-SWARM — fila/enxame de mini-inimigos (só modo trilho) ============
 export const MINI_SWARM_KIND = 'miniSwarm'
@@ -105,6 +106,7 @@ export function updateMiniSwarm(enemy, dt, ctx) {
     if (enemy.patrolTimer <= 0) {
       enemy.swarmState = 'telegraph'
       enemy.telegraphTimer = MINI_SWARM_TELEGRAPH_S
+      triggerSoundCue(ENEMY_SOUND_CUES.mini_swarm_dive_telegraph, { worldPos: enemy.mesh.position, variant: enemy.variant })
     }
     return
   }
@@ -126,6 +128,7 @@ export function updateMiniSwarm(enemy, dt, ctx) {
       const toTarget = diveTarget.clone().sub(enemy.mesh.position)
       enemy.diveDir = toTarget.lengthSq() > 1e-4 ? toTarget.normalize() : frame.forward.clone().negate()
       enemy.diveCorePos = enemy.mesh.position.clone()
+      triggerSoundCue(ENEMY_SOUND_CUES.mini_swarm_whoosh, { worldPos: enemy.mesh.position, variant: enemy.variant })
     }
     return
   }

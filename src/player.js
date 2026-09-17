@@ -1,4 +1,5 @@
 import { DEFAULT_FIRE_COOLDOWN } from './combat/index.js'
+import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 
 // ============ ESCUDO ============
 // camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
@@ -326,6 +327,13 @@ export function createPlayerSystem(session) {
         }
       }
       const shieldBroke = absorbedByShield && shieldValue <= 0
+      if (absorbedByShield) {
+        if (shieldBroke) {
+          triggerSoundCue(PLAYER_SOUND_CUES.shield_break, { remainingShield: shieldValue, damage: amount })
+        } else {
+          triggerSoundCue(PLAYER_SOUND_CUES.shield_absorb, { remainingShield: shieldValue, damage: amount })
+        }
+      }
       let outOfLives = false
       if (remaining > 0) {
         // pedido do usuário: a invencibilidade momentânea só existe quando o escudo está
@@ -337,6 +345,14 @@ export function createPlayerSystem(session) {
         invincibleTimer = Math.max(invincibleTimer, invincibilityDurationMs)
         session.health = Math.max(0, session.health - remaining)
         outOfLives = applyHealthLoss()
+        triggerSoundCue(PLAYER_SOUND_CUES.hull_damage, { damage: remaining, health: session.health, lives: session.lives })
+        if (session.health <= 0) {
+          if (outOfLives) {
+            triggerSoundCue(PLAYER_SOUND_CUES.game_over, { score: session.score || 0 })
+          } else {
+            triggerSoundCue(PLAYER_SOUND_CUES.life_lost, { livesRemaining: session.lives })
+          }
+        }
       }
       telemetry?.recordEvent('damage', `Dano sofrido: ${amount} (Escudo: ${absorbedByShield ? 'absorveu' : 'vazio'}, HP restante: ${session.health}, Vidas: ${session.lives})`, {
         amount, absorbedByShield, shieldBroke, outOfLives, health: session.health, lives: session.lives,
@@ -359,6 +375,7 @@ export function createPlayerSystem(session) {
       fullSpinCooldownTimer = FULL_SPIN_COOLDOWN_MS
       invincibleTimer = Math.max(invincibleTimer, fullSpinIframeMs)
       rollIframeTimer = fullSpinIframeMs
+      triggerSoundCue(PLAYER_SOUND_CUES.barrel_roll, { durationMs: fullSpinIframeMs })
       telemetry?.recordEvent('roll', `Giro completo efetuado! I-frames ativados por ${fullSpinIframeMs}ms`, { iframeMs: fullSpinIframeMs })
       return true
     },
@@ -369,6 +386,7 @@ export function createPlayerSystem(session) {
       if (!boostReady()) return false
       propulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
+      triggerSoundCue(PLAYER_SOUND_CUES.boost_ignite, { durationMs: BOOST_DURATION_MS })
       telemetry?.recordEvent('boost', `Propulsor ativado (velocidade ${PROPULSION_SPEED_MULT}x)`, { factor: PROPULSION_SPEED_MULT })
       return true
     },
@@ -376,6 +394,7 @@ export function createPlayerSystem(session) {
       if (!boostReady()) return false
       repulsionActiveTimer = BOOST_DURATION_MS
       boostCharge = 0
+      triggerSoundCue(PLAYER_SOUND_CUES.brake_ignite, { durationMs: BOOST_DURATION_MS })
       telemetry?.recordEvent('boost', `Repulsor/Freio ativado (velocidade ${REPULSION_SPEED_MULT}x)`, { factor: REPULSION_SPEED_MULT })
       return true
     },
@@ -398,6 +417,7 @@ export function createPlayerSystem(session) {
       session.health = Math.min(maxHealth, session.health + amount)
       const healed = session.health - before
       if (healed > 0) {
+        triggerSoundCue(PLAYER_SOUND_CUES.heal, { amount: healed, health: session.health, maxHealth })
         telemetry?.recordEvent('heal', `Cura recebida: +${healed} HP (${session.health}/${maxHealth})`, { healed, health: session.health })
       }
       return healed
@@ -484,6 +504,9 @@ export function createPlayerSystem(session) {
       }
       if (shieldRegenDelayTimer > 0) {
         shieldRegenDelayTimer = Math.max(0, shieldRegenDelayTimer - dt * 1000)
+        if (shieldRegenDelayTimer <= 0 && shieldValue < shieldMax) {
+          triggerSoundCue(PLAYER_SOUND_CUES.shield_regen, { currentShield: shieldValue, shieldMax })
+        }
       } else if (shieldValue < shieldMax) {
         shieldValue = Math.min(shieldMax, shieldValue + shieldRegenRate * dt)
       }

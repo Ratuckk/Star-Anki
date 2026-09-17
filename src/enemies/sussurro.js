@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ SUSSURRO — batedor quase invisível que chama reforços, só trilho ============
 // pedido do usuário: fica invisível a maior parte do tempo, pisca visível por janelas curtas, e
@@ -70,6 +71,7 @@ export function updateSussurro(enemy, dt, rail) {
   if (enemy.pulseTimer <= 0) {
     enemy.pulseVisible = !enemy.pulseVisible
     enemy.pulseTimer = enemy.pulseVisible ? PULSE_VISIBLE_MS : PULSE_INVISIBLE_MS
+    triggerSoundCue(ENEMY_SOUND_CUES.sussurro_cloak_pulse, { worldPos: enemy.mesh.position, visible: enemy.pulseVisible })
   }
   enemy.mesh.material.opacity = enemy.pulseVisible ? OPACITY_VISIBLE : OPACITY_HIDDEN
 }
@@ -79,6 +81,7 @@ export function sussurroShouldSummon(enemy) {
   if (enemy.summoned) return false
   if (enemy.aliveMs < SUSSURRO_SUMMON_AFTER_S * 1000) return false
   enemy.summoned = true
+  triggerSoundCue(ENEMY_SOUND_CUES.sussurro_summon, { worldPos: enemy.mesh.position })
   return true
 }
 

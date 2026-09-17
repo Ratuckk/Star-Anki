@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { PASS_BEHIND, randomSpawnPositionOnPath } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ RÉPLICA — eco fantasma do movimento lateral do jogador, só trilho ============
 // pedido do usuário: copia o deslocamento lateral do JOGADOR com um atraso curto (sempre ocupa
@@ -41,6 +42,7 @@ export function spawnReplica(scene, rail, id) {
   const mesh = new THREE.Mesh(geometry, material)
   mesh.position.copy(position)
   scene.add(mesh)
+  triggerSoundCue(ENEMY_SOUND_CUES.replica_spawn, { worldPos: position })
   return {
     id, mesh, kind: REPLICA_KIND, dying: false, deathT: 0, hp: REPLICA_HP, maxHp: REPLICA_HP, fireTimer: Infinity,
     clock: 0,

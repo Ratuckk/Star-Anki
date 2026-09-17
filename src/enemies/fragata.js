@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { spawnPositionForEnemy } from './shared.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ FRAGATA-ESCUDO — placa de blindagem giratória, só arena/all-range ============
 // pedido do usuário: uma placa protege um arco fixo (girando devagar e previsível) — só toma
@@ -74,7 +75,13 @@ export function updateFragataMovement(enemy, dt, playerPosition, speedCap) {
 export function isFragataShielded(enemy, prevPos) {
   const incoming = prevPos.clone().sub(enemy.mesh.position)
   if (incoming.lengthSq() < 1e-8) return false
-  return incoming.normalize().dot(enemy.shieldFacing) > 0
+  const isShielded = incoming.normalize().dot(enemy.shieldFacing) > 0
+  if (isShielded) {
+    triggerSoundCue(ENEMY_SOUND_CUES.fragata_side_broadside, { worldPos: enemy.mesh.position })
+  } else {
+    triggerSoundCue(ENEMY_SOUND_CUES.fragata_core_vulnerable, { worldPos: enemy.mesh.position })
+  }
+  return isShielded
 }
 
 export function disposeFragata() {

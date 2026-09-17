@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR } from './shared.js'
 import { createEnemyTelemetry } from './enemy-telemetry.js'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
@@ -274,6 +275,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     scene.add(mesh)
     enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
+    triggerSoundCue(ENEMY_SOUND_CUES.blaster_fire, { enemyId: enemy?.id, kind: enemy?.kind, worldPos: enemy?.mesh?.position })
 
     if (enemy) {
       enemy.shotsFired = (enemy.shotsFired || 0) + 1
@@ -516,6 +518,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           if (toPlayerDir.lengthSq() > 1e-4) tPos = enemy.mesh.position.clone().addScaledVector(toPlayerDir.normalize(), BOSS_HIT_RADIUS)
         }
         effects.telegraph(tPos, colorFor(enemy))
+        triggerSoundCue(ENEMY_SOUND_CUES.blaster_telegraph, { enemyId: enemy.id, kind: enemy.kind, worldPos: tPos })
       }
       enemy.fireTimer -= dt
       if (enemy.fireTimer <= 0 && inFireRange) {
@@ -1014,7 +1017,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             if (effects) explodeBoss(effects, enemyHit.mesh.position, isHoming)
           } else {
             enemyKillPoints = killPointsFor(enemyHit.kind)
-            if (enemyHit.kind === TIME_KIND) timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+            if (enemyHit.kind === TIME_KIND) {
+              timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+              triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_rewind_snap, { worldPos: enemyHit.mesh.position.clone(), timeReductionMs })
+            } else if (enemyHit.kind === DETRITO_KIND) {
+              if (enemyHit.isGiant) {
+                triggerSoundCue(ENEMY_SOUND_CUES.debris_titanic_shatter, { worldPos: enemyHit.mesh.position.clone() })
+              } else {
+                triggerSoundCue(ENEMY_SOUND_CUES.debris_shatter, { worldPos: enemyHit.mesh.position.clone() })
+              }
+            } else if (enemyHit.kind !== VERME_KIND) {
+              triggerSoundCue(ENEMY_SOUND_CUES.generic_death, { enemyId: enemyHit.id, kind: enemyHit.kind, worldPos: enemyHit.mesh.position.clone() })
+            }
             if (enemyHit.kind === VERME_KIND) severChainAt(enemyHit, enemies, rail)
             const killColor = isHoming ? HOMING_EXPLOSION_COLOR : colorFor(enemyHit)
             if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6, { rings: true })

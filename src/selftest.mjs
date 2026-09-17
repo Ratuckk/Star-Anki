@@ -419,4 +419,60 @@ assert.strictEqual(rightAfterDrop, 'patrol', 'Companheiro em cooldown de descans
 const afterCooldownElapsed = simulateWingmanFocusDecision('patrol', 'focus', 0.0, 60)
 assert.strictEqual(afterCooldownElapsed, 'dogfight', 'Companheiro descansado com alvo em alcance deve engajar em dogfight com foco ativo')
 
-console.log('OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09).')
+// ---------------------------------------------------------------------------
+// 10. Sound Cues: Validação de Parâmetros, Timings e Despachante Seguro
+// ---------------------------------------------------------------------------
+import { getAllRegisteredCues, triggerSoundCue, registerAudioHandler } from './audio-cues.js'
+
+const allCues = getAllRegisteredCues()
+assert.ok(allCues.player, 'Sound cues do jogador devem estar registradas')
+assert.ok(allCues.wingmen, 'Sound cues dos wingmen devem estar registradas')
+assert.ok(allCues.enemies, 'Sound cues dos inimigos/chefes devem estar registradas')
+
+const validCategories = new Set(['sfx', 'voice', 'ambient', 'music'])
+let totalCueCount = 0
+
+for (const [groupName, groupCues] of Object.entries(allCues)) {
+  const cueKeys = Object.keys(groupCues)
+  assert.ok(cueKeys.length > 0, `Grupo de áudio "${groupName}" não deve estar vazio`)
+  for (const key of cueKeys) {
+    const cue = groupCues[key]
+    totalCueCount++
+    assert.strictEqual(typeof cue.id, 'string', `Cue ${key} deve ter id string`)
+    assert.strictEqual(cue.file, null, `Cue ${key} deve ter file: null (sem áudio inserido ainda)`)
+    assert.ok(typeof cue.durationMs === 'number' && cue.durationMs > 0, `Cue ${key} deve ter durationMs > 0`)
+    assert.ok(typeof cue.delayMs === 'number' && cue.delayMs >= 0, `Cue ${key} deve ter delayMs >= 0`)
+    assert.ok(typeof cue.cooldownMs === 'number' && cue.cooldownMs >= 0, `Cue ${key} deve ter cooldownMs >= 0`)
+    assert.ok(typeof cue.volume === 'number' && cue.volume > 0 && cue.volume <= 1.0, `Cue ${key} deve ter volume entre 0 e 1.0`)
+    assert.ok(validCategories.has(cue.category), `Cue ${key} deve ter category válida (sfx, voice, ambient, music)`)
+    assert.strictEqual(typeof cue.spatial, 'boolean', `Cue ${key} deve ter spatial booleano`)
+    assert.strictEqual(typeof cue.loop, 'boolean', `Cue ${key} deve ter loop booleano`)
+    assert.ok(typeof cue.triggerLogic === 'string' && cue.triggerLogic.length >= 10, `Cue ${key} deve ter triggerLogic descritivo`)
+  }
+}
+assert.ok(totalCueCount >= 40, `Esperava pelo menos 40 Sound Cues registradas no sistema, obteve ${totalCueCount}`)
+
+// Teste do despachante seguro: sem manipulador (no-op silencioso)
+assert.doesNotThrow(() => {
+  triggerSoundCue(allCues.player.laser_fire, { origin: [0, 0, 0] })
+  triggerSoundCue(null)
+  triggerSoundCue({})
+}, 'triggerSoundCue sem handler não deve lançar exceção')
+
+// Teste do despachante seguro com manipulador registrado
+let receivedCue = null
+let receivedParams = null
+registerAudioHandler((cue, params) => {
+  receivedCue = cue
+  receivedParams = params
+})
+
+triggerSoundCue(allCues.wingmen.falco_ram, { worldPos: [10, 20, 30] })
+assert.strictEqual(receivedCue?.id, 'wingman_falco_ram', 'Handler deve receber a cue disparada')
+assert.deepStrictEqual(receivedParams?.worldPos, [10, 20, 30], 'Handler deve receber os parâmetros contextuais')
+
+// Desregistra manipulador após o teste
+registerAudioHandler(null)
+
+console.log(`OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09 + ${totalCueCount} Sound Cues validadas).`)
+

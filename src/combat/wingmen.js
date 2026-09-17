@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createWingmanTelemetry } from './wingman-telemetry.js'
+import { WINGMAN_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ ESQUADRÃO STAR FOX (WINGMEN IA DE VOO LIVRE) ============
 // Sistema de companheiros de equipe autônomos, vivos e úteis (v0.54.1).
@@ -611,6 +612,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
+      triggerSoundCue(WINGMAN_SOUND_CUES.command_focus_toggle, { targetCount: squadronFocusTargets.length, hasLocked: validLocked.length > 0 })
       return {
         mode: 'focus',
         targetCount: squadronFocusTargets.length,
@@ -618,6 +620,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
     } else {
       deactivateFocusCommand()
+      triggerSoundCue(WINGMAN_SOUND_CUES.command_free_toggle)
       return { mode: 'free' }
     }
   }
@@ -637,6 +640,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     mesh.position.copy(origin)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction.clone().normalize())
     scene.add(mesh)
+
+    triggerSoundCue(WINGMAN_SOUND_CUES.laser_fire, {
+      wingmanId: wingman.profile.id,
+      name: wingman.profile.name,
+      worldPos: origin,
+    })
 
     activeLasers.push({
       mesh,
@@ -766,6 +775,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.stateTimer = 0
             w.abilityActive = true
             w.abilityTimer = 0
+            triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
           }
         }
 
@@ -817,6 +827,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   w.stateTimer = 0
                   w.burstRemaining = 5
                   w.burstTimer = 0.35
+                  triggerSoundCue(WINGMAN_SOUND_CUES.dogfight_engage, { wingmanId: w.profile.id, name: w.profile.name, enemyKind: candidates[0].kind })
                 } else {
                   w.fireCooldown = 1.2 + Math.random() * 0.8
                 }
@@ -858,6 +869,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.stateTimer = 0
             w.abilityActive = true
             w.abilityTimer = 0
+            triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
           } else {
             w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(_wmAimDir, -16)
 
@@ -946,6 +958,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (!w.abilityApplied && w.mesh.position.distanceTo(playerPos) < GUARD_TRIGGER_RANGE) {
             w.abilityApplied = true
             shieldGrants += 1
+            triggerSoundCue(WINGMAN_SOUND_CUES.peppy_guard, { worldPos: w.mesh.position })
             telemetry.recordEvent(w.profile.name, 'ability', 'Guarda de Peppy: +1 escudo transferido com sucesso ao jogador', { elapsed })
           }
           if (w.abilityTimer > GUARD_ESCORT_S) {
@@ -1094,8 +1107,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           // orbe de reparo no ponto do impacto — proc no acerto, não em cada disparo.
           const owner = laser.owner
           if (owner && owner.profile.abilityId === 'repair' && !owner.abilityActive && owner.abilityCooldown <= 0) {
-            healOrbSpawns.push(hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone())
+            const orbPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
+            healOrbSpawns.push(orbPos)
             owner.abilityCooldown = abilityCooldownFor(owner.profile)
+            triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
             telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
           }
           scene.remove(laser.mesh)
@@ -1122,6 +1137,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Disparo manual sincronizado de suporte: companheiros em formação acompanham o fogo do líder
   // respeitando estritamente suas cadências e intervalos individuais de recarga (sem spam caótico)
   function tryFireSupport(direction) {
+    if (activeWingmen.length > 0) {
+      triggerSoundCue(WINGMAN_SOUND_CUES.support_volley, { activeCount: activeWingmen.length })
+    }
     for (const w of activeWingmen) {
       if (w.state === 'patrol' && w.fireCooldown <= 0) {
         w.fireCooldown = w.profile.fireInterval * (0.85 + Math.random() * 0.3)

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { PLAYER_SOUND_CUES, ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ TIROS DO JOGADOR — normal + carregado (teleguiado) ============
 // Extraído de combat.js (v0.38.0, split por sistema). Os dois tipos de tiro ficam JUNTOS aqui de
@@ -185,6 +186,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         if (_projDeflect.lengthSq() > 1e-8) {
           projectile.velocity.add(_projDeflect)
           if (projectile.velocity.lengthSq() > 1e-6) projectile.velocity.normalize().multiplyScalar(speed)
+          triggerSoundCue(ENEMY_SOUND_CUES.ima_deflect_shot, { worldPos: projectile.mesh.position })
         }
       }
       // ============================================================
@@ -241,11 +243,11 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           squadWipeBonus += (hit.squadWipeBonus || 150)
         }
         if (hit.blocked) { removeProjectile(projectile); continue }
-        // pedido do usuário: tiro carregado no MÁXIMO também estoura uma explosão em área no
-        // ponto de impacto (raio fixo, circular) — ALÉM do dano direto já aplicado acima pelo
-        // resolveProjectileHit. O alvo já atingido está marcado `dying`, então applyAreaDamage
-        // (que pula inimigos `dying`) não dobra o dano nele.
+        if (projectile.isHoming) {
+          triggerSoundCue(PLAYER_SOUND_CUES.homing_impact, { worldPos: hit.worldPos, isMaxCharge: projectile.isMaxCharge })
+        }
         if (projectile.isMaxCharge) {
+          triggerSoundCue(PLAYER_SOUND_CUES.max_charge_splash, { worldPos: hit.worldPos, radius: MAX_CHARGE_SPLASH_RADIUS })
           const splash = enemies.applyAreaDamage(hit.worldPos, MAX_CHARGE_SPLASH_RADIUS, MAX_CHARGE_SPLASH_DAMAGE)
           if (effects) {
             if (effects.maxChargeImpact) {
@@ -313,6 +315,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             projectile.homingTarget = nextTarget
             projectile.bouncesLeft -= 1
             bounced = true
+            triggerSoundCue(PLAYER_SOUND_CUES.ricochet, { worldPos: hit.worldPos, bouncesLeft: projectile.bouncesLeft })
           }
         }
         if (!bounced) removeProjectile(projectile)
@@ -343,6 +346,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       const isFrenzy = !!opts.isFrenzy
       cooldown = isFrenzy ? fireCooldownDuration * 0.45 : fireCooldownDuration
       fire(origin, direction)
+      triggerSoundCue(PLAYER_SOUND_CUES.laser_fire, { isFrenzy, origin })
       if (isFrenzy) {
         _projOrigin.copy(origin).add(FRENZY_OFFSET_L)
         fire(_projOrigin, direction)
@@ -390,6 +394,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         } else {
           effects.smokeRing(origin, firstDir)
         }
+      }
+      if (targetList.length > 0) {
+        triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: targetList.length, isMaxCharge, origin })
       }
       return targetList.length
     },

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ VERME-CORRENTE — cadeia de elos, só trilho ============
 // pedido do usuário: inimigo segmentado tipo cobra, cada elo atingível separadamente; destruir
@@ -106,6 +107,9 @@ export function updateVermeMovement(enemy, dt, rail) {
 // spawn. Recalcula os 3 números a partir da posição ATUAL dele, projetada na base da câmera
 // deste instante — vira cabeça exatamente de onde já estava, sem pulo.
 export function severChainAt(deadSegment, allEnemies, rail) {
+  if (deadSegment?.mesh) {
+    triggerSoundCue(ENEMY_SOUND_CUES.verme_segment_break, { worldPos: deadSegment.mesh.position.clone() })
+  }
   const next = allEnemies.find((e) => e.kind === VERME_KIND && !e.dying && e.followTarget === deadSegment)
   if (next) {
     next.followTarget = null

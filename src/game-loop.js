@@ -17,6 +17,7 @@ import * as THREE from 'three'
 import { isActionPressed } from './keybindings.js'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import { HOMING_MAX_TARGETS_CAP } from './player.js'
+import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 import {
   ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
   INVINCIBILITY_FLICKER_MS,
@@ -194,9 +195,14 @@ export function createGameLoop(deps) {
       const assistMult = combat.getAssistChargeMult ? combat.getAssistChargeMult() : 1
       state.fireHeldMs += dt * 1000 * assistMult
       if (isCharging) {
+        if (!state.chargeLoopSignaled) {
+          state.chargeLoopSignaled = true
+          triggerSoundCue(PLAYER_SOUND_CUES.charge_loop)
+        }
         const atMax = state.fireHeldMs >= player.config.homingChargeMaxMs
         if (atMax && !state.chargeMaxSignaled) {
           state.chargeMaxSignaled = true
+          triggerSoundCue(PLAYER_SOUND_CUES.charge_max_ready)
           if (effects && effects.maxChargeReady) {
             effects.maxChargeReady(nosePos, _fireDirection)
           }
@@ -217,9 +223,11 @@ export function createGameLoop(deps) {
       } else {
         effects.setChargeGlow(false)
         state.chargeMaxSignaled = false
+        state.chargeLoopSignaled = false
       }
     } else {
       state.chargeMaxSignaled = false
+      state.chargeLoopSignaled = false
       if (isCharging) {
         const isMaxCharge = state.fireHeldMs >= player.config.homingChargeMaxMs
         combat.fireHomingShot(nosePos, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
