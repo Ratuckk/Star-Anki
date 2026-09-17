@@ -13,7 +13,7 @@ export const GOLDEN_HIT_RADIUS = 2.42 // 2.2 * 1.10 (+10%)
 const GOLDEN_DEATH_DURATION = 0.25
 const GOLDEN_PULSE_SPEED = 4
 const GOLDEN_PULSE_AMOUNT = 0.18
-const GOLDEN_HP = 40
+const GOLDEN_HP = 70 // 40 + 30 (pedido do usuário)
 const GOLDEN_CHASE_SPEED = 10
 // pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for atingido por
 // disparos" — cooldown próprio, reiniciado a cada teleporte de verdade (não a cada hit)

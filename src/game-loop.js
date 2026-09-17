@@ -374,7 +374,9 @@ export function createGameLoop(deps) {
 
           if (state.debrisStormTimer <= 0) {
             state.debrisStormActive = false
-            state.nextDebrisStormTimer = 55000 + Math.random() * 35000 // próxima em 55-90s
+            // pedido do usuário: +15% de chance/frequência — intervalo até a próxima reduzido em
+            // 15% (55-90s → ~46.75-76.5s)
+            state.nextDebrisStormTimer = 46750 + Math.random() * 29750
             if (hud?.showDebrisStormNotice) {
               hud.showDebrisStormNotice({
                 active: false,
@@ -635,7 +637,11 @@ export function createGameLoop(deps) {
               combat.spawnSquadron(picked)
             } else {
               const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
-              const count = Math.min(room, roll + state.extraSpawnPerBatch)
+              // pedido do usuário: quanto mais aliados no esquadrão, mais inimigos por leva —
+              // +2 por piloto recrutado, lido na hora do spawn (sempre em dia, sem precisar
+              // recalcular quando alguém entra/sai da formação no meio da run)
+              const wingmanSpawnBonus = (combat.getWingmanCount ? combat.getWingmanCount() : 0) * 2
+              const count = Math.min(room, roll + state.extraSpawnPerBatch + wingmanSpawnBonus)
               for (let i = 0; i < count; i += 1) combat.spawnEnemy()
             }
           }

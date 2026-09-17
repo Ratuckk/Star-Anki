@@ -1799,7 +1799,9 @@ export function createGameHud() {
         slot.sweep.style.background = frac > 0
           ? `conic-gradient(rgba(6,8,12,0.88) 0deg, rgba(6,8,12,0.88) ${frac * 360}deg, transparent ${frac * 360}deg)`
           : 'none'
-        slot.num.textContent = (s.recruited && !s.active && s.cooldownRemaining > 0 && s.cooldownRemaining <= 3)
+        // Pedido do usuário: mostrar o número o tempo TODO do cooldown, não só nos 3s finais —
+        // "pra eu saber quanto tempo vai levar até eles estarem capazes de realizar suas gimmicks"
+        slot.num.textContent = (s.recruited && !s.active && s.cooldownRemaining > 0)
           ? String(Math.ceil(s.cooldownRemaining)) : ''
 
         slot.el.classList.toggle('locked', !s.recruited)

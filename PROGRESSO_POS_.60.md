@@ -42,6 +42,40 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Ícones de Habilidade Maiores + Timer Completo, Pesquisa SF64 (Starship), Dificuldade Escala com Esquadrão — v0.74.0
+
+1. **Emblemas de habilidade do esquadrão +20% maiores** (`src/hud-styles.js`): `.hud-ability-hex`
+   28×24px → 34×29px, ícone 12px→14px, número de cooldown 8px→10px.
+2. **Número de cooldown mostrado o tempo TODO, não só nos 3s finais** (`src/hud-game.js`,
+   `setSquadronAbilities`): antes só aparecia quando faltavam ≤3s pra habilidade ficar pronta;
+   pedido do usuário foi "pra eu saber quanto tempo vai levar até eles estarem capazes de
+   realizar suas gimmicks" — agora mostra o `Math.ceil()` do cooldown restante desde o início.
+3. **Pesquisa no código-fonte real de Star Fox 64** (decomp `HarbourMasters/Starship`, via `gh api
+   search/code`): os companheiros em trilho não são simulados por física/IA a cada frame como os
+   nossos — são "ActorEvent" com estado roteirizado por nível (`EVID_TEAMMATE`, opcodes
+   `EVOP_*`). A técnica de suavização que SE REPETE em todo o código de movimento do jogo original
+   (inclusive no estado mais próximo de "perseguir o jogador", `EVSTATE_PURSUE_PLAYER` em
+   `fox_enmy2.c`) é `Math_SmoothStepToAngle(&ângulo, alvo, escala, passoMáximo, epsilon)` — nunca
+   um salto instantâneo de ângulo, sempre um passo angular limitado por frame. Isso confirma que a
+   escolha arquitetural já feita aqui (quaternion com taxa de giro capada, e agora também o
+   `patrolTarget.lerp()` do fix de v0.73.2) está na direção correta e "autêntica" ao original —
+   suavizar o ALVO/ângulo perseguido, nunca só reagir à posição crua.
+4. **Dificuldade escala com o tamanho do esquadrão** (`src/game-loop.js`): pedido do usuário —
+   cada aliado recrutado soma +2 inimigos por leva de spawn normal (lido ao vivo via
+   `combat.getWingmanCount()` no momento do spawn, nunca fica desatualizado quando alguém entra/
+   sai da formação). Confirmado por teste: média de inimigos por leva subiu de 3.64 (0 aliados)
+   pra 5.12 (4 aliados) em 25 tentativas cada.
+5. **Chuva de detritos +15% de frequência** (`src/mount-game.js`, `src/game-loop.js`): os dois
+   intervalos até o próximo evento (inicial 32-60s, recorrente 55-90s) reduzidos em 15%. **Aviso**:
+   o evento continua DESLIGADO por padrão (`ENVIRONMENT_CONFIG.enableDebrisStormEvent = false` em
+   `environment-config.js`, com o comentário "Desativado para evitar excesso de detritos na
+   pista") — é uma decisão explícita de uma entrega anterior, então não desliguei/liguei essa flag
+   sozinho. O ajuste de frequência só passa a ter efeito visível se/quando o evento for reativado
+   (debug panel ou editando a flag).
+6. **Vida do inimigo dourado +30** (`src/enemies/golden.js`): `GOLDEN_HP` 40 → 70.
+
+---
+
 ### Aliados: Conclusão do Plano de Reestruturação + Propulsores Discretos + Tiro Normal +40% — v0.73.2
 
 Atendendo a três pedidos do usuário: (1) confirmar/concluir as mudanças do plano de reestruturação

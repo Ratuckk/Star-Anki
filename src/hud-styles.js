@@ -202,8 +202,8 @@ export function injectHudExtraStyles() {
 }
 .hud-ability-hex {
   position: relative;
-  width: 28px;
-  height: 24px;
+  width: 34px;
+  height: 29px;
   clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
   background: rgba(20, 24, 32, 0.75);
   display: flex;
@@ -223,7 +223,7 @@ export function injectHudExtraStyles() {
 .hud-ability-icon {
   position: relative;
   z-index: 2;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1;
   filter: drop-shadow(0 1px 2px #000);
 }
@@ -238,7 +238,7 @@ export function injectHudExtraStyles() {
   right: 0px;
   z-index: 3;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px #000;
