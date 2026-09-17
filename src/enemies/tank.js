@@ -4,10 +4,10 @@ import { spawnPositionForEnemy } from './shared.js'
 // ============ TANQUE (debug) — movimento/tiro genéricos, só HP/escala mudam ============
 export const TANK_KIND = 'tank'
 export const TANK_COLOR = 0xff9d4d
-export const TANK_HIT_RADIUS = 1.8
+export const TANK_HIT_RADIUS = 2.34
 export const TANK_DEATH_DURATION = 0.2
-const TANK_SCALE = 1.6
-export const TANK_DEFAULT_HP = 5
+const TANK_SCALE = 2.08
+export const TANK_DEFAULT_HP = 15
 const SPAWN_DISTANCE_MIN = 45
 const SPAWN_DISTANCE_MAX = 70
 const BOX_X = 7

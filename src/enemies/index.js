@@ -632,10 +632,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         leader.fireTimer = randomEnemyFireInterval()
         group.push(leader)
         const offsets = [
-          { x: -3.0, y: 0.8, d: 8 },
-          { x: 3.0, y: 0.8, d: 8 },
-          { x: -5.5, y: 0.2, d: 16 },
-          { x: 5.5, y: 0.2, d: 16 },
+          { x: -2.0, y: 0.8, d: 8 },
+          { x: 2.0, y: 0.8, d: 8 },
+          { x: -3.8, y: 0.2, d: 16 },
+          { x: 3.8, y: 0.2, d: 16 },
         ]
         for (const off of offsets) {
           const wingman = spawnBlaster(scene, rail, nextEnemyId++, {
@@ -646,7 +646,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           group.push(wingman)
         }
       } else if (formation === 'sweepLine') {
-        const xs = [-4.5, -1.5, 1.5, 4.5]
+        const xs = [-3.6, -1.2, 1.2, 3.6]
         for (let i = 0; i < xs.length; i++) {
           const ship = spawnBlaster(scene, rail, nextEnemyId++, {
             profile: archetype, depth: baseDepth + i * 2, screenX: xs[i], screenY: 1.2,
@@ -659,7 +659,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         const depths = [baseDepth, baseDepth + 10, baseDepth + 20]
         for (let i = 0; i < depths.length; i++) {
           const ship = spawnBlaster(scene, rail, nextEnemyId++, {
-            profile: archetype, depth: depths[i], screenX: (i % 2 === 0 ? -1.5 : 1.5), screenY: 1.5 - i * 0.5,
+            profile: archetype, depth: depths[i], screenX: (i % 2 === 0 ? -1.2 : 1.2), screenY: 1.2 - i * 0.4,
             isLeader: i === 0, squadronId: sId,
           })
           ship.fireTimer = randomEnemyFireInterval()
@@ -667,10 +667,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       } else {
         const pincerOffsets = [
-          { x: -5.5, y: 2.0, d: 0 },
-          { x: -4.0, y: 0.5, d: 8 },
-          { x: 5.5, y: 2.0, d: 0 },
-          { x: 4.0, y: 0.5, d: 8 },
+          { x: -3.8, y: 1.6, d: 0 },
+          { x: -2.4, y: 0.4, d: 8 },
+          { x: 3.8, y: 1.6, d: 0 },
+          { x: 2.4, y: 0.4, d: 8 },
         ]
         for (let i = 0; i < pincerOffsets.length; i++) {
           const off = pincerOffsets[i]

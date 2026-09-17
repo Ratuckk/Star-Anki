@@ -1010,6 +1010,37 @@ export function createEffectsSystem(scene, opts = {}) {
     microOrbes.push({ group, core, ring, life: 0 })
   }
 
+  function updateMicroOrbes(dt, playerPos) {
+    microOrbesCollectedThisFrame = 0
+    if (!playerPos) return
+    for (let i = microOrbes.length - 1; i >= 0; i--) {
+      const orb = microOrbes[i]
+      orb.life += dt
+      orb.core.rotation.y += dt * 3.5
+      orb.ring.rotation.x += dt * 4.0
+      orb.ring.rotation.z += dt * 2.0
+
+      const dist = orb.group.position.distanceTo(playerPos)
+      if (dist < 8.5) {
+        const pull = playerPos.clone().sub(orb.group.position).normalize().multiplyScalar(24 * dt)
+        orb.group.position.add(pull)
+      }
+      if (dist < 1.7) {
+        microOrbesCollectedThisFrame++
+        cardAcquiredPulse(playerPos, 'especial')
+        bloomSprite(orb.group.position, 0x00f2fe, 1.4)
+        scene.remove(orb.group)
+        microOrbes.splice(i, 1)
+        continue
+      }
+
+      if (orb.life > 14) {
+        scene.remove(orb.group)
+        microOrbes.splice(i, 1)
+      }
+    }
+  }
+
   function cardAcquiredPulse(position, category = 'ofensivo') {
     const colorHex = category === 'ofensivo' ? 0xff4d6d : (category === 'defensivo' ? 0x3ea6ff : 0xffd700)
     shockwave(position, colorHex, 2.2)
@@ -1683,35 +1714,7 @@ export function createEffectsSystem(scene, opts = {}) {
     }
 
     // MICRO-ORBES ANKI
-    microOrbesCollectedThisFrame = 0
-    for (let i = microOrbes.length - 1; i >= 0; i--) {
-      const orb = microOrbes[i]
-      orb.life += dt
-      orb.core.rotation.y += dt * 3.5
-      orb.ring.rotation.x += dt * 4.0
-      orb.ring.rotation.z += dt * 2.0
-
-      if (playerPosition) {
-        const dist = orb.group.position.distanceTo(playerPosition)
-        if (dist < 8.5) {
-          const pull = playerPosition.clone().sub(orb.group.position).normalize().multiplyScalar(24 * dt)
-          orb.group.position.add(pull)
-        }
-        if (dist < 1.7) {
-          microOrbesCollectedThisFrame++
-          cardAcquiredPulse(playerPosition, 'especial')
-          bloomSprite(orb.group.position, 0x00f2fe, 1.4)
-          scene.remove(orb.group)
-          microOrbes.splice(i, 1)
-          continue
-        }
-      }
-
-      if (orb.life > 14) {
-        scene.remove(orb.group)
-        microOrbes.splice(i, 1)
-      }
-    }
+    updateMicroOrbes(dt, shipPosition || opts.playerPosition)
 
     // RICOCHET ARCS
     for (let i = ricochetArcs.length - 1; i >= 0; i--) {
@@ -1896,7 +1899,7 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   return {
-    update, explosion, muzzleFlash, enemyMuzzleFlare, enemyThrusterTrail, spawnMicroOrbe,
+    update, updateMicroOrbes, explosion, muzzleFlash, enemyMuzzleFlare, enemyThrusterTrail, spawnMicroOrbe,
     getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
     setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
