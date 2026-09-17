@@ -18,10 +18,9 @@ const SEGMENT_COUNT = 4
 const SEGMENT_SPACING = 2.6
 const HEAD_SPEED = 7
 const FOLLOW_LAG = 0.15 // segundos "de corrente puxando" — cada elo converge pro espaçamento nesse ritmo
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo.
-// v0.62.2: alargado de 70-100 pra 55-150 pelo mesmo motivo do Blaster (ver comentário lá).
-const SPAWN_DISTANCE_MIN = 55
-const SPAWN_DISTANCE_MAX = 150
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
+const SPAWN_DISTANCE_MIN = 45
+const SPAWN_DISTANCE_MAX = 75
 const BOX_X = 5
 const BOX_Y = 4
 

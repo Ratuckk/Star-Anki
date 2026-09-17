@@ -13,15 +13,13 @@ export const REPLICA_HIT_RADIUS = 1.7
 export const REPLICA_DEATH_DURATION = 0.2
 export const REPLICA_HP = 3
 export const REPLICA_KILL_BONUS = 30
-// v0.62.2: mesma faixa e mesmo motivo da Sentinela (ver comentário em sentinela.js) — alargado
-// de 90-130 pra 70-160 pra dar variação real de distância sem repetir o teto "longe demais" já
-// rejeitado pelo mini-swarm.js.
-const SPAWN_DISTANCE_MIN = 70
-const SPAWN_DISTANCE_MAX = 160
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-70u
+const SPAWN_DISTANCE_MIN = 45
+const SPAWN_DISTANCE_MAX = 70
 const BOX_X = 6
 const BOX_Y = 4
 
-const STANDOFF = 70 // distância fixa à frente da câmera, mesmo princípio do standoff da Sentinela
+const STANDOFF = 48 // distância fixa à frente da câmera, próximo e legível
 const STANDOFF_EASE_RATE = 2.5 // s^-1, independente de framerate
 const DELAY_S = 0.4 // quanto tempo no passado o movimento lateral copiado reflete
 const HISTORY_MAX_AGE_S = DELAY_S + 0.3

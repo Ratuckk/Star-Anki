@@ -12,21 +12,14 @@ export const SENTINELA_DEATH_DURATION = 0.25
 export const SENTINELA_HP = 10
 // v0.62.2: alargado de 90-130 (faixa de 40, sempre nascia a uma distância bem parecida) pra
 // 70-160 (faixa de 90) — chão um pouco mais baixo que antes mas ainda alto o bastante pra dar
-// tempo de reação pra um inimigo deste porte, teto abaixo dos 160-240 que o mini-swarm.js já
-// tinha testado e rejeitado como "longe demais" (ver comentário lá). Réplica usa a mesma faixa
-// (ver replica.js) por serem visualmente/mecanicamente parecidas, como o pedido original notou.
-const SPAWN_DISTANCE_MIN = 70
-const SPAWN_DISTANCE_MAX = 160
+// Pedido do usuário: combate estilo Star Fox 64 — Sentinela surge visível (45-70u) e trava
+// num standoff dramático e próximo (48u) à frente da nave, em vez de 180u onde era invisível.
+const SPAWN_DISTANCE_MIN = 45
+const SPAWN_DISTANCE_MAX = 70
 const BOX_X = 6
 const BOX_Y = 4
 
-// pedido do usuário: standoff bem maior (fica mais longe do jogador) — 55 era perto demais.
-// Com o alvo tão mais distante, a correção discreta antiga (+1/0/-1 * ENGAGE_SPEED=8) nunca
-// alcançava: a nave anda a 22u/s e 8 é mais lento até que ISSO, sem contar que virava um
-// liga/desliga brusco (jitter) perto do standoff. Trocado por um modelo proporcional —
-// corrige mais forte quanto maior a diferença, sem overshoot brusco — com teto ACIMA da
-// velocidade da nave, senão ela nunca alcançaria de qualquer jeito.
-const ENGAGE_STANDOFF = 180 // distância-alvo à frente da câmera, mantida enquanto ataca
+const ENGAGE_STANDOFF = 48 // distância-alvo à frente da câmera, mantida enquanto ataca
 const ENGAGE_SPEED_GAIN = 0.3 // proporcional: quanto maior a diferença pro standoff, mais forte corrige
 const ENGAGE_SPEED_MAX = 26 // teto — precisa ser MAIOR que a velocidade da nave (22) pra conseguir alcançar
 const LATERAL_TRACK_RATE = 7 // "1/tempo" de resposta lateral — alto o bastante pra travar no jogador

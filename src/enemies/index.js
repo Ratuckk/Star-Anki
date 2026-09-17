@@ -49,18 +49,16 @@ import {
 
 export { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS }
 
-// ============ constantes genéricas (comuns a vários kinds, não específicas de 1 classe) ============
 const ENEMY_FIRE_INTERVAL_MIN = 1500
 const ENEMY_FIRE_INTERVAL_MAX = 3000
-const ENEMY_FIRE_RANGE = 120
-const ENEMY_FIRE_MIN_DISTANCE = 14
-const ENEMY_PROJECTILE_SPEED = 26
-const ENEMY_PROJECTILE_MAX_RANGE = 100
-// pedido do usuário: "os tiros deles nunca chegam em você" no all-range — bug real, confirmado.
-// Em arena, `inFireRange` deixava atirar de QUALQUER distância (até ENEMY_ARENA_SPAWN_MAX =
-// 160), mas o projétil se autodestrói em ENEMY_PROJECTILE_MAX_RANGE (100) — de longe, o tiro
-// sempre expirava no meio do caminho. Precisa estar dentro deste raio pra atirar de verdade.
-const ENEMY_ARENA_FIRE_MAX_DISTANCE = 85
+// Pedido do usuário: combate estilo Star Fox 64 — inimigos não atiram de 120u de distância (onde
+// mal são visíveis na tela). Eles se aproximam até a faixa de 55u para abrir fogo, com aviso
+// visual (telegraph) claro antes de cada disparo.
+const ENEMY_FIRE_RANGE = 55
+const ENEMY_FIRE_MIN_DISTANCE = 8
+const ENEMY_PROJECTILE_SPEED = 24
+const ENEMY_PROJECTILE_MAX_RANGE = 65
+const ENEMY_ARENA_FIRE_MAX_DISTANCE = 48
 const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 const ENEMY_AIM_ERROR_DEG = 5
 
@@ -426,9 +424,23 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (relative.dot(frame.forward) < passBehind || passedDistance) { removeEnemy(enemy); continue }
       }
 
+      const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
+      const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
+      const inFireRange = distToPlayer > ENEMY_FIRE_MIN_DISTANCE && (
+        inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE
+          : enemy.kind === BOSS_KIND || relativeForward < ENEMY_FIRE_RANGE
+      )
+
+      // Estilo Star Fox 64: inimigos fora da zona visível de combate não queimam seu timer
+      // até disparar no vácuo ou entrar atirando no susto. Segura em 0.45s até que se aproximem,
+      // garantindo que sempre executem o telegraph visual (0.3s) antes do primeiro disparo.
+      if (!inFireRange && enemy.kind !== BOSS_KIND) {
+        if (enemy.fireTimer < 0.45) enemy.fireTimer = 0.45
+      }
+
       // telegraph colorido por classe + deslocado pra fora do mesh do chefe (senão nasce
       // invisível dentro do corpo dele)
-      if (enemy.fireTimer > 0.3 && enemy.fireTimer - dt <= 0.3 && effects) {
+      if (enemy.fireTimer > 0.3 && enemy.fireTimer - dt <= 0.3 && effects && inFireRange) {
         let tPos = enemy.mesh.position
         if (enemy.kind === BOSS_KIND) {
           const toPlayerDir = playerPosition.clone().sub(enemy.mesh.position)
@@ -437,12 +449,6 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         effects.telegraph(tPos, colorFor(enemy))
       }
       enemy.fireTimer -= dt
-      const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
-      const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
-      const inFireRange = distToPlayer > ENEMY_FIRE_MIN_DISTANCE && (
-        inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE
-          : enemy.kind === BOSS_KIND || relativeForward < ENEMY_FIRE_RANGE
-      )
       if (enemy.fireTimer <= 0 && inFireRange) {
         let handled = false
         if (enemy.kind === BOSS_KIND) { fireBossVolley(enemy, playerPosition, projectileCtx); handled = true }

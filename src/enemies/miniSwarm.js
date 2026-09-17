@@ -45,11 +45,10 @@ const MINI_SWARM_DIVE_BEHIND_GRACE_S = 0.35
 // abaixo disso o inimigo vira uma perseguição pura, garantindo que ele realmente cruza o
 // jogador em vez de só balançar por perto pra sempre.
 const MINI_SWARM_DIVE_OFFSET_FADE_DIST = 15
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — 160-240 era a distância de spawn
-// mais longa do jogo, deixando MUITO espaço/tempo pro mergulho fazer curvas largas até
-// convergir. Reduzido, também ajuda a evitar o "ataca por fora da tela".
-const BLASTER_SPAWN_DISTANCE_MIN = 110
-const BLASTER_SPAWN_DISTANCE_MAX = 160
+// Pedido do usuário: combate estilo Star Fox 64 — esquadrão surge visível (48-75u) e mergulha
+// em direção à câmera de forma dinâmica e legível.
+const BLASTER_SPAWN_DISTANCE_MIN = 48
+const BLASTER_SPAWN_DISTANCE_MAX = 75
 const BLASTER_BOX_X = 9
 const BLASTER_BOX_Y = 6
 

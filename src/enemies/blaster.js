@@ -14,9 +14,10 @@ export const BLASTER_KILL_BONUS = 30
 // (faixa de 100): chão (50) continua alto o bastante pra nunca nascer colado (a nave a 22u/s
 // ainda tem ~2.3s de reação), teto (150) fica abaixo do valor que o mini-swarm.js já tinha
 // testado e rejeitado como "longe demais" (160-240, ver comentário em miniSwarm.js) — mesmo
-// princípio aplicado às outras classes "comuns" de trilho abaixo (timeEnemy/verme/sussurro).
-export const BLASTER_SPAWN_DISTANCE_MIN = 50
-export const BLASTER_SPAWN_DISTANCE_MAX = 150
+// Pedido do usuário: combate estilo Star Fox 64 — inimigos surgem na faixa de 45-75u (claramente
+// visíveis e identificáveis na tela) e voam dinamicamente em direção ao jogador/câmera.
+export const BLASTER_SPAWN_DISTANCE_MIN = 45
+export const BLASTER_SPAWN_DISTANCE_MAX = 75
 export const BLASTER_BOX_X = 7
 export const BLASTER_BOX_Y = 5
 
@@ -54,13 +55,13 @@ const EVASIVE_JUKE_INTERVAL_MAX = 0.9
 
 const RAIL_ORBIT_RADIUS = 4.5
 const RAIL_ORBIT_SPEED = 1.4
-const RAIL_ADVANCE_SPEED = 9
-const RAIL_SLOW_SPEED = 2
-const RAIL_FOLLOW_SPEED = 7
+const RAIL_ADVANCE_SPEED = 14
+const RAIL_SLOW_SPEED = 6
+const RAIL_FOLLOW_SPEED = 9
 const RAIL_FOLLOW_STANDOFF = 10
 export const BLASTER_RAIL_FOLLOW_PASS_BEHIND = PASS_BEHIND * 5 // bem mais tolerante — esse perfil não "passa" fácil
-const RAIL_CIRCULAR_DRIFT_SPEED = 3.2
-const RAIL_EVASIVE_SPEED = 6
+const RAIL_CIRCULAR_DRIFT_SPEED = 5.5
+const RAIL_EVASIVE_SPEED = 8
 
 const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
 enemyGeometry.rotateX(Math.PI / 2)

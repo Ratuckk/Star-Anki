@@ -14,13 +14,12 @@ export const SUSSURRO_HP = 2
 export const SUSSURRO_KILL_BONUS = 25
 export const SUSSURRO_SUMMON_AFTER_S = 6 // sobreviveu esse tempo sem morrer → chama reforços
 
-// pedido do usuário: "a maioria dos inimigos fica tão longe" — reduzido pra engajar mais cedo.
-// v0.62.2: alargado de 70-110 pra 55-150 pelo mesmo motivo do Blaster (ver comentário lá).
-const SPAWN_DISTANCE_MIN = 55
-const SPAWN_DISTANCE_MAX = 150
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
+const SPAWN_DISTANCE_MIN = 45
+const SPAWN_DISTANCE_MAX = 75
 const BOX_X = 7
 const BOX_Y = 5
-const ADVANCE_SPEED = 5
+const ADVANCE_SPEED = 8
 const PULSE_VISIBLE_MS = 500
 const PULSE_INVISIBLE_MS = 2200
 const OPACITY_VISIBLE = 0.85

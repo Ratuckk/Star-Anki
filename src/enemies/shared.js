@@ -56,8 +56,8 @@ export function randomSpawnAroundArena(rail, distanceMin, distanceMax) {
   return center.add(offset)
 }
 
-export const ENEMY_ARENA_SPAWN_MIN = 70
-export const ENEMY_ARENA_SPAWN_MAX = 160
+export const ENEMY_ARENA_SPAWN_MIN = 45
+export const ENEMY_ARENA_SPAWN_MAX = 80
 
 export function spawnPositionForEnemy(rail, distanceMin, distanceMax, boxX, boxY) {
   return rail.isArena()

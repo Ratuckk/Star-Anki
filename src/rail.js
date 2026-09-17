@@ -846,14 +846,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     // pra fora da asa). Removido o offset de profundidade (fica em Z=0, junto da cabine, onde a
     // meia-largura real medida é ~2.33) — mesmos raio/offset lateral, mas agora dentro da asa.
     getShipHitboxPoints: () => {
-      const f = lastFrame ? lastFrame.forward : new THREE.Vector3(0, 0, 1)
-      const r = lastFrame ? lastFrame.right : new THREE.Vector3(1, 0, 0)
       const p = lastPlayerPos
       return [
-        { worldPos: p.clone().addScaledVector(f, 1.1), radius: 0.28 }, // bico
-        { worldPos: p.clone(), radius: 0.55 }, // cabine/centro
-        { worldPos: p.clone().addScaledVector(r, -1.6), radius: 0.38 }, // asa esquerda
-        { worldPos: p.clone().addScaledVector(r, 1.6), radius: 0.38 }, // asa direita
+        { worldPos: p.clone(), radius: 0.55 }, // Círculo central único (estilo clássico Star Fox)
       ]
     },
     getShipNosePosition: () => lastPlayerPos.clone().addScaledVector(lastFrame.forward, SHIP_NOSE_OFFSET),
