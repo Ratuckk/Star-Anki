@@ -60,6 +60,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     deflectNearbyProjectiles: (playerPos, radius) => projectiles.deflectNearbyProjectiles(playerPos, radius),
 
     setWingmanCount: (n) => squadron.setWingmanCount(n),
+    getWingmanCount: () => squadron.getWingmanCount(),
     spawnSpecificWingman: (id) => squadron.spawnMember(id),
     removeSpecificWingman: (id) => squadron.removeMember(id),
     clearSquadron: () => squadron.clearSquadron(),

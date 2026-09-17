@@ -388,6 +388,32 @@ export function mountGame(session, deck, menu) {
     restartSector, nextSector, prevSector, exitArenaNow,
   }))
 
+  // Snapshot plano pro overhaul do painel de debug (v0.68.0) — hud-game.js só chama isso e
+  // pinta os valores, sem precisar importar combat/rail/session/enemies (mantém o HUD como
+  // camada de apresentação pura, mesmo padrão dos outros métodos do hud que recebem dados
+  // já prontos de quem chama).
+  hud.debug.setStatsProvider(() => {
+    const pos = rail.getPlayerPosition()
+    const aliveEnemies = (enemies.getAlive ? enemies.getAlive().length : 0) +
+      (enemies.getGoldenAlive ? enemies.getGoldenAlive().length : 0)
+    return {
+      phase: state.phase,
+      sector: `${(session.pointer || 0) + 1}/${session.queue.length}`,
+      health: session.health,
+      maxHealth: player.getMaxHealth(),
+      shield: player.getShieldValue(),
+      maxShield: player.getShieldMax(),
+      lives: session.lives,
+      maxLives: player.getMaxLives(),
+      score: Math.round(session.score),
+      combo: session.comboMultiplier,
+      enemies: aliveEnemies,
+      wingmen: combat.getWingmanCount(),
+      position: `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`,
+      flags: state.debugFlags,
+    }
+  })
+
   // ============ KICKOFF ============
   enterCombat()
   hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })

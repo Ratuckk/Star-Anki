@@ -1,5 +1,5 @@
 import { getBindings } from './keybindings.js'
-import { DEBUG_ACTIONS } from './debug.js'
+import { DEBUG_ACTIONS, DEBUG_CATEGORY_ORDER } from './debug.js'
 import { CARD_CATEGORY_LABEL, CARD_CATEGORY_COLOR, ROGUELIKE_CARDS } from './roguelike.js'
 import { COLOR_MAP, shapeMarkup, showScreen } from './hud-shared.js'
 import { injectHudExtraStyles } from './hud-styles.js'
@@ -549,6 +549,13 @@ export function createGameHud() {
   cardChoiceList.className = 'card-choice-list'
   cardChoiceOverlay.appendChild(cardChoiceList)
 
+  // ============ PAINEL DE DEBUG (overhaul v0.68.0) ============
+  // Antes: heading + lista plana de ~60 botões idênticos, sem agrupamento nem busca, sem
+  // nenhum retrato do estado vivo da partida — só ações. Overhaul mantém a API externa 100%
+  // compatível (hud.debug.bind/.setVisible/.setToggleActive continuam idênticos, main.js/
+  // mount-game.js/debug-actions.js não mudam nada) e adiciona: (1) leitura de estado ao vivo
+  // (fps/fase/vida/inimigos/posição/flags) via setStatsProvider, (2) busca que filtra ações
+  // por texto, (3) seções por categoria (DEBUG_CATEGORY_ORDER) colapsáveis individualmente.
   const debugPanel = document.createElement('div')
   debugPanel.className = 'debug-panel'
   debugPanel.hidden = true
@@ -563,13 +570,166 @@ export function createGameHud() {
   debugHint.textContent = 'Crase (`) para abrir/fechar'
   debugPanel.appendChild(debugHint)
 
-  const debugButtons = {}
-  for (const action of DEBUG_ACTIONS) {
-    const btn = document.createElement('button')
-    btn.textContent = action.label
-    debugPanel.appendChild(btn)
-    debugButtons[action.id] = btn
+  // ---- Leitura de estado ao vivo ----
+  const DEBUG_STAT_ROWS = [
+    ['fps', 'FPS'], ['phase', 'Fase'], ['sector', 'Setor'],
+    ['health', 'Vida'], ['shield', 'Escudo'], ['lives', 'Vidas'],
+    ['score', 'Pontos'], ['combo', 'Combo'], ['enemies', 'Inimigos'],
+    ['wingmen', 'Ala'], ['position', 'Posição'], ['flags', 'Flags'],
+  ]
+  const debugStats = document.createElement('div')
+  debugStats.className = 'debug-stats'
+  debugPanel.appendChild(debugStats)
+  const debugStatEls = {}
+  for (const [key, label] of DEBUG_STAT_ROWS) {
+    const row = document.createElement('div')
+    // posição/flags são texto de tamanho variável (coordenadas, lista de flags ativas) — ganham
+    // a linha inteira pra não truncar em elipse contra o vizinho de coluna, diferente dos outros
+    // (números curtos de formato fixo, cabem bem 2 por linha)
+    row.className = key === 'position' || key === 'flags' ? 'debug-stat-row debug-stat-row-wide' : 'debug-stat-row'
+    const labelEl = document.createElement('span')
+    labelEl.className = 'debug-stat-label'
+    labelEl.textContent = label
+    const valueEl = document.createElement('span')
+    valueEl.className = 'debug-stat-value'
+    valueEl.textContent = '—'
+    row.appendChild(labelEl)
+    row.appendChild(valueEl)
+    debugStats.appendChild(row)
+    debugStatEls[key] = valueEl
   }
+
+  let debugStatsProvider = null
+  let debugStatsRafId = null
+  let debugStatsFrameCount = 0
+  let debugStatsFpsWindowStart = 0
+  let debugStatsLastFps = 0
+  let debugStatsLastRenderAt = 0
+
+  function renderDebugStats() {
+    if (!debugStatsProvider) return
+    const s = debugStatsProvider()
+    if (!s) return
+    debugStatEls.fps.textContent = String(debugStatsLastFps)
+    debugStatEls.phase.textContent = s.phase ?? '—'
+    debugStatEls.sector.textContent = s.sector ?? '—'
+    debugStatEls.health.textContent = `${s.health ?? 0}/${s.maxHealth ?? 0}`
+    debugStatEls.shield.textContent = `${Math.round(s.shield ?? 0)}/${Math.round(s.maxShield ?? 0)}`
+    debugStatEls.lives.textContent = `${s.lives ?? 0}/${s.maxLives ?? 0}`
+    debugStatEls.score.textContent = String(s.score ?? 0)
+    debugStatEls.combo.textContent = `x${(s.combo ?? 1).toFixed(2)}`
+    debugStatEls.enemies.textContent = String(s.enemies ?? 0)
+    debugStatEls.wingmen.textContent = String(s.wingmen ?? 0)
+    debugStatEls.position.textContent = s.position ?? '—'
+    const activeFlags = s.flags ? Object.keys(s.flags).filter((k) => s.flags[k]) : []
+    debugStatEls.flags.textContent = activeFlags.length ? activeFlags.join(', ') : '—'
+  }
+
+  function debugStatsLoop(now) {
+    debugStatsRafId = requestAnimationFrame(debugStatsLoop)
+    debugStatsFrameCount++
+    if (now - debugStatsFpsWindowStart >= 500) {
+      debugStatsLastFps = Math.round((debugStatsFrameCount * 1000) / (now - debugStatsFpsWindowStart))
+      debugStatsFrameCount = 0
+      debugStatsFpsWindowStart = now
+    }
+    if (now - debugStatsLastRenderAt >= 200) {
+      debugStatsLastRenderAt = now
+      renderDebugStats()
+    }
+  }
+  function startDebugStatsLoop() {
+    if (debugStatsRafId != null) return
+    debugStatsFrameCount = 0
+    debugStatsFpsWindowStart = performance.now()
+    debugStatsLastRenderAt = 0
+    debugStatsRafId = requestAnimationFrame(debugStatsLoop)
+  }
+  function stopDebugStatsLoop() {
+    if (debugStatsRafId != null) {
+      cancelAnimationFrame(debugStatsRafId)
+      debugStatsRafId = null
+    }
+  }
+
+  // ---- Busca ----
+  const debugSearch = document.createElement('input')
+  debugSearch.type = 'text'
+  debugSearch.className = 'debug-search'
+  debugSearch.placeholder = 'Filtrar ações…'
+  debugSearch.autocomplete = 'off'
+  debugPanel.appendChild(debugSearch)
+
+  const debugEmpty = document.createElement('p')
+  debugEmpty.className = 'debug-empty'
+  debugEmpty.textContent = 'Nenhuma ação encontrada.'
+  debugEmpty.hidden = true
+  debugPanel.appendChild(debugEmpty)
+
+  // ---- Ações agrupadas por categoria ----
+  const debugCategoriesEl = document.createElement('div')
+  debugCategoriesEl.className = 'debug-categories'
+  debugPanel.appendChild(debugCategoriesEl)
+
+  const debugButtons = {}
+  const debugCategoryMap = new Map()
+  for (const action of DEBUG_ACTIONS) {
+    const catName = action.category || 'Outros'
+    let cat = debugCategoryMap.get(catName)
+    if (!cat) {
+      const section = document.createElement('div')
+      section.className = 'debug-category'
+      const header = document.createElement('button')
+      header.type = 'button'
+      header.className = 'debug-category-header'
+      const chevron = document.createElement('span')
+      chevron.className = 'debug-category-chevron'
+      chevron.textContent = '▾'
+      const title = document.createElement('span')
+      title.textContent = catName
+      header.appendChild(chevron)
+      header.appendChild(title)
+      const body = document.createElement('div')
+      body.className = 'debug-category-body'
+      section.appendChild(header)
+      section.appendChild(body)
+      debugCategoriesEl.appendChild(section)
+      header.onclick = () => section.classList.toggle('collapsed')
+      cat = { section, body, entries: [] }
+      debugCategoryMap.set(catName, cat)
+    }
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.textContent = action.label
+    btn.className = action.toggle ? 'debug-action-btn debug-toggle-btn' : 'debug-action-btn'
+    cat.body.appendChild(btn)
+    debugButtons[action.id] = btn
+    cat.entries.push({ btn, label: action.label.toLowerCase() })
+  }
+  // seções na ordem declarada em DEBUG_CATEGORY_ORDER; qualquer categoria nova que alguém
+  // esqueça de listar lá ainda aparece (só vai parar no fim, em vez de sumir)
+  const debugCategoriesInOrder = [
+    ...DEBUG_CATEGORY_ORDER.filter((name) => debugCategoryMap.has(name)),
+    ...[...debugCategoryMap.keys()].filter((name) => !DEBUG_CATEGORY_ORDER.includes(name)),
+  ].map((name) => debugCategoryMap.get(name))
+  for (const cat of debugCategoriesInOrder) debugCategoriesEl.appendChild(cat.section)
+
+  debugSearch.addEventListener('input', () => {
+    const q = debugSearch.value.trim().toLowerCase()
+    let anyVisible = false
+    for (const cat of debugCategoriesInOrder) {
+      let catHasMatch = false
+      for (const { btn, label } of cat.entries) {
+        const match = !q || label.includes(q)
+        btn.hidden = !match
+        if (match) catHasMatch = true
+      }
+      cat.section.hidden = !catHasMatch
+      if (q && catHasMatch) cat.section.classList.remove('collapsed')
+      if (catHasMatch) anyVisible = true
+    }
+    debugEmpty.hidden = anyVisible
+  })
 
   // handler do keydown 1–4 do modal de pergunta — guardado pra remover quando o modal fecha
   // (evita listener órfão se o modal abrir/fechar várias vezes, ou se `hideQuestionModal` for
@@ -1529,7 +1689,11 @@ export function createGameHud() {
     },
 
     debug: {
-      setVisible(v) { debugPanel.hidden = !v },
+      setVisible(v) {
+        debugPanel.hidden = !v
+        if (v) startDebugStatsLoop()
+        else stopDebugStatsLoop()
+      },
       bind(handlers) {
         for (const [id, fn] of Object.entries(handlers)) {
           if (debugButtons[id]) debugButtons[id].onclick = fn
@@ -1538,6 +1702,11 @@ export function createGameHud() {
       setToggleActive(id, active) {
         if (debugButtons[id]) debugButtons[id].classList.toggle('active', !!active)
       },
+      // recebe uma função sem args que devolve um snapshot plano do estado da partida (ver
+      // getDebugStatsSnapshot em mount-game.js) — mantém hud-game.js sem importar nada de
+      // combat/rail/session diretamente, só consome o objeto pronto, igual aos outros métodos
+      // do HUD que recebem dados já computados por quem chama.
+      setStatsProvider(fn) { debugStatsProvider = fn },
     },
 
     unmount() {
@@ -1547,6 +1716,7 @@ export function createGameHud() {
       // callbacks em nós já desanexados do DOM — não quebrava nada, mas era exatamente o
       // tipo de vazamento silencioso que aparece como bug intermitente depois de N partidas.
       cancelFocusCollapse()
+      stopDebugStatsLoop()
       cancelTimeout(squadronNoticeTimeout)
       squadronNoticeTimeout = null
       squadronNotice.classList.remove('active')

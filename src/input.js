@@ -46,7 +46,17 @@ export function createInputState() {
   // botão físico diferente
   let prevPadButtons = {}
 
+  // painel de debug (overhaul v0.68.0) introduziu o primeiro campo de texto que pode ganhar
+  // foco DURANTE a partida (busca de ações) — sem essa guarda, digitar "spawn" pra filtrar
+  // também dispararia movimento/tiro/dodge, já que o jogo continua rodando com o painel aberto
+  // e este listener é global em `window`.
+  function isTypingTarget(e) {
+    const t = e.target
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+  }
+
   function onKeyDown(e) {
+    if (isTypingTarget(e)) return
     if (edgeCodeSet.has(e.code) && !keys.has(e.code)) pressedThisFrame.add(e.code)
     keys.add(e.code)
     const t = performance.now()
