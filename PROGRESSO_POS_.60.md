@@ -42,6 +42,46 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Fix: Número de Cooldown Invisível, HUD de Vida Reposicionada, Rastro Real dos Aliados, Aliado Sumido, Comando de Foco com Duração/Cooldown — v0.74.1
+
+Atendendo ao relato do usuário (com screenshot) de que o número de cooldown continuava invisível
+mesmo depois do fix de v0.74.0, além de outros 4 pedidos na mesma mensagem.
+
+1. **Causa raiz real do número invisível**: `.hud-ability-num` era FILHO de `.hud-ability-hex`,
+   que tem `clip-path` hexagonal — o badge ficava ancorado no canto inferior-direito da caixa,
+   uma região que o recorte hexagonal CORTA FORA (o hexágono não alcança os cantos). O número
+   nunca tinha renderizado de verdade, em NENHUMA versão anterior — só não tinha sido notado
+   porque antes só aparecia nos 3s finais (breve, fácil de não ver o "nada"). Fix: o badge virou
+   irmão do hexágono (não mais filho), num wrapper `.hud-ability-slot` sem clip-path, com seu
+   próprio chip escuro arredondado pra ficar legível flutuando fora do hexágono. Confirmado por
+   DOM ao vivo: `display:flex` com o texto do número visível.
+2. **HUD de vida movida para a extrema esquerda inferior**: `.hud-vitals-cluster` (vida/escudo/
+   boost) tinha `top:40px`, virou `bottom:12px` (mesmo `left:12px`) — pedido do usuário.
+3. **A causa REAL do rastro/"propulsor" distrativo dos aliados**: o fix de v0.73.2 (reduzir o
+   cone pequeno do propulsor em `wingmen.js`) tratou o sintoma errado. Investigação na cena viva
+   (`scene.traverse`) achou o culpado de verdade: `effects.spawnContrailTick()`, chamado toda
+   frame em `game-loop.js`, gera uma esfera brilhante (`0x7fe0ff`) atrás de CADA aliado a cada
+   0.06s (~17x/segundo) — um sistema de partículas "contrail" inteiramente separado do propulsor,
+   sem nenhum equivalente no jogador. Essa é a "chuva de bolhas" que apareceu desde o primeiro
+   vídeo desta sessão. Chamada removida de `game-loop.js`. Confirmado: 0 esferas de contrail na
+   cena após vários segundos simulados (antes: 4+ grudadas em cada aliado). Propulsor do próprio
+   mesh (`wingmen.js`) também segue invisível (`mesh.visible = false`), igual ao jogador.
+4. **Aliado sumido da tela — causa raiz medida, não achismo**: projeção NDC ao vivo (600 frames)
+   confirmou Slippy visível em tela 0.0% do tempo e Peppy só 9.8% (contra 96.7%/88.8% de Falco/
+   Phantom) — os dois tinham `forward` NEGATIVO em `FORMATION_SLOTS` (-3 e -5, "atrás" da nave),
+   quase em cima da câmera (que já fica atrás do jogador). Reposicionados pra `forward: 5.0` e
+   `4.0` (à frente, só mais perto que Falco/Phantom) — reconfirmado no mesmo teste: 67.2%/66.2%.
+5. **Comando de ofensividade do esquadrão ([D]) ganhou duração + cooldown**: antes era um toggle
+   manual puro, sem limite. Agora dura 6s e volta sozinho ao normal; só pode ser reativado 10s
+   depois de terminar (manual ou automaticamente). Aviso novo na HUD (`showSquadronNotice`, modo
+   `'cooldown'`) quando o jogador tenta ativar durante a recarga, senão pareceria bugado (apertar
+   e não acontecer nada). Testado ao vivo: ativa → expira sozinho aos 6s → bloqueado até ~9s de
+   cooldown restante → libera de novo após os 10s completos.
+6. **Debug**: `camera` e `scene` adicionados a `window.__starAnki` pra permitir esse tipo de
+   verificação geométrica/de cena em testes futuros.
+
+---
+
 ### Ícones de Habilidade Maiores + Timer Completo, Pesquisa SF64 (Starship), Dificuldade Escala com Esquadrão — v0.74.0
 
 1. **Emblemas de habilidade do esquadrão +20% maiores** (`src/hud-styles.js`): `.hud-ability-hex`

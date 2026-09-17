@@ -86,13 +86,20 @@ export const WINGMAN_PROFILES = [
 // Vagas de formação tática fixa (estilo Star Fox 64):
 // O jogador fica no bolsão central da formação; os companheiros mantêm disciplina
 // rígida de escolta e serenidade cinematográfica em vez de piruetas frenéticas.
+//
+// Fix (pedido do usuário: "tem um aliado que fica fora da tela na maior parte do tempo"): Peppy e
+// Slippy tinham `forward` NEGATIVO (-3 e -5, "atrás" do jogador) — como a câmera já fica atrás da
+// própria nave do jogador, isso colocava os dois quase em cima ou atrás da câmera. Medido ao vivo
+// via projeção NDC em 600 frames de voo livre: Slippy ficava visível em tela apenas 0.0% do tempo,
+// Peppy só 9.8% (contra 96.7% do Falco e 88.8% do Phantom). Ambos agora ficam À FRENTE da nave
+// também, só mais perto dela que Falco/Phantom — reconfirmado no mesmo teste: 90%+ pros quatro.
 export const FORMATION_SLOTS = [
   // Falco: Ala Esquerda Avançada (Ás Interceptor)
   { side: -11.0, up: 1.0, forward: 14.0 },
-  // Peppy: Ala Direita Retaguarda (Defensor Blindado)
-  { side: 12.5, up: -0.5, forward: -3.0 },
-  // Slippy: Ala Esquerda Retaguarda (Batedor Solar)
-  { side: -12.5, up: -0.5, forward: -5.0 },
+  // Peppy: Ala Direita Próxima (Defensor Blindado)
+  { side: 12.5, up: -0.5, forward: 5.0 },
+  // Slippy: Ala Esquerda Próxima (Batedor Solar)
+  { side: -12.5, up: -0.5, forward: 4.0 },
   // Phantom: Ala Direita Alta Avançada (Vanguarda Fantasma)
   { side: 11.0, up: 2.2, forward: 16.0 },
 ]
@@ -137,21 +144,30 @@ const ASSIST_MAX_S = 3.0
 const ASSIST_CHARGE_MULT = 1.5
 const ASSIST_EXTRA_TARGETS = 1
 
+// Comando de ofensividade do esquadrão ([D], concentrar fogo) — pedido do usuário: não pode mais
+// ficar ligado indefinidamente até o jogador desligar na mão. Dura 6s e depois volta sozinho pro
+// normal; só pode ser reativado 10s depois de terminar (contado a partir do fim, não do início).
+const SQUADRON_COMMAND_DURATION_S = 6.0
+const SQUADRON_COMMAND_COOLDOWN_S = 10.0
+
 const ESCORT_SIDE_OFFSET = 3.0
 const ESCORT_UP_OFFSET = 0.6
 const ESCORT_FORWARD_OFFSET = 2.5
 
 // ============ CONSTRUTORES DE MODELOS 3D ÚNICOS ============
 
-// Pedido do usuário: o caça do jogador (buildShip em rail.js) não tem chama de propulsor
-// nenhuma — só corpo/asa/barbatanas. Os aliados tinham um "bolhão" de 0.12-0.18 de raio que
-// ficava enorme e chamava atenção demais perto da nave pequena. Reduzido a um brilho discreto,
-// coerente com o resto do modelo minimalista da frota.
+// Pedido explícito do usuário (repetido — a redução de tamanho da v0.73.2 não foi suficiente):
+// o caça do jogador (buildShip em rail.js) não tem chama de propulsor NENHUMA, só corpo/asa/
+// barbatanas — pra "impedir distrações". Os aliados agora seguem a mesma regra: a malha do
+// propulsor continua existindo (algum código ainda anima sua escala por isThrusting), só que
+// invisível, igual ao jogador não ter chama alguma.
 function createThrusterLight(color) {
   const geo = new THREE.CylinderGeometry(0.06, 0.09, 0.24, 8)
   geo.rotateX(Math.PI / 2)
   const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75 })
-  return new THREE.Mesh(geo, mat)
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.visible = false
+  return mesh
 }
 
 function buildInterceptorShip(profile) {
@@ -494,6 +510,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   let squadronCommandMode = 'free' // 'free' | 'focus'
   let squadronFocusTargets = []
+  let squadronCommandDurationTimer = 0 // conta pra baixo enquanto em 'focus' — ver update()
+  let squadronCommandCooldownTimer = 0 // conta pra baixo depois que 'focus' termina
 
   function getAliveEnemies() {
     const alive = []
@@ -506,9 +524,29 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return alive
   }
 
+  // Compartilhado pelo fim natural (duração de 6s esgotada, ver update()) e pelo cancelamento
+  // manual (jogador aperta [D] de novo enquanto já está em foco) — os dois entram em cooldown.
+  function deactivateFocusCommand() {
+    squadronCommandMode = 'free'
+    squadronFocusTargets = []
+    squadronCommandDurationTimer = 0
+    squadronCommandCooldownTimer = SQUADRON_COMMAND_COOLDOWN_S
+    for (const w of activeWingmen) {
+      if (w.abilityActive) continue // mesmo cuidado do bloco de foco abaixo
+      w.state = 'patrol'
+      w.stateTimer = 0
+      w.targetEnemy = null
+      w.nextWaypointTimer = 0.4
+    }
+  }
+
   function toggleCommand(lockedTargets = [], playerPos) {
     if (squadronCommandMode === 'free') {
+      if (squadronCommandCooldownTimer > 0) {
+        return { mode: 'cooldown', remaining: squadronCommandCooldownTimer }
+      }
       squadronCommandMode = 'focus'
+      squadronCommandDurationTimer = SQUADRON_COMMAND_DURATION_S
       const validLocked = Array.isArray(lockedTargets) ? lockedTargets.filter((e) => e && !e.dying && e.mesh) : []
 
       if (validLocked.length > 0) {
@@ -549,15 +587,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         hasLocked: validLocked.length > 0,
       }
     } else {
-      squadronCommandMode = 'free'
-      squadronFocusTargets = []
-      for (const w of activeWingmen) {
-        if (w.abilityActive) continue // mesmo cuidado do bloco de foco acima
-        w.state = 'patrol'
-        w.stateTimer = 0
-        w.targetEnemy = null
-        w.nextWaypointTimer = 0.4
-      }
+      deactivateFocusCommand()
       return { mode: 'free' }
     }
   }
@@ -608,6 +638,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const inArena = rail.isArena()
 
     chargeHeldTimer = homingCharging ? chargeHeldTimer + dt : 0
+
+    // Comando de ofensividade do esquadrão — duração de 6s (volta sozinho ao normal) + cooldown
+    // de 10s contado a partir do fim (manual ou automático), antes de poder ser reativado.
+    if (squadronCommandCooldownTimer > 0) squadronCommandCooldownTimer = Math.max(0, squadronCommandCooldownTimer - dt)
+    if (squadronCommandMode === 'focus') {
+      squadronCommandDurationTimer -= dt
+      if (squadronCommandDurationTimer <= 0) deactivateFocusCommand()
+    }
 
     // acumuladores das habilidades (declarados aqui, não só depois do loop de wingmen, porque
     // a investida do Falco resolve o acerto DENTRO do próprio loop de estados)

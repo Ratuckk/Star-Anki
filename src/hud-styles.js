@@ -200,6 +200,9 @@ export function injectHudExtraStyles() {
   gap: 5px;
   pointer-events: none;
 }
+.hud-ability-slot {
+  position: relative;
+}
 .hud-ability-hex {
   position: relative;
   width: 34px;
@@ -234,15 +237,25 @@ export function injectHudExtraStyles() {
 }
 .hud-ability-num {
   position: absolute;
-  bottom: -1px;
-  right: 0px;
-  z-index: 3;
+  bottom: -5px;
+  right: -5px;
+  z-index: 5;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 2px;
+  border-radius: 7px;
+  background: rgba(8, 10, 14, 0.9);
+  box-shadow: inset 0 0 0 1px #333944;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 10px;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px #000;
 }
+.hud-ability-num:empty { display: none; }
 /* Bloqueado: piloto ainda não recrutado — contorno vazado, sem preenchimento nem glifo visível */
 .hud-ability-hex.locked {
   background: transparent;
@@ -408,7 +421,7 @@ export function injectHudExtraStyles() {
    superior esquerdo) e a mesma API do hud (setLives/setStatus/setShield/setBoost inalteradas). */
 .hud-vitals-cluster {
   position: absolute;
-  top: 40px;
+  bottom: 12px;
   left: 12px;
   display: flex;
   flex-direction: column;
@@ -1668,6 +1681,11 @@ export function injectHudExtraStyles() {
   border-color: rgba(239, 68, 68, 0.85);
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
   color: #fecaca;
+}
+.hud-squadron-notice.cooldown .hud-squadron-notice-pill {
+  border-color: rgba(148, 163, 184, 0.7);
+  box-shadow: 0 0 14px rgba(148, 163, 184, 0.3), 0 4px 12px rgba(0, 0, 0, 0.6);
+  color: #cbd5e1;
 }
 .hud-squadron-notice-icon {
   font-size: 14px;

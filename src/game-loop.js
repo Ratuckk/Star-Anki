@@ -302,6 +302,7 @@ export function createGameLoop(deps) {
           mode: res.mode,
           targetCount: res.targetCount,
           hasLocked: res.hasLocked,
+          remaining: res.remaining,
           xFrac,
           yFrac,
         })
@@ -514,7 +515,11 @@ export function createGameLoop(deps) {
       ramActive,
       rollActive: player.isRollIframeActive(),
     })
-    effects.spawnContrailTick(combat.getWingmanPositions(), dt)
+    // Pedido explícito do usuário (repetido): propulsores/rastros dos aliados devem ser "iguais
+    // aos do jogador" (que não tem NENHUM) pra não distrair. Esse era o rastro real por trás da
+    // reclamação — uma esfera "contrail" brilhante (0x7fe0ff) nascendo ~17x/s atrás de CADA
+    // aliado (CONTRAIL_INTERVAL=0.06s em effects.js/spawnContrailTick), inteiramente separado do
+    // cone pequeno do propulsor em wingmen.js que já tinha sido reduzido/escondido antes.
 
     if (environment) {
       environment.update(dt, playerPos, {

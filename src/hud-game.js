@@ -152,20 +152,28 @@ export function createGameHud() {
   const abilityRow = document.createElement('div')
   abilityRow.className = 'hud-squad-abilities'
   topbarRow.appendChild(abilityRow)
+  // v0.74.1 fix: o número de cooldown morava DENTRO de .hud-ability-hex, que tem clip-path de
+  // hexágono — o badge ficava ancorado no canto inferior-direito da caixa, uma região que o
+  // recorte hexagonal CORTA FORA (o hexágono não chega nos cantos). Resultado: o número nunca
+  // aparecia de verdade, só não tinha sido notado porque antes só mostrava nos 3s finais. Agora
+  // o badge é irmão do hexágono (não filho), num wrapper `.hud-ability-slot` sem clip-path.
   const abilityHexEls = [0, 1, 2, 3].map(() => {
-    const hex = document.createElement('div')
-    hex.className = 'hud-ability-hex locked'
-    hex.innerHTML = `
-      <span class="hud-ability-icon"></span>
-      <div class="hud-ability-sweep"></div>
+    const slot = document.createElement('div')
+    slot.className = 'hud-ability-slot'
+    slot.innerHTML = `
+      <div class="hud-ability-hex locked">
+        <span class="hud-ability-icon"></span>
+        <div class="hud-ability-sweep"></div>
+      </div>
       <span class="hud-ability-num"></span>
     `
-    abilityRow.appendChild(hex)
+    abilityRow.appendChild(slot)
+    const hex = slot.querySelector('.hud-ability-hex')
     return {
       el: hex,
       icon: hex.querySelector('.hud-ability-icon'),
       sweep: hex.querySelector('.hud-ability-sweep'),
-      num: hex.querySelector('.hud-ability-num'),
+      num: slot.querySelector('.hud-ability-num'),
     }
   })
   let prevAbilitySignature = ''
@@ -1811,10 +1819,10 @@ export function createGameHud() {
       })
     },
 
-    showSquadronNotice({ mode, targetCount = 1, hasLocked = false, xFrac = 0.5, yFrac = 0.5 }) {
+    showSquadronNotice({ mode, targetCount = 1, hasLocked = false, remaining = 0, xFrac = 0.5, yFrac = 0.5 }) {
       cancelTimeout(squadronNoticeTimeout)
-      squadronNotice.classList.remove('active', 'focus')
-      
+      squadronNotice.classList.remove('active', 'focus', 'cooldown')
+
       const icon = squadronNotice.querySelector('.hud-squadron-notice-icon')
       const text = squadronNotice.querySelector('.hud-squadron-notice-text')
       const sub = squadronNotice.querySelector('.hud-squadron-notice-sub')
@@ -1823,7 +1831,14 @@ export function createGameHud() {
         squadronNotice.classList.add('focus')
         if (icon) icon.textContent = '🎯'
         if (text) text.textContent = hasLocked ? 'ESQUADRÃO: FOCO NO ALVO TRAVADO!' : 'ESQUADRÃO: CONCENTRAR FOGO!'
-        if (sub) sub.textContent = '[D] Dispersar / Ataque Livre'
+        if (sub) sub.textContent = 'Volta ao normal sozinho em 6s'
+      } else if (mode === 'cooldown') {
+        // pedido do usuário: comando agora tem cooldown de 10s após os 6s de duração — sem esse
+        // aviso, apertar [D] durante o cooldown não fazia nada visível e parecia bugado.
+        squadronNotice.classList.add('cooldown')
+        if (icon) icon.textContent = '⏳'
+        if (text) text.textContent = 'ESQUADRÃO: COMANDO EM RECARGA'
+        if (sub) sub.textContent = `Disponível em ${Math.ceil(remaining)}s`
       } else {
         if (icon) icon.textContent = '🚀'
         if (text) text.textContent = 'ESQUADRÃO: DISPERSÃO / ATAQUE LIVRE'

@@ -459,6 +459,8 @@ export function mountGame(session, deck, menu) {
     player,
     enemies,
     rail,
+    camera,
+    scene,
     step: (frames, dtMs) => gameLoop.step(frames, dtMs),
     setManualStepping: (active) => gameLoop.setManualStepping(active),
     isManualStepping: () => gameLoop.isManualStepping(),
