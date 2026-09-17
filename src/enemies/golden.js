@@ -7,9 +7,9 @@ import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSI
 // vira uma instância própria (factory) em vez de funções soltas como os outros arquivos de
 // classe, que compartilham os arrays do orquestrador.
 export const GOLDEN_KIND = 'golden'
-export const GOLDEN_COLOR = 0xfff2a0
-const GOLDEN_EMISSIVE = 0xffb300
-export const GOLDEN_HIT_RADIUS = 2.2
+export const GOLDEN_COLOR = 0xffea00 // Ouro neon vibrante
+const GOLDEN_EMISSIVE = 0xffaa00
+export const GOLDEN_HIT_RADIUS = 2.42 // 2.2 * 1.10 (+10%)
 const GOLDEN_DEATH_DURATION = 0.25
 const GOLDEN_PULSE_SPEED = 4
 const GOLDEN_PULSE_AMOUNT = 0.18
@@ -25,23 +25,15 @@ const GOLDEN_DASH_DURATION_S = 0.38
 const GOLDEN_DASH_SPEED = 72
 const GOLDEN_FIRE_INTERVAL_MIN = 1100
 const GOLDEN_FIRE_INTERVAL_MAX = 2200
-// solta mini-naves amarelas com IA de perseguição curva e mergulho
+// solta mini-naves amarelas com IA suave de passagem
 const MINION_INTERVAL_MIN = 2.2
 const MINION_INTERVAL_MAX = 3.2
-const MINION_SPEED = 18
-const MINION_HIT_RADIUS = 1.0
+const MINION_SPEED = 12 // velocidade equilibrada para não grudar na nave
+const MINION_HIT_RADIUS = 1.1
 const MINION_MAX_RANGE = 150
-const MINION_COLOR = 0xffe066
+const MINION_COLOR = 0xffd600
 
 // ============ LASER GRANDE DO DOURADO ============
-// mesmo padrão do laser do chefe (mostra círculos crescendo durante o telegraph, dispara um
-// cone-laser gigante na direção travada). Era o único tipo de ataque que faltava no dourado —
-// antes ele só tinha projétil comum + mini-nave.
-// Valores ligeiramente menores que os do chefe, porque o dourado é menor (hit radius 2.2 vs 7).
-// pedido do usuário: "é pra serem LASERS, [feixes] IMENSOS e rápidos o bastante pro jogador só
-// conseguir desviar na hora certa" — velocidade multiplicada ~7x (cruza o alcance máximo em
-// ~0.4s em vez de ~2.9s, virou de fato "raio rápido" e não "torpedo lento") + raio/comprimento
-// maiores.
 const GOLDEN_LASER_INTERVAL_MIN = 8.0
 const GOLDEN_LASER_INTERVAL_MAX = 12.0
 const GOLDEN_LASER_TELEGRAPH_S = 2.5
@@ -51,13 +43,21 @@ const GOLDEN_LASER_SPEED = 500
 const GOLDEN_LASER_HIT_RADIUS = 4.0
 const GOLDEN_LASER_MAX_RANGE = 200
 
-export const goldenGeometry = new THREE.TorusKnotGeometry(1.1, 0.4, 80, 12)
+export const goldenGeometry = new THREE.TorusKnotGeometry(1.21, 0.44, 80, 12) // +10% maior (era 1.1, 0.4)
 export const goldenMaterial = new THREE.MeshPhongMaterial({
-  color: GOLDEN_COLOR, emissive: GOLDEN_EMISSIVE, emissiveIntensity: 0.9, flatShading: true,
+  color: GOLDEN_COLOR,
+  emissive: GOLDEN_EMISSIVE,
+  emissiveIntensity: 1.0,
+  flatShading: true,
 })
-const minionGeometry = new THREE.ConeGeometry(0.28, 1.0, 3)
+const minionGeometry = new THREE.ConeGeometry(0.31, 1.1, 3) // +10% maior (era 0.28, 1.0)
 minionGeometry.rotateX(Math.PI / 2)
-const minionMaterial = new THREE.MeshPhongMaterial({ color: MINION_COLOR, emissive: 0x996600, emissiveIntensity: 0.8, flatShading: true })
+const minionMaterial = new THREE.MeshPhongMaterial({
+  color: MINION_COLOR,
+  emissive: 0xff8f00,
+  emissiveIntensity: 0.9,
+  flatShading: true,
+})
 
 function randomGoldenFireInterval() {
   return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000

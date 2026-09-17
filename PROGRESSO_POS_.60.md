@@ -298,3 +298,84 @@ Segundo agente verificou de forma independente os 4 achados da v0.62.2 acima, es
 
 **Testado**: `node --check` nos 55 arquivos de `src/`. `node src/selftest.mjs` OK. 3 scripts sintéticos próprios em Node (moldura da Sentinela com >15 cenários isolados + 47 amostras de pista real + varredura de desvio tardio; geometria da nave reconstruída com `THREE.ConeGeometry`/`ShapeGeometry` reais + verificação empírica do `lookAt`; Monte Carlo de 4M amostras + fórmula fechada pro icosaedro do detrito), todos rodando contra os módulos reais do projeto, do zero, sem reaproveitar os testes do agente anterior. Testado ao vivo no Browser pane.
 **Versão**: v0.62.2 → **v0.62.3**
+
+---
+
+### Modo Arcade (Sem Baralho) e Seleção de Companheiros Iniciais — v0.65.0
+
+1. **Modo Arcade Roguelike ("Jogar Sem Baralho")**:
+   - Adicionada opção tanto na tela de pré-jogo quanto nas configurações para jogar sem cartas/perguntas do Anki.
+   - O jogo remove todas as pausas de perguntas: ao passar pelas transições ou derrotar chefes, transiciona diretamente para a escolha de upgrades Roguelike, mantendo o gameplay espacial arcade ininterrupto.
+2. **Seleção de Companheiros Iniciais (0 a 4 pilotos)**:
+   - Seletor interativo na tela inicial e no menu de configurações permitindo decolar imediatamente acompanhado por 0, 1, 2, 3 ou 4 naves de apoio (*Falco, Peppy, Slippy, Phantom*).
+   - Persistência em `localStorage` e integração com a contagem máxima de companheiros (`WINGMAN_CAP = 4`).
+
+**Versão**: v0.64.0 → **v0.65.0**
+
+---
+
+### Overhaul do Sentinela, Proibição de Inimigos Presos/Atrás, Fuga dos Genéricos após 4 Ataques, Mini-Naves do Dourado, Inimigos +10% e Cores Vibrantes, e Novo Muzzle Flash — v0.66.0
+
+Pacote completo de correções estruturais e melhorias de gameplay respondendo aos 7 apontamentos do usuário:
+
+1. **Correção Completa do Sentinela (`src/enemies/sentinela.js`)**:
+   - **Causa raiz da aproximação prematura**: a Sentinela usava coordenadas de mundo estáticas e não acompanhava o avanço do trilho da pista (`railSpeed = 22 u/s`), fazendo o jogador ramar nela em menos de 2 segundos.
+   - **Solução implementada**: adotado o modelo de trilho (`projectSentinelaToWorld`), travando rigidamente a profundidade em `depth = ENGAGE_STANDOFF` (48 unidades) durante todo o estado `ENGAGING`. Ela avança na mesma velocidade do trilho e **NUNCA** se aproxima da nave antes de terminar os 4 disparos.
+   - **Velocidade do tiro equilibrada**: reduzida de 42 u/s para **18 u/s**. A velocidade relativa com a nave fica em confortáveis ~40 u/s (~1.2s de tempo de reação e voo legível), acabando com o disparo excessivamente rápido.
+   - **Dimensões e colisão real da moldura**: corrigido o bug em que `GATE_INNER_HALF` estava em 11.2 (uma abertura vazada de 22.4 unidades, muito maior que toda a tela útil), tornando impossível encostar nas bordas. Redimensionado para proporções reais:
+     - `GATE_INNER_HALF = 2.6`: abertura central vazada de 5.2 x 5.2 unidades (passagem justa e segura se a nave estiver centralizada).
+     - `GATE_OUTER_HALF = 6.4`: bordas sólidas luminosas de 3.8 unidades de espessura.
+     - `resolveGateHit`: colisão justa que causa dano real (1 HP / 1 escudo) ao encostar nas bordas sólidas, permite passagem segura no vão central e esquiva limpa por fora.
+   - **Fuga dramática**: ao terminar o 4º disparo, a Sentinela empina para cima (`screenY += 12 * dt`) e acelera a toda velocidade para frente (`depth += 32 * dt`), sumindo no horizonte.
+
+2. **Proibição Estrita de Inimigos Atrás ou ao Lado do Jogador (`blaster.js`, `miniSwarm.js`, `shared.js`, `index.js`)**:
+   - `PASS_BEHIND` ajustado para **-2.0**: qualquer inimigo que cruze para trás do jogador é sumariamente removido (`removeEnemy`), proibindo qualquer permanência na retaguarda.
+   - Removido o standoff infinito do perfil `follow` do Blaster que igualava a velocidade e mantinha inimigos emparelhados ao lado da nave.
+   - Ao se aproximar a menos de 5 unidades de profundidade da nave, todos os inimigos recebem aceleração mínima de passagem (`depth -= 14.0 * dt`), garantindo que cruzem o enquadramento em uma fração de segundo e saiam da tela sem nunca empacar ao lado.
+
+3. **Inimigos Genéricos Voam Embora após 4 Ataques sem Teleguiar (`blaster.js`, `tank.js`, `index.js`)**:
+   - Inimigos `blaster` e `tank` agora rastreiam `shotsFired`. Ao atingirem 4 disparos, ativam `disengaging = true` e travam o timer de disparo (`fireTimer = Infinity`).
+   - **Sem teleguiar**: desativa o `mesh.lookAt(playerPosition)`.
+   - **Subir e fugir**: no trilho, empinam para cima (`screenY += 12.0 * dt`, `rotation.x = -0.35`) e passam por cima do jogador em alta velocidade (`depth -= 16.0 * dt`), saindo pelo topo da tela. Na arena, ascendem e aceleram em linha reta para o vácuo até despawnarem.
+
+4. **Mini-naves do Inimigo Dourado Suaves e sem Grudar (`golden.js`, `index.js`)**:
+   - Velocidade reduzida de 18 (com boost para 24.3) para **12 u/s**.
+   - Taxa de curva reduzida para 1.8 rad/s para evitar manobras bruscas.
+   - **Passagem limpa**: ao chegarem a menos de 14 unidades da nave ou começarem a ultrapassar o jogador (`dotHeading < 0.2` ou `traveled > 55u`), **desativam o teleguiamento** (`projectile.homing = false`). Seguem em linha reta, cruzam suavemente pelo jogador e vão embora para longe sem rodopiar em volta da nave.
+
+5. **Aumento de 10% no Tamanho de Todos os Inimigos + Cores e Emissivos Vibrantes**:
+   - Geometrias e hitboxes escaladas em +10% em todas as classes:
+     - `blaster`: Cone (1.265 raio, 2.783 altura), Hitbox 2.28.
+     - `sentinela`: Box (2.64 x 2.64 x 0.44), Hitbox 2.2.
+     - `tank`: Escala 2.29, Hitbox 2.57.
+     - `timeEnemy`: Cone (0.99, 1.43), Hitbox 1.98.
+     - `replica`: Cone (1.1, 2.42), Hitbox 1.87.
+     - `fragata`: Corpo 1.76, Placa 3.52, Hitbox 3.74.
+     - `verme`: Esfera 1.1, Hitbox 1.54.
+     - `sussurro`: Octaedro 1.21, Hitbox 1.76.
+     - `ima`: Esfera 0.77, Hitbox 1.43.
+     - `detrito`: Icosaedro 1.43, Hitbox 1.21.
+     - `miniSwarm`: Escala 0.77, Hitbox 2.42.
+     - `boss`: Escala 5.5, Hitbox 7.7.
+     - `golden`: TorusKnot (1.21, 0.44), Hitbox 2.42.
+   - **Cores & Emissivos Ultra-Vibrantes**:
+     - Todos os materiais receberam componentes emissivos brilhantes para contraste absoluto no espaço escuro.
+     - Réplica atualizada para ciano espectral vibrante (`0x80d8ff`, emissivo `0x0091ea`, opacidade 0.88), eliminando o cinza opaco 0.55 invisível.
+     - Sussurro com opacidade mínima elevada para 0.28 em ciano neon brilhante (`0x00e5ff`).
+     - Fragata com corpo em azul cobalto elétrico (`0x2563eb`) e escudo em ouro reluzente (`0xffaa00`).
+     - Verme em verde lima neon elétrico (`0x76ff03`).
+     - Blasters com saturação máxima (Ciano elétrico, Vermelho puro, Verde neon, Âmbar dourado, Branco brilhante, Magenta elétrico).
+
+6. **Novo Efeito de Disparo dos Tiros Normais (Muzzle Flash) (`effects.js`)**:
+   - Substituída a esfera amarelada gigante por um **cone azul relativamente pequeno cuja ponta é invertida** (`playerMuzzleConeGeo`).
+   - Vértice (ponta) voltado para trás em direção à boca do canhão da nave, e base aberta projetada para frente na direção do tiro.
+   - Material em azul elétrico vibrante (`0x38bdf8`, blending aditivo, opacidade 0.95).
+   - Escala contida (0.42 expandindo suavemente até 0.56 antes de desvanecer em 0.07s), acabando com o efeito gigantesco que obstruía a visão.
+
+7. **Validação e Testes**:
+   - `test-enemy-overhaul.mjs`: 100% dos testes matemáticos de colisão e passagem aprovados.
+   - `selftest.mjs`: suite de testes executada com sucesso.
+   - `node --check` em todos os arquivos JavaScript do projeto aprovado com 0 erros de sintaxe.
+
+**Versão**: v0.65.0 → **v0.66.0**
+

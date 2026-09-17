@@ -450,6 +450,10 @@ export function createEffectsSystem(scene, opts = {}) {
   const sharedConeGeometry = new THREE.ConeGeometry(0.5, 2.5, 6)
   sharedConeGeometry.rotateX(Math.PI / 2)
 
+  // Cone invertido de disparo do jogador: ponta voltada para trás (boca da arma), base aberta para a frente
+  const playerMuzzleConeGeo = new THREE.ConeGeometry(0.24, 0.58, 8)
+  playerMuzzleConeGeo.rotateX(-Math.PI / 2)
+
   const _FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
   const _BACKWARD_AXIS = new THREE.Vector3(0, 0, -1)
   const _GRID_PULSE_COLOR = new THREE.Color(0xff8844)
@@ -554,14 +558,15 @@ export function createEffectsSystem(scene, opts = {}) {
 
   function muzzleFlash(position, direction) {
     const material = new THREE.MeshBasicMaterial({
-      color: 0xfff2a8, transparent: true, opacity: 1,
+      color: 0x38bdf8, transparent: true, opacity: 0.95,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
-    mesh.scale.setScalar(0.4)
-    mesh.position.copy(position).addScaledVector(direction, 0.6)
+    const mesh = new THREE.Mesh(playerMuzzleConeGeo, material)
+    mesh.scale.setScalar(0.42)
+    mesh.position.copy(position).addScaledVector(direction, 0.22)
+    mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, direction)
     scene.add(mesh)
-    muzzleFlashes.push({ mesh, life: 0 })
+    muzzleFlashes.push({ mesh, life: 0, initialScale: 0.42 })
   }
 
   function enemyMuzzleFlare(position, colorHex = 0xff5a3d) {
@@ -570,10 +575,10 @@ export function createEffectsSystem(scene, opts = {}) {
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(sharedSphereGeometry, material)
-    mesh.scale.setScalar(0.45)
+    mesh.scale.setScalar(0.35)
     mesh.position.copy(position)
     scene.add(mesh)
-    muzzleFlashes.push({ mesh, life: 0 })
+    muzzleFlashes.push({ mesh, life: 0, initialScale: 0.35 })
   }
 
   // "explosão azul em formato de fogo" no instante em que a propulsão é ativada (Fase 7) —
@@ -1439,8 +1444,9 @@ export function createEffectsSystem(scene, opts = {}) {
         scene.remove(m.mesh); m.mesh.material.dispose()
         muzzleFlashes.splice(i, 1); continue
       }
-      m.mesh.material.opacity = 1 - t
-      m.mesh.scale.setScalar(1 + t * 1.5)
+      m.mesh.material.opacity = Math.max(0, 1 - t)
+      const s = (m.initialScale || 0.42) * (1 + t * 0.35)
+      m.mesh.scale.setScalar(s)
     }
 
     // SMOKE RINGS
@@ -1877,6 +1883,7 @@ export function createEffectsSystem(scene, opts = {}) {
     sharedWideRingGeometry.dispose()
     sharedTorusGeometry.dispose()
     sharedConeGeometry.dispose()
+    playerMuzzleConeGeo.dispose()
     microOrbeCoreGeo.dispose()
     microOrbeRingGeo.dispose()
     microOrbeCoreMat.dispose()

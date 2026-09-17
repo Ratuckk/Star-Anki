@@ -4,7 +4,8 @@ import * as THREE from 'three'
 // Extraído do antigo enemies.js monolítico (v0.34.0) na separação por classe/arquivo — mesmo
 // comportamento, só virou módulo próprio pra cada arquivo de classe poder importar sem duplicar.
 
-export const PASS_BEHIND = -4
+// Proibição de ficar atrás do jogador: qualquer inimigo que ultrapassar a profundidade -2.0 é removido
+export const PASS_BEHIND = -2.0
 // a geometria de todo cone deste projeto nasce apontando pro +Z local — usado pra virar o cone
 // na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 export const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)

@@ -8,14 +8,14 @@ import * as THREE from 'three'
 // (referência a outro elo) e a função de resolver o corte, chamada pelo orquestrador na morte
 // de qualquer elo.
 export const VERME_KIND = 'verme'
-export const VERME_COLOR = 0x7a9c3f
-export const VERME_HIT_RADIUS = 1.4
+export const VERME_COLOR = 0x76ff03 // Verde lima neon elétrico vibrante
+export const VERME_HIT_RADIUS = 1.54 // 1.4 * 1.10 (+10%)
 export const VERME_DEATH_DURATION = 0.2
 export const VERME_HP = 3 // por elo
 export const VERME_KILL_BONUS = 20 // por elo
 
 const SEGMENT_COUNT = 4
-const SEGMENT_SPACING = 2.6
+const SEGMENT_SPACING = 2.86 // 2.6 * 1.10
 const HEAD_SPEED = 7
 const FOLLOW_LAG = 0.15 // segundos "de corrente puxando" — cada elo converge pro espaçamento nesse ritmo
 // Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
@@ -24,8 +24,14 @@ const SPAWN_DISTANCE_MAX = 75
 const BOX_X = 5
 const BOX_Y = 4
 
-const geometry = new THREE.SphereGeometry(1, 8, 6)
-const material = new THREE.MeshPhongMaterial({ color: VERME_COLOR, flatShading: true, emissive: 0x1a2e08, emissiveIntensity: 0.5 })
+// Esfera +10% maior (raio 1.1)
+const geometry = new THREE.SphereGeometry(1.1, 8, 6)
+const material = new THREE.MeshPhongMaterial({
+  color: VERME_COLOR,
+  flatShading: true,
+  emissive: 0x2e7d32,
+  emissiveIntensity: 0.75,
+})
 
 // v0.51.11: só a CABEÇA (elo sem followTarget) precisa do modelo profundidade+tela — ela é a
 // única que avança sozinha ao longo de `frame.forward`, e acumular isso por vários segundos

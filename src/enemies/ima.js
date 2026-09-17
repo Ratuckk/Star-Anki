@@ -8,8 +8,8 @@ import { spawnPositionForEnemy } from './shared.js'
 // tiro normal, é a favor, puxando rumo à mira) — a força de verdade mora em
 // combat/projectiles.js (getMagnetSources() exposta por este módulo/pelo orquestrador).
 export const IMA_KIND = 'ima'
-export const IMA_COLOR = 0x4433ff
-export const IMA_HIT_RADIUS = 1.3
+export const IMA_COLOR = 0x7c4dff // Violeta elétrico vibrante
+export const IMA_HIT_RADIUS = 1.43 // 1.3 * 1.10 (+10%)
 export const IMA_DEATH_DURATION = 0.2
 export const IMA_HP = 4
 export const IMA_KILL_BONUS = 15
@@ -30,8 +30,15 @@ const SPAWN_DISTANCE_MAX = 65
 const BOX_X = 6
 const BOX_Y = 5
 
-const geometry = new THREE.SphereGeometry(0.7, 10, 8)
-const material = new THREE.MeshPhongMaterial({ color: IMA_COLOR, flatShading: true, emissive: 0x140057, emissiveIntensity: 0.9, transparent: true, opacity: 0.92 })
+const geometry = new THREE.SphereGeometry(0.77, 10, 8) // +10% maior (era 0.7)
+const material = new THREE.MeshPhongMaterial({
+  color: IMA_COLOR,
+  flatShading: true,
+  emissive: 0x3d00e0,
+  emissiveIntensity: 0.95,
+  transparent: true,
+  opacity: 0.95,
+})
 
 export function spawnImaSwarm(scene, rail, makeId) {
   const count = GROUP_MIN + Math.floor(Math.random() * (GROUP_MAX - GROUP_MIN + 1))

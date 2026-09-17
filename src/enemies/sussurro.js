@@ -7,8 +7,8 @@ import * as THREE from 'three'
 // aqui dentro do orquestrador (updateEnemies em index.js), que já tem `spawnBlaster`/`enemies`/
 // `nextEnemyId` em escopo.
 export const SUSSURRO_KIND = 'sussurro'
-export const SUSSURRO_COLOR = 0xc7ccd4
-export const SUSSURRO_HIT_RADIUS = 1.6
+export const SUSSURRO_COLOR = 0x00e5ff // Ciano neon elétrico visível
+export const SUSSURRO_HIT_RADIUS = 1.76 // 1.6 * 1.10 (+10%)
 export const SUSSURRO_DEATH_DURATION = 0.2
 export const SUSSURRO_HP = 2
 export const SUSSURRO_KILL_BONUS = 25
@@ -22,10 +22,10 @@ const BOX_Y = 5
 const ADVANCE_SPEED = 8
 const PULSE_VISIBLE_MS = 500
 const PULSE_INVISIBLE_MS = 2200
-const OPACITY_VISIBLE = 0.85
-const OPACITY_HIDDEN = 0.12
+const OPACITY_VISIBLE = 0.95
+const OPACITY_HIDDEN = 0.28 // visibilidade sutil mesmo invisível, nunca impossível de ver
 
-const geometry = new THREE.OctahedronGeometry(1.1, 0)
+const geometry = new THREE.OctahedronGeometry(1.21, 0) // +10% maior (era 1.1)
 const baseMaterial = new THREE.MeshBasicMaterial({ color: SUSSURRO_COLOR, transparent: true, opacity: OPACITY_HIDDEN })
 
 // v0.51.11: mesmo modelo profundidade+tela do blaster.js (ver comentário lá) — `updateSussurro`

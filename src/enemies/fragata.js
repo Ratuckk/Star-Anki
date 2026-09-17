@@ -9,23 +9,34 @@ import { spawnPositionForEnemy } from './shared.js'
 // o jogador precisa poder voar ao redor pra explorar o lado exposto, e no trilho não tem como
 // flanquear.
 export const FRAGATA_KIND = 'fragata'
-export const FRAGATA_BODY_COLOR = 0x5a6472
-export const FRAGATA_SHIELD_COLOR = 0xffb84d
-export const FRAGATA_HIT_RADIUS = 3.4 // cobre corpo + alcance da placa (hitbox é uma esfera única, como todo inimigo do jogo)
+export const FRAGATA_BODY_COLOR = 0x2563eb // Azul cobalto elétrico vibrante (alta visibilidade)
+export const FRAGATA_SHIELD_COLOR = 0xffaa00 // Âmbar dourado brilhante
+export const FRAGATA_HIT_RADIUS = 3.74 // 3.4 * 1.10 (+10%)
 export const FRAGATA_DEATH_DURATION = 0.3
 export const FRAGATA_HP = 6
 export const FRAGATA_KILL_BONUS = 40
 
 const SPIN_RATE = 0.9 // rad/s — velocidade da blindagem girando, sempre no mesmo sentido
-const SHIELD_OFFSET = 2.0
+const SHIELD_OFFSET = 2.2 // ajustado para escala +10%
 const STANDOFF = 40
 const APPROACH_SPEED_FACTOR = 0.4
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
-const bodyGeometry = new THREE.IcosahedronGeometry(1.6, 0)
-const bodyMaterial = new THREE.MeshPhongMaterial({ color: FRAGATA_BODY_COLOR, flatShading: true })
-const shieldGeometry = new THREE.BoxGeometry(0.35, 3.2, 3.2)
-const shieldMaterial = new THREE.MeshPhongMaterial({ color: FRAGATA_SHIELD_COLOR, flatShading: true, emissive: 0x442200, emissiveIntensity: 0.5 })
+// Geometrias +10% maiores
+const bodyGeometry = new THREE.IcosahedronGeometry(1.76, 0)
+const bodyMaterial = new THREE.MeshPhongMaterial({
+  color: FRAGATA_BODY_COLOR,
+  emissive: 0x1d4ed8,
+  emissiveIntensity: 0.65,
+  flatShading: true,
+})
+const shieldGeometry = new THREE.BoxGeometry(0.38, 3.52, 3.52)
+const shieldMaterial = new THREE.MeshPhongMaterial({
+  color: FRAGATA_SHIELD_COLOR,
+  flatShading: true,
+  emissive: 0x884400,
+  emissiveIntensity: 0.8,
+})
 
 export function spawnFragata(scene, rail, id) {
   if (!rail.isArena()) return null

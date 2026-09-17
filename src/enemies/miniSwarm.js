@@ -3,12 +3,8 @@ import { spawnPositionForEnemy } from './shared.js'
 
 // ============ MINI-SWARM — fila/enxame de mini-inimigos (só modo trilho) ============
 export const MINI_SWARM_KIND = 'miniSwarm'
-const MINI_ENEMY_SCALE = 0.7 // 30% menor que o blaster normal
-// v0.51.10: 1.8*0.7=1.26 era pequeno demais combinado com a velocidade do mergulho (55u/s,
-// ~0.9 unidade por frame a 60fps) — o alvo "pulava" por cima do raio de contato entre um frame
-// e outro sem nunca cair dentro dele, dando a sensação de "quase nunca acerta". Subido pra um
-// valor que sobrevive ao salto por frame na velocidade atual.
-const MINI_ENEMY_HIT_RADIUS = 2.2
+const MINI_ENEMY_SCALE = 0.77 // +10% maior (era 0.7)
+const MINI_ENEMY_HIT_RADIUS = 2.42 // 2.2 * 1.10 (+10%)
 const MINI_SWARM_MIN_COUNT = 5
 const MINI_SWARM_MAX_COUNT = 10
 const MINI_SWARM_SPACING = 2
@@ -16,34 +12,14 @@ const MINI_SWARM_PATROL_SPEED = 28
 const MINI_SWARM_PATROL_AMPLITUDE = 10
 const MINI_SWARM_PATROL_DURATION_MIN = 1.2
 const MINI_SWARM_PATROL_DURATION_MAX = 2.8
-// pedido do usuário: "momento de preparação" antes do mergulho — o grupo trava mirando o
-// jogador e pulsa visualmente por essa duração antes de disparar de verdade.
 const MINI_SWARM_TELEGRAPH_S = 0.45
 const MINI_SWARM_DIVE_SPEED = 55
 const MINI_SWARM_DIVE_SPREAD = 7
-// taxa (por segundo) com que a direção do mergulho vira pra CONTINUAR mirando o jogador em
-// movimento — antes era travada uma vez no início e nunca corrigia, então um jogador que
-// continuava andando pra frente (o normal, o trilho sempre avança) fazia o mergulho errar por
-// tabela quase sempre. Não é homing perfeito (`MINI_SWARM_DIVE_TURN_RATE` baixo o bastante pra
-// ainda dar pra desviar de propósito), só o suficiente pra não errar por um alvo desatualizado.
 const MINI_SWARM_DIVE_TURN_RATE = 6
 const MINI_SWARM_DIVE_MAX_S = 7
-// PASS_BEHIND genérico (-4) checa só a PROFUNDIDADE ao longo do trilho — pra um mergulho rápido
-// (55u/s) mirando o jogador, é fácil cruzar essa profundidade enquanto ainda está a 5-15
-// unidades de distância LATERAL/vertical real (medido: removido a 9.67 de distância de verdade
-// por esse motivo). Usa um limite mais tolerante só durante o mergulho, pra dar tempo dele
-// convergir de verdade antes de desistir — mas não TÃO tolerante: medido que a convergência de
-// verdade acontece ANTES de cruzar a profundidade zero (por volta de -1 a -2), então -8 já
-// sobra folga sem deixar ele rondar/atacar por trás do jogador por um tempo longo depois de já
-// ter passado (pedido do usuário: "fica te atacando por trás" — era -20 antes, tolerante demais).
-const MINI_SWARM_DIVE_PASS_BEHIND = -8
-// quanto tempo, DEPOIS de cruzar a profundidade do jogador, ainda vale reajustar a mira antes
-// de congelar de vez (ver comentário completo no ponto de uso) — curto o bastante pra não virar
-// perseguição-por-trás, longo o bastante pra não cortar acertos de última hora.
-const MINI_SWARM_DIVE_BEHIND_GRACE_S = 0.35
-// distância (unidades) em que o desvio visual (zigue-zague/hélice) começa a encolher até 0 —
-// abaixo disso o inimigo vira uma perseguição pura, garantindo que ele realmente cruza o
-// jogador em vez de só balançar por perto pra sempre.
+// Proibição de ficar atrás: ultrapassou a profundidade -2.0, é imediatamente removido
+const MINI_SWARM_DIVE_PASS_BEHIND = -2.0
+const MINI_SWARM_DIVE_BEHIND_GRACE_S = 0.15
 const MINI_SWARM_DIVE_OFFSET_FADE_DIST = 15
 // Pedido do usuário: combate estilo Star Fox 64 — esquadrão surge visível (48-75u) e mergulha
 // em direção à câmera de forma dinâmica e legível.
@@ -52,14 +28,11 @@ const BLASTER_SPAWN_DISTANCE_MAX = 75
 const BLASTER_BOX_X = 9
 const BLASTER_BOX_Y = 6
 
- 
-// v0.34.0: pedido do usuário — 2 padrões de mergulho novos além do reto original, cada um com
-// cor própria (o grupo inteiro sorteia 1 variante por spawn, todos os membros usam a mesma —
-// lê como "esse enxame ataca em zigue-zague", não "membro individual aleatório").
+// Variantes com cores ultra-vibrantes e componentes emissivos
 const MINI_SWARM_VARIANTS = {
-  straight: { color: 0xff8080 }, // original, vermelho claro
-  zigzag: { color: 0x4de1ff }, // ciano elétrico — zigue-zague lateral contínuo
-  spiral: { color: 0x9dff4d }, // verde-limão — hélice rodopiante contínua, avançando em linha
+  straight: { color: 0xff1744, emissive: 0x880018 }, // vermelho elétrico
+  zigzag: { color: 0x00e5ff, emissive: 0x005588 },   // ciano elétrico
+  spiral: { color: 0x76ff03, emissive: 0x2e7d32 },   // verde-limão neon
 }
 const MINI_SWARM_VARIANT_IDS = Object.keys(MINI_SWARM_VARIANTS)
 const ZIGZAG_AMPLITUDE = 6
@@ -67,10 +40,18 @@ const ZIGZAG_FREQUENCY = 3.2 // rad/s
 const SPIRAL_RADIUS = 4.5
 const SPIRAL_ANGULAR_SPEED = 5.5 // rad/s
 
-const enemyGeometry = new THREE.ConeGeometry(1, 2.2, 4)
+const enemyGeometry = new THREE.ConeGeometry(1.1, 2.42, 4) // +10% maior (era 1, 2.2)
 enemyGeometry.rotateX(Math.PI / 2)
 const variantMaterials = new Map(
-  MINI_SWARM_VARIANT_IDS.map((id) => [id, new THREE.MeshPhongMaterial({ color: MINI_SWARM_VARIANTS[id].color, flatShading: true })]),
+  Object.entries(MINI_SWARM_VARIANTS).map(([k, v]) => [
+    k,
+    new THREE.MeshPhongMaterial({
+      color: v.color,
+      emissive: v.emissive,
+      emissiveIntensity: 0.75,
+      flatShading: true,
+    }),
+  ]),
 )
 
 // retorna um ARRAY de inimigos (o enxame inteiro) — quem chama (index.js) empurra cada um no

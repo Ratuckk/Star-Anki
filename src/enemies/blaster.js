@@ -2,10 +2,11 @@ import * as THREE from 'three'
 import { PASS_BEHIND } from './shared.js'
 
 // ============ BLASTER — caças estelares genéricos ============
-// Modelos unificados em cone 4 faces (15% maiores), diferenciados puramente por cor de material.
-// Movimentação suavizada para permanecer confortavelmente no enquadramento da tela.
+// Modelos unificados em cone 4 faces (+10% maiores), diferenciados por cores saturadas e vibrantes.
+// Ao completar 4 ataques, puxam para cima e vão embora voando sem teleguiar.
+// Proibidos de empacar ao lado ou atrás do jogador.
 export const BLASTER_KIND = 'blaster'
-export const BLASTER_HIT_RADIUS = 2.07 // 1.8 * 1.15
+export const BLASTER_HIT_RADIUS = 2.28 // 2.07 * 1.10
 export const BLASTER_DEATH_DURATION = 0.2
 export const BLASTER_KILL_BONUS = 30
 
@@ -22,14 +23,14 @@ const ENEMY_ORBIT_RADIUS_MIN = 12
 const ENEMY_ORBIT_RADIUS_MAX = 22
 const ENEMY_ORBIT_ANGULAR_SPEED = 0.8
 
-// 6 variações de cor/movimento — modelo idêntico, apenas a cor se diferencia
+// 6 variações com cores ultra-vibrantes e componentes emissivos para alta visibilidade no espaço negro
 export const BLASTER_PROFILES = [
-  { id: 'orbit', color: 0x4da6ff },    // Azul: órbita suave
-  { id: 'advance', color: 0xff4d4d },  // Vermelho: avanço frontal direto
-  { id: 'slow', color: 0x4dff88 },     // Verde: avanço lento
-  { id: 'follow', color: 0xffaa33 },   // Laranja: perseguição com standoff
-  { id: 'circular', color: 0xffffff }, // Branco: espiral suave convergente
-  { id: 'evasive', color: 0xd066ff },  // Roxo: desvio evasivo suave
+  { id: 'orbit', color: 0x00e5ff, emissive: 0x005588 },    // Ciano elétrico
+  { id: 'advance', color: 0xff1744, emissive: 0x880018 },  // Vermelho puro/escarlate
+  { id: 'slow', color: 0x00e676, emissive: 0x006622 },     // Verde neon
+  { id: 'follow', color: 0xff9100, emissive: 0x773300 },   // Âmbar dourado
+  { id: 'circular', color: 0xffffff, emissive: 0x666666 }, // Branco brilhante
+  { id: 'evasive', color: 0xd500f9, emissive: 0x660088 },  // Magenta/roxo elétrico
 ]
 export const BLASTER_PROFILE_COLOR = new Map(BLASTER_PROFILES.map((p) => [p.id, p.color]))
 const BLASTER_PROFILE_SPEED_RANGE = {
@@ -49,19 +50,24 @@ const EVASIVE_JUKE_INTERVAL_MAX = 1.6
 
 const RAIL_ORBIT_RADIUS = 2.0
 const RAIL_ORBIT_SPEED = 1.0
-const RAIL_ADVANCE_SPEED = 11
-const RAIL_SLOW_SPEED = 5.5
-const RAIL_FOLLOW_SPEED = 7.5
-const RAIL_FOLLOW_STANDOFF = 11
-export const BLASTER_RAIL_FOLLOW_PASS_BEHIND = PASS_BEHIND * 5
-const RAIL_CIRCULAR_DRIFT_SPEED = 4.8
+const RAIL_ADVANCE_SPEED = 12
+const RAIL_SLOW_SPEED = 6.0
+const RAIL_CIRCULAR_DRIFT_SPEED = 5.2
 
-// Geometria clássica unificada do caça (15% maior: 1.15 raio, 2.53 altura)
-const enemyGeometry = new THREE.ConeGeometry(1.15, 2.53, 4)
+// Geometria clássica unificada do caça (+10% maior: 1.265 raio, 2.783 altura)
+const enemyGeometry = new THREE.ConeGeometry(1.265, 2.783, 4)
 enemyGeometry.rotateX(Math.PI / 2)
 
 const profileMaterials = new Map(
-  BLASTER_PROFILES.map((p) => [p.id, new THREE.MeshPhongMaterial({ color: p.color, flatShading: true })]),
+  BLASTER_PROFILES.map((p) => [
+    p.id,
+    new THREE.MeshPhongMaterial({
+      color: p.color,
+      emissive: p.emissive,
+      emissiveIntensity: 0.75,
+      flatShading: true,
+    }),
+  ]),
 )
 
 function rerollJukeDir(enemy, frame) {
@@ -101,6 +107,8 @@ export function spawnBlaster(scene, rail, id, opts = {}) {
     hp: 2,
     maxHp: 2,
     fireTimer: null,
+    shotsFired: 0,
+    disengaging: false,
     profile: profile.id,
     speedFactor: speedMin + Math.random() * (speedMax - speedMin),
     depth: distanceAhead,
@@ -131,8 +139,18 @@ export function spawnBlaster(scene, rail, id, opts = {}) {
 
 export function updateBlasterArenaMovement(enemy, dt, playerPosition, frame, speedCap) {
   const chaseSpeed = (enemy.speedFactor ?? 0.6) * speedCap
-  let desiredDir
 
+  // Após 4 ataques: sobe e foge em alta velocidade sem teleguiar
+  if (enemy.disengaging) {
+    const escapeDir = (enemy.moveDir || new THREE.Vector3(0, 1, 0)).clone()
+    escapeDir.y = Math.max(0.5, escapeDir.y + dt * 1.5)
+    escapeDir.normalize()
+    enemy.moveDir = escapeDir
+    enemy.mesh.position.addScaledVector(escapeDir, chaseSpeed * 1.8 * dt)
+    return
+  }
+
+  let desiredDir
   if (enemy.profile === 'orbit' || enemy.profile === 'circular') {
     const angularSpeed = enemy.profile === 'circular' ? CIRCULAR_ANGULAR_SPEED : ENEMY_ORBIT_ANGULAR_SPEED
     enemy.orbitAngle += angularSpeed * enemy.orbitDir * dt
@@ -185,8 +203,17 @@ export function updateBlasterRailMovement(enemy, dt, rail) {
   // Tumble spin suave ao sofrer impacto
   if (enemy.tumbleSpin) {
     enemy.mesh.rotation.z += enemy.tumbleRollSpeed * dt
-    enemy.depth -= RAIL_SLOW_SPEED * dt
+    enemy.depth -= RAIL_ADVANCE_SPEED * dt
     enemy.screenX = THREE.MathUtils.clamp(enemy.screenX + (enemy.tumbleRollSpeed > 0 ? 0.6 : -0.6) * dt, -MAX_SCREEN_X, MAX_SCREEN_X)
+    projectBlasterToWorld(enemy, rail)
+    return
+  }
+
+  // APÓS 4 DISPAROS: sobe para cima do jogador e vai embora voando sem teleguiar
+  if (enemy.disengaging) {
+    enemy.screenY += 12.0 * dt
+    enemy.depth -= 16.0 * dt
+    enemy.mesh.rotation.x = -0.35 // empinado para cima
     projectBlasterToWorld(enemy, rail)
     return
   }
@@ -209,8 +236,9 @@ export function updateBlasterRailMovement(enemy, dt, rail) {
   } else if (enemy.profile === 'slow') {
     enemy.depth -= RAIL_SLOW_SPEED * dt
   } else if (enemy.profile === 'follow') {
-    const correction = enemy.depth > RAIL_FOLLOW_STANDOFF ? -1 : enemy.depth < RAIL_FOLLOW_STANDOFF * 0.5 ? 1 : 0
-    enemy.depth += correction * RAIL_FOLLOW_SPEED * dt
+    // Proibido de ficar emparelhado: avança sempre para frente, acelerando na passagem
+    const passSpeed = enemy.depth < 14 ? RAIL_ADVANCE_SPEED : RAIL_SLOW_SPEED
+    enemy.depth -= passSpeed * dt
   } else if (enemy.profile === 'evasive') {
     if ((enemy.jukeTimer -= dt) <= 0) {
       enemy.jukeTimer = EVASIVE_JUKE_INTERVAL_MIN + Math.random() * (EVASIVE_JUKE_INTERVAL_MAX - EVASIVE_JUKE_INTERVAL_MIN)
@@ -218,7 +246,6 @@ export function updateBlasterRailMovement(enemy, dt, rail) {
       enemy.targetScreenY = (Math.random() * 2 - 1) * (MAX_SCREEN_Y * 0.75)
     }
     enemy.depth -= RAIL_SLOW_SPEED * dt
-    // Movimento suave interpolado dentro dos limites da tela
     const prevX = enemy.screenX
     enemy.screenX = THREE.MathUtils.clamp(
       THREE.MathUtils.lerp(enemy.screenX, enemy.targetScreenX, Math.min(1, dt * 2.2)),
@@ -233,11 +260,17 @@ export function updateBlasterRailMovement(enemy, dt, rail) {
     enemy.mesh.rotation.z = THREE.MathUtils.clamp((enemy.screenX - prevX) * 4.0, -0.6, 0.6)
   }
 
+  // Garantia absoluta contra ficar preso ao exato lado do jogador:
+  // Ao atingir profundidade próxima (< 5.0u), acelera para ultrapassar e sair da tela
+  if (enemy.depth < 5.0) {
+    enemy.depth -= 14.0 * dt
+  }
+
   projectBlasterToWorld(enemy, rail)
 }
 
 export function blasterPassBehind(enemy) {
-  return enemy.profile === 'follow' ? BLASTER_RAIL_FOLLOW_PASS_BEHIND : PASS_BEHIND
+  return PASS_BEHIND
 }
 
 export function blasterColor(enemy) {

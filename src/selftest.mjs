@@ -169,4 +169,43 @@ for (const m of summary.missed) {
   assert.ok(typeof m.answer === 'string', 'card perdido deveria ter answer')
 }
 
-console.log('OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js).')
+// ---------------------------------------------------------------------------
+// 8. Validação matemática do overhaul de inimigos v0.66.0 (Sentinela, Molduras, Genéricos, Dourado)
+// ---------------------------------------------------------------------------
+const GATE_INNER_HALF = 2.6
+const GATE_OUTER_HALF = 6.4
+const SHIP_RADIUS = 0.5
+
+function testGateCollision(localX, localY) {
+  const maxCoord = Math.max(Math.abs(localX), Math.abs(localY))
+  return maxCoord >= (GATE_INNER_HALF - SHIP_RADIUS) && maxCoord <= (GATE_OUTER_HALF + SHIP_RADIUS)
+}
+
+// Nave centralizada (X=0, Y=0 ou 1.2, 0.8): passagem segura
+assert.strictEqual(testGateCollision(0, 0), false, 'Nave no centro deve passar sem dano')
+assert.strictEqual(testGateCollision(1.2, 0.8), false, 'Nave no vão central seguro deve passar sem dano')
+
+// Nave colidindo com a borda sólida: dano real
+assert.strictEqual(testGateCollision(2.6, 0), true, 'Nave na borda interna (2.6) deve colidir e tomar dano')
+assert.strictEqual(testGateCollision(4.0, 1.0), true, 'Nave em cheio na borda (4.0) deve colidir e tomar dano')
+assert.strictEqual(testGateCollision(6.4, 0), true, 'Nave na borda externa (6.4) deve colidir e tomar dano')
+
+// Nave esquivando por fora: sem dano
+assert.strictEqual(testGateCollision(7.5, 0), false, 'Nave fora da moldura (7.5) não deve colidir')
+
+// Tempo de voo da moldura em velocidade moderada (18 u/s)
+const GATE_SPEED = 18
+const RAIL_SPEED = 22
+const STANDOFF = 48
+const flightTime = STANDOFF / (GATE_SPEED + RAIL_SPEED)
+assert.ok(flightTime >= 1.1 && flightTime <= 1.3, `Tempo de voo da moldura deve ser ~1.2s, obteve ${flightTime.toFixed(2)}s`)
+
+// Desengajamento de mini-naves do Dourado ao aproximar ou ultrapassar
+function shouldMinionStopHoming(dist, dotHeading, traveled) {
+  return dist < 14 || dotHeading < 0.2 || traveled > 55
+}
+assert.strictEqual(shouldMinionStopHoming(35, 0.95, 10), false, 'Longe e na frente deve continuar teleguiando')
+assert.strictEqual(shouldMinionStopHoming(12, 0.9, 20), true, 'Perto (< 14u) deve parar de teleguiar')
+assert.strictEqual(shouldMinionStopHoming(25, -0.4, 30), true, 'Ultrapassando deve parar de teleguiar')
+
+console.log('OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + overhaul v0.66.0).')

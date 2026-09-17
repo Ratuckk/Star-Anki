@@ -8,18 +8,8 @@ import { BLASTER_KILL_BONUS } from './blaster.js'
 // Aqui dentro ele é só mais um `kind` normal: sem movimento nem tiro, recebe kamikaze e tiro do
 // jogador pelo mesmo caminho genérico de todo mundo.
 export const DETRITO_KIND = 'detrito'
-export const DETRITO_COLOR = 0x888888
-// hit radius base — escala junto com o tamanho do mesh.
-// Medido com um teste sintético amostrando 2M de pontos sobre a SUPERFÍCIE real da
-// IcosahedronGeometry(1.3, 0), ponderado por área de cada face: o raio circunscrito (vértice) é
-// 1.3, mas os vértices são só 12 pontos esparsos — a colisão de tiro/nave é contra as FACES
-// (a maior parte da área visível), cujo raio inscrito é 1.0331 e cuja distância média
-// centro->superfície (o que a maioria dos ângulos de aproximação realmente encontra primeiro) é
-// 1.1045 (RMS 1.1058). O valor antigo (1.15) tentava "casar com os vértices" mas nem chegava
-// perto disso (1.3) — na prática ficava ~4% ACIMA da média real da superfície visível, uma
-// margem fantasma pequena porém sistemática (escala com o tamanho do detrito). Ajustado pra
-// 1.10, colado na média medida.
-const DETRITO_BASE_HIT_RADIUS = 1.10
+export const DETRITO_COLOR = 0x9fa8da
+const DETRITO_BASE_HIT_RADIUS = 1.21 // 1.10 * 1.10 (+10%)
 export const DETRITO_HIT_RADIUS = DETRITO_BASE_HIT_RADIUS // mantido pra compat (index.js ainda exporta)
 export const DETRITO_DEATH_DURATION = 0.2
 export const DETRITO_HP = 9
@@ -47,9 +37,14 @@ function rollDetritoScale(isTitanic = false, allowGiant = true) {
   return base * (1 - DETRITO_TIER_JITTER + Math.random() * DETRITO_TIER_JITTER * 2)
 }
 
-const geometry = new THREE.IcosahedronGeometry(1.3, 0)
-const material = new THREE.MeshPhongMaterial({ color: DETRITO_COLOR, flatShading: true })
-const titanicMaterial = new THREE.MeshPhongMaterial({ color: 0x6e615a, flatShading: true, shininess: 6 })
+const geometry = new THREE.IcosahedronGeometry(1.43, 0) // +10% maior (era 1.3)
+const material = new THREE.MeshPhongMaterial({
+  color: DETRITO_COLOR,
+  flatShading: true,
+  emissive: 0x282c34,
+  emissiveIntensity: 0.35,
+})
+const titanicMaterial = new THREE.MeshPhongMaterial({ color: 0x8d7b72, flatShading: true, shininess: 6 })
 
 export function spawnDetrito(scene, rail, id, opts = {}) {
   const isTitanic = !!opts.titanic

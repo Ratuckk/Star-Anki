@@ -70,8 +70,8 @@ const ENEMY_AIM_ERROR_DEG = 5
 const ARENA_PREVIEW_DISTANCE = 220
 const ARENA_PREVIEW_SCALE = { boss: BOSS_HIT_RADIUS * 2 * 2.4, golden: 3.2 }
 
-const GOLDEN_MINION_TURN_RATE = 4.2
-const GOLDEN_MINION_SPEED = 18
+const GOLDEN_MINION_TURN_RATE = 1.8
+const GOLDEN_MINION_SPEED = 12
 
 export function createEnemiesSystem(scene, rail, effects = null) {
   const enemies = []
@@ -254,6 +254,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     scene.add(mesh)
     enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
 
+    if (enemy) {
+      enemy.shotsFired = (enemy.shotsFired || 0) + 1
+      // Inimigos genéricos puxam para cima e vão embora voando após atacarem 4 vezes
+      if (enemy.shotsFired >= 4 && (enemy.kind === BLASTER_KIND || enemy.kind === TANK_KIND)) {
+        enemy.disengaging = true
+        enemy.fireTimer = Infinity
+      }
+    }
+
     if (enemy && enemy.kind === BLASTER_KIND) {
       triggerBlasterRecoil(enemy)
       if (effects && effects.enemyMuzzleFlare) {
@@ -424,9 +433,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             }
           }
         }
-        // Réplica/Verme não olham pro jogador (não faz sentido pro conceito de cada um) — os
-        // outros continuam com a ponta virada pro jogador, comportamento de sempre.
-        if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND) enemy.mesh.lookAt(playerPosition)
+        // Réplica/Verme e inimigos em fuga/desengajamento não olham pro jogador (sem teleguiar)
+        if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND && !enemy.disengaging) {
+          enemy.mesh.lookAt(playerPosition)
+        }
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
 
         if (enemy.kind === BLASTER_KIND && effects && effects.enemyThrusterTrail) {
@@ -441,7 +451,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         const relative = enemy.mesh.position.clone().sub(frame.position)
         const passBehind = passBehindFor(enemy)
         const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
-        if (relative.dot(frame.forward) < passBehind || passedDistance) { removeEnemy(enemy); continue }
+        const offScreenAbove = enemy.screenY != null && enemy.screenY > 11.0
+        if (relative.dot(frame.forward) < passBehind || passedDistance || offScreenAbove) { removeEnemy(enemy); continue }
+      }
+
+      if (inArena && enemy.disengaging) {
+        const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
+        if (distToPlayer > 85) { removeEnemy(enemy); continue }
       }
 
       const relativeForward = enemy.mesh.position.clone().sub(frame.position).dot(frame.forward)
@@ -492,22 +508,24 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (projectile.homing) {
         const toPlayer = playerPosition.clone().sub(projectile.mesh.position)
         const dist = toPlayer.length()
-        const desired = toPlayer.normalize()
-        if (dist > 16 && projectile.flankOffset) {
-          const up = new THREE.Vector3(0, 1, 0)
-          const side = new THREE.Vector3().crossVectors(desired, up).normalize()
-          const weave = Math.sin((projectile.traveled || 0) * 0.18) * projectile.flankOffset * Math.min(1, dist / 40)
-          desired.addScaledVector(side, weave * 0.15).normalize()
-        }
-        const current = projectile.velocity.clone().normalize()
-        const turnRate = dist < 30 ? GOLDEN_MINION_TURN_RATE * 1.6 : GOLDEN_MINION_TURN_RATE
-        current.lerp(desired, Math.min(1, turnRate * dt))
-        if (current.lengthSq() > 1e-6) {
-          const speed = dist < 30 ? GOLDEN_MINION_SPEED * 1.35 : GOLDEN_MINION_SPEED
-          projectile.velocity.copy(current.normalize().multiplyScalar(speed))
-          projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, current)
-          const rollBank = Math.sin((projectile.traveled || 0) * 0.25) * 0.6
-          projectile.mesh.rotateZ(rollBank)
+        const velNorm = projectile.velocity.clone().normalize()
+        const dotHeading = toPlayer.clone().normalize().dot(velNorm)
+
+        // As mini-naves do Dourado avançam suavemente: ao chegar perto (< 14u),
+        // cruzar pelo jogador (dotHeading < 0.2) ou voar por tempo suficiente,
+        // param de teleguiar e vão embora em linha reta sem grudar no jogador!
+        if (dist < 14 || dotHeading < 0.2 || (projectile.traveled || 0) > 55) {
+          projectile.homing = false
+        } else {
+          const desired = toPlayer.normalize()
+          const current = velNorm
+          current.lerp(desired, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
+          if (current.lengthSq() > 1e-6) {
+            projectile.velocity.copy(current.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
+            projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, current)
+            const rollBank = Math.sin((projectile.traveled || 0) * 0.25) * 0.4
+            projectile.mesh.rotateZ(rollBank)
+          }
         }
       }
 

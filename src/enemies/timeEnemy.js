@@ -3,47 +3,52 @@ import { FORWARD_AXIS, PASS_BEHIND, spawnPositionForEnemy } from './shared.js'
 
 // ============ AMPULHETA (redutor de tempo) — normal + variante "mega" ============
 export const TIME_KIND = 'time'
-export const TIME_COLOR = 0xb026ff
-const TIME_EMISSIVE = 0x4b0082
+export const TIME_COLOR = 0xd500f9 // Magenta neon vibrante
+const TIME_EMISSIVE = 0x660088
 // Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
 const SPAWN_DISTANCE_MIN = 45
 const SPAWN_DISTANCE_MAX = 75
 const BOX_X = 7
 const BOX_Y = 5
-export const TIME_HIT_RADIUS = 1.8
+export const TIME_HIT_RADIUS = 1.98 // 1.8 * 1.10 (+10%)
 export const TIME_DEATH_DURATION = 0.2
 const TIME_MAX_HP = 5
 const TIME_SPIN_RATE = 1.6 // rad/s, gira em cima do próprio eixo
-// default de quem não seta speedFactor é 0.6 (movimento genérico de arena) — a ampulheta fica
-// bem abaixo disso, "ainda mais lenta" (pedido do usuário)
 const TIME_SPEED_FACTOR = 0.3
 export const TIME_REDUCTION_MIN_MS = 10000
 export const TIME_REDUCTION_MAX_MS = 30000
 
-// v0.34.0: variante grande pedida pelo usuário — mais vida, fica mais tempo em tela (mesmo
-// truque do perfil "follow" do Blaster: PASS_BEHIND bem mais tolerante) e troca o projétil
-// comum por um laser reto que dá muito dano no escudo.
-const TIME_MEGA_COLOR = 0x7a00e0 // roxo mais rico/escuro que o normal (0xb026ff)
-const TIME_MEGA_SCALE = 1.6
+// Variante mega
+const TIME_MEGA_COLOR = 0xaa00ff // Roxo elétrico vibrante
+const TIME_MEGA_SCALE = 1.76 // 1.6 * 1.10 (+10%)
 const TIME_MEGA_HP = 10
-export const TIME_MEGA_PASS_BEHIND = PASS_BEHIND * 4
+export const TIME_MEGA_PASS_BEHIND = PASS_BEHIND
 const TIME_MEGA_LASER_SPEED = 50
-const TIME_MEGA_LASER_HIT_RADIUS = 2.0
+const TIME_MEGA_LASER_HIT_RADIUS = 2.2
 const TIME_MEGA_LASER_MAX_RANGE = 180
-// >= SHIELD_MAX_CAP (player.js) — garante estourar o escudo cheio numa hitada só, mesmo com
-// upgrade de carga extra de escudo
 const TIME_MEGA_SHIELD_DAMAGE = 4
 
-const timeEnemyGeometry = new THREE.ConeGeometry(0.9, 1.3, 4)
-const timeEnemyMaterial = new THREE.MeshPhongMaterial({ color: TIME_COLOR, emissive: TIME_EMISSIVE, flatShading: true })
-const timeMegaMaterial = new THREE.MeshPhongMaterial({ color: TIME_MEGA_COLOR, emissive: TIME_EMISSIVE, flatShading: true })
+// Geometria da ampulheta +10% maior (0.99 raio, 1.43 altura)
+const timeEnemyGeometry = new THREE.ConeGeometry(0.99, 1.43, 4)
+const timeEnemyMaterial = new THREE.MeshPhongMaterial({
+  color: TIME_COLOR,
+  emissive: TIME_EMISSIVE,
+  emissiveIntensity: 0.8,
+  flatShading: true,
+})
+const timeMegaMaterial = new THREE.MeshPhongMaterial({
+  color: TIME_MEGA_COLOR,
+  emissive: 0x4a0072,
+  emissiveIntensity: 0.85,
+  flatShading: true,
+})
 
 function buildMesh(material) {
   const top = new THREE.Mesh(timeEnemyGeometry, material)
-  top.position.y = 0.65
+  top.position.y = 0.715
   top.rotation.x = Math.PI
   const bottom = new THREE.Mesh(timeEnemyGeometry, material)
-  bottom.position.y = -0.65
+  bottom.position.y = -0.715
   const group = new THREE.Group()
   group.add(top, bottom)
   return group

@@ -8,8 +8,8 @@ import { PASS_BEHIND, randomSpawnPositionOnPath } from './shared.js'
 // ou perseguem `playerPosition` direto ou rodam um padrão fixo; a Réplica "grava e reproduz" o
 // próprio input do jogador (`rail.getPlayerLateral()`).
 export const REPLICA_KIND = 'replica'
-export const REPLICA_COLOR = 0xaab4c8 // cinza-azulado translúcido — "fantasma", cor nova no roster
-export const REPLICA_HIT_RADIUS = 1.7
+export const REPLICA_COLOR = 0x80d8ff // Ciano espectral luminoso vibrante
+export const REPLICA_HIT_RADIUS = 1.87 // 1.7 * 1.10 (+10%)
 export const REPLICA_DEATH_DURATION = 0.2
 export const REPLICA_HP = 3
 export const REPLICA_KILL_BONUS = 30
@@ -24,9 +24,16 @@ const STANDOFF_EASE_RATE = 2.5 // s^-1, independente de framerate
 const DELAY_S = 0.4 // quanto tempo no passado o movimento lateral copiado reflete
 const HISTORY_MAX_AGE_S = DELAY_S + 0.3
 
-const geometry = new THREE.ConeGeometry(1, 2.2, 4)
+const geometry = new THREE.ConeGeometry(1.1, 2.42, 4)
 geometry.rotateX(Math.PI / 2)
-const material = new THREE.MeshPhongMaterial({ color: REPLICA_COLOR, flatShading: true, transparent: true, opacity: 0.55 })
+const material = new THREE.MeshPhongMaterial({
+  color: REPLICA_COLOR,
+  emissive: 0x0091ea,
+  emissiveIntensity: 0.8,
+  flatShading: true,
+  transparent: true,
+  opacity: 0.88,
+})
 
 export function spawnReplica(scene, rail, id) {
   if (rail.isArena()) return null

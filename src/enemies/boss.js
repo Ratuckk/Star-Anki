@@ -17,10 +17,10 @@ import { FORWARD_AXIS, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, ENEMY_ARE
 // corpo do chefe nunca se mexe e o offset angular viaja como argumento.
 
 export const BOSS_KIND = 'boss'
-export const BOSS_COLOR = 0xff2d4d
-const BOSS_EMISSIVE = 0x5c0018
-export const BOSS_SCALE = 5
-export const BOSS_HIT_RADIUS = 7
+export const BOSS_COLOR = 0xff1744 // Vermelho escarlate neon vibrante
+const BOSS_EMISSIVE = 0x880018
+export const BOSS_SCALE = 5.5 // 5 * 1.10 (+10%)
+export const BOSS_HIT_RADIUS = 7.7 // 7 * 1.10 (+10%)
 export const BOSS_DEATH_DURATION = 0.6
 
 // LASER: mesma dimensão física em todas as fases — o que muda é frequência, tempo de telegraph
