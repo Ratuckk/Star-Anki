@@ -37,6 +37,31 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Sentinela Refeita do Zero: Moldura Larga com Buraco que Pulsa (Abre/Fecha) de Verdade — v0.69.0
+
+Pedido do usuário, direto e frustrado com tentativas anteriores: *"eu quero que refaça o sentinela do zero, pelo que parece nenhuma IA consegue entender o conceito simples de um inimigo que atira um quadrado reto em direção ao jogador que fica se abrindo e fechando, causando dano caso o jogador esteja dentro quando ele se fecha, com tamanho de MOLDURA, não de QUADRADO largo (bordas pequenas mas largo)"*.
+
+**Diagnóstico do porquê as tentativas anteriores (v0.62.0→v0.66.0) nunca acertaram o conceito**, lendo o código real antes de mexer:
+1. `updateGateAnimation(gate)` era **literalmente um no-op**: `gate.mesh.scale.set(1, 1, 1)`, com o comentário "Escala estável e nítida" — uma decisão deliberada de uma sessão anterior de NUNCA animar a moldura. Não existia abre/fecha nenhum, nunca existiu desde a v0.62.0.
+2. As dimensões (`GATE_INNER_HALF=2.6`, `GATE_BORDER_WIDTH=3.8`) tinham a **borda mais grossa que o próprio buraco** (3.8 de espessura contra 2.6 de raio de abertura) — exatamente o "quadrado largo" que o usuário não queria, em vez de uma moldura de borda fina.
+3. `resolveGateHit` fazia uma checagem puramente espacial e ESTÁTICA (banda fixa entre `inner` e `outer`), sem noção nenhuma de tempo/fase — não tinha como existir um "quando ela se fecha" porque nada nunca fechava.
+
+**Antes de reescrever, confirmada com o usuário a única decisão de design que o código não podia responder sozinho**: o ciclo de abrir/fechar pulsa continuamente o voo inteiro (repete várias vezes até chegar no jogador), não é um pulso único — usuário confirmou essa opção.
+
+**Reescrita completa (`src/enemies/sentinela.js`)**:
+- **Silhueta externa constante, buraco interno que pulsa**: `GATE_OUTER_HALF = 6.4` nunca muda (é o "tamanho largo" da moldura). O que anima é só a abertura (`apertureHalf`), oscilando suavemente por cosseno entre `GATE_OPEN_APERTURE_HALF = 5.55` (aberta — borda residual de só `GATE_BORDER_MIN = 0.85`, ~4.5x mais fina que antes) e `0` (fechada — moldura vira um quadrado sólido, toda a área perigosa), num ciclo de `GATE_PULSE_PERIOD = 1.0s` que se repete o voo inteiro (`computeApertureHalf(age)`). A borda "cresce pra dentro" conforme fecha (`borderThickness = outer - aperture`) em vez de a moldura inteira encolher — por isso o tamanho externo nunca muda.
+- **Geometria das barras trocada de estática pra unitária escalada por instância** (`gateBarUnitGeo = BoxGeometry(1,1,1)`, mesmo padrão de "geometria compartilhada + transform por instância" já usado em `detrito.js`): as 4 barras da borda e o plano central (`applyGateAperture`) são reposicionadas/re-escaladas a cada frame pra refletir a abertura atual, em vez de nascerem com um tamanho fixo pra sempre.
+- **`resolveGateHit` agora usa a abertura VIVA do instante exato da passagem** (`gate.apertureHalf`, atualizada por `updateGateAnimation` no mesmo frame antes da checagem de cruzamento em `enemies/index.js`, arquitetura de resolução única já existente e preservada): fora da moldura inteira = sempre seguro; dentro do buraco daquele instante = seguro; qualquer outra coisa = dano real. Isso faz emergir exatamente o pedido — se a moldura estiver fechando/fechada bem na hora que cruza o jogador, praticamente a área inteira vira perigosa; se estiver bem aberta, só a borda fina machuca.
+- **Mira reta preservada**: o direcionamento "atira reto" (trava o alvo em coordenadas relativas ao frame do trilho no instante do disparo e reprojeta a cada frame pra acompanhar a curva da pista sem homing) é a lógica adversarialmente validada em duas sessões anteriores (v0.62.2/v0.62.3) — não foi tocada, só reaproveitada.
+
+**Testado**: `node --check` limpo. `node src/selftest.mjs` 100% ok (não afetado). **Teste sintético novo, escrito do zero pra este overhaul** (`three@0.169.0` instalado temporariamente via `npm install --no-save`, removido no final junto com `node_modules`/`package-lock.json` — mesmo padrão de sessões anteriores): exercitou o módulo REAL (`sentinelaFire`/`updateGateFlight`/`updateGateAnimation`/`resolveGateHit`, não uma reimplementação da lógica) contra um rail falso reto, simulando o voo inteiro (48u a 18u/s, ~2.67s) em passos de 1/60s. Os 15 asserts confirmaram: a moldura dispara reta e cruza o jogador no tempo esperado; a abertura de fato oscila entre ~0 (fechada) e ~5.55 (aberta) — não fica travada; **pulsa mais de uma vez durante o voo** (≥2 ciclos completos, não é pulso único); jogador no centro exato quando fechada → dano; jogador no centro quando aberta → seguro; jogador na borda fina quando aberta → dano; jogador bem fora da silhueta inteira → sempre seguro independente da fase; estado parcialmente fechado testado nos dois lados do buraco atual (dentro = seguro, fora = dano); e a proporção borda/moldura no estado aberto ficou abaixo de 10% da largura total (moldura de borda fina, não quadrado grosso).
+
+**Não testado ao vivo no navegador nesta entrega**: outra sessão/chat tinha o servidor `static` (porta 8420) em uso no momento — evitei mexer em `.claude/launch.json` (configuração compartilhada entre sessões) só pra liberar a porta pra mim. A cobertura sintética acima testa o módulo real ponta a ponta (não uma simulação da lógica), mas vale uma passada visual ao vivo (`preview_start "static"`, debug → spawnar sentinela, observar o pulso a olho) na próxima sessão com a porta livre.
+
+**Versão**: v0.68.0 → **v0.69.0**
+
+---
+
 ### Overhaul Completo do Painel de Debug (Categorias, Busca, Leitura de Estado ao Vivo) e Correção de Crash no Spawn de Wingman — v0.68.0
 
 Pedido do usuário: *"quero que faça uma pesquisa, checagem e correção extensiva por bugs, busque o máximo possível de problemas e corrija-os um por um, após isso eu quero que faça um overhaul completo no sistema de debug."* A parte de caçada extensiva de bugs já tinha sido entregue nas duas sessões anteriores (v0.66.0 e v0.67.0, ambas neste mesmo arquivo) — reconferido no início desta sessão (`node --check` nos 60+ arquivos de `src/` limpo, `node src/selftest.mjs` 100% ok, zero `TODO`/`FIXME` pendente no código) antes de partir pro overhaul do debug em si.

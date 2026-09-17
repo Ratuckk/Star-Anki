@@ -25,13 +25,22 @@ export const SENTINELA_FIRE_INTERVAL = 1.9 // intervalo entre os 4 disparos
 export const SENTINELA_STATE_ENGAGING = 'engaging'
 export const SENTINELA_STATE_LEAVING = 'leaving'
 
-// ============ DIMENSÕES DA MOLDURA QUADRADA ============
-// Abertura central: 5.2 x 5.2 (raio interno 2.6). Espaço seguro justo para a nave centralizada.
-// Bordas sólidas luminosas: 3.8 de espessura (raio externo 6.4). Colidir com a borda causa dano real.
-const GATE_INNER_HALF = 2.6
-const GATE_OUTER_HALF = 6.4
-const GATE_BORDER_WIDTH = 3.8
-const GATE_BAR_THICKNESS = 0.4
+// ============ DIMENSÕES E PULSO DA MOLDURA (overhaul v0.69.0) ============
+// Conceito do usuário, literal: "atira um quadrado reto em direção ao jogador que fica se
+// abrindo e fechando, causando dano caso o jogador esteja dentro quando ele se fecha, com
+// tamanho de MOLDURA, não de QUADRADO largo (bordas pequenas mas largo)".
+//
+// O SILHUETA EXTERNA da moldura (GATE_OUTER_HALF) é constante — é ela que dá o "tamanho largo".
+// O que pulsa é só o BURACO interno: aberto (GATE_OPEN_APERTURE_HALF, quase do tamanho da
+// moldura inteira → borda fininha) até fechado (0 → a moldura vira um quadrado sólido, toda a
+// área dela fica perigosa). A borda "cresce pra dentro" conforme o buraco fecha, em vez de a
+// moldura inteira encolher — por isso o tamanho externo nunca muda, só o quanto dela é seguro.
+const GATE_OUTER_HALF = 6.4 // silhueta externa fixa — o "tamanho largo" da moldura
+const GATE_BORDER_MIN = 0.85 // espessura da borda quando TOTALMENTE ABERTA (fina, não um quadrado grosso)
+const GATE_OPEN_APERTURE_HALF = GATE_OUTER_HALF - GATE_BORDER_MIN // buraco bem largo quando aberta
+const GATE_CLOSED_APERTURE_HALF = 0 // fechada: buraco zero, moldura inteira vira sólida
+const GATE_PULSE_PERIOD = 1.0 // segundos por ciclo completo abre → fecha → abre (pulsa o voo todo)
+const GATE_BAR_THICKNESS = 0.4 // espessura no eixo de voo (profundidade visual da barra)
 const GATE_SPEED = 18 // velocidade equilibrada e legível (aproximação total ~40 u/s)
 const GATE_DAMAGE = 1
 const GATE_SHIELD_DAMAGE = 1
@@ -49,9 +58,11 @@ const material = new THREE.MeshPhongMaterial({
   flatShading: true,
 })
 
-// Moldura: 4 barras sólidas luminosas + plano central translúcido
-const gateBorderTopBottomGeo = new THREE.BoxGeometry(GATE_OUTER_HALF * 2, GATE_BORDER_WIDTH, GATE_BAR_THICKNESS)
-const gateBorderSideGeo = new THREE.BoxGeometry(GATE_BORDER_WIDTH, GATE_INNER_HALF * 2, GATE_BAR_THICKNESS)
+// Moldura: 4 barras sólidas luminosas (geometria unitária, escalada por instância a cada frame
+// pra desenhar a borda no tamanho atual do pulso — mesmo padrão de "geometria compartilhada +
+// transform por instância" já usado em detrito.js) + plano central translúcido que encolhe
+// junto com o buraco.
+const gateBarUnitGeo = new THREE.BoxGeometry(1, 1, 1)
 const gateBorderMaterial = new THREE.MeshBasicMaterial({
   color: 0x00f0ff,
   transparent: true,
@@ -61,7 +72,7 @@ const gateBorderMaterial = new THREE.MeshBasicMaterial({
   depthWrite: false,
 })
 
-const gateCenterGeo = new THREE.PlaneGeometry(GATE_INNER_HALF * 2, GATE_INNER_HALF * 2)
+const gateCenterUnitGeo = new THREE.PlaneGeometry(2, 2) // meio-tamanho 1 — escalado pela abertura atual
 const gateCenterMaterial = new THREE.MeshBasicMaterial({
   color: 0x00b4d8,
   transparent: true,
@@ -70,6 +81,36 @@ const gateCenterMaterial = new THREE.MeshBasicMaterial({
   blending: THREE.AdditiveBlending,
   depthWrite: false,
 })
+
+// Calcula a abertura (raio do buraco seguro) num instante do pulso, dado o tempo de vida do
+// tiro em segundos. Oscilação suave (cosseno) entre TOTALMENTE ABERTA (fase 0, a moldura nasce
+// já aberta) e TOTALMENTE FECHADA (meio ciclo depois), repetindo pelo voo inteiro.
+function computeApertureHalf(age) {
+  const phase = ((age % GATE_PULSE_PERIOD) + GATE_PULSE_PERIOD) % GATE_PULSE_PERIOD / GATE_PULSE_PERIOD
+  const opennessFrac = (1 + Math.cos(phase * Math.PI * 2)) / 2 // 1 = aberta, 0 = fechada
+  return GATE_CLOSED_APERTURE_HALF + (GATE_OPEN_APERTURE_HALF - GATE_CLOSED_APERTURE_HALF) * opennessFrac
+}
+
+// Reposiciona/escala as 4 barras + o plano central pra refletir a abertura atual. A silhueta
+// externa (GATE_OUTER_HALF) nunca muda — só a fronteira interna (aperture) anda entre 0 e
+// GATE_OPEN_APERTURE_HALF, fazendo a borda "crescer pra dentro" até virar um quadrado sólido.
+function applyGateAperture(gate, apertureHalf) {
+  gate.apertureHalf = apertureHalf
+  const stripCenter = (apertureHalf + GATE_OUTER_HALF) / 2
+  const borderThickness = Math.max(0.02, GATE_OUTER_HALF - apertureHalf)
+
+  gate.topBar.scale.set(GATE_OUTER_HALF * 2, borderThickness, GATE_BAR_THICKNESS)
+  gate.topBar.position.set(0, stripCenter, 0)
+  gate.bottomBar.scale.set(GATE_OUTER_HALF * 2, borderThickness, GATE_BAR_THICKNESS)
+  gate.bottomBar.position.set(0, -stripCenter, 0)
+  gate.leftBar.scale.set(borderThickness, GATE_OUTER_HALF * 2, GATE_BAR_THICKNESS)
+  gate.leftBar.position.set(-stripCenter, 0, 0)
+  gate.rightBar.scale.set(borderThickness, GATE_OUTER_HALF * 2, GATE_BAR_THICKNESS)
+  gate.rightBar.position.set(stripCenter, 0, 0)
+
+  const centerScale = Math.max(0.001, apertureHalf)
+  gate.centerMesh.scale.set(centerScale, centerScale, 1)
+}
 
 function projectSentinelaToWorld(enemy, rail) {
   const frame = rail.getSpawnFrame()
@@ -150,17 +191,12 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx, frame) {
   }
 
   const group = new THREE.Group()
-  const centerMesh = new THREE.Mesh(gateCenterGeo, gateCenterMaterial)
-  const borderOffset = GATE_INNER_HALF + GATE_BORDER_WIDTH / 2
-  const top = new THREE.Mesh(gateBorderTopBottomGeo, gateBorderMaterial)
-  top.position.set(0, borderOffset, 0)
-  const bottom = new THREE.Mesh(gateBorderTopBottomGeo, gateBorderMaterial)
-  bottom.position.set(0, -borderOffset, 0)
-  const left = new THREE.Mesh(gateBorderSideGeo, gateBorderMaterial)
-  left.position.set(-borderOffset, 0, 0)
-  const right = new THREE.Mesh(gateBorderSideGeo, gateBorderMaterial)
-  right.position.set(borderOffset, 0, 0)
-  group.add(centerMesh, top, bottom, left, right)
+  const centerMesh = new THREE.Mesh(gateCenterUnitGeo, gateCenterMaterial)
+  const topBar = new THREE.Mesh(gateBarUnitGeo, gateBorderMaterial)
+  const bottomBar = new THREE.Mesh(gateBarUnitGeo, gateBorderMaterial)
+  const leftBar = new THREE.Mesh(gateBarUnitGeo, gateBorderMaterial)
+  const rightBar = new THREE.Mesh(gateBarUnitGeo, gateBorderMaterial)
+  group.add(centerMesh, topBar, bottomBar, leftBar, rightBar)
   group.position.copy(originPos)
   group.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
   group.scale.set(1, 1, 1)
@@ -175,11 +211,14 @@ export function sentinelaFire(scene, enemy, playerPosition, ctx, frame) {
     targetLocal,
     targetDistance,
     traveled: 0,
-    innerHalf: GATE_INNER_HALF,
+    age: 0,
     outerHalf: GATE_OUTER_HALF,
+    apertureHalf: GATE_OPEN_APERTURE_HALF,
+    centerMesh, topBar, bottomBar, leftBar, rightBar,
     damage: GATE_DAMAGE,
     shieldDamage: GATE_SHIELD_DAMAGE,
   }
+  applyGateAperture(gate, computeApertureHalf(0)) // nasce já na fase certa (aberta) do pulso
   ctx.pushGate(gate)
 
   enemy.shotsFired += 1
@@ -204,21 +243,26 @@ export function updateGateFlight(gate, dt, rail) {
     gate.up.set(0, 1, 0).applyQuaternion(gate.mesh.quaternion)
   }
   gate.traveled += GATE_SPEED * dt
+  gate.age += dt
   gate.mesh.position.copy(gate.originPos).addScaledVector(gate.dir, gate.traveled)
 }
 
+// Pulso contínuo abre/fecha durante todo o voo — ver computeApertureHalf/applyGateAperture.
 export function updateGateAnimation(gate) {
-  // Escala estável e nítida para que o jogador julgue com clareza o tamanho do quadrado
-  gate.mesh.scale.set(1, 1, 1)
+  applyGateAperture(gate, computeApertureHalf(gate.age))
 }
 
-// Resolução precisa de colisão com a moldura:
-// - Centro vazado (<= inner - radius): seguro, sem dano.
-// - Borda sólida (inner - radius até outer + radius): DANO REAL!
-// - Fora da moldura (> outer + radius): esquiva completa, sem dano.
+// Resolução de colisão no instante exato da passagem pelo plano do jogador — usa a abertura
+// VIVA do pulso naquele instante (gate.apertureHalf, atualizada por updateGateAnimation logo
+// antes desta chamada, ver updateEnemyGates em enemies/index.js):
+// - Fora da moldura inteira (> outer + radius): esquiva completa, sem dano, não importa a fase.
+// - Dentro do buraco atual (< aperture - radius): seguro — a moldura estava aberta bem ali.
+// - Caso contrário: DANO REAL. Se a moldura estava quase toda aberta na passagem, é só a borda
+//   fininha; se estava fechando/fechada, praticamente a área inteira conta como "quase toda a
+//   moldura" — exatamente o pedido: "causa dano caso o jogador esteja dentro quando ela se fecha".
 export function resolveGateHit(gate, playerPosition, opts = {}) {
   const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
-  const inner = gate.innerHalf
+  const aperture = gate.apertureHalf ?? 0
   const outer = gate.outerHalf
 
   let hit = false
@@ -228,12 +272,10 @@ export function resolveGateHit(gate, playerPosition, opts = {}) {
     const localY = Math.abs(rel.dot(gate.up))
     const maxCoord = Math.max(localX, localY)
 
-    // Colisão com a borda sólida
-    const hitBorder = maxCoord >= (inner - pt.radius) && maxCoord <= (outer + pt.radius)
-    if (hitBorder) {
-      hit = true
-      break
-    }
+    if (maxCoord > outer + pt.radius) continue // fora da moldura inteira
+    if (maxCoord < aperture - pt.radius) continue // dentro do buraco aberto naquele instante
+    hit = true
+    break
   }
   return { hit }
 }
@@ -241,9 +283,8 @@ export function resolveGateHit(gate, playerPosition, opts = {}) {
 export function disposeSentinela() {
   geometry.dispose()
   material.dispose()
-  gateBorderTopBottomGeo.dispose()
-  gateBorderSideGeo.dispose()
+  gateBarUnitGeo.dispose()
   gateBorderMaterial.dispose()
-  gateCenterGeo.dispose()
+  gateCenterUnitGeo.dispose()
   gateCenterMaterial.dispose()
 }
