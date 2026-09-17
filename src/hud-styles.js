@@ -1165,10 +1165,17 @@ export function injectHudExtraStyles() {
   z-index: 34;
   pointer-events: none;
   animation: launch-banner-in 0.5s cubic-bezier(0.2, 1, 0.3, 1) both;
+  /* transição de saída (pedido do usuário: fim da cutscene de decolagem sem "pop") — sem isso
+     hideLaunchBanner() só tinha hidden=true pra sumir, e display:none não anima; a classe
+     is-hiding abaixo dá o alvo (opacity:0) que essa transition interpola antes do hidden real */
+  transition: opacity 0.35s ease;
 }
 @keyframes launch-banner-in {
   0% { opacity: 0; transform: translate(-50%, -55%) scale(0.85); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.hud-launch-banner.is-hiding {
+  opacity: 0;
 }
 .hud-launch-sector {
   color: #3ea6ff;

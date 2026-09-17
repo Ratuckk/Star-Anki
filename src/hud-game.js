@@ -106,6 +106,10 @@ export function createGameHud() {
   const pendingTimeouts = new Set()
   let focusCollapseTimeout = null
   let focusCollapseContainer = null
+  // transição de saída do banner de decolagem (ver hideLaunchBanner) — dedicado como os outros
+  // dois acima porque showLaunchBanner precisa CANCELAR um hide pendente se a cutscene seguinte
+  // já reabrir o banner antes da anterior terminar de sumir (setor seguinte, restart via debug)
+  let launchBannerHideTimeout = null
 
   function scheduleTimeout(fn, ms) {
     const id = setTimeout(() => {
@@ -981,6 +985,9 @@ export function createGameHud() {
     },
 
     showLaunchBanner({ sector = 'SECTOR 01', text = 'MISSÃO INICIADA: BOA SORTE', skipText = '[ESPAÇO] PULAR DECOLAGEM' } = {}) {
+      cancelTimeout(launchBannerHideTimeout)
+      launchBannerHideTimeout = null
+      launchBanner.classList.remove('is-hiding')
       launchBanner.innerHTML = `
         <div class="hud-launch-sector">${sector}</div>
         <div class="hud-launch-sub">${text}</div>
@@ -989,8 +996,18 @@ export function createGameHud() {
       launchBanner.hidden = false
     },
 
+    // diagnóstico ao vivo (transição decolagem→gameplay): `hidden = true` direto cortava pra
+    // `display:none` no mesmo frame do letterbox/HUD — os únicos elementos que já tinham
+    // transição própria (CSS) — e o banner, sem nenhuma, dava o "pop" que sobrava no meio da
+    // troca suave. Agora primeiro dispara o fade (classe `is-hiding`, opacity 0.35s em
+    // hud-styles.js) e só marca `hidden` de verdade depois, quando a transição já terminou.
     hideLaunchBanner() {
-      launchBanner.hidden = true
+      launchBanner.classList.add('is-hiding')
+      cancelTimeout(launchBannerHideTimeout)
+      launchBannerHideTimeout = scheduleTimeout(() => {
+        launchBannerHideTimeout = null
+        launchBanner.hidden = true
+      }, 370)
     },
 
     triggerWhiteout() {
@@ -1502,6 +1519,8 @@ export function createGameHud() {
       cancelTimeout(stormWarningTimeout)
       stormWarningTimeout = null
       stormWarning.classList.remove('active')
+      cancelTimeout(launchBannerHideTimeout)
+      launchBannerHideTimeout = null
       for (const id of pendingTimeouts) clearTimeout(id)
       pendingTimeouts.clear()
       hitMarkerTimeout = null
