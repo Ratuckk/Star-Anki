@@ -37,6 +37,21 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Fix de Crash ao Escolher Qualquer Carta Roguelike no Modo Arcade (`src/player.js`) — v0.70.1
+
+Pedido do usuário: *"o jogo crasha no modo arcade quando você seleciona uma carta no roguelike"*, com a cobrança justa de que uma revisão de bugs anterior não tinha pegado isso.
+
+1. **Reprodução ao vivo primeiro, sem adivinhar**: `preview_start "static"`. O primeiro obstáculo foi um `ReferenceError: GATE_BORDER_WIDTH is not defined` em `sentinela.js` logo no boot — mas isso era só **cache stale do Service Worker** desta aba de teste (registro de uma sessão anterior, de antes da constante ter sido renomeada para `GATE_BORDER_MIN` no overhaul da v0.69.0), não um bug de código: `node --check`/leitura do arquivo em disco não têm `GATE_BORDER_WIDTH` em lugar nenhum. Resolvido com `navigator.serviceWorker.getRegistrations()` + `unregister()` + `caches.delete()` antes de continuar — vale lembrar disso em qualquer sessão futura que veja um `ReferenceError` estranho logo no load em vez de esperar o load normal.
+2. **Segundo obstáculo, ambiental (já documentado, não é bug)**: o loop principal roda via `requestAnimationFrame`, que não dispara nesta aba do Browser pane sem foco de SO (mesma limitação das sessões v0.62.3/v0.63.x/v0.68.0). Contornado com o mesmo tipo de stepper manual já usado nessas sessões (`requestAnimationFrame`/`cancelAnimationFrame` sobrescritos, avanço determinístico de frame), escrito do zero nesta sessão.
+3. **Causa raiz encontrada por reprodução real, não leitura de código**: com o painel de debug (ação "Escolher carta roguelike") aberto em Modo Arcade e um card qualquer clicado, o console acusou `TypeError: player.getWingmanCount is not a function` em `applyRoguelikeCard` (`flow-question.js:21`). `combat.setWingmanCount(player.getWingmanCount())` roda incondicionalmente em **toda** escolha de carta roguelike (não só ao pegar a carta de wingman) — mas `player.js` só expunha `setWingmanCount`, nunca um `getWingmanCount` correspondente (`wingmanCount` só existia como variável interna do closure). Isso quebra a seleção de QUALQUER carta, em qualquer modo — Arcade só é onde o jogador chega nessa tela com mais frequência (todo ciclo de combate cai direto em `enterCardChoice`, sem pergunta no meio). É o mesmo padrão de bug já corrigido do lado do `combat` na v0.68.0 (`combat.getWingmanCount` faltando), só que faltando do lado do `player` agora.
+4. **Correção**: adicionado `getWingmanCount: () => wingmanCount,` em `player.js`, ao lado do `setWingmanCount` existente.
+
+**Testado**: `node --check src/player.js` e `node src/selftest.mjs` limpos. **Testado ao vivo** (`preview_start "static"`, stepper de frame manual): reproduzido o crash de forma determinística ANTES do fix (mesmo fluxo: Modo Arcade → debug "Escolher carta roguelike" → clicar num card → `TypeError` no console, tela de carta trava sem avançar) e confirmado que ele desaparece DEPOIS do fix, com o jogo voltando normalmente para `combat` e os stats do HUD (vida/pontos/inimigos) refletindo o estado pós-escolha.
+
+**Versão**: v0.70.0 → **v0.70.1**.
+
+---
+
 ### Esquadrão Menos Agressivo e Movimentação Cinematográfica (`src/combat/wingmen.js`) — v0.70.0
 
 Pedido do usuário: *"o esquadrão é meio overkill e perfeito demais em questão de ataques, faça com que eles ataquem menos e se movam mais pelo cenário, de forma cinemática e menos aleatória e estranha como fazem agora, quero que sejam mais suaves e 'humanos'"*.

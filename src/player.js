@@ -153,6 +153,7 @@ export function createPlayerSystem(session) {
       if (wingmanCount > 0) collectedCards.set('wingman', wingmanCount)
       else collectedCards.delete('wingman')
     },
+    getWingmanCount: () => wingmanCount,
 
     getBoostCharge: () => boostCharge,
     isPropulsionActive: () => propulsionActiveTimer > 0,
