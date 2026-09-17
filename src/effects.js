@@ -413,6 +413,26 @@ export function createEffectsSystem(scene, opts = {}) {
   const maxChargeRingsList = []
   const ricochetArcs = []
   const reverseBrakeJetsList = []
+  const enemyTrails = []
+  const microOrbes = []
+  let microOrbesCollectedThisFrame = 0
+  const ENEMY_TRAIL_DURATION = 0.35
+  const microOrbeCoreGeo = new THREE.OctahedronGeometry(0.4, 0)
+  const microOrbeRingGeo = new THREE.TorusGeometry(0.6, 0.05, 4, 12)
+  const microOrbeCoreMat = new THREE.MeshBasicMaterial({
+    color: 0x00f2fe,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
+  const microOrbeRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffe600,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
@@ -503,6 +523,12 @@ export function createEffectsSystem(scene, opts = {}) {
     // flash central que expande rápido — dá o "punch" que faltava nas explosões menores
     bloomSprite(position, colorHex, size * 0.8)
 
+    // Estilhaços poligonais voando e mini-mach shockwaves em explosões de naves (opts.rings)
+    if (opts.rings) {
+      shockwave(position, colorHex, size * 0.65)
+      glassShatter(position, colorHex)
+    }
+
     // argolas cinzas grandes, tamanho e ângulo 3D aleatórios (fixo — não colam na câmera, pra
     // lerem como destroço de verdade visto de um ângulo qualquer, não um círculo sempre de frente)
     const ringChance = opts.isBoss ? EXPLOSION_GRAY_RING_CHANCE_BOSS : EXPLOSION_GRAY_RING_CHANCE_NORMAL
@@ -534,6 +560,18 @@ export function createEffectsSystem(scene, opts = {}) {
     const mesh = new THREE.Mesh(sharedSphereGeometry, material)
     mesh.scale.setScalar(0.4)
     mesh.position.copy(position).addScaledVector(direction, 0.6)
+    scene.add(mesh)
+    muzzleFlashes.push({ mesh, life: 0 })
+  }
+
+  function enemyMuzzleFlare(position, colorHex = 0xff5a3d) {
+    const material = new THREE.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(sharedSphereGeometry, material)
+    mesh.scale.setScalar(0.45)
+    mesh.position.copy(position)
     scene.add(mesh)
     muzzleFlashes.push({ mesh, life: 0 })
   }
@@ -942,6 +980,34 @@ export function createEffectsSystem(scene, opts = {}) {
 
     spawnReverseBrakeJetParticle(leftJetOrigin, leftDir)
     spawnReverseBrakeJetParticle(rightJetOrigin, rightDir)
+  }
+
+  function enemyThrusterTrail(position, colorHex = 0xff5a3d) {
+    if (enemyTrails.length > 90) return
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    })
+    const mesh = new THREE.Mesh(sharedSphereGeometry, mat)
+    mesh.scale.setScalar(0.24)
+    mesh.position.copy(position)
+    scene.add(mesh)
+    enemyTrails.push({ mesh, life: 0 })
+  }
+
+  function spawnMicroOrbe(position) {
+    const group = new THREE.Group()
+    const core = new THREE.Mesh(microOrbeCoreGeo, microOrbeCoreMat)
+    const ring = new THREE.Mesh(microOrbeRingGeo, microOrbeRingMat)
+    group.add(core)
+    group.add(ring)
+    group.position.copy(position)
+    scene.add(group)
+    microOrbes.push({ group, core, ring, life: 0 })
   }
 
   function cardAcquiredPulse(position, category = 'ofensivo') {
@@ -1601,6 +1667,52 @@ export function createEffectsSystem(scene, opts = {}) {
       c.mesh.scale.setScalar(1 - t * 0.7)
     }
 
+    // ENEMY THRUSTER TRAILS
+    for (let i = enemyTrails.length - 1; i >= 0; i--) {
+      const et = enemyTrails[i]
+      et.life += dt
+      const t = et.life / ENEMY_TRAIL_DURATION
+      if (t >= 1) {
+        scene.remove(et.mesh)
+        et.mesh.material.dispose()
+        enemyTrails.splice(i, 1)
+        continue
+      }
+      et.mesh.material.opacity = 0.8 * (1 - t)
+      et.mesh.scale.setScalar(0.24 * (1 - t * 0.6))
+    }
+
+    // MICRO-ORBES ANKI
+    microOrbesCollectedThisFrame = 0
+    for (let i = microOrbes.length - 1; i >= 0; i--) {
+      const orb = microOrbes[i]
+      orb.life += dt
+      orb.core.rotation.y += dt * 3.5
+      orb.ring.rotation.x += dt * 4.0
+      orb.ring.rotation.z += dt * 2.0
+
+      if (playerPosition) {
+        const dist = orb.group.position.distanceTo(playerPosition)
+        if (dist < 8.5) {
+          const pull = playerPosition.clone().sub(orb.group.position).normalize().multiplyScalar(24 * dt)
+          orb.group.position.add(pull)
+        }
+        if (dist < 1.7) {
+          microOrbesCollectedThisFrame++
+          cardAcquiredPulse(playerPosition, 'especial')
+          bloomSprite(orb.group.position, 0x00f2fe, 1.4)
+          scene.remove(orb.group)
+          microOrbes.splice(i, 1)
+          continue
+        }
+      }
+
+      if (orb.life > 14) {
+        scene.remove(orb.group)
+        microOrbes.splice(i, 1)
+      }
+    }
+
     // RICOCHET ARCS
     for (let i = ricochetArcs.length - 1; i >= 0; i--) {
       const arc = ricochetArcs[i]
@@ -1751,6 +1863,8 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.material.dispose() }
     for (const a of ricochetArcs) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.material.dispose() }
+    for (const et of enemyTrails) { scene.remove(et.mesh); et.mesh.material.dispose() }
+    for (const o of microOrbes) { scene.remove(o.group) }
     for (const f of distantFlashes) { scene.remove(f.mesh); f.mesh.material.dispose() }
     for (const s of distantSilhouettes) { scene.remove(s.mesh); }
     silhouetteGeometry.dispose()
@@ -1760,6 +1874,12 @@ export function createEffectsSystem(scene, opts = {}) {
     sharedWideRingGeometry.dispose()
     sharedTorusGeometry.dispose()
     sharedConeGeometry.dispose()
+    microOrbeCoreGeo.dispose()
+    microOrbeRingGeo.dispose()
+    microOrbeCoreMat.dispose()
+    microOrbeRingMat.dispose()
+    enemyTrails.length = 0
+    microOrbes.length = 0
     ricochetArcs.length = 0
     reverseBrakeJetsList.length = 0
     distantFlashes.length = 0
@@ -1776,7 +1896,9 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   return {
-    update, explosion, muzzleFlash, setChargeGlow, smokeRing, homingAfterimage,
+    update, explosion, muzzleFlash, enemyMuzzleFlare, enemyThrusterTrail, spawnMicroOrbe,
+    getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
+    setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,

@@ -1406,6 +1406,65 @@ export function injectHudExtraStyles() {
 .hud-storm-warning.cleared .hud-storm-warning-sub {
   color: rgba(220, 252, 231, 0.8);
 }
+
+/* ============ BANNERS DE EVENTO DE COMBATE (SQUAD WIPE / FRENESI) ============ */
+.hud-combat-event-banner {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 28px;
+  border-radius: 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  pointer-events: none;
+  z-index: 55;
+  opacity: 0;
+  animation: hud-combat-banner-anim 2.2s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+.hud-combat-event-banner.squad-wipe {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.25), rgba(15, 23, 42, 0.85));
+  border: 2px solid #eab308;
+  box-shadow: 0 0 25px rgba(234, 179, 8, 0.6), inset 0 0 15px rgba(234, 179, 8, 0.3);
+}
+.hud-combat-event-banner.frenzy {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(15, 23, 42, 0.9));
+  border: 2px solid #c084fc;
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.8), inset 0 0 20px rgba(192, 132, 252, 0.4);
+}
+.hud-combat-event-title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.hud-combat-event-banner.squad-wipe .hud-combat-event-title {
+  color: #fef08a;
+  text-shadow: 0 0 12px rgba(234, 179, 8, 0.9), 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+.hud-combat-event-banner.frenzy .hud-combat-event-title {
+  color: #f5d0fe;
+  text-shadow: 0 0 14px rgba(192, 132, 252, 1), 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+.hud-combat-event-sub {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+  margin-top: 4px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+@keyframes hud-combat-banner-anim {
+  0%   { opacity: 0; transform: translate(-50%, -60%) scale(0.6); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  22%  { transform: translate(-50%, -50%) scale(1.0); }
+  75%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+  100% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
+}
 `
   document.head.appendChild(style)
 }

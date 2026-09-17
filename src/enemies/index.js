@@ -3,7 +3,9 @@ import { PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR } 
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
+  BLASTER_PROFILES,
   spawnBlaster, updateBlasterArenaMovement, updateBlasterRailMovement, blasterPassBehind, blasterColor, disposeBlaster,
+  triggerBlasterRecoil, breakBlasterWing,
 } from './blaster.js'
 import { MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm } from './miniSwarm.js'
 import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, disposeTank } from './tank.js'
@@ -77,6 +79,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const enemyLasers = []
   const enemyGates = []
   let nextEnemyId = 1
+  let nextSquadronId = 1
+  const activeSquadrons = new Map()
   let elapsed = 0
   let enemyAggression = 1
   let arenaPreviewMesh = null
@@ -249,6 +253,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     scene.add(mesh)
     enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
+
+    if (enemy && enemy.kind === BLASTER_KIND) {
+      triggerBlasterRecoil(enemy)
+      if (effects && effects.enemyMuzzleFlare) {
+        effects.enemyMuzzleFlare(enemy.mesh.position, colorFor(enemy))
+      }
+    }
   }
 
   const bossLaserCtx = { pushLaser: (l) => enemyLasers.push(l) }
@@ -417,6 +428,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // outros continuam com a ponta virada pro jogador, comportamento de sempre.
         if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND) enemy.mesh.lookAt(playerPosition)
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
+
+        if (enemy.kind === BLASTER_KIND && effects && effects.enemyThrusterTrail) {
+          if (!enemy.trailTimer) enemy.trailTimer = 0
+          enemy.trailTimer -= dt
+          if (enemy.trailTimer <= 0) {
+            enemy.trailTimer = 0.05
+            effects.enemyThrusterTrail(enemy.mesh.position, colorFor(enemy))
+          }
+        }
 
         const relative = enemy.mesh.position.clone().sub(frame.position)
         const passBehind = passBehindFor(enemy)
@@ -594,6 +614,87 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const enemy = spawnBlaster(scene, rail, nextEnemyId++)
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
+    },
+
+    spawnSquadron(formationType = null) {
+      const sId = nextSquadronId++
+      const types = ['vFormation', 'sweepLine', 'trailColumn', 'pincer']
+      const formation = formationType || types[Math.floor(Math.random() * types.length)]
+      const archetype = BLASTER_PROFILES[Math.floor(Math.random() * BLASTER_PROFILES.length)].id
+      const baseDepth = 55 + Math.random() * 15
+      const group = []
+
+      if (formation === 'vFormation') {
+        const leader = spawnBlaster(scene, rail, nextEnemyId++, {
+          profile: archetype, depth: baseDepth, screenX: 0, screenY: 1.5,
+          isLeader: true, squadronId: sId,
+        })
+        leader.fireTimer = randomEnemyFireInterval()
+        group.push(leader)
+        const offsets = [
+          { x: -3.0, y: 0.8, d: 8 },
+          { x: 3.0, y: 0.8, d: 8 },
+          { x: -5.5, y: 0.2, d: 16 },
+          { x: 5.5, y: 0.2, d: 16 },
+        ]
+        for (const off of offsets) {
+          const wingman = spawnBlaster(scene, rail, nextEnemyId++, {
+            profile: archetype, depth: baseDepth + off.d, screenX: off.x, screenY: off.y,
+            isLeader: false, squadronId: sId,
+          })
+          wingman.fireTimer = randomEnemyFireInterval()
+          group.push(wingman)
+        }
+      } else if (formation === 'sweepLine') {
+        const xs = [-4.5, -1.5, 1.5, 4.5]
+        for (let i = 0; i < xs.length; i++) {
+          const ship = spawnBlaster(scene, rail, nextEnemyId++, {
+            profile: archetype, depth: baseDepth + i * 2, screenX: xs[i], screenY: 1.2,
+            isLeader: i === 1, squadronId: sId,
+          })
+          ship.fireTimer = randomEnemyFireInterval()
+          group.push(ship)
+        }
+      } else if (formation === 'trailColumn') {
+        const depths = [baseDepth, baseDepth + 10, baseDepth + 20]
+        for (let i = 0; i < depths.length; i++) {
+          const ship = spawnBlaster(scene, rail, nextEnemyId++, {
+            profile: archetype, depth: depths[i], screenX: (i % 2 === 0 ? -1.5 : 1.5), screenY: 1.5 - i * 0.5,
+            isLeader: i === 0, squadronId: sId,
+          })
+          ship.fireTimer = randomEnemyFireInterval()
+          group.push(ship)
+        }
+      } else {
+        const pincerOffsets = [
+          { x: -5.5, y: 2.0, d: 0 },
+          { x: -4.0, y: 0.5, d: 8 },
+          { x: 5.5, y: 2.0, d: 0 },
+          { x: 4.0, y: 0.5, d: 8 },
+        ]
+        for (let i = 0; i < pincerOffsets.length; i++) {
+          const off = pincerOffsets[i]
+          const ship = spawnBlaster(scene, rail, nextEnemyId++, {
+            profile: archetype, depth: baseDepth + off.d, screenX: off.x, screenY: off.y,
+            isLeader: i === 0, squadronId: sId,
+          })
+          ship.fireTimer = randomEnemyFireInterval()
+          group.push(ship)
+        }
+      }
+
+      const leaderShip = group.find((s) => s.isLeader)
+      activeSquadrons.set(sId, {
+        total: group.length,
+        remaining: group.length,
+        leaderId: leaderShip ? leaderShip.id : null,
+        archetype,
+        wiped: false,
+        startTime: elapsed,
+      })
+
+      registerSpawnGroup(group)
+      return group
     },
 
     spawnMiniSwarm() {
@@ -812,6 +913,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         let enemyKillPoints = 0
         let timeReductionMs = null
         let bossDefeated = false
+        let squadWipe = false
+        let squadWipeBonus = 0
+
         if (killed) {
           enemyHit.dying = true
           enemyHit.deathT = 0
@@ -826,11 +930,38 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             if (enemyHit.kind === VERME_KIND) severChainAt(enemyHit, enemies, rail)
             const killColor = isHoming ? HOMING_EXPLOSION_COLOR : colorFor(enemyHit)
             if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6, { rings: true })
+
+            // Rastreamento de abates de esquadrão
+            if (enemyHit.squadronId && activeSquadrons.has(enemyHit.squadronId)) {
+              const sq = activeSquadrons.get(enemyHit.squadronId)
+              sq.remaining--
+              if (sq.leaderId === enemyHit.id) {
+                for (const ally of enemies) {
+                  if (ally.squadronId === enemyHit.squadronId && !ally.dying) {
+                    ally.panicked = true
+                    ally.panicTimer = 2.0
+                  }
+                }
+              }
+              if (sq.remaining <= 0 && !sq.wiped) {
+                sq.wiped = true
+                activeSquadrons.delete(enemyHit.squadronId)
+                squadWipe = true
+                squadWipeBonus = 150
+                enemyKillPoints += squadWipeBonus
+                if (effects && effects.spawnMicroOrbe) {
+                  effects.spawnMicroOrbe(enemyHit.mesh.position.clone())
+                }
+              }
+            }
           }
+        } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
+          breakBlasterWing(enemyHit, Math.random() < 0.5 ? 'left' : 'right')
         }
         return {
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
           enemyKillPoints, timeReductionMs, bossDefeated, goldenSpecialHit: false,
+          squadWipe, squadWipeBonus,
         }
       }
 

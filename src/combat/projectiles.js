@@ -128,6 +128,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     let bossDefeatedIsHoming = false
     let bossHitWorldPos = null
     let bossOrbHit = false
+    let squadWipe = false
+    let squadWipeBonus = 0
     // log de acertos (posição, dano, se matou) — usado pelo main.js pra faíscas, flash no mesh
     // atingido e números de dano flutuantes no HUD
     const hitsLog = []
@@ -220,17 +222,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         hitBuffer,
       })
       if (hit) {
-        // v0.51.14 — `removeProjectile` não roda mais aqui na hora: carta "Ricochete" pode
-        // redirecionar este mesmo projétil pro próximo alvo mais próximo em vez de removê-lo
-        // (ver decisão de bounce no fim deste bloco). Cada saída abaixo decide por conta própria.
-        //
-        // v0.51.0 — `hit.blocked` = fragata-escudo defendeu este tiro (veio do lado coberto pela
-        // blindagem giratória). O projétil some mesmo (ele bateu na placa — enemies/index.js já
-        // dispara a faísca âmbar na cor da blindagem), mas NÃO entra no `hitsLog`, e NÃO pula
-        // pro próximo alvo (bateu num escudo, não "atingiu" ninguém de verdade). Sem esse guard,
-        // o tiro bloqueado gerava número de dano flutuante em cima da fragata, contradizendo a
-        // própria regra de "blindagem que não deixa passar". Também pula os campos de kill/
-        // points, que já vinham zerados do lado de lá (defensivo).
+        if (hit.squadWipe) {
+          squadWipe = true
+          squadWipeBonus += (hit.squadWipeBonus || 150)
+        }
         if (hit.blocked) { removeProjectile(projectile); continue }
         // pedido do usuário: tiro carregado no MÁXIMO também estoura uma explosão em área no
         // ponto de impacto (raio fixo, circular) — ALÉM do dano direto já aplicado acima pelo
@@ -324,14 +319,20 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       enemyKills, enemyKillPoints, bonusKillPoints,
       goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
       timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+      squadWipe, squadWipeBonus,
     }
   }
 
   return {
-    tryFire(origin, direction) {
+    tryFire(origin, direction, opts = {}) {
       if (cooldown > 0) return null
-      cooldown = fireCooldownDuration
+      const isFrenzy = !!opts.isFrenzy
+      cooldown = isFrenzy ? fireCooldownDuration * 0.45 : fireCooldownDuration
       fire(origin, direction)
+      if (isFrenzy) {
+        fire(origin.clone().add(new THREE.Vector3(-0.8, 0, 0)), direction)
+        fire(origin.clone().add(new THREE.Vector3(0.8, 0, 0)), direction)
+      }
       return true
     },
 

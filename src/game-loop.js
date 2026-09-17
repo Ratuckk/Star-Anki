@@ -429,6 +429,14 @@ export function createGameLoop(deps) {
       hud.spawnDamageNumber(xFracT, yFracT, `${Math.round(events.timeReductionMs / 1000)}s ⏳`, { time: true, prefix: '-' })
     }
 
+    // ============ SQUAD WIPE & FRENESI DE FOCO ============
+    if (events.squadWipe && hud.showCombatEventBanner) {
+      hud.showCombatEventBanner('SQUAD WIPE!', `+${events.squadWipeBonus || 150} PTS // ELIMINAÇÃO TOTAL`, 'squad-wipe')
+    }
+    if (events.focusFrenzyActivated && hud.showCombatEventBanner) {
+      hud.showCombatEventBanner('FRENESI DE FOCO!', 'DISPARO TRIPLO ACELERADO (5S)', 'frenzy')
+    }
+
     const ndc = reticleWorldPos.project(camera)
     hud.setReticlePosition(
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
@@ -571,9 +579,15 @@ export function createGameLoop(deps) {
             combat.spawnSussurro()
           } else {
             const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
-            const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
-            const count = Math.min(room, roll + state.extraSpawnPerBatch)
-            for (let i = 0; i < count; i += 1) combat.spawnEnemy()
+            if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {
+              const formations = ['vFormation', 'sweepLine', 'trailColumn', 'pincer']
+              const picked = formations[Math.floor(Math.random() * formations.length)]
+              combat.spawnSquadron(picked)
+            } else {
+              const roll = NORMAL_SPAWN_MIN_COUNT + Math.floor(Math.random() * (NORMAL_SPAWN_MAX_COUNT - NORMAL_SPAWN_MIN_COUNT + 1))
+              const count = Math.min(room, roll + state.extraSpawnPerBatch)
+              for (let i = 0; i < count; i += 1) combat.spawnEnemy()
+            }
           }
         }
       }

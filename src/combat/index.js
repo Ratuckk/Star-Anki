@@ -47,9 +47,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     }
   }
 
+  let focusFrenzyTimer = 0
+
   return {
     tryFire(origin, direction) {
-      if (!projectiles.tryFire(origin, direction)) return false
+      if (!projectiles.tryFire(origin, direction, { isFrenzy: focusFrenzyTimer > 0 })) return false
       squadron.tryFireSupport(direction)
       return true
     },
@@ -67,6 +69,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
 
     spawnEnemy: () => enemies.spawnEnemy(),
+    spawnSquadron: (formationType) => enemies.spawnSquadron ? enemies.spawnSquadron(formationType) : null,
     spawnMiniSwarm: () => enemies.spawnMiniSwarm(),
     spawnTimeEnemy: () => enemies.spawnTimeEnemy(),
     spawnTimeEnemyMega: () => enemies.spawnTimeEnemyMega(),
@@ -128,10 +131,25 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       const aimDirection = opts.aimDirection
       projectiles.tick(dt)
 
+      // Micro-Orbes Anki & Frenesi de Foco
+      let focusFrenzyActivated = false
+      if (effects && effects.updateMicroOrbes) {
+        effects.updateMicroOrbes(dt, playerPosition)
+        const orbesCollected = effects.getMicroOrbesCollected ? effects.getMicroOrbesCollected() : 0
+        if (orbesCollected > 0) {
+          focusFrenzyTimer = 5.0
+          focusFrenzyActivated = true
+        }
+      }
+      if (focusFrenzyTimer > 0) {
+        focusFrenzyTimer = Math.max(0, focusFrenzyTimer - dt)
+      }
+
       const {
         enemyKills, enemyKillPoints, bonusKillPoints,
         goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
         timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
+        squadWipe, squadWipeBonus,
       } = projectiles.update(dt, aimDirection, { allowBossOrbHit: opts.allowBossOrbHit !== false })
       targets.update(dt)
 
@@ -182,6 +200,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bossOrbHit,
         bossCollisionWorldPos,
         hitsLog,
+        squadWipe: Boolean(squadWipe),
+        squadWipeBonus: squadWipeBonus || 0,
+        focusFrenzyActivated,
+        isFrenzyActive: focusFrenzyTimer > 0,
       }
     },
 

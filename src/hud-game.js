@@ -1494,6 +1494,27 @@ export function createGameHud() {
       }, duration)
     },
 
+    showCombatEventBanner(title, subtitle, type = 'squad-wipe') {
+      const banner = document.createElement('div')
+      banner.className = `hud-combat-event-banner ${type}`
+
+      const titleEl = document.createElement('div')
+      titleEl.className = 'hud-combat-event-title'
+      titleEl.textContent = title
+
+      const subEl = document.createElement('div')
+      subEl.className = 'hud-combat-event-sub'
+      subEl.textContent = subtitle
+
+      banner.appendChild(titleEl)
+      banner.appendChild(subEl)
+      root.appendChild(banner)
+
+      scheduleTimeout(() => {
+        if (banner.parentNode) banner.parentNode.removeChild(banner)
+      }, 2300)
+    },
+
     debug: {
       setVisible(v) { debugPanel.hidden = !v },
       bind(handlers) {
