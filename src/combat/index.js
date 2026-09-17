@@ -71,6 +71,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getAbilityStates: () => squadron.getAbilityStates(),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
+    getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets() : 0,
 
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnSquadron: (formationType) => enemies.spawnSquadron ? enemies.spawnSquadron(formationType) : null,

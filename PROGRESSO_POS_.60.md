@@ -42,6 +42,69 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Restaura o Alvo Extra de Phantom, Corrige Velocidade da Investida e Auditoria de Progresso — v0.72.2
+
+Pedido do usuário depois da auditoria de tudo que ficou pendente (ver entrada anterior): *"não
+devia ter cortado isso, era meio que a ideia ele dar alvos/disparos extras..."* sobre o "+1 alvo
+travado extra" da Carga Compartilhada do Phantom, que a v0.72.0 tinha cortado sem avisar; e
+*"corrija isso [números nunca ajustados por playtest] após o último pedido"*.
+
+1. **Alvo extra do Phantom restaurado (`src/combat/wingmen.js`, `src/combat/index.js`,
+   `src/game-loop.js`, `src/player.js`)**: nova `getAssistExtraTargets()` no sistema de esquadrão
+   (`ASSIST_EXTRA_TARGETS = 1`, mesma condição de `getAssistChargeMult` — Phantom acoplado e
+   ativo), repassada por `combat.getAssistExtraTargets()`. `currentHomingAllowedTargets()` em
+   `game-loop.js` agora soma esse bônus ao teto ATUAL de alvos (`player.config.homingMaxTargets`,
+   já inclui qualquer stack da carta `more-homing-targets`), clampado em `HOMING_MAX_TARGETS_CAP`
+   (exportado de `player.js`, antes só interno) — e **recalcula o `lockStep`** em cima desse teto
+   efetivo, não só o teto de exibição: sem isso, o alvo extra nunca seria alcançável dentro da
+   janela normal de carga (o `lockStep` continuaria fatiado pro teto antigo), um bônus só de
+   fachada que nunca se manifestava. Empilha corretamente com `more-homing-targets` sem estourar o
+   teto global, como o plano original pedia.
+2. **Bug real encontrado durante a revisão dos números da investida do Falco
+   (`src/combat/wingmen.js`)**: a compensação de velocidade "acelera se ficar longe do JOGADOR"
+   (`+32u/s` quando `distToPlayer > 35`) é código herdado de antes das habilidades, pensado pra
+   patrulha/regroup alcançarem o jogador. Como o multiplicador de investida (`cruiseSpeed *= 2.2`)
+   multiplica esse valor já somado, no pior caso (wingman longe do jogador ao disparar a investida
+   contra um inimigo longe DELE) a velocidade chegava a `(42+48+32)*2.2 ≈ 268u/s` — cruzava o
+   alcance máximo de disparo (45u) em ~0.17s, um teleporte, não uma investida com peso (contradiz
+   diretamente o trabalho da v0.72.1 de tirar exatamente esse tipo de movimento instantâneo).
+   Corrigido: a compensação "+32 se longe do jogador" agora é pulada especificamente durante
+   `'ram'` (não faz sentido de qualquer forma — o alvo da investida é um inimigo, não o jogador),
+   deixando o pior caso em `(42+48)*2.2 ≈ 198u/s` — ainda uma investida rápida e dramática, sem
+   virar teleporte.
+3. **Resto da revisão numérica — comparado contra a economia real do jogo, não alterado**: dano da
+   investida (6 normal / 2 vs chefe-dourado) comparado ao `RAM_DAMAGE=5` da própria carta de aríete
+   do jogador e ao HP dos inimigos comuns (blaster/mini-swarm = 1-2, tanque = 15, chefe ≥ 33) —
+   proporção já fazia sentido (mata a maioria dos inimigos comuns num golpe só, sem trivializar
+   chefe/dourado). Cura do Slippy (1 de vida por orbe) comparada ao teto de vida do jogador
+   (`STARTING_HEALTH=10`) e à carta `extra-life` (+1 vida inteira, permanente) — um trickle
+   pequeno e repetível claramente numa escala diferente da carta permanente, proporção ok. Bônus
+   combinado do Phantom (carga 1.5x + alvo extra) — comparado ao ritmo normal de carga
+   (600-2200ms) — é um pico de poder forte mas correto pro contexto: exige segurar o disparo
+   (expondo o jogador), dura no máximo 3s, e tem cooldown de 16s (piso 8s). Nenhum desses valores
+   foi mudado — a auditoria não achou motivo real pra mexer, só documentou o porquê.
+4. **Nota de processo**: durante esta sessão, `src/game-loop.js` já tinha ganhado, no disco, um
+   sistema de avanço manual de frame (`runFrame`/`step`/`setManualStepping`, provavelmente de uma
+   sessão concorrente usando a mesma pasta — não fui eu quem escreveu) parecendo endereçar
+   exatamente a limitação de rAF sem foco de SO documentada repetidamente neste arquivo. As
+   mudanças desta entrega (import de `HOMING_MAX_TARGETS_CAP`, corpo de
+   `currentHomingAllowedTargets`) foram aplicadas em cima dessa versão do arquivo sem conflito, e
+   os dois conjuntos de mudança acabaram no mesmo commit — registrando aqui pra quem for ler o
+   histórico depois não estranhar `runFrame`/`step` aparecendo sem uma entrega própria que os
+   explique.
+
+**Testado**: `node --check` nos 4 arquivos tocados e `node src/selftest.mjs`, 100% ok. **Testado
+ao vivo** (`preview_start "static"`): página carrega e a tela de pré-jogo renderiza sem nenhum
+erro de console — confirma que a cadeia de import/export nova (`player.js` →
+`game-loop.js`, `combat/wingmen.js` → `combat/index.js` → `game-loop.js`) resolve limpa no
+navegador real. **Não verificado ao vivo**: o alcance efetivo de 5 alvos travados simultâneos
+durante a Carga Compartilhada em combate real — mesma limitação de rAF já documentada
+extensivamente neste arquivo impediu observar um ciclo de carga completo nesta sessão.
+
+**Versão**: v0.72.1 → **v0.72.2**
+
+---
+
 ### Fix Real de "Piruetas" do Esquadrão — Taxa de Giro Capada (`src/combat/wingmen.js`) — v0.72.1
 
 Pedido do usuário, direto e frustrado: *"eles continuam fazendo um milhão de piruetas, você não

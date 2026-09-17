@@ -118,6 +118,7 @@ const GUARD_TRIGGER_RANGE = 9
 const ASSIST_MIN_HOLD_S = 0.35
 const ASSIST_MAX_S = 3.0
 const ASSIST_CHARGE_MULT = 1.5
+const ASSIST_EXTRA_TARGETS = 1
 
 const ESCORT_SIDE_OFFSET = 3.0
 const ESCORT_UP_OFFSET = 0.6
@@ -382,6 +383,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function getAssistChargeMult() {
     return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_CHARGE_MULT : 1
+  }
+
+  // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada do Phantom concede
+  // enquanto acoplado — empilha com a carta 'more-homing-targets', o teto (HOMING_MAX_TARGETS_CAP)
+  // é respeitado do lado de fora (game-loop.js), aqui é só o bônus bruto.
+  function getAssistExtraTargets() {
+    return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_EXTRA_TARGETS : 0
   }
 
   function spawnMember(profileId) {
@@ -899,8 +907,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       let cruiseSpeed = w.profile.speed
       if (!inArena) {
         // No rail, compensa a velocidade de avanço do mundo (+48u/s) e acelera se ficar para trás
+        // do JOGADOR — não aplica durante 'ram': ali o alvo é um INIMIGO (não o jogador), então
+        // "distToPlayer > 35" não tem relação nenhuma com a corrida de investida, e empilhado com
+        // o *2.2 da investida (abaixo) dava velocidades de até ~268u/s — fechava os 45u máximos de
+        // alcance em ~0.17s, um teleporte, não uma investida com peso.
         cruiseSpeed += 48
-        if (w.state === 'regroup' || distToPlayer > 35) cruiseSpeed += 32
+        if (w.state !== 'ram' && (w.state === 'regroup' || distToPlayer > 35)) cruiseSpeed += 32
       }
       if (boostActive || w.state === 'flyby') cruiseSpeed *= 1.65
       else if (w.state === 'ram') cruiseSpeed *= 2.2
@@ -1059,6 +1071,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     getAbilityStates,
     applyAbilityCooldownCard,
     getAssistChargeMult,
+    getAssistExtraTargets,
     dispose,
   }
 }

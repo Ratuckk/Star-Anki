@@ -16,6 +16,7 @@
 import * as THREE from 'three'
 import { isActionPressed } from './keybindings.js'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
+import { HOMING_MAX_TARGETS_CAP } from './player.js'
 import {
   ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
   INVINCIBILITY_FLICKER_MS,
@@ -72,15 +73,20 @@ export function createGameLoop(deps) {
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
     const windowMs = Math.max(250, player.config.homingChargeMaxMs - player.config.homingChargeMinMs)
-    const maxAdditionalTargets = Math.max(1, (player.config.homingMaxTargets || 4) - 1)
+    // Phantom (Carga Compartilhada): +1 alvo de trava enquanto acoplado, empilhando com a carta
+    // 'more-homing-targets' sem passar do teto global — recalcula o passo de trava (lockStep) em
+    // cima do teto efetivo pra o alvo extra ficar de fato alcançável dentro da mesma janela de
+    // carga, não só um número de fachada que nunca é atingido.
+    const assistExtra = combat.getAssistExtraTargets ? combat.getAssistExtraTargets() : 0
+    const effectiveMax = Math.min(HOMING_MAX_TARGETS_CAP, (player.config.homingMaxTargets || 4) + assistExtra)
+    const maxAdditionalTargets = Math.max(1, effectiveMax - 1)
     const lockStep = Math.max(100, windowMs / maxAdditionalTargets)
-    return Math.max(1, Math.min(player.config.homingMaxTargets, 1 + Math.floor(chargeMs / lockStep)))
+    return Math.max(1, Math.min(effectiveMax, 1 + Math.floor(chargeMs / lockStep)))
   }
 
-  function tick(now) {
+  function runFrame(now, forcedRawDt) {
     if (state.stopped) return
-    state.rafId = requestAnimationFrame(tick)
-    const rawDt = Math.min((now - state.lastTime) / 1000, 0.1)
+    const rawDt = forcedRawDt != null ? forcedRawDt : Math.min((now - state.lastTime) / 1000, 0.1)
     const dt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
     state.lastTime = now
 
@@ -763,15 +769,77 @@ export function createGameLoop(deps) {
     renderer.render(scene, camera)
   }
 
+  function tick(now) {
+    if (state.stopped) return
+    if (!state.manualStepActive) {
+      state.rafId = requestAnimationFrame(tick)
+    }
+    runFrame(now)
+  }
+
+  function setManualStepping(enabled) {
+    const active = !!enabled
+    state.manualStepActive = active
+    if (state.debugFlags) {
+      state.debugFlags.manualStepActive = active
+    }
+    if (hud?.debug?.setToggleActive) {
+      hud.debug.setToggleActive('toggleManualStep', active)
+    }
+    if (active) {
+      if (state.rafId != null) {
+        cancelAnimationFrame(state.rafId)
+        state.rafId = null
+      }
+    } else {
+      if (!state.stopped && state.rafId == null) {
+        state.lastTime = performance.now()
+        state.rafId = requestAnimationFrame(tick)
+      }
+    }
+    hud?.debug?.refreshStats?.()
+    return state.manualStepActive
+  }
+
+  function step(frames = 1, dtMs = 16.6667) {
+    if (state.stopped) return
+    if (state.paused) {
+      state.paused = false
+      hud.setPaused(false)
+    }
+    if (!state.manualStepActive) {
+      setManualStepping(true)
+    }
+    const count = Math.max(1, Math.floor(frames))
+    const dtSec = dtMs / 1000
+    for (let i = 0; i < count; i++) {
+      if (state.stopped) break
+      const now = (state.lastTime || performance.now()) + dtMs
+      runFrame(now, dtSec)
+    }
+    hud?.debug?.refreshStats?.()
+  }
+
   function start() {
     state.lastTime = performance.now()
-    state.rafId = requestAnimationFrame(tick)
+    if (!state.manualStepActive) {
+      state.rafId = requestAnimationFrame(tick)
+    }
   }
 
   function stop() {
     state.stopped = true
-    cancelAnimationFrame(state.rafId)
+    if (state.rafId != null) {
+      cancelAnimationFrame(state.rafId)
+      state.rafId = null
+    }
   }
 
-  return { start, stop }
+  return {
+    start,
+    stop,
+    step,
+    setManualStepping,
+    isManualStepping: () => !!state.manualStepActive,
+  }
 }

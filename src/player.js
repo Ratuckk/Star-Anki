@@ -28,7 +28,7 @@ const HOMING_CHARGE_MIN_MS = 600
 const HOMING_CHARGE_MAX_MS = 2200
 const HOMING_CHARGE_MIN_FLOOR_MS = 250
 const HOMING_MAX_TARGETS_BASE = 4
-const HOMING_MAX_TARGETS_CAP = 8
+export const HOMING_MAX_TARGETS_CAP = 8
 // carta "Ricochete": quantas vezes um tiro carregado pula pro próximo inimigo mais próximo após
 // atingir o alvo mirado. Cap defensivo (evita uma cadeia infinita se o jogador empilhar demais).
 const RICOCHET_CAP = 5
