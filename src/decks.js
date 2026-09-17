@@ -145,3 +145,26 @@ export function buildReviewDeck(history) {
   if (cards.length < REVIEW_MIN_CARDS) return null
   return { shooterCards: cards, painelCards: [], allCards: cards, warning: null }
 }
+
+// Modo Arcade / Sem Baralho: jogo sem perguntas com fluxo direto para cartas roguelike
+export const NO_DECK_ID = '__no_deck__'
+
+export function buildNoDeckVirtual() {
+  const dummyCard = {
+    guid: 'arcade-virtual-card',
+    question: 'Modo Arcade',
+    answer: 'Sem Baralho',
+    tags: ['arcade'],
+    explanation: 'Modo de combate puro sem perguntas.',
+  }
+  return {
+    id: NO_DECK_ID,
+    name: 'Modo Arcade (Sem Baralho)',
+    title: 'Arcade Roguelike',
+    shooterCards: [dummyCard],
+    allCards: [dummyCard],
+    painelCards: [],
+    warning: null,
+    isNoDeck: true,
+  }
+}

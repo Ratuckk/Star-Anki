@@ -7,6 +7,8 @@ const DEFAULTS = {
   arenaTurnSensitivity: 1,
   // visual da nave — ids de SHIP_VISUAL_OPTIONS em rail.js ('default'/'bombardeiro'/'racer')
   shipVisual: 'default',
+  // companheiros de início na ala (0 a 4 pilotos)
+  startingWingmen: 0,
 }
 
 function readAll() {

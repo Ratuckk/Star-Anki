@@ -56,6 +56,33 @@ export function showSettingsScreen({ onBack }) {
   })
   lifeRow.appendChild(lifeInput)
   lifeSection.appendChild(lifeRow)
+
+  const wingmanRow = document.createElement('div')
+  wingmanRow.className = 'settings-row'
+  const wingmanLabel = document.createElement('label')
+  wingmanLabel.textContent = 'Companheiros iniciais na ala'
+  wingmanRow.appendChild(wingmanLabel)
+  const wingmanSelect = document.createElement('select')
+  const wingmanOpts = [
+    { val: 0, text: 'Nenhum (Voo Solo)' },
+    { val: 1, text: '1 Ala (Falco)' },
+    { val: 2, text: '2 Alas (Falco & Peppy)' },
+    { val: 3, text: '3 Alas (Falco, Peppy & Slippy)' },
+    { val: 4, text: '4 Alas (Esquadrão Completo)' },
+  ]
+  wingmanOpts.forEach((o) => {
+    const opt = document.createElement('option')
+    opt.value = String(o.val)
+    opt.textContent = o.text
+    if ((getSettings().startingWingmen || 0) === o.val) opt.selected = true
+    wingmanSelect.appendChild(opt)
+  })
+  wingmanSelect.addEventListener('change', () => {
+    setSetting('startingWingmen', Number(wingmanSelect.value) || 0)
+  })
+  wingmanRow.appendChild(wingmanSelect)
+  lifeSection.appendChild(wingmanRow)
+
   root.appendChild(lifeSection)
 
   const visualSection = document.createElement('div')

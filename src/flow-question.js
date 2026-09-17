@@ -51,6 +51,19 @@ export function createQuestionFlow(deps) {
   }
 
   function enterAlternatives() {
+    if (deck?.isNoDeck) {
+      combat.clearBonusTargets()
+      hud.setCountdown(null)
+      hud.setFeedback(null)
+      state.pendingCardChoice = false
+      state.phase = 'cardChoice'
+      enterCardChoice(() => {
+        session.pointer = (session.pointer + 1) % session.queue.length
+        deps.enterCombat?.()
+      })
+      return
+    }
+
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()

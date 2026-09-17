@@ -54,6 +54,23 @@ export function createBossFlow(deps) {
 
   function triggerBossQuestion() {
     combat.clearProjectiles?.()
+    if (deck?.isNoDeck) {
+      state.bossOrbsRemaining = Math.max(0, state.bossOrbsRemaining - 1)
+      hud.setBossActive(true, state.bossOrbsRemaining)
+      state.bossBuildupTimer += BOSS_HUNT_BONUS_MS
+      if (effects && rail && effects.cardAcquiredPulse) {
+        effects.cardAcquiredPulse(rail.getPlayerPosition(), 'especial')
+      }
+      if (state.bossOrbsRemaining <= 0) {
+        finishBossHunt()
+      } else {
+        state.pendingCardChoice = true
+        state.phase = 'bossBuildupResolution'
+        state.phaseTimer = 0
+      }
+      return
+    }
+
     const result = nextQuestion(session, deck.allCards)
     if (!result) {
       endSector()
@@ -179,6 +196,13 @@ export function createBossFlow(deps) {
   }
 
   function enterGoldenAlternatives() {
+    if (deck?.isNoDeck) {
+      state.pendingCardChoice = true
+      state.phase = 'goldenResolution'
+      state.phaseTimer = 0
+      return
+    }
+
     state.goldenCard = pickBonusCard(deck, session)
     const result = buildBonusQuestion(state.goldenCard, deck.allCards)
     state.questionResult = result

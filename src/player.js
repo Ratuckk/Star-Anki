@@ -148,8 +148,11 @@ export function createPlayerSystem(session) {
     isFullSpinOnCooldown: () => fullSpinCooldownTimer > 0,
     isDeflectActive: () => deflectCardActive,
     isRamCardActive: () => ramCardActive,
-    getWingmanCount: () => wingmanCount,
-    setWingmanCount: (count) => { wingmanCount = Math.max(0, Math.min(WINGMAN_CAP, count || 0)) },
+    setWingmanCount: (count) => {
+      wingmanCount = Math.max(0, Math.min(WINGMAN_CAP, count || 0))
+      if (wingmanCount > 0) collectedCards.set('wingman', wingmanCount)
+      else collectedCards.delete('wingman')
+    },
 
     getBoostCharge: () => boostCharge,
     isPropulsionActive: () => propulsionActiveTimer > 0,

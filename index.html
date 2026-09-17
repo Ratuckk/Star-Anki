@@ -129,6 +129,57 @@
     font-size: 0.85rem;
     color: #8392a5;
   }
+  .pregame-option-card {
+    background: #121824;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .pregame-wingman-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.6rem 0;
+  }
+  .wingman-opt-btn {
+    flex: 1 1 80px;
+    background: #1a2232;
+    border: 1px solid #2d3b52;
+    color: #94a3b8;
+    padding: 0.55rem 0.75rem;
+    border-radius: 6px;
+    font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+  }
+  .wingman-opt-btn:hover {
+    background: #222d42;
+    color: #f1f5f9;
+    border-color: #3b4d6b;
+  }
+  .wingman-opt-btn.active {
+    background: rgba(14, 165, 233, 0.2);
+    border-color: #0ea5e9;
+    color: #38bdf8;
+    box-shadow: 0 0 12px rgba(14, 165, 233, 0.35);
+  }
+  .btn-arcade {
+    background: linear-gradient(135deg, #0ea5e9, #8b5cf6) !important;
+    color: #ffffff !important;
+    font-weight: 800;
+    border: none;
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.35);
+    transition: all 0.2s ease;
+  }
+  .btn-arcade:hover {
+    background: linear-gradient(135deg, #38bdf8, #a855f7) !important;
+    box-shadow: 0 0 22px rgba(168, 85, 247, 0.6);
+    transform: translateY(-1px);
+  }
   .pregame-footer {
     display: flex;
     justify-content: space-between;

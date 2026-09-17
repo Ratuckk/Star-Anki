@@ -1,8 +1,9 @@
 import { showScreen } from './hud-shared.js'
 import { listDecks } from './decks.js'
+import { getSettings, setSetting } from './settings.js'
 import { GAME_VERSION } from './version.js'
 
-export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
+export function showPreGameMenu({ onPlay, onPlayNoDeck, onAddDeck, onSettings }) {
   showScreen('pregame')
   const root = document.getElementById('pregame-screen')
   root.innerHTML = ''
@@ -18,10 +19,10 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
 
   const desc = document.createElement('p')
   desc.className = 'pregame-desc'
-  desc.textContent = 'Transforme um baralho exportado do Anki num rail shooter de estudo.'
+  desc.textContent = 'Combate espacial 3D em trilho e arena — jogue no Modo Estudo com repetição espaçada ou no Modo Arcade Roguelike.'
   root.appendChild(desc)
 
-  // 2. Card discreto do Baralho Ativo
+  // 2. Card do Baralho Ativo
   const deckCard = document.createElement('div')
   deckCard.className = 'pregame-deck-card'
   if (hasDecks) {
@@ -33,42 +34,136 @@ export function showPreGameMenu({ onPlay, onAddDeck, onSettings }) {
   } else {
     deckCard.innerHTML = `
       <div class="deck-card-label">Nenhum baralho cadastrado</div>
-      <div class="deck-card-meta">Adicione um arquivo .txt exportado do Anki para começar a jogar.</div>
+      <div class="deck-card-meta">Inicie direto no Modo Arcade sem perguntas, ou importe um arquivo .txt exportado do Anki.</div>
     `
   }
   root.appendChild(deckCard)
 
-  // 3. Ações principais
+  // 3. Card de Companheiros de Início (Escolta Aliada)
+  const wingmanCard = document.createElement('div')
+  wingmanCard.className = 'pregame-option-card'
+  const wingmanLabel = document.createElement('div')
+  wingmanLabel.className = 'deck-card-label'
+  wingmanLabel.textContent = '🚀 Companheiros de Início na Ala'
+  wingmanCard.appendChild(wingmanLabel)
+
+  const wingmanSelector = document.createElement('div')
+  wingmanSelector.className = 'pregame-wingman-selector'
+
+  const wingmanHints = {
+    0: 'Voo solo. Recrute novos pilotos durante a missão com cartas de Esquadrão.',
+    1: 'Inicia a missão com 1 ala aliado cobrindo seus flancos.',
+    2: 'Inicia a missão com 2 alas aliados em formação tática.',
+    3: 'Inicia a missão com 3 alas aliados cobrindo a esquadrilha.',
+    4: 'Esquadrão completo de 4 naves em formação desde a decolagem!',
+  }
+
+  const wingmanHint = document.createElement('div')
+  wingmanHint.className = 'deck-card-meta'
+
+  let currentWingmen = getSettings().startingWingmen || 0
+
+  function updateWingmanUi(val) {
+    currentWingmen = val
+    setSetting('startingWingmen', val)
+    const btns = wingmanSelector.querySelectorAll('.wingman-opt-btn')
+    btns.forEach((b) => {
+      const count = Number(b.dataset.count)
+      b.classList.toggle('active', count === currentWingmen)
+    })
+    wingmanHint.textContent = wingmanHints[currentWingmen] || wingmanHints[0]
+  }
+
+  const wingmanOptions = [
+    { count: 0, label: 'Solo (0)' },
+    { count: 1, label: '+1 Ala' },
+    { count: 2, label: '+2 Alas' },
+    { count: 3, label: '+3 Alas' },
+    { count: 4, label: 'Esquadrão (4)' },
+  ]
+
+  wingmanOptions.forEach((opt) => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = `wingman-opt-btn ${opt.count === currentWingmen ? 'active' : ''}`
+    btn.dataset.count = String(opt.count)
+    btn.textContent = opt.label
+    btn.addEventListener('click', () => updateWingmanUi(opt.count))
+    wingmanSelector.appendChild(btn)
+  })
+
+  wingmanCard.appendChild(wingmanSelector)
+  wingmanHint.textContent = wingmanHints[currentWingmen] || wingmanHints[0]
+  wingmanCard.appendChild(wingmanHint)
+  root.appendChild(wingmanCard)
+
+  // 4. Ações principais
   const actions = document.createElement('div')
   actions.className = 'menu-actions'
 
-  const playBtn = document.createElement('button')
-  playBtn.id = 'btn-pregame-play'
-  playBtn.textContent = hasDecks ? 'Jogar' : 'Adicionar baralho'
-  playBtn.addEventListener('click', hasDecks ? onPlay : onAddDeck)
-  actions.appendChild(playBtn)
+  if (hasDecks) {
+    const playDeckBtn = document.createElement('button')
+    playDeckBtn.id = 'btn-pregame-play-deck'
+    playDeckBtn.textContent = '🎮 Jogar com Baralho'
+    playDeckBtn.addEventListener('click', onPlay)
+    actions.appendChild(playDeckBtn)
 
-  const btnRow = document.createElement('div')
-  btnRow.className = 'btn-row'
+    const playArcadeBtn = document.createElement('button')
+    playArcadeBtn.id = 'btn-pregame-play-arcade'
+    playArcadeBtn.className = 'btn-arcade'
+    playArcadeBtn.textContent = '⚡ Jogar Sem Baralho (Modo Arcade)'
+    playArcadeBtn.addEventListener('click', onPlayNoDeck)
+    actions.appendChild(playArcadeBtn)
 
-  const decksBtn = document.createElement('button')
-  decksBtn.id = 'btn-pregame-decks'
-  decksBtn.className = 'btn-secondary'
-  decksBtn.textContent = hasDecks ? 'Gerenciar baralhos' : 'Importar baralho'
-  decksBtn.addEventListener('click', onPlay)
-  btnRow.appendChild(decksBtn)
+    const btnRow = document.createElement('div')
+    btnRow.className = 'btn-row'
 
-  const settingsBtn = document.createElement('button')
-  settingsBtn.id = 'btn-pregame-settings'
-  settingsBtn.className = 'btn-secondary'
-  settingsBtn.textContent = 'Configurações'
-  settingsBtn.addEventListener('click', onSettings)
-  btnRow.appendChild(settingsBtn)
+    const decksBtn = document.createElement('button')
+    decksBtn.id = 'btn-pregame-decks'
+    decksBtn.className = 'btn-secondary'
+    decksBtn.textContent = 'Gerenciar baralhos'
+    decksBtn.addEventListener('click', onPlay)
+    btnRow.appendChild(decksBtn)
 
-  actions.appendChild(btnRow)
+    const settingsBtn = document.createElement('button')
+    settingsBtn.id = 'btn-pregame-settings'
+    settingsBtn.className = 'btn-secondary'
+    settingsBtn.textContent = 'Configurações'
+    settingsBtn.addEventListener('click', onSettings)
+    btnRow.appendChild(settingsBtn)
+
+    actions.appendChild(btnRow)
+  } else {
+    const playArcadeBtn = document.createElement('button')
+    playArcadeBtn.id = 'btn-pregame-play-arcade'
+    playArcadeBtn.className = 'btn-arcade'
+    playArcadeBtn.textContent = '⚡ Jogar Sem Baralho (Modo Arcade)'
+    playArcadeBtn.addEventListener('click', onPlayNoDeck)
+    actions.appendChild(playArcadeBtn)
+
+    const btnRow = document.createElement('div')
+    btnRow.className = 'btn-row'
+
+    const addDeckBtn = document.createElement('button')
+    addDeckBtn.id = 'btn-pregame-add-deck'
+    addDeckBtn.className = 'btn-secondary'
+    addDeckBtn.textContent = 'Importar baralho'
+    addDeckBtn.addEventListener('click', onAddDeck)
+    btnRow.appendChild(addDeckBtn)
+
+    const settingsBtn = document.createElement('button')
+    settingsBtn.id = 'btn-pregame-settings'
+    settingsBtn.className = 'btn-secondary'
+    settingsBtn.textContent = 'Configurações'
+    settingsBtn.addEventListener('click', onSettings)
+    btnRow.appendChild(settingsBtn)
+
+    actions.appendChild(btnRow)
+  }
+
   root.appendChild(actions)
 
-  // 4. Rodapé discreto de controles
+  // 5. Rodapé discreto de controles
   const footer = document.createElement('div')
   footer.className = 'pregame-footer'
   footer.innerHTML = `

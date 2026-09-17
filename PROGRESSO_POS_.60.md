@@ -37,6 +37,58 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Modo Arcade Roguelike (Jogar Sem Baralho) e Escolta Inicial de Companheiros — v0.65.0
+
+Pedido do usuário: *"adicione uma opção no pré jogo para jogar sem baralho, removendo as perguntas do jogo e mantendo o modo roguelike normal (onde ao invés de ir para uma pergunta, vai direto para a escolha de carta)", "atualize sempre o numero de versao no readme do site", "adicione a opção no pré-jogo de iniciar já com 1 ou mais companheiros"*.
+
+1. **Modo Arcade Roguelike (Jogar Sem Baralho)**:
+   - Criado `buildNoDeckVirtual()` e `NO_DECK_ID = '__no_deck__'` em `src/decks.js`, gerando uma estrutura virtual leve sem necessidade de baralhos Anki importados.
+   - Em `src/flow-question.js`: ao expirar o tempo de ciclo, quando `deck.isNoDeck` está ativo, o jogo bypassa completamente qualquer modal de pergunta (`enterAlternatives`) e abre diretamente a escolha de 3 cartas Roguelike (`enterCardChoice`). Ao selecionar uma carta, os upgrades são aplicados e o setor/ciclo de combate avança imediatamente.
+   - Em `src/flow-boss.js`: destruição de orbes no *Boss Buildup* e vitória sobre a *Anomalia Dourada* concedem seus bônus e avançam diretamente para a escolha de cartas de melhoria sem exibir perguntas.
+   - Botão estilizado com gradiente neon/arcade (`.btn-arcade`) adicionado na tela de pré-jogo (`src/hud-pregame.js`), permitindo iniciar partidas Arcade com um clique mesmo sem nenhum arquivo de deck importado.
+2. **Escolta Inicial de Companheiros Configurável**:
+   - Adicionada configuração `startingWingmen: 0` em `src/settings.js`, persistida em `localStorage`.
+   - Criado seletor interativo com botões de 0 a 4 alas (`Solo (0)`, `+1 Ala`, `+2 Alas`, `+3 Alas`, `Esquadrão (4)`) no card de pré-jogo (`src/hud-pregame.js`) e no menu de Configurações (`src/hud-settings.js`).
+   - Em `src/mount-game.js`: `player.setWingmanCount` e `combat.setWingmanCount` são inicializados imediatamente no carregamento da partida com a quantidade escolhida, fazendo os caças aliados (*Falco, Peppy, Slippy, Phantom*) decolarem e voarem em formação ao lado da nave do jogador desde o primeiro frame.
+3. **Sincronização de Documentação e README**:
+   - Badge de versão do `README.md` atualizado para **`v0.65.0`**.
+   - Visão Geral do `README.md` atualizada com o resumo do Modo Estudo, Modo Arcade e Escolta de Companheiros.
+
+**Versão**: v0.64.1 → **v0.65.0**
+
+---
+
+### Reversão de Modelos Genéricos, Suavização de Movimento em Tela, Escala e Fix Crítico de `playerPosition` — v0.64.1
+
+Pedido do usuário: *"eu não pedi pra mudar os modelos dos inimigos, volte atrás com os modelos deles, é apenas para se diferenciar em cores, deixa a movimentação deles mais suave e menos extrema, eles estão saindo da tela na maior parte das vezes. Os deixe 15% maiores, o tank deixe 30% maior com 10 de vida a mais e corrija este problema [screenshot com ReferenceError: playerPosition is not defined]"*.
+
+1. **Correção de Crash de Loop (`src/effects.js`)**:
+   - `ReferenceError: playerPosition is not defined`: o loop de atração de micro-orbes em `effects.update` tentava referenciar `playerPosition` em vez do parâmetro de função `shipPosition`. Extraído para a função dedicada `updateMicroOrbes(dt, playerPos)` e exposta com segurança para consumo no orquestrador de combate.
+2. **Reversão dos Modelos 3D para Modelo Unificado (`src/enemies/blaster.js`)**:
+   - Revertidas todas as variações complexas de malhas para o modelo 3D unificado de caça com cone piramidal de 4 faces (`ConeGeometry`), mantendo a diferenciação puramente pelas cores originais dos 6 arquétipos (Azul, Vermelho, Verde, Laranja, Branco e Roxo).
+3. **Escalonamento de Inimigos**:
+   - Caças genéricos ampliados em **15%** (`ConeGeometry(1.15, 2.53, 4)` e `BLASTER_HIT_RADIUS = 2.07`).
+   - Tanque blindado ampliado em **30%** (`TANK_SCALE = 2.08`, `TANK_HIT_RADIUS = 2.34`) com **+10 de vida** (`TANK_DEFAULT_HP = 15`).
+4. **Movimentação Suave sem Sair da Tela**:
+   - Removidas manobras extremas de fuga (*fly-by velocity* que arremessavam naves a 18u/s para fora da visão).
+   - Adicionada interpolação suave (*lerp*) e limites estritos de tela (`MAX_SCREEN_X: ±5.4`, `MAX_SCREEN_Y: ±3.5`) no perfil evasivo e em órbitas, garantindo que os caças permaneçam sempre enquadrados na câmera.
+   - Ajustados os espaçamentos das esquadrilhas em `src/enemies/index.js` para evitar que naves surjam cortando as bordas.
+
+**Versão**: v0.64.0 → **v0.64.1**
+
+---
+
+### Overhaul Tático dos Inimigos Genéricos Estilo Star Fox 64 — v0.64.0
+
+1. **Formações Coordenadas em Esquadrilha**: 4 formações táticas (`vFormation`, `sweepLine`, `trailColumn`, `pincer`) integradas no spawn de trilho.
+2. **Líder de Esquadrão e Pânico de Ala**: Insígnia holográfica para o líder; abate do líder descoordena o esquadrão.
+3. **Bônus Squad Wipe e Micro-Orbes Anki de Frenesi**: Eliminar o esquadrão concede +150 PTS e dropa Micro-Orbe Anki magnético que ativa o **Frenesi de Foco (5s)** (disparo frontal triplo contínuo acelerado).
+4. **Feedback Visual de Combate no HUD**: Banners cinemáticos `SQUAD WIPE!` e `FRENESI DE FOCO!`.
+
+**Versão**: v0.63.3 → **v0.64.0**
+
+---
+
 ### Transição suave entre o fim da cutscene de decolagem e o início do gameplay — v0.63.2
 
 Pedido do usuário, logo depois da v0.63.1: *"eu queria que houvesse uma transição suave do fim da cutscene até o início do gameplay"* — mesmo com os fixes de FOV/background da v0.63.0, a TROCA em si (letterbox, banner, HUD de combate) ainda podia estar abrupta.

@@ -2,7 +2,7 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.62.0-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.65.0-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
@@ -13,9 +13,11 @@
 
 ## 🌌 Visão Geral
 
-**Star-Anki** combina a adrenalina e fluidez dos combates espaciais clássicos dos anos 90 (*rail-shooter* e combate tridimensional em arena *all-range mode*) com os fundamentos da ciência cognitiva da aprendizagem: **recordação ativa** e **feedback imediato**.
+**Star-Anki** combina a adrenalina e fluidez dos combates espaciais clássicos dos anos 90 (*rail-shooter* e combate tridimensional em arena *all-range mode*) com flexibilidade total de jogo:
 
-Enquanto pilota sua nave através do cosmos, desviando de asteroides e enfrentando frotas hostis, o jogador é desafiado por perguntas extraídas de baralhos de estudo. Cada acerto concede upgrades roguelike permanentes e acelera o avanço da missão, enquanto os erros exigem adaptação e aprendizado contínuo.
+1. **Modo Estudo (Com Baralho):** Estudo de alta retenção através de **recordação ativa** e **repetição espaçada (SRS)** com cartas do Anki. Cada acerto concede upgrades roguelike permanentes.
+2. **Modo Arcade Roguelike (Sem Baralho):** Combate arcade espacial puro sem perguntas, indo diretamente para a escolha de upgrades Roguelike a cada transição e encontro de chefes.
+3. **Escolta de Companheiros Configurável:** Escolha no pré-jogo iniciar a missão com 0 até 4 pilotos aliados cobrindo seus flancos desde a decolagem.
 
 ---
 

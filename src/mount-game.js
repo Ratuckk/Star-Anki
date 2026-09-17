@@ -87,6 +87,13 @@ export function mountGame(session, deck, menu) {
   const bindings = getBindings()
   const showEnemyHealthBars = getSettings().showEnemyHealthBars
 
+  // Iniciar partida já com companheiros escolhidos no pré-jogo / configurações
+  const startingWingmen = menu?.startingWingmen ?? getSettings().startingWingmen ?? 0
+  if (startingWingmen > 0) {
+    player.setWingmanCount(startingWingmen)
+    combat.setWingmanCount(startingWingmen)
+  }
+
   // Fase 9 (ideia de baralho, item 1): desloca só o ponto de partida do intervalo de spawn
   // pelo histórico de erro do baralho — ver comentário de DIFFICULTY_BIAS_INTERVAL_RANGE_MS.
   // (computado ANTES do `state` object porque enemyIntervalMax depende de enemyIntervalMin)
@@ -388,12 +395,12 @@ export function mountGame(session, deck, menu) {
   hud.updateCollectedCards(player.getCollectedCards())
 
   const sectorNum = (session.pointer || 0) + 1
-  const deckTitle = deck?.title || deck?.name || 'ESPACIAL'
+  const deckTitle = deck?.isNoDeck ? 'MODO ARCADE' : (deck?.title || deck?.name || 'ESPACIAL')
   cutscenes.startLaunchCutscene(() => {
     state.phase = 'combat'
   }, {
     sector: `SETOR ${String(sectorNum).padStart(2, '0')} // ${deckTitle.toUpperCase()}`,
-    text: 'DECOLAGEM AUTORIZADA // BOA SORTE',
+    text: deck?.isNoDeck ? 'MODO ARCADE // COMBATE DIRETO' : 'DECOLAGEM AUTORIZADA // BOA SORTE',
     skipText: '[ESPAÇO / TIRO] PULAR DECOLAGEM',
   })
 

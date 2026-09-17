@@ -1,7 +1,7 @@
 import { buildDeck, exportTagsTsv, parseAnkiExport, filterDeckByTags } from './anki.js'
 import { createSession, getSummary, createPainelSession, nextPainelCard, resolvePainel } from './quiz.js'
 import { loadHistory, saveHistory, recordResult } from './storage.js'
-import { getDeck, buildMergedDeck, buildReviewDeck, REVIEW_DECK_ID } from './decks.js'
+import { getDeck, buildMergedDeck, buildReviewDeck, REVIEW_DECK_ID, NO_DECK_ID, buildNoDeckVirtual } from './decks.js'
 import { getSettings } from './settings.js'
 import { showPreGameMenu, showDeckManager, showSettingsScreen, showSectorEnd, showPainelCard, showPainelAnswer } from './hud.js'
 
@@ -19,9 +19,22 @@ export function createGameMenu(mountGameFn) {
   let sessionResults = []
   let painelDone = false
 
+  function handlePlayNoDeck() {
+    currentDeckIds = NO_DECK_ID
+    deck = buildNoDeckVirtual()
+    deckTexts = []
+    sessionResults = []
+    painelDone = true
+    startGame()
+  }
+
   // tagFilter (Fase 9, ideia de baralho "tags/categorias"): guids de assunto marcados no
   // gerenciador de baralhos — vazio joga o baralho inteiro, igual sempre foi.
   function handlePlayDeck(deckId, tagFilter = []) {
+    if (deckId === NO_DECK_ID) {
+      handlePlayNoDeck()
+      return
+    }
     let built
     let text = null
     if (deckId === REVIEW_DECK_ID) {
@@ -64,8 +77,13 @@ export function createGameMenu(mountGameFn) {
   // ponto único que chama mountGameFn — deck/sessionResults/renderEndScreen são o que o loop de
   // jogo precisa de volta daqui (ver comentário no topo do arquivo)
   function startGame() {
-    const session = createSession(deck, { history, startingHealth: getSettings().startingHealth })
-    mountGameFn(session, deck, { sessionResults, renderEndScreen })
+    const settings = getSettings()
+    const session = createSession(deck, { history, startingHealth: settings.startingHealth })
+    mountGameFn(session, deck, {
+      sessionResults,
+      renderEndScreen,
+      startingWingmen: settings.startingWingmen || 0,
+    })
   }
 
   function restart() {
@@ -73,19 +91,21 @@ export function createGameMenu(mountGameFn) {
     deckTexts = []
     showPreGameMenu({
       onPlay: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, history }),
+      onPlayNoDeck: handlePlayNoDeck,
       onAddDeck: () => showDeckManager({ onPlay: handlePlayDeck, onPlayMerged: handlePlayMergedDecks, onBack: restart, startInAdd: true, history }),
       onSettings: () => showSettingsScreen({ onBack: restart }),
     })
   }
 
   function playAgain() {
-    if (Array.isArray(currentDeckIds)) handlePlayMergedDecks(currentDeckIds)
+    if (currentDeckIds === NO_DECK_ID || deck?.isNoDeck) handlePlayNoDeck()
+    else if (Array.isArray(currentDeckIds)) handlePlayMergedDecks(currentDeckIds)
     else if (currentDeckIds) handlePlayDeck(currentDeckIds)
     else restart()
   }
 
   function renderEndScreen(summary) {
-    const practiceAvailable = !painelDone && deck.painelCards.length > 0
+    const practiceAvailable = !painelDone && deck.painelCards && deck.painelCards.length > 0
     showSectorEnd({
       summary,
       onPlayAgain: playAgain,
