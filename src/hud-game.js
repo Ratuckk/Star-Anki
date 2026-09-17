@@ -626,10 +626,21 @@ export function createGameHud() {
   minimap.className = 'hud-minimap'
   minimap.hidden = true
   root.appendChild(minimap)
+  const minimapFov = document.createElement('div')
+  minimapFov.className = 'hud-minimap-fov'
+  minimap.appendChild(minimapFov)
   const minimapPlayer = document.createElement('div')
   minimapPlayer.className = 'hud-minimap-player'
   minimap.appendChild(minimapPlayer)
   const minimapBlipPool = new Map()
+  const minimapAllyPool = new Map()
+  // Radar Tático: formato do blip por tipo de ameaça (ver kind em src/enemies/*.js), não só cor
+  const MINIMAP_SHAPE_BY_KIND = {
+    blaster: 'tri', time: 'tri', tank: 'tri', detrito: 'tri', replica: 'tri', ima: 'tri',
+    sentinela: 'diamond',
+    miniSwarm: 'hex', sussurro: 'hex',
+    fragata: 'plus', verme: 'plus',
+  }
 
   const pause = document.createElement('div')
   pause.className = 'hud-pause'
@@ -1617,13 +1628,14 @@ export function createGameHud() {
       }
     },
 
+    // Radar Tático (overhaul v0.75.0): jogador sempre fixo no centro apontando "pra cima" — o
+    // mundo gira ao redor dele (xFrac/yFrac já vêm projetados relativos ao frame do jogador, ver
+    // game-loop.js), então o marcador do jogador não precisa mais de rotação por JS.
     setMinimap(active, data) {
       minimap.hidden = !active
       if (!active) return
-      const { player, blips } = data
-      minimapPlayer.style.left = `${(player.xFrac * 0.5 + 0.5) * 100}%`
-      minimapPlayer.style.top = `${(player.yFrac * 0.5 + 0.5) * 100}%`
-      minimapPlayer.style.transform = `translate(-50%, -50%) rotate(${player.angle}rad)`
+      const { blips = [], allies = [], alert = false } = data
+      minimap.classList.toggle('alert', !!alert)
 
       const seen = new Set()
       blips.forEach((b, i) => {
@@ -1634,12 +1646,31 @@ export function createGameHud() {
           minimap.appendChild(el)
           minimapBlipPool.set(i, el)
         }
-        el.className = `hud-minimap-blip hud-minimap-blip-${b.type}`
+        const shape = b.type === 'boss' ? 'boss' : b.type === 'golden' ? 'golden' : (MINIMAP_SHAPE_BY_KIND[b.kind] || 'tri')
+        el.className = `hud-minimap-blip hud-minimap-blip-${shape}`
         el.style.left = `${(b.xFrac * 0.5 + 0.5) * 100}%`
         el.style.top = `${(b.yFrac * 0.5 + 0.5) * 100}%`
       })
       for (const [i, el] of minimapBlipPool) {
         if (!seen.has(i)) { el.remove(); minimapBlipPool.delete(i) }
+      }
+
+      const seenAllies = new Set()
+      allies.forEach((a, i) => {
+        seenAllies.add(i)
+        let el = minimapAllyPool.get(i)
+        if (!el) {
+          el = document.createElement('div')
+          el.className = 'hud-minimap-ally'
+          minimap.appendChild(el)
+          minimapAllyPool.set(i, el)
+        }
+        el.style.left = `${(a.xFrac * 0.5 + 0.5) * 100}%`
+        el.style.top = `${(a.yFrac * 0.5 + 0.5) * 100}%`
+        el.style.setProperty('--ally-color', a.color)
+      })
+      for (const [i, el] of minimapAllyPool) {
+        if (!seenAllies.has(i)) { el.remove(); minimapAllyPool.delete(i) }
       }
     },
 

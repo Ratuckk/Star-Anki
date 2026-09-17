@@ -1052,7 +1052,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const blips = []
       for (const e of enemies) {
         if (e.dying) continue
-        blips.push({ type: e.kind === BOSS_KIND ? 'boss' : 'enemy', worldPos: e.mesh.position })
+        // `kind` viaja junto pro Radar Tático (overhaul do minimapa escolhido pelo usuário)
+        // escolher o FORMATO do blip por tipo de ameaça, não só a cor
+        blips.push({ type: e.kind === BOSS_KIND ? 'boss' : 'enemy', kind: e.kind, worldPos: e.mesh.position })
       }
       return blips.concat(golden.getMinimapBlips())
     },

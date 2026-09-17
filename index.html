@@ -909,7 +909,12 @@
     box-shadow: 0 0 12px rgba(250, 204, 21, 0.9) inset;
   }
 
-  /* ============ MINIMAPA ============ */
+  /* ============ MINIMAPA — RADAR TÁTICO (overhaul v0.75.0, opção A escolhida pelo usuário) ==
+     Antes só ativo em arena de chefe/dourado, todo inimigo era o mesmo pontinho vermelho e os
+     aliados não apareciam. Agora: sempre ativo, formato do blip por TIPO de ameaça (não só cor),
+     losangos coloridos do esquadrão ao redor do jogador, cone de visão estático apontando "pra
+     cima" (o jogador fica fixo no centro, o mundo gira ao redor dele — ver game-loop.js), e a
+     moldura pulsa vermelho enquanto algo hostil está perto o bastante pra doer. */
   .hud-minimap {
     position: absolute;
     top: 12px;
@@ -921,15 +926,44 @@
     border-radius: 8px;
     pointer-events: none;
     overflow: hidden;
+    transition: border-color 200ms ease;
+  }
+  .hud-minimap.alert {
+    border-color: #ff2d4d;
+    animation: hud-minimap-alert-pulse 900ms ease-in-out infinite;
+  }
+  @keyframes hud-minimap-alert-pulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(255, 45, 77, 0.35); }
+    50%      { box-shadow: 0 0 16px rgba(255, 45, 77, 0.9); }
+  }
+  .hud-minimap-fov {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(90, 209, 255, 0.26), rgba(90, 209, 255, 0) 70%);
+    clip-path: polygon(50% 50%, 16% 0%, 84% 0%);
   }
   .hud-minimap-player {
     position: absolute;
+    left: 50%; top: 50%;
     width: 0;
     height: 0;
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
     border-bottom: 9px solid #f5f5f7;
     filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.8));
+    transform: translate(-50%, -50%);
+    z-index: 2;
+  }
+  .hud-minimap-ally {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-bottom: 6px solid var(--ally-color, #5ad1ff);
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 0 3px var(--ally-color, #5ad1ff));
+    z-index: 1;
   }
   .hud-minimap-blip {
     position: absolute;
@@ -938,7 +972,17 @@
     border-radius: 50%;
     transform: translate(-50%, -50%);
   }
-  .hud-minimap-blip-enemy { background: #ff4d4d; box-shadow: 0 0 4px rgba(255, 77, 77, 0.9); }
+  /* formato por tipo de ameaça — cor continua indicando aliança (vermelho = hostil comum) */
+  .hud-minimap-blip-tri, .hud-minimap-blip-diamond, .hud-minimap-blip-hex, .hud-minimap-blip-plus {
+    width: 8px; height: 8px; border-radius: 0;
+    background: #ff4d4d; box-shadow: 0 0 4px rgba(255, 77, 77, 0.9);
+  }
+  .hud-minimap-blip-tri { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+  .hud-minimap-blip-diamond { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }
+  .hud-minimap-blip-hex { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+  .hud-minimap-blip-plus {
+    clip-path: polygon(35% 0%, 65% 0%, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0% 65%, 0% 35%, 35% 35%);
+  }
   .hud-minimap-blip-golden { background: #ffd700; width: 9px; height: 9px; box-shadow: 0 0 5px rgba(255, 215, 0, 0.9); }
   .hud-minimap-blip-boss { background: #ff2d4d; width: 12px; height: 12px; box-shadow: 0 0 6px rgba(255, 45, 77, 1); }
   .hud-minimap-blip-bossOrb {

@@ -770,29 +770,38 @@ export function createGameLoop(deps) {
       hud.setBossFight(false, 0, 1)
     }
 
-    if (rail.isArena()) {
-      const center = rail.getArenaCenter()
+    // ============ RADAR TÁTICO (overhaul do minimapa, opção A escolhida pelo usuário) ============
+    // Antes só aparecia em arena de chefe/dourado; agora fica ativo o combate inteiro. Projeção
+    // relativa ao jogador (frame.right/forward) em vez de eixos XZ do mundo — necessário fora da
+    // arena porque o trilho curva em 3D, então "mundo fixo, ícone do jogador gira" vira ilegível.
+    // O jogador fica sempre fixo no centro apontando "pra cima"; o mundo é que gira ao redor dele.
+    {
       const mapRadius = 190
-      const rel = playerPos.clone().sub(center)
-      const playerAngle = Math.atan2(noseFrame.forward.x, noseFrame.forward.z)
+      const alertRadius = 32
+      let alert = false
       const blips = combat.getMinimapBlips().map((b) => {
-        const r = b.worldPos.clone().sub(center)
+        const r = b.worldPos.clone().sub(playerPos)
+        if (b.type !== 'golden' && r.length() < alertRadius) alert = true
         return {
           type: b.type,
-          xFrac: THREE.MathUtils.clamp(r.x / mapRadius, -1, 1),
-          yFrac: THREE.MathUtils.clamp(r.z / mapRadius, -1, 1),
+          kind: b.kind,
+          xFrac: THREE.MathUtils.clamp(r.dot(noseFrame.right) / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(-r.dot(noseFrame.forward) / mapRadius, -1, 1),
         }
       })
-      hud.setMinimap(true, {
-        player: {
-          xFrac: THREE.MathUtils.clamp(rel.x / mapRadius, -1, 1),
-          yFrac: THREE.MathUtils.clamp(rel.z / mapRadius, -1, 1),
-          angle: playerAngle,
-        },
-        blips,
+      const wingmanPositions = combat.getWingmanPositions ? combat.getWingmanPositions() : []
+      const wingmanMembers = combat.getActiveWingmen ? combat.getActiveWingmen() : []
+      const allies = wingmanPositions.map((pos, i) => {
+        const r = pos.clone().sub(playerPos)
+        const colorHex = typeof wingmanMembers[i]?.color === 'number'
+          ? `#${wingmanMembers[i].color.toString(16).padStart(6, '0')}` : '#5ad1ff'
+        return {
+          xFrac: THREE.MathUtils.clamp(r.dot(noseFrame.right) / mapRadius, -1, 1),
+          yFrac: THREE.MathUtils.clamp(-r.dot(noseFrame.forward) / mapRadius, -1, 1),
+          color: colorHex,
+        }
       })
-    } else {
-      hud.setMinimap(false)
+      hud.setMinimap(true, { blips, allies, alert })
     }
 
     if (state.hitShakeTimer > 0) {

@@ -1,7 +1,10 @@
-# Progresso pós-v0.60 — novas documentações a partir daqui
+# Progresso pós-v0.60 — CONGELADO na v0.74.1
+
+> **⚠️ Este arquivo está congelado.** O histórico cobre v0.61.0 → v0.74.1.
+> A continuação está em [PROGRESSO_POS_.70.md](PROGRESSO_POS_.70.md).
 
 Continuação do [PROGRESSO_POS_0.50.md](PROGRESSO_POS_0.50.md) (histórico v0.51.9 → v0.60.0, agora
-congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
+congelado).
 
 ---
 
