@@ -691,6 +691,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
     }
 
+    let enemyKills = 0
+    let enemyKillPoints = 0
+    let bossDefeated = false
+    let bossHitWorldPos = null
+    let goldenSpecialHit = false
+    let goldenHitWorldPos = null
+
     // 2. Atualiza os lasers disparados pelos companheiros
     for (let i = activeLasers.length - 1; i >= 0; i--) {
       const laser = activeLasers[i]
@@ -717,11 +724,32 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (effects && effects.hitSpark) {
             effects.hitSpark(laser.mesh.position, laser.color)
           }
+          if (hit.killed) {
+            enemyKills++
+            enemyKillPoints += (hit.enemyKillPoints || 0)
+          }
+          if (hit.bossDefeated) {
+            bossDefeated = true
+            bossHitWorldPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
+          }
+          if (hit.goldenSpecialHit) {
+            goldenSpecialHit = true
+            goldenHitWorldPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
+          }
           scene.remove(laser.mesh)
           activeLasers.splice(i, 1)
           continue
         }
       }
+    }
+
+    return {
+      enemyKills,
+      enemyKillPoints,
+      bossDefeated,
+      bossHitWorldPos,
+      goldenSpecialHit,
+      goldenHitWorldPos,
     }
   }
 
@@ -735,13 +763,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  function dispose() {
-    clearSquadron()
-    laserGeometry.dispose()
+  function clearLasers() {
     for (let i = activeLasers.length - 1; i >= 0; i--) {
       scene.remove(activeLasers[i].mesh)
     }
     activeLasers.length = 0
+  }
+
+  function dispose() {
+    clearSquadron()
+    clearLasers()
+    laserGeometry.dispose()
   }
 
   return {
@@ -751,6 +783,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     spawnMember,
     removeMember,
     clearSquadron,
+    clearLasers,
     toggleCommand,
     getCommandMode: () => squadronCommandMode,
     getWingmanPositions: () => activeWingmen.map((w) => w.mesh.position.clone()),

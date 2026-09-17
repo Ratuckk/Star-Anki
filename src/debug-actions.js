@@ -4,6 +4,7 @@
 // evita inflar main.js com ~70 linhas que não fazem parte do loop de jogo em si.
 export function createDebugActions(deps) {
   const {
+    state,
     combat, session, player, rail, effects, hud, enemies,
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
@@ -13,6 +14,45 @@ export function createDebugActions(deps) {
     enterCardChoice, enterCombat,
     restartSector, nextSector, prevSector, exitArenaNow,
   } = deps
+
+  function resetEverythingForDebugEvent() {
+    // 1. Limpa TODOS os inimigos, projéteis, lasers e portais na tela imediatamente
+    combat.clearAllCombatants()
+    combat.clearOtherEnemies?.()
+
+    // 2. Reseta o rail e arenas
+    rail.exitArena()
+    rail.setAdvancing(true)
+
+    // 3. Reseta elementos de HUD
+    hud.setBossFight(false, 0, 1)
+    hud.setBossTint(false)
+    hud.setBossActive(false)
+    hud.setGoldenActive(false)
+    hud.setMinimap(false)
+    hud.setHorizon(null)
+    hud.setCountdown(null)
+    hud.setFeedback(null)
+    hud.hideQuestionModal?.()
+    hud.hideCardChoice?.()
+    hud.hideMissionComplete?.()
+    hud.setLetterbox?.(false)
+
+    // 4. Limpa estados de transição/cutscenes pendentes
+    if (state) {
+      state.deathCutsceneTimer = 0
+      state.deathCutsceneKind = null
+      state.deathCutsceneOnDone = null
+      state.deathCutsceneUiInitialized = false
+      state.deathWhiteoutTriggered = false
+      state.arenaCutsceneActive = false
+      state.arenaCutsceneTimer = 0
+      state.bossOrbsRemaining = 0
+      state.pendingQuestionKind = null
+      state.pendingCardChoice = false
+      state.phase = 'combat'
+    }
+  }
 
   if (environment && hud?.debug?.setToggleActive) {
     const cfg = environment.getConfig()
@@ -29,41 +69,32 @@ export function createDebugActions(deps) {
 
   return {
     restartSector: () => {
+      resetEverythingForDebugEvent()
       if (restartSector) restartSector()
       else {
-        rail.exitArena()
-        combat.clearAllCombatants()
         enterCombat()
       }
     },
     nextSector: () => {
+      resetEverythingForDebugEvent()
       if (nextSector) nextSector()
       else {
         session.pointer = (session.pointer + 1) % session.queue.length
-        rail.exitArena()
-        combat.clearAllCombatants()
         enterCombat()
       }
     },
     prevSector: () => {
+      resetEverythingForDebugEvent()
       if (prevSector) prevSector()
       else {
         session.pointer = (session.pointer - 1 + session.queue.length) % session.queue.length
-        rail.exitArena()
-        combat.clearAllCombatants()
         enterCombat()
       }
     },
     exitArenaNow: () => {
+      resetEverythingForDebugEvent()
       if (exitArenaNow) exitArenaNow()
       else {
-        rail.exitArena()
-        combat.clearAllCombatants()
-        hud.setBossFight(false)
-        hud.setBossTint(false)
-        hud.setGoldenActive(false)
-        hud.setMinimap(false)
-        hud.setHorizon(null)
         enterCombat()
       }
     },
@@ -145,14 +176,23 @@ export function createDebugActions(deps) {
     // dava pra testar a transição sem esperar o gatilho natural (dourado 45-100s, chefe a cada
     // 5 perguntas). Agora roteiam pela mesma startArenaCutscene que o jogo usa de verdade.
     // skipToBossFight continua sendo o atalho SEM cutscene, pra testar só a luta em si.
-    gotoBoss: () => { if (getPhase() === 'combat') startArenaCutscene('boss', enterBossBuildup) },
-    skipToBossFight: () => {
-      const phase = getPhase()
-      if (phase === 'bossBuildup' || phase === 'bossQuestionPause') finishBossHunt()
-      else if (phase === 'combat') { resetBossHealthBonus(); rail.enterArena(); enterBossFight() }
+    gotoBoss: () => {
+      resetEverythingForDebugEvent()
+      startArenaCutscene('boss', enterBossBuildup)
     },
-    gotoGolden: () => { if (getPhase() === 'combat') startArenaCutscene('golden', enterGoldenArena) },
-    clearCombatants: () => combat.clearAllCombatants(),
+    skipToBossFight: () => {
+      resetEverythingForDebugEvent()
+      resetBossHealthBonus()
+      rail.enterArena()
+      enterBossFight()
+    },
+    gotoGolden: () => {
+      resetEverythingForDebugEvent()
+      startArenaCutscene('golden', enterGoldenArena)
+    },
+    clearCombatants: () => {
+      resetEverythingForDebugEvent()
+    },
     showHitboxes: () => {
       debugFlags.hitboxesActive = !debugFlags.hitboxesActive
       combat.setShowHitboxes(debugFlags.hitboxesActive)
@@ -162,7 +202,10 @@ export function createDebugActions(deps) {
       debugFlags.slowMoActive = !debugFlags.slowMoActive
       hud.debug.setToggleActive('slowMo', debugFlags.slowMoActive)
     },
-    giveCard: () => { if (getPhase() === 'combat') enterCardChoice(enterCombat) },
+    giveCard: () => {
+      resetEverythingForDebugEvent()
+      enterCardChoice(enterCombat)
+    },
     triggerFullDodge: () => {
       player.grantInvincibility(1000)
       if (player.isDeflectActive()) {

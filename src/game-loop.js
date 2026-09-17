@@ -497,10 +497,25 @@ export function createGameLoop(deps) {
     if (events.enemyKills > 0) state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
 
     // cutscene em câmera lenta do chefe explodindo antes de sair da arena — handler extraído
-    // pra flow-boss.js. A guarda de fase continua AQUI (era um `if` de topo de tick no
-    // original, antes dos branches de fase), preservando a estrutura original.
-    if (events.bossDefeated && state.phase === 'bossFight') {
-      bossFlow.handleBossDefeated(events.bossHitWorldPos || playerPos)
+    // pra flow-boss.js.
+    const bossDefeatedFromCombat = combat.consumeBossDefeated ? combat.consumeBossDefeated() : null
+    const isBossDefeated = Boolean(events.bossDefeated || bossDefeatedFromCombat?.defeated)
+    const bossDeathWorldPos = events.bossHitWorldPos || bossDefeatedFromCombat?.worldPos || (combat.getBossWorldPos ? combat.getBossWorldPos() : null) || playerPos
+
+    if (state.phase === 'bossFight') {
+      const bossAlive = combat.hasAliveBoss ? combat.hasAliveBoss() : false
+      const bossDying = combat.isBossDying ? combat.isBossDying() : false
+      const bossSnap = combat.getBossSnapshot()
+
+      // Dispara cutscene de vitória e saída da arena se:
+      // 1) O chefe foi derrotado (tiro do jogador, raio teleguiado, tiro de wingman, splash, aríete)
+      // 2) O chefe está no estado dying (animação de explosão iniciada)
+      // 3) Fail-safe: não há chefe vivo e snapshot de HP está nulo ou zerado
+      if (isBossDefeated || bossDying || (!bossAlive && (!bossSnap || bossSnap.hp <= 0))) {
+        bossFlow.handleBossDefeated(bossDeathWorldPos)
+      }
+    } else if (isBossDefeated && (state.phase === 'bossBuildup' || (rail.isArena() && !state.phase.startsWith('golden')))) {
+      bossFlow.handleBossDefeated(bossDeathWorldPos)
     }
 
     // ============ COLISÃO FÍSICA COM BOSS / DOURADO (KNOCKBACK + TUMBLE SPIN) ============
@@ -698,10 +713,11 @@ export function createGameLoop(deps) {
 
     if (state.phase === 'bossFight') {
       const bossSnap = combat.getBossSnapshot()
-      if (bossSnap) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp, 'CHEFE', false)
+      if (bossSnap && bossSnap.hp > 0) hud.setBossFight(true, bossSnap.hp, bossSnap.maxHp, 'CHEFE', false)
+      else hud.setBossFight(false, 0, 1)
     } else if (state.phase === 'goldenArena') {
       const goldenSnap = combat.getGoldenSnapshot()
-      if (goldenSnap) hud.setBossFight(true, goldenSnap.hp, goldenSnap.maxHp, 'ANOMALIA DOURADA', true)
+      if (goldenSnap && goldenSnap.hp > 0) hud.setBossFight(true, goldenSnap.hp, goldenSnap.maxHp, 'ANOMALIA DOURADA', true)
       else hud.setBossFight(false, 0, 1)
     } else {
       hud.setBossFight(false, 0, 1)

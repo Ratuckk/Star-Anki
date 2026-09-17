@@ -37,6 +37,52 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Correção do Softlock do Chefe, Propagação de Abate por Wingmen e Reset do Painel de Debug — v0.67.0
+
+Pedido do usuário: *"por que você anda quebrando coisa que antes funcionava direito??? o boss foi derrotado mas não teve cutscene e agora o jogo deu softlock. que que adianta existir debug se as opções do debug não podem ser selecionadas quando um evento está presente? era pra resetar tudo (inimigos na tela) e ai ir pra esse evento"*.
+
+1. **Diagnóstico do Softlock do Chefe e Resolução em Múltiplas Camadas**:
+   - **Causa Raiz 1 (Abate por Wingmen desconsiderado)**: Em `src/combat/wingmen.js`, quando os caças aliados disparavam lasers contra o chefe e desferiam o golpe final (`hit.bossDefeated = true`), a função `wingmen.update()` descartava o retorno de `enemies.resolveProjectileHit()`. Com isso, `events.bossDefeated` retornava `false` no tick do `game-loop.js`. Como o chefe já entrava em `dying = true` e reduzia seu HP a 0, em todos os frames subsequentes `!e.dying` o tornava invisível para novos acertos. O chefe sumia e a barra de HUD esvaziava, mas a fase permanecia indefinidamente em `'bossFight'`.
+   - **Solução 1**: `wingmen.update()` agora acumula e propaga `enemyKills`, `enemyKillPoints`, `bossDefeated`, `bossHitWorldPos`, `goldenSpecialHit` e `goldenHitWorldPos`, integrando-os diretamente ao retorno de `combat.update()`.
+   - **Causa Raiz 2 (Dependência de evento booleano instantâneo)**: No `game-loop.js`, a vitória dependia exclusivamente de `events.bossDefeated && state.phase === 'bossFight'` no exato frame da colisão. Se qualquer condição de tick ou morte assíncrona ocorresse, a transição para a cutscene era perdida para sempre.
+   - **Solução 2 (Fail-Safe Imbatível no `game-loop.js`)**: O loop agora verifica `combat.hasAliveBoss()`, `combat.isBossDying()` e o snapshot de HP. Se a fase for `'bossFight'` e o chefe estiver morto (`hp <= 0`), no estado `dying`, ou ausente da arena, o jogo dispara imediatamente `bossFlow.handleBossDefeated(...)`. É matematicamente impossível o jogador ficar preso na arena de chefe sem chefe ativo.
+   - **Ajuste de HUD**: Se `bossSnap` for nulo ou tiver `hp <= 0`, o HUD do chefe é ocultado automaticamente (`hud.setBossFight(false, 0, 1)`), impedindo que a barra vermelha vazia continue flutuando na tela.
+
+2. **Reset Geral e Desbloqueio Irrestrito do Painel de Debug**:
+   - As opções de evento do debug (`gotoBoss`, `skipToBossFight`, `gotoGolden`, `giveCard`, `restartSector`, `nextSector`, `prevSector`, `exitArenaNow`) continham guardas restritivas `if (getPhase() === 'combat')`, impedindo o jogador de clicar ou navegar caso o jogo estivesse em arena, cutscene, evento ou em estado anômalo.
+   - Criada a rotina unificada `resetEverythingForDebugEvent()` em `src/debug-actions.js`:
+     1. Limpa imediatamente todos os inimigos, chefes, projéteis, lasers e portais da tela (`combat.clearAllCombatants()`, `combat.clearOtherEnemies()`).
+     2. Limpa projéteis de alas em voo (`squadron.clearLasers()`).
+     3. Destrava e reseta o rail e o modo arena (`rail.exitArena()`, `rail.setAdvancing(true)`).
+     4. Reseta e oculta todas as barras de combate, chefes, anomalias, minimapa, horizonte, contadores e feedbacks do HUD.
+     5. Fecha qualquer modal aberto (pergunta ou escolha de cartas roguelike).
+     6. Limpa temporizadores de cutscene e reseta a fase para `'combat'`.
+   - Todas as opções de salto e transição do debug agora executam `resetEverythingForDebugEvent()` antes de iniciar o evento solicitado, garantindo tela limpa e execução 100% confiável em qualquer circunstância.
+
+**Versão**: v0.66.0 → **v0.67.0**
+
+---
+
+### Sentinela Retificado, Proibição de Inimigos Presos, Desengajamento após 4 Tiros, Naves Douradas Suaves e Efeito de Disparo em Cone Invertido — v0.66.0
+
+1. **Sentinela Reformulado (Giroscópio / Moldura)**:
+   - Velocidade equilibrada para 18 u/s (~1.2s de reação).
+   - Moldura central com abertura de 5.2x5.2 unidades e colisão real de 3.8 unidades de espessura de borda com partículas de impacto âmbar.
+2. **Proibição Absoluta de Inimigos Presos ao Lado ou Atrás da Nave**:
+   - Linha de ultrapassagem estrita `PASS_BEHIND = -2.0u`. Ao ultrapassar a nave do jogador, os inimigos aceleram e desengajam para fora do campo de visão.
+3. **Desengajamento de Inimigos Genéricos após 4 Ataques**:
+   - Caças comuns (Blaster e Tank) que realizam 4 disparos puxam o manche para cima e aceleram sem teleguiar, saindo da tela suavemente.
+4. **Naves Douradas da Anomalia**:
+   - Corrigido o comportamento de grudar no jogador: após ultrapassagem ou aproximação (< 14u), desativam o tracking e passam direto.
+5. **Visibilidade e Dimensões (+10%)**:
+   - Escala de todos os inimigos aumentada em +10% e materiais com brilho emissivo mais vibrante.
+6. **Muzzle Flash em Cone Invertido**:
+   - Geometria cônica azul compacta de ápice invertido voltado para a saída do canhão.
+
+**Versão**: v0.65.0 → **v0.66.0**
+
+---
+
 ### Modo Arcade Roguelike (Jogar Sem Baralho) e Escolta Inicial de Companheiros — v0.65.0
 
 Pedido do usuário: *"adicione uma opção no pré jogo para jogar sem baralho, removendo as perguntas do jogo e mantendo o modo roguelike normal (onde ao invés de ir para uma pergunta, vai direto para a escolha de carta)", "atualize sempre o numero de versao no readme do site", "adicione a opção no pré-jogo de iniciar já com 1 ou mais companheiros"*.

@@ -370,6 +370,7 @@ export function mountGame(session, deck, menu) {
 
   // ============ DEBUG PANEL ============
   hud.debug.bind(createDebugActions({
+    state,
     combat, session, player, rail, effects, hud, enemies,
     environment,
     GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,

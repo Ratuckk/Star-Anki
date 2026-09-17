@@ -103,10 +103,18 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearAllCombatants() {
       enemies.clearAll()
       projectiles.clearAll()
+      targets.clearBonusTargets()
+      targets.clearBossOrbs()
+      squadron.clearLasers?.()
       // QoL (v0.29.4): sem isso, as travas sobreviviam a um clear — os marcadores de lock no
       // HUD ficavam pendurados por alguns frames até o próximo sweepLockOn limpar.
       lockon.clearLockedEnemies()
     },
+
+    consumeBossDefeated: () => (enemies.consumeBossDefeated ? enemies.consumeBossDefeated() : null),
+    hasAliveBoss: () => (enemies.hasAliveBoss ? enemies.hasAliveBoss() : false),
+    isBossDying: () => (enemies.isBossDying ? enemies.isBossDying() : false),
+    getBossWorldPos: () => (enemies.getBossWorldPos ? enemies.getBossWorldPos() : null),
 
     spawnBonusTarget: () => targets.spawnBonusTarget(),
     clearBonusTargets: () => targets.clearBonusTargets(),
@@ -179,24 +187,24 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
       }
 
-      squadron.update(dt, playerPosition, rail.getFrameAt(0), { boostActive: opts.boostActive })
+      const wingmanResult = squadron.update(dt, playerPosition, rail.getFrameAt(0), { boostActive: opts.boostActive }) || {}
 
       if (showHitboxes) refreshHitboxes()
 
       return {
-        enemyKills: enemyKills + ramKills,
-        enemyKillPoints: enemyKillPoints + ramKillPoints,
+        enemyKills: enemyKills + ramKills + (wingmanResult.enemyKills || 0),
+        enemyKillPoints: enemyKillPoints + ramKillPoints + (wingmanResult.enemyKillPoints || 0),
         bonusKillPoints,
         enemyHits,
         enemyDamage,
-        goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated,
+        goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated || Boolean(wingmanResult.goldenSpecialHit),
         goldenSpecialHitIsHoming,
-        goldenHitWorldPos: goldenHitWorldPos || ramGoldenWorldPos || null,
+        goldenHitWorldPos: goldenHitWorldPos || ramGoldenWorldPos || wingmanResult.goldenHitWorldPos || null,
         timeReductionMs,
         timeReductionWorldPos,
-        bossDefeated: bossDefeated || ramBossDefeated,
+        bossDefeated: bossDefeated || ramBossDefeated || Boolean(wingmanResult.bossDefeated),
         bossDefeatedIsHoming,
-        bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || null,
+        bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || wingmanResult.bossHitWorldPos || null,
         bossOrbHit,
         bossCollisionWorldPos,
         hitsLog,

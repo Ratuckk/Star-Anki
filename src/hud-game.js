@@ -1395,6 +1395,19 @@ export function createGameHud() {
       cardChoiceGpStop = watchGamepadSlots(cards.length, pick)
     },
 
+    hideCardChoice() {
+      if (cardChoiceKeyHandler) {
+        window.removeEventListener('keydown', cardChoiceKeyHandler)
+        cardChoiceKeyHandler = null
+      }
+      if (cardChoiceGpStop) {
+        cardChoiceGpStop()
+        cardChoiceGpStop = null
+      }
+      cardChoiceOverlay.hidden = true
+      cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
+    },
+
     updateCollectedCards(cardsMap) {
       if (!cardsMap) {
         cardsTray.innerHTML = ''

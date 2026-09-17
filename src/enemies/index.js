@@ -88,6 +88,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // velocidade base do projétil comum (também usado pela rajada do chefe)
   let enemyProjectileSpeedBonus = 0
   let enemyAimErrorDeg = ENEMY_AIM_ERROR_DEG
+  let bossDefeatedPending = false
+  let bossDefeatedWorldPos = null
 
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
 
@@ -330,8 +332,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
               enemy.deathT = 0
               if (enemy.kind === BOSS_KIND) {
                 ramBossDefeated = true
-                ramBossWorldPos = enemy.mesh.position.clone()
-                if (effects) explodeBoss(effects, enemy.mesh.position)
+                bossDefeatedPending = true
+                bossDefeatedWorldPos = enemy.mesh.position.clone()
+                enemy.isShieldActive = false
+                if (enemy.shieldMesh) enemy.shieldMesh.visible = false
+                if (effects) explodeBoss(effects, enemy.mesh.position, false)
               } else {
                 ramKills += 1
                 ramKillPoints += killPointsFor(enemy.kind)
@@ -861,10 +866,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           e.deathT = 0
           if (e.kind === BOSS_KIND) {
             bossDefeated = true
-            bossHitWorldPos = e.mesh.position.clone()
+            bossDefeatedPending = true
+            bossDefeatedWorldPos = e.mesh.position.clone()
             e.isShieldActive = false
             if (e.shieldMesh) e.shieldMesh.visible = false
-            if (effects) explodeBoss(effects, e.mesh.position, true)
+            if (effects) explodeBoss(effects, e.mesh.position, false)
           } else {
             enemyKillPoints += killPointsFor(e.kind)
             if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
@@ -939,6 +945,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           enemyHit.deathT = 0
           if (enemyHit.kind === BOSS_KIND) {
             bossDefeated = true
+            bossDefeatedPending = true
+            bossDefeatedWorldPos = enemyHit.mesh.position.clone()
             enemyHit.isShieldActive = false
             if (enemyHit.shieldMesh) enemyHit.shieldMesh.visible = false
             if (effects) explodeBoss(effects, enemyHit.mesh.position, isHoming)
@@ -1042,6 +1050,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     setEnemyAimError(deg) { enemyAimErrorDeg = Math.max(1, deg) },
 
     clearEnemies() {
+      bossDefeatedPending = false
+      bossDefeatedWorldPos = null
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
       for (const l of [...enemyLasers]) removeEnemyLaser(l)
@@ -1063,11 +1073,27 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     clearAll() {
+      bossDefeatedPending = false
+      bossDefeatedWorldPos = null
       for (const enemy of [...enemies]) removeEnemy(enemy)
       for (const projectile of [...enemyProjectiles]) removeEnemyProjectile(projectile)
       for (const l of [...enemyLasers]) removeEnemyLaser(l)
       for (const g of [...enemyGates]) removeEnemyGate(g)
       golden.clear()
+    },
+
+    consumeBossDefeated: () => {
+      if (bossDefeatedPending) {
+        bossDefeatedPending = false
+        return { defeated: true, worldPos: bossDefeatedWorldPos ? bossDefeatedWorldPos.clone() : null }
+      }
+      return null
+    },
+    hasAliveBoss: () => enemies.some((e) => e.kind === BOSS_KIND && !e.dying),
+    isBossDying: () => enemies.some((e) => e.kind === BOSS_KIND && e.dying),
+    getBossWorldPos: () => {
+      const b = enemies.find((e) => e.kind === BOSS_KIND)
+      return b ? b.mesh.position.clone() : null
     },
 
     dispose() {
