@@ -163,7 +163,7 @@ Atendendo à seleção das 5 melhorias de Qualidade de Vida (QOL) aprovadas pelo
 
 ---
 
-### Verificação, Testes e Qualidade de Código
+### Verificação, Testes e Qualidade de Código (v0.76.0 QOL)
 
 - **Suite de testes automatizados (`src/selftest.mjs`)**:
   - Nova Seção 8 adicionada a `selftest.mjs` testando especificamente:
@@ -174,4 +174,130 @@ Atendendo à seleção das 5 melhorias de Qualidade de Vida (QOL) aprovadas pelo
 - **Validação estática de sintaxe e dependências (`node --check`)**:
   - Validado em todos os 11 arquivos tocados (`quiz.js`, `flow-question.js`, `flow-boss.js`, `game-menu.js`, `game-loop.js`, `hud-end.js`, `hud-game.js`, `hud-styles.js`, `combat/wingmen.js`, `combat/index.js`, `version.js`), confirmando zero erros de sintaxe ou imports quebrados.
 - **Versão**: `v0.75.0` → **`v0.76.0`** (atualizado em `src/version.js` e `README.md`).
+
+---
+
+### Auditoria Geral de Bugs, Ações Insolicitadas de IA e Otimização de GC — v0.76.0
+
+Documento de auditoria dedicado completo criado em [`REGISTRO_AUDITORIA_E_CORRECOES.md`](REGISTRO_AUDITORIA_E_CORRECOES.md).
+
+1. **Correções de Bugs e Ações Insolicitadas de IA (BUG-01 a BUG-09):**
+   - **BUG-01 e BUG-02 (Inversão 180° e Disparo Traseiro no Trilho):** Inimigos que ultrapassavam o jogador no trilho giravam de costas e atiravam para trás. Corrigido restringindo `lookAt` e `inFireRange` a `relativeForward > 0`.
+   - **BUG-03 (Perda de Roll Dinâmico por lookAt):** Corrigido reaplicando a rotação local `rollZ` após o direcionamento do caça em curvas.
+   - **BUG-04 (Elos Órfãos do Verme de Fogo Suspensos):** Segmentos sem predecessor ativo são agora promovidos a cabeças autônomas com projeção correta no trilho (`rail.getSpawnFrame()`).
+   - **BUG-05 (Vazamento do Contador de Esquadrões no Despawn):** Decremento de `activeSquadrons` incluído no despawn natural para evitar bloqueio de novas ondas.
+   - **BUG-06 (Jitter de 1 Frame de Wingmen em Foco):** Caças aliados em descanso não reengajam instantaneamente em dogfight se o alvo estiver fora de alcance (>105u) ou em cooldown.
+   - **BUG-07 (Descarte de VRAM e Geometrias de Caças Aliados):** Criado `disposeWingmanMesh(mesh)` com liberação recursiva de geometrias e materiais na remoção de membros.
+   - **BUG-08 (Deduplicação de Cards Cloze no Códice de Erros):** Chave atualizada para `${e.guid}::${e.question}`, permitindo que múltiplos cartões cloze da mesma nota coexistam no resumo de erros.
+   - **BUG-09 (Shield Gate e Dano Decimal no Casco):** Qualquer valor de escudo > 0 agora absorve completamente o hit que o esgota, zerando o dano excedente para o casco e mantendo a integridade inteira do HP.
+
+2. **Otimizações de Desempenho e Coleta de Lixo (OPT-01 a OPT-05):**
+   - Vetores de módulo reutilizáveis em `src/combat/projectiles.js` e consulta içada de fontes magnéticas (1x por frame).
+   - Cache de frame de câmera em `src/rail.js:getSpawnFrame()`, eliminando ~1.920 alocações de `THREE.Vector3` por segundo.
+   - Chamada única de `combat.getMinimapBlips()` por tick compartilhada entre radar e minimapa em `src/game-loop.js`.
+   - Telemetria preguiçosa (*lazy*) em `enemy-telemetry.js` e `wingman-telemetry.js`, com geração de snapshots apenas sob demanda.
+   - Vetores estáticos de módulo em `src/enemies/miniSwarm.js` e `src/combat/wingmen.js`.
+
+3. **Validação:** Seção 9 de `src/selftest.mjs` cobrindo todos os cenários, aprovada com 20 execuções consecutivas (100% de consistência).
+
+---
+
+### Preparação da Arquitetura e Gatilhos de Áudio (Sound Cues) — v0.76.0
+
+Conforme especificado pelo usuário e mapeado no checklist [`SONS_TODO.md`](SONS_TODO.md), foi preparada toda a infraestrutura de eventos e gatilhos de áudio no código-fonte de **cada personagem, nave aliada, inimigo e chefe**, **sem carregar arquivos de áudio antecipadamente (`file: null`)**:
+
+1. **Módulo Centralizador de Sound Cues ([`src/audio-cues.js`](src/audio-cues.js)):**
+   - **78 Sound Cues registradas**, catalogadas em três dicionários exportados: `PLAYER_SOUND_CUES`, `WINGMAN_SOUND_CUES` e `ENEMY_SOUND_CUES`.
+   - **Parâmetros padronizados por Cue:**
+     - `id`: identificador único semântico do som.
+     - `file: null`: nenhum arquivo de áudio carregado ainda.
+     - `durationMs`: duração estimada em milissegundos.
+     - `delayMs`: atraso planejado para o início do som.
+     - `cooldownMs`: janela de proteção contra disparos simultâneos/spam.
+     - `volume`: intensidade relativa (0.0 a 1.0).
+     - `category`: categoria (`'sfx'`, `'voice'`, `'ambient'`, `'music'`).
+     - `spatial`: booleano indicando se possui posicionamento espacial 3D (`true`) ou estéreo fixo (`false`).
+     - `loop`: booleano indicando se é som contínuo de sustentação.
+     - `triggerLogic`: descrição da regra exata e momento do início do evento.
+   - **Despachante Seguro (`triggerSoundCue(cue, params)`):**
+     - Execução não-bloqueante e protegida por `try/catch`.
+     - Opera como `no-op` silencioso de zero custo quando nenhum driver de som estiver conectado.
+     - Encaminha automaticamente eventos e dados contextuais (`worldPos`, `damage`, `count`, etc.) para qualquer manipulador registrado via `registerAudioHandler(fn)` ou `window.__starAnkiAudio`.
+
+2. **Gatilhos Conectados no Código de Cada Entidade:**
+   - **Jogador (Player):**
+     - [`src/player.js`](src/player.js): `shield_absorb`, `shield_break`, `shield_regen`, `hull_damage`, `life_lost`, `game_over`, `heal`, `boost_ignite`, `brake_ignite`, `barrel_roll`.
+     - [`src/combat/projectiles.js`](src/combat/projectiles.js): `laser_fire`, `homing_fire`, `homing_impact`, `max_charge_splash`, `ricochet`, `ima_deflect_shot`.
+     - [`src/game-loop.js`](src/game-loop.js): `charge_loop`, `charge_max_ready`.
+   - **Companheiros de Esquadrão (Wingmen):**
+     - [`src/combat/wingmen.js`](src/combat/wingmen.js): `laser_fire`, `support_volley`, `command_focus_toggle`, `command_free_toggle`, `dogfight_engage`.
+     - Habilidades únicas: Falco (`falco_ram`), Peppy (`peppy_guard`), Slippy (`slippy_repair`), Phantom (`phantom_assist`).
+   - **Inimigos Comuns, Especiais e Chefes:**
+     - [`src/enemies/index.js`](src/enemies/index.js): `blaster_fire`, `blaster_telegraph`, `generic_death`, `time_enemy_rewind_snap`, `debris_shatter`, `debris_titanic_shatter`.
+     - [`src/enemies/blaster.js`](src/enemies/blaster.js): `blaster_spin_damage`.
+     - [`src/enemies/boss.js`](src/enemies/boss.js): `boss_entrance`, `boss_volley`, `boss_laser_charge`, `boss_laser_fire`, `boss_shield_activate`, `boss_phase_transition`, `boss_death_sequence`.
+     - [`src/enemies/golden.js`](src/enemies/golden.js): `golden_entrance`, `golden_straight_volley`, `golden_drone_launch`, `golden_laser_fire`, `golden_teleport`, `golden_cataclysm_death`.
+     - [`src/enemies/sentinela.js`](src/enemies/sentinela.js): `sentinela_gate_fire`, `sentinela_crush`, `sentinela_escape`.
+     - [`src/enemies/verme.js`](src/enemies/verme.js): `verme_segment_break`.
+     - [`src/enemies/sussurro.js`](src/enemies/sussurro.js): `sussurro_cloak_pulse`, `sussurro_summon`.
+     - [`src/enemies/miniSwarm.js`](src/enemies/miniSwarm.js): `mini_swarm_dive_telegraph`, `mini_swarm_whoosh`.
+     - [`src/enemies/fragata.js`](src/enemies/fragata.js): `fragata_side_broadside`, `fragata_core_vulnerable`.
+     - [`src/enemies/timeEnemy.js`](src/enemies/timeEnemy.js): `time_enemy_time_dilation_field`.
+     - [`src/enemies/ima.js`](src/enemies/ima.js): `ima_polar_pulse`.
+     - [`src/enemies/replica.js`](src/enemies/replica.js): `replica_spawn`.
+
+3. **Catálogo de Cues e Parâmetros de Timing:**
+
+   | Categoria / Cue ID | Duração (`durationMs`) | Atraso (`delayMs`) | Cooldown (`cooldownMs`) | Espacial 3D | Momento do Gatilho / Lógica de Início |
+   | :--- | :--- | :--- | :--- | :--- | :--- |
+   | **Player: laser_fire** | 240ms | 0ms | 80ms | Não | Disparo instantâneo do blaster comum ao acionar gatilho |
+   | **Player: charge_loop** | 1200ms (loop) | 0ms | 0ms | Não | Segurar disparo (`fireHeldMs >= homingChargeMinMs`) |
+   | **Player: charge_max_ready** | 450ms | 0ms | 400ms | Não | Chime quando `fireHeldMs` atinge 100% da carga |
+   | **Player: homing_fire** | 600ms | 0ms | 200ms | Não | Soltura do botão de tiro com alvos travados |
+   | **Player: homing_impact** | 380ms | 0ms | 50ms | Sim | Colisão física do míssil contra o mesh inimigo |
+   | **Player: max_charge_splash** | 850ms | 0ms | 300ms | Sim | Detonação em área esférica da carga máxima |
+   | **Player: ricochet** | 300ms | 0ms | 60ms | Sim | Tiro saltando para o próximo alvo do encadeamento |
+   | **Player: ima_deflect_shot** | 420ms | 0ms | 80ms | Sim | Projétil refletido ou curvado por campo polar |
+   | **Player: barrel_roll** | 480ms | 0ms | 300ms | Não | Esquiva lateral ativada com Z ou C |
+   | **Player: boost_ignite** | 350ms | 0ms | 200ms | Não | Início imediato do impulso propulsor frontal |
+   | **Player: brake_ignite** | 320ms | 0ms | 200ms | Não | Acionamento dos retrofoguetes de frenagem |
+   | **Player: shield_absorb** | 280ms | 0ms | 60ms | Não | Escudo absorvendo impacto sem se esgotar |
+   | **Player: shield_break** | 720ms | 0ms | 500ms | Não | Escudo reduzido a zero (quebra do campo) |
+   | **Player: shield_regen** | 400ms | 0ms | 1000ms | Não | Início do ciclo de recarga passiva do escudo |
+   | **Player: hull_damage** | 520ms | 0ms | 120ms | Não | Dano penetrante atingindo o casco diretamente |
+   | **Player: life_lost** | 1300ms | 0ms | 1000ms | Não | Perda de um caça/vida de reserva |
+   | **Player: game_over** | 3200ms | 150ms | 0ms | Não | Destruição final (última vida perdida) |
+   | **Player: heal** | 650ms | 0ms | 400ms | Não | Coleta de kit médico ou reparo de casco |
+   | **Wingman: laser_fire** | 220ms | 0ms | 100ms | Sim | Disparo do canhão auxiliar de caça aliado |
+   | **Wingman: support_volley** | 350ms | 0ms | 250ms | Sim | Rajada de cobertura sincronizada com o líder |
+   | **Wingman: dogfight_engage** | 450ms | 0ms | 2000ms | Sim | Entrada autônoma em perseguição de alvo |
+   | **Wingman: commands** | 260ms | 0ms | 200ms | Não | Alternância entre Postura de Foco e Postura Livre |
+   | **Wingman: falco_ram** | 750ms | 0ms | 1000ms | Sim | Execução da manobra aríete de Falco |
+   | **Wingman: peppy_guard** | 850ms | 0ms | 1000ms | Sim | Barreira de interceptação defensiva de Peppy |
+   | **Wingman: slippy_repair** | 900ms | 0ms | 1000ms | Sim | Drones de nanocura e reparo de Slippy |
+   | **Wingman: phantom_assist** | 800ms | 0ms | 1000ms | Sim | Transferência de sobrecarga de Phantom |
+   | **Enemy: blaster_fire** | 280ms | 0ms | 90ms | Sim | Disparo frontal padrão do caça Blaster |
+   | **Enemy: blaster_telegraph** | 320ms | 0ms | 300ms | Sim | Brilho e trava de mira 300ms antes do tiro |
+   | **Enemy: blaster_spin** | 420ms | 0ms | 200ms | Sim | Dano de colisão durante giro fora de controle |
+   | **Enemy: generic_death** | 650ms | 0ms | 50ms | Sim | Explosão ao zerar HP de unidade comum |
+   | **Enemy: mini_swarm_dive** | 340ms / 550ms | 0ms | 200ms | Sim | Telegraph de mergulho e whoosh de rasante |
+   | **Enemy: time_rewind_snap**| 480ms | 0ms | 600ms | Sim | Salto temporal / restauração de estado |
+   | **Enemy: debris_shatter** | 600ms / 1400ms | 0ms | 80ms | Sim | Estilhaçamento de asteroide ou detrito titânico |
+   | **Enemy: sentinela** | 420ms / 850ms | 0ms | 300ms | Sim | Disparo de moldura, fechamento esmagador e fuga |
+   | **Enemy: verme_break** | 400ms | 0ms | 100ms | Sim | Rompimento de anel segmentado do verme |
+   | **Enemy: sussurro** | 500ms / 800ms | 0ms | 400ms | Sim | Pulso de invisibilidade e invocação de sombras |
+   | **Enemy: fragata** | 700ms / 950ms | 0ms | 300ms | Sim | Bateria lateral pesada e exposição de núcleo |
+   | **Boss: entrance** | 1800ms | 0ms | 0ms | Não | Entrada cinematográfica da nave capitânia |
+   | **Boss: volley / laser** | 450ms / 1400ms | 0ms | 150ms | Sim | Rajada massiva de dispersão e canhão de feixe contínuo |
+   | **Boss: shield / phase** | 750ms / 1600ms | 0ms | 500ms | Não | Ativação de barreira e transição de fase com sobrecarga |
+   | **Boss: death_sequence** | 4200ms | 0ms | 0ms | Não | Sequência encadeada de múltiplas explosões finais |
+   | **Golden: entrance / warp**| 1600ms / 500ms | 0ms | 0ms | Sim | Aparição dimensional e teleporte quântico |
+   | **Golden: cataclysm** | 3800ms | 0ms | 0ms | Não | Morte cataclísmica com clarão e pulso eletromagnético |
+
+4. **Validação Automatizada:**
+   - Adicionada Seção 10 em `src/selftest.mjs`, validando cada um dos 78 cues e testando o despacho com e sem manipulador.
+   - `node src/selftest.mjs`: **100% aprovado** (*"78 Sound Cues validadas"*).
+   - `node --check` validado em todos os 18 arquivos modificados: **0 erros**.
+
+
 
