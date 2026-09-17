@@ -87,6 +87,14 @@ export const WINGMAN_PROFILES = [
 const ENGAGEMENT_CHANCE = 0.45
 const AIM_SPREAD_RAD = 0.085
 
+// Taxa MÁXIMA de giro (rad/s) usada por quaternion.rotateTowards — pedido do usuário: as naves
+// estavam fazendo "piruetas" (giro instantâneo no próprio eixo) sempre que o alvo/waypoint mudava
+// de direção. Um passo angular capado por frame faz uma reversão de rumo virar curva larga (leva
+// mais tempo pra virar mais), não um giro rápido de corpo inteiro — bem mais próximo de como um
+// piloto de verdade manobra.
+const CRUISE_TURN_RATE = 2.0 // ~115°/s — patrulha/escolta/regroup/flyby
+const AIM_TURN_RATE = 3.0 // ~172°/s — dogfight/investida (mais responsivo, ainda não instantâneo)
+
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
@@ -918,12 +926,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
-      // Orientação: no dogfight/investida mira firme no alvo; na patrulha plana suavemente com roll sutil
+      // Orientação: no dogfight/investida mira firme no alvo; na patrulha plana suavemente com roll sutil.
+      // IMPORTANTE: usa rotateTowards (passo angular máximo por frame), não slerp por decaimento
+      // exponencial — slerp com taxa fixa reorienta em ~0.5-0.8s INDEPENDENTE do ângulo, então uma
+      // reversão de rumo grande (waypoint novo, saída de dogfight, troca de estado) virava um giro
+      // rápido no próprio eixo ("pirueta") em vez de uma curva. Com passo angular capado, um giro de
+      // 180° leva proporcionalmente mais tempo (curva larga) — igual um piloto de verdade vira.
       if ((w.state === 'dogfight' || w.state === 'ram') && w.targetEnemy && w.targetEnemy.mesh && !w.targetEnemy.dying) {
         const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
         if (toEnemy.lengthSq() > 1e-4) {
           const aimQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, toEnemy.normalize())
-          w.mesh.quaternion.slerp(aimQuat, 1 - Math.exp(-5.5 * dt))
+          w.mesh.quaternion.rotateTowards(aimQuat, AIM_TURN_RATE * dt)
         }
         w.smoothRoll += (0 - w.smoothRoll) * (1 - Math.exp(-6.0 * dt))
         w.mesh.rotateZ(w.smoothRoll)
@@ -932,7 +945,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (currentSpeed > 1.0) {
           const moveDir = w.velocity.clone().normalize()
           const moveQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, moveDir)
-          w.mesh.quaternion.slerp(moveQuat, 1 - Math.exp(-5.0 * dt))
+          w.mesh.quaternion.rotateTowards(moveQuat, CRUISE_TURN_RATE * dt)
 
           // Banking suave / planado em curvas (inclinando suavemente no máximo ~18° em vez de piruetas)
           const lateralMove = w.velocity.dot(frame.right)

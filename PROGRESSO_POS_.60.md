@@ -42,6 +42,51 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Fix Real de "Piruetas" do Esquadrão — Taxa de Giro Capada (`src/combat/wingmen.js`) — v0.72.1
+
+Pedido do usuário, direto e frustrado: *"eles continuam fazendo um milhão de piruetas, você não
+ajeitou o que eu pedi pra ajeitar"* — resposta à v0.70.0 (que reduziu ataques e suavizou a escolha
+de waypoints de patrulha, mas não atacou a causa raiz de giros bruscos).
+
+**Diagnóstico**: a v0.70.0 suavizou a ESCOLHA de para onde o wingman vai (waypoints por
+deslocamento limitado em vez de sorteio livre), mas nunca tocou em COMO ele gira o corpo pra
+encarar essa direção. A orientação (`w.mesh.quaternion.slerp(moveQuat/aimQuat, 1 -
+Math.exp(-taxa*dt))`) usa decaimento exponencial de taxa fixa — isso reorienta a nave em ~0.5-0.8s
+**independente do ângulo**, então uma reversão de rumo de 170-180° (comum em troca de estado:
+sair de dogfight, entrar em regroup/flyby/escort/ram, cada um define um `patrolTarget` novo numa
+direção qualquer) vira um giro rápido em torno do próprio eixo no mesmo meio segundo que um ajuste
+de 10° levaria — exatamente uma "pirueta". O comentário do código já dizia "banking suave... no
+máximo ~18° em vez de piruetas", mas isso só cobria o ROLL (`rotateZ`, inclinação lateral), nunca
+o YAW/PITCH real (a reorientação do nariz em si), que é onde o giro de corpo inteiro realmente
+acontecia.
+
+**Correção**: trocado `quaternion.slerp(target, taxaFixa)` por `quaternion.rotateTowards(target,
+taxaAngular * dt)` — passo angular MÁXIMO por frame, não fração do ângulo restante. Um giro de
+180° agora leva proporcionalmente mais tempo (curva larga) que um ajuste de 10° (quase instantâneo),
+igual um piloto de verdade manobra. Duas taxas novas: `CRUISE_TURN_RATE = 2.0 rad/s` (~115°/s,
+patrulha/escolta/regroup/flyby) e `AIM_TURN_RATE = 3.0 rad/s` (~172°/s, dogfight/investida — mais
+responsivo em combate, ainda não instantâneo).
+
+**Testado**: `node --check` limpo, `node src/selftest.mjs` 100% ok. **Teste sintético isolado**
+contra o `three@0.169.0` real (instalado temporariamente via `npm install --no-save`, removido no
+final): confirmou que `rotateTowards` respeita o passo angular exato esperado por frame
+(`2.0rad/s * 1/60s = 1.91°`, batendo com o medido) e que um giro de 180° completa em ~1.58s (contra
+o ~0.5-0.8s do slerp antigo, independente do ângulo) enquanto um ajuste de 10° completa em ~0.1s —
+prova matemática de que o comportamento agora é proporcional ao ângulo, não mais um snap de taxa
+fixa. **Testado ao vivo parcialmente**: `preview_start "static"`, Modo Arcade, esquadrão completo —
+zero erro de console durante spawn/voo/combate real, posições dos wingmen avançando normalmente
+entre frames. **Não foi possível observar visualmente uma reversão de rumo completa em tempo real
+nesta sessão**: a mesma limitação de rAF sem foco de SO já documentada extensivamente neste
+projeto (v0.62.3/v0.63.x/v0.68.0/v0.71.0) travou a fase em `launchCutscene` mesmo depois de tentar
+"Reiniciar setor atual"/"Próximo setor" via painel de debug — vale uma passada visual ao vivo
+numa sessão futura com o ambiente de teste menos instável, mas a prova matemática do teste
+sintético cobre o mecanismo real ponta a ponta (mesma função `Quaternion.rotateTowards` do
+three.js real, não uma reimplementação).
+
+**Versão**: v0.72.0 → **v0.72.1**
+
+---
+
 ### Habilidades Únicas do Esquadrão (Investida/Guarda/Reparo/Carga Compartilhada) + Ícones de Cooldown na HUD — v0.72.0
 
 Implementação do [PLANO_HABILIDADES_ESQUADRAO.md](PLANO_HABILIDADES_ESQUADRAO.md) (planejado numa
