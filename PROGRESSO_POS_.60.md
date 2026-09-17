@@ -42,6 +42,38 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Fix: Aliados Travados/Sem Reação em Combate — `AIM_SPREAD_RAD` Não Declarada — v0.73.1
+
+Atendendo ao relato do usuário ("os aliados simplesmente não fazem nada e ficam voando desse jeito
+bugado", com vídeo mostrando os caças do esquadrão parados/travados em vez de reagir em combate).
+
+1. **Causa raiz confirmada por teste ao vivo**: o usuário depois compartilhou o próprio plano do
+   Antigravity (`Plano de Reestruturação: Movimentação dos Aliados & Correção da Sentinela`),
+   confirmando que a Proposta 2 (engajamentos mais longos — 4 a 6s por dogfight, com rajada em
+   vez do ataque instantâneo antigo) estava em implementação e foi interrompida no meio. A rajada
+   nova em `src/combat/wingmen.js` (função de dogfight, disparo de `fireWingmanLaser` com
+   dispersão angular) referenciava uma constante `AIM_SPREAD_RAD` que nunca foi declarada.
+2. **Efeito em jogo**: assim que QUALQUER aliado entrava em `dogfight` (perseguia um inimigo), o
+   `ReferenceError: AIM_SPREAD_RAD is not defined` estourava dentro do laço `for` que atualiza
+   TODOS os companheiros — como a exceção não é capturada, ela aborta o resto daquele laço no
+   meio (física de voo, orientação, laços de laser, tudo que vem DEPOIS do ponto do crash naquele
+   frame). Resultado visual: o esquadrão trava exatamente na formação/posição em que estava
+   quando o primeiro aliado tentou atirar, e nunca mais se move de verdade — só as animações que
+   não dependem desse laço (chama do propulsor) continuam, dando a impressão de "voando bugado".
+3. **Fix**: declarada `const AIM_SPREAD_RAD = 0.05` (rad) junto das outras constantes de laser dos
+   aliados, no topo do arquivo.
+4. **Testado ao vivo** via `window.__starAnki.step()`: reproduzi o crash exato ANTES do fix
+   (confirmado no console: `ReferenceError: AIM_SPREAD_RAD is not defined` em `wingmen.js:776`,
+   disparado a partir de `combat/index.js` → `game-loop.js`), apliquei o fix, e reproduzi de novo
+   simulando ~1000 frames (~16s) com esquadrão completo (4 alas) e inimigos por perto — zero erros
+   no console, e as posições dos 4 aliados (`combat.getWingmanPositions()`) mudam de verdade frame
+   a frame, confirmando que voltaram a se mover e engajar.
+5. **Varredura preventiva**: rodei uma checagem de todas as constantes em `MAIÚSCULA` usadas em
+   `wingmen.js` contra as declaradas/importadas — só encontrou essa, nenhuma outra pendência do
+   mesmo tipo.
+
+---
+
 ### Feedback de Combate "Arcade Neon" — Pontos por Abate, Cadeia de Abates e K.O. de Chefe — v0.73.0
 
 Atendendo ao pedido do usuário de um documento de design com 5 opções animadas para "mostrar a

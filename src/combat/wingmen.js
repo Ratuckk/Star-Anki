@@ -113,6 +113,8 @@ const AIM_TURN_RATE = 3.2 // ~183°/s — mira em combate
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
+// Dispersão angular (rad) da rajada de dogfight — mira imperfeita, tiros não saem 100% retos
+const AIM_SPREAD_RAD = 0.05
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 
 // ============ HABILIDADES ÚNICAS DO ESQUADRÃO ============
