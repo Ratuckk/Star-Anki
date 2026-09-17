@@ -68,6 +68,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getActiveWingmen: () => squadron.getActiveMembers(),
     getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
     toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
+    getAbilityStates: () => squadron.getAbilityStates(),
+    applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
+    getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
 
     spawnEnemy: () => enemies.spawnEnemy(),
     spawnSquadron: (formationType) => enemies.spawnSquadron ? enemies.spawnSquadron(formationType) : null,
@@ -188,7 +191,24 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
       }
 
-      const wingmanResult = squadron.update(dt, playerPosition, rail.getFrameAt(0), { boostActive: opts.boostActive }) || {}
+      const wingmanResult = squadron.update(dt, playerPosition, rail.getFrameAt(0), {
+        boostActive: opts.boostActive,
+        homingCharging: opts.homingCharging,
+        shieldNotFull: player.getShieldValue() < player.getShieldMax(),
+      }) || {}
+
+      // Habilidades únicas do esquadrão que afetam o jogador diretamente (Peppy: Guarda / Slippy:
+      // Reparo de Campo) resolvem aqui — combat/index.js já tem `player`/`effects` no escopo, não
+      // precisa subir esse encanamento até o game-loop.
+      if (wingmanResult.shieldGrants > 0 && player.grantShieldPip) {
+        for (let i = 0; i < wingmanResult.shieldGrants; i++) player.grantShieldPip()
+      }
+      if (wingmanResult.healOrbSpawns && wingmanResult.healOrbSpawns.length > 0 && effects && effects.spawnMicroOrbe) {
+        for (const pos of wingmanResult.healOrbSpawns) effects.spawnMicroOrbe(pos, { kind: 'heal' })
+      }
+
+      const healOrbesCollected = effects && effects.getHealOrbesCollected ? effects.getHealOrbesCollected() : 0
+      if (healOrbesCollected > 0 && player.heal) player.heal(healOrbesCollected)
 
       if (showHitboxes) refreshHitboxes()
 

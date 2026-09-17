@@ -433,6 +433,23 @@ export function createEffectsSystem(scene, opts = {}) {
     blending: THREE.AdditiveBlending,
     fog: false,
   })
+  // Orbe de reparo do Slippy (habilidade única do esquadrão): mesma geometria da orbe Anki de
+  // Frenesi, cor verde de cura em vez de ciano/amarelo, pra ficar claro que é um pickup diferente.
+  const microOrbeHealCoreMat = new THREE.MeshBasicMaterial({
+    color: 0x4ade80,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
+  const microOrbeHealRingMat = new THREE.MeshBasicMaterial({
+    color: 0xbbf7d0,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
+  let healOrbesCollectedThisFrame = 0
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
@@ -1004,19 +1021,21 @@ export function createEffectsSystem(scene, opts = {}) {
     enemyTrails.push({ mesh, life: 0 })
   }
 
-  function spawnMicroOrbe(position) {
+  function spawnMicroOrbe(position, opts = {}) {
+    const kind = opts.kind === 'heal' ? 'heal' : 'frenzy'
     const group = new THREE.Group()
-    const core = new THREE.Mesh(microOrbeCoreGeo, microOrbeCoreMat)
-    const ring = new THREE.Mesh(microOrbeRingGeo, microOrbeRingMat)
+    const core = new THREE.Mesh(microOrbeCoreGeo, kind === 'heal' ? microOrbeHealCoreMat : microOrbeCoreMat)
+    const ring = new THREE.Mesh(microOrbeRingGeo, kind === 'heal' ? microOrbeHealRingMat : microOrbeRingMat)
     group.add(core)
     group.add(ring)
     group.position.copy(position)
     scene.add(group)
-    microOrbes.push({ group, core, ring, life: 0 })
+    microOrbes.push({ group, core, ring, life: 0, kind })
   }
 
   function updateMicroOrbes(dt, playerPos) {
     microOrbesCollectedThisFrame = 0
+    healOrbesCollectedThisFrame = 0
     if (!playerPos) return
     for (let i = microOrbes.length - 1; i >= 0; i--) {
       const orb = microOrbes[i]
@@ -1031,9 +1050,10 @@ export function createEffectsSystem(scene, opts = {}) {
         orb.group.position.add(pull)
       }
       if (dist < 1.7) {
-        microOrbesCollectedThisFrame++
-        cardAcquiredPulse(playerPos, 'especial')
-        bloomSprite(orb.group.position, 0x00f2fe, 1.4)
+        if (orb.kind === 'heal') healOrbesCollectedThisFrame++
+        else microOrbesCollectedThisFrame++
+        cardAcquiredPulse(playerPos, orb.kind === 'heal' ? 'defensivo' : 'especial')
+        bloomSprite(orb.group.position, orb.kind === 'heal' ? 0x4ade80 : 0x00f2fe, 1.4)
         scene.remove(orb.group)
         microOrbes.splice(i, 1)
         continue
@@ -1888,6 +1908,8 @@ export function createEffectsSystem(scene, opts = {}) {
     microOrbeRingGeo.dispose()
     microOrbeCoreMat.dispose()
     microOrbeRingMat.dispose()
+    microOrbeHealCoreMat.dispose()
+    microOrbeHealRingMat.dispose()
     enemyTrails.length = 0
     microOrbes.length = 0
     ricochetArcs.length = 0
@@ -1908,6 +1930,7 @@ export function createEffectsSystem(scene, opts = {}) {
   return {
     update, updateMicroOrbes, explosion, muzzleFlash, enemyMuzzleFlare, enemyThrusterTrail, spawnMicroOrbe,
     getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
+    getHealOrbesCollected: () => healOrbesCollectedThisFrame,
     setChargeGlow, smokeRing, homingAfterimage,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,

@@ -136,9 +136,39 @@ export function createGameHud() {
     }
   }
 
+  const topbarRow = document.createElement('div')
+  topbarRow.className = 'hud-topbar-row'
+  root.appendChild(topbarRow)
+
   const status = document.createElement('div')
   status.className = 'hud-status'
-  root.appendChild(status)
+  topbarRow.appendChild(status)
+
+  // ============ ÍCONES DE COOLDOWN DO ESQUADRÃO (Opção B: emblemas hexagonais) ============
+  // 4 slots fixos (Falco/Peppy/Slippy/Phantom, mesma ordem de WINGMAN_PROFILES) ao lado do
+  // placar — ver PLANO_HABILIDADES_ESQUADRAO.md. A posição nunca "pula" quando um piloto novo
+  // é recrutado porque os 4 slots sempre existem, só o estado visual muda (bloqueado → pronto).
+  const SQUAD_ABILITY_ICONS = { ram: '☄️', guard: '🔰', repair: '🩹', assist: '🔗' }
+  const abilityRow = document.createElement('div')
+  abilityRow.className = 'hud-squad-abilities'
+  topbarRow.appendChild(abilityRow)
+  const abilityHexEls = [0, 1, 2, 3].map(() => {
+    const hex = document.createElement('div')
+    hex.className = 'hud-ability-hex locked'
+    hex.innerHTML = `
+      <span class="hud-ability-icon"></span>
+      <div class="hud-ability-sweep"></div>
+      <span class="hud-ability-num"></span>
+    `
+    abilityRow.appendChild(hex)
+    return {
+      el: hex,
+      icon: hex.querySelector('.hud-ability-icon'),
+      sweep: hex.querySelector('.hud-ability-sweep'),
+      num: hex.querySelector('.hud-ability-num'),
+    }
+  })
+  let prevAbilitySignature = ''
 
   // ============ HORIZONTE ARTIFICIAL (Fase 9, ideia all-range 2) ============
   // só visível no modo all-range — ajuda a não perder a noção de "pra cima" (main.js chama
@@ -1664,6 +1694,36 @@ export function createGameHud() {
         `
         cardsTray.appendChild(chip)
       }
+    },
+
+    // 4 slots fixos (ver criação de abilityHexEls acima) — states vem de combat.getAbilityStates(),
+    // sempre na ordem Falco/Peppy/Slippy/Phantom (mesma de WINGMAN_PROFILES).
+    setSquadronAbilities(states) {
+      if (!Array.isArray(states) || states.length === 0) return
+      const sig = states.map((s) => `${s.id}:${s.recruited ? 1 : 0}:${s.active ? 1 : 0}:${Math.ceil(s.cooldownRemaining)}`).join(';')
+      if (sig === prevAbilitySignature) return
+      prevAbilitySignature = sig
+
+      states.forEach((s, i) => {
+        const slot = abilityHexEls[i]
+        if (!slot) return
+        const colorHex = typeof s.color === 'number' ? `#${s.color.toString(16).padStart(6, '0')}` : '#38bdf8'
+        slot.el.style.setProperty('--ab-color', colorHex)
+        slot.icon.textContent = SQUAD_ABILITY_ICONS[s.abilityId] || ''
+        slot.el.title = s.recruited ? (s.name || '') : ''
+
+        const frac = s.cooldownTotal > 0 ? Math.max(0, Math.min(1, s.cooldownRemaining / s.cooldownTotal)) : 0
+        slot.sweep.style.background = frac > 0
+          ? `conic-gradient(rgba(6,8,12,0.88) 0deg, rgba(6,8,12,0.88) ${frac * 360}deg, transparent ${frac * 360}deg)`
+          : 'none'
+        slot.num.textContent = (s.recruited && !s.active && s.cooldownRemaining > 0 && s.cooldownRemaining <= 3)
+          ? String(Math.ceil(s.cooldownRemaining)) : ''
+
+        slot.el.classList.toggle('locked', !s.recruited)
+        slot.el.classList.toggle('ready', s.recruited && s.ready)
+        slot.el.classList.toggle('cooling', s.recruited && !s.ready && !s.active)
+        slot.el.classList.toggle('active', s.recruited && s.active)
+      })
     },
 
     showSquadronNotice({ mode, targetCount = 1, hasLocked = false, xFrac = 0.5, yFrac = 0.5 }) {

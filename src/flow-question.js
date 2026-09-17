@@ -7,6 +7,15 @@ import { recordResult, saveHistory } from './storage.js'
 import { pickRandomCards } from './roguelike.js'
 import { WRONG_FEEDBACK_MS } from './main-constants.js'
 
+// Cartas "Vínculo" → id do piloto (mesma ordem de WINGMAN_PROFILES em combat/wingmen.js:
+// 0 Falco, 1 Peppy, 2 Slippy, 3 Phantom).
+const WINGMAN_ABILITY_CARD_PROFILE_ID = {
+  'wingman-ram-cooldown': 0,
+  'wingman-guard-cooldown': 1,
+  'wingman-repair-cooldown': 2,
+  'wingman-assist-cooldown': 3,
+}
+
 export function createQuestionFlow(deps) {
   const {
     state, session, deck, menu,
@@ -30,6 +39,9 @@ export function createQuestionFlow(deps) {
       const positions = combat.getWingmanPositions?.()
       const pos = (positions && positions.length > 0) ? positions[positions.length - 1] : deps.rail.getPlayerPosition()
       deps.effects.wingmanSpawn(pos)
+    }
+    if (card.id in WINGMAN_ABILITY_CARD_PROFILE_ID && combat.applyWingmanAbilityCard) {
+      combat.applyWingmanAbilityCard(WINGMAN_ABILITY_CARD_PROFILE_ID[card.id])
     }
   }
 

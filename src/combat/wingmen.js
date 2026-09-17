@@ -21,6 +21,10 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0.14,
     speed: 42,
     modelType: 'interceptor',
+    abilityId: 'ram',
+    abilityLabel: 'Investida Aríete',
+    abilityCooldownBase: 14,
+    abilityCooldownFloor: 7,
   },
   {
     id: 1,
@@ -35,6 +39,10 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0,
     speed: 36,
     modelType: 'bomber',
+    abilityId: 'guard',
+    abilityLabel: 'Guarda',
+    abilityCooldownBase: 20,
+    abilityCooldownFloor: 10,
   },
   {
     id: 2,
@@ -49,6 +57,10 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0.16,
     speed: 38,
     modelType: 'scout',
+    abilityId: 'repair',
+    abilityLabel: 'Reparo de Campo',
+    abilityCooldownBase: 18,
+    abilityCooldownFloor: 9,
   },
   {
     id: 3,
@@ -63,6 +75,10 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0.12,
     speed: 45,
     modelType: 'stealth',
+    abilityId: 'assist',
+    abilityLabel: 'Carga Compartilhada',
+    abilityCooldownBase: 16,
+    abilityCooldownFloor: 8,
   },
 ]
 
@@ -75,6 +91,29 @@ const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
+
+// ============ HABILIDADES ÚNICAS DO ESQUADRÃO ============
+// Uma ação autônoma por piloto (ver PLANO_HABILIDADES_ESQUADRAO.md), cada uma com cooldown
+// próprio (abilityCooldownBase, reduzido por carta até abilityCooldownFloor — ver
+// applyAbilityCooldownCard). Falco investe em aríete, Peppy dá guarda (escudo), Slippy solta
+// orbe de reparo ao acertar um tiro, Phantom acopla pra acelerar o tiro carregado do jogador.
+const RAM_MIN_RANGE = 20
+const RAM_MAX_RANGE = 45
+const RAM_HIT_RADIUS = 2.2
+const RAM_DAMAGE = 6
+const RAM_DAMAGE_VS_BOSS = 2
+const RAM_TIMEOUT_S = 2.5
+
+const GUARD_ESCORT_S = 4.0
+const GUARD_TRIGGER_RANGE = 9
+
+const ASSIST_MIN_HOLD_S = 0.35
+const ASSIST_MAX_S = 3.0
+const ASSIST_CHARGE_MULT = 1.5
+
+const ESCORT_SIDE_OFFSET = 3.0
+const ESCORT_UP_OFFSET = 0.6
+const ESCORT_FORWARD_OFFSET = 2.5
 
 // ============ CONSTRUTORES DE MODELOS 3D ÚNICOS ============
 
@@ -292,9 +331,50 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const activeWingmen = []
   const activeLasers = []
   let elapsed = 0
+  let chargeHeldTimer = 0
 
   const laserGeometry = new THREE.CylinderGeometry(0.09, 0.09, 1.4, 6)
   laserGeometry.rotateX(Math.PI / 2)
+
+  // Multiplicador de cooldown por piloto (id 0-3), reduzido pelas cartas "Vínculo" — mora no
+  // sistema (não na instância do wingman) pra sobreviver a remoção/respawn via debug.
+  const abilityCooldownMultByProfileId = [1, 1, 1, 1]
+
+  function applyAbilityCooldownCard(profileId) {
+    const profile = WINGMAN_PROFILES[profileId]
+    if (!profile) return
+    const floorRatio = profile.abilityCooldownFloor / profile.abilityCooldownBase
+    abilityCooldownMultByProfileId[profileId] = Math.max(floorRatio, abilityCooldownMultByProfileId[profileId] * 0.75)
+  }
+
+  function abilityCooldownFor(profile) {
+    return profile.abilityCooldownBase * abilityCooldownMultByProfileId[profile.id]
+  }
+
+  function getAbilityStates() {
+    return WINGMAN_PROFILES.map((profile) => {
+      const cooldownTotal = abilityCooldownFor(profile)
+      const w = activeWingmen.find((x) => x.profile.id === profile.id)
+      if (!w) {
+        return {
+          id: profile.id, abilityId: profile.abilityId, name: profile.name, color: profile.accentColor,
+          recruited: false, ready: false, active: false, cooldownRemaining: cooldownTotal, cooldownTotal,
+        }
+      }
+      return {
+        id: profile.id, abilityId: profile.abilityId, name: profile.name, color: profile.accentColor,
+        recruited: true,
+        ready: !w.abilityActive && w.abilityCooldown <= 0,
+        active: w.abilityActive,
+        cooldownRemaining: Math.max(0, w.abilityCooldown),
+        cooldownTotal,
+      }
+    })
+  }
+
+  function getAssistChargeMult() {
+    return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_CHARGE_MULT : 1
+  }
 
   function spawnMember(profileId) {
     const profile = WINGMAN_PROFILES[profileId]
@@ -336,6 +416,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       weavePhase: Math.random() * Math.PI * 2,
       weaveFreq: 0.11 + Math.random() * 0.07,
       weaveAmp: 2.6 + Math.random() * 1.8,
+      // habilidade única (ver seção "HABILIDADES ÚNICAS DO ESQUADRÃO" acima): começa na metade
+      // do cooldown, não pronta de cara no primeiro segundo de jogo.
+      abilityCooldown: abilityCooldownFor(profile) * 0.5,
+      abilityActive: false,
+      abilityTimer: 0,
+      abilityApplied: false,
+      escortKind: null, // 'guard' | 'assist' — só usado quando state === 'escort'
     }
 
     activeWingmen.push(wingman)
@@ -397,9 +484,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // Atribui alvos imediatamente para todos os caças ativos
+      // Atribui alvos imediatamente para todos os caças ativos — exceto quem estiver no meio de
+      // uma habilidade única (investida/escolta): puxar o state pra 'dogfight' à força deixaria
+      // abilityActive travado em true pra sempre (nada mais o desligaria), soft-lock permanente
+      // daquele piloto. Deixa a habilidade terminar sozinha, o comando de foco pega ele depois.
       for (let i = 0; i < activeWingmen.length; i++) {
         const w = activeWingmen[i]
+        if (w.abilityActive) continue
         if (squadronFocusTargets.length > 0) {
           const chosen = squadronFocusTargets.length === 1
             ? squadronFocusTargets[0]
@@ -422,6 +513,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       squadronCommandMode = 'free'
       squadronFocusTargets = []
       for (const w of activeWingmen) {
+        if (w.abilityActive) continue // mesmo cuidado do bloco de foco acima
         w.state = 'patrol'
         w.stateTimer = 0
         w.targetEnemy = null
@@ -453,6 +545,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       life: WINGMAN_LASER_LIFETIME,
       color: wingman.profile.laserColor,
       damage: WINGMAN_LASER_DAMAGE,
+      owner: wingman, // usado pelo proc do Reparo de Campo (Slippy) na resolução de acerto
     })
 
     if (effects && effects.muzzleFlash) {
@@ -465,13 +558,29 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function update(dt, playerPos, frame, opts = {}) {
     elapsed += dt
     const boostActive = !!opts.boostActive
+    const homingCharging = !!opts.homingCharging
+    const shieldNotFull = !!opts.shieldNotFull
     const inArena = rail.isArena()
+
+    chargeHeldTimer = homingCharging ? chargeHeldTimer + dt : 0
+
+    // acumuladores das habilidades (declarados aqui, não só depois do loop de wingmen, porque
+    // a investida do Falco resolve o acerto DENTRO do próprio loop de estados)
+    let enemyKills = 0
+    let enemyKillPoints = 0
+    let bossDefeated = false
+    let bossHitWorldPos = null
+    let goldenSpecialHit = false
+    let goldenHitWorldPos = null
+    let shieldGrants = 0
+    const healOrbSpawns = []
 
     for (let idx = 0; idx < activeWingmen.length; idx++) {
       const w = activeWingmen[idx]
       w.stateTimer += dt
       w.fireCooldown -= dt
       w.flybyCooldown -= dt
+      if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
 
       // Fogo das turbinas reage a boost ou manobras fly-by
       const isThrusting = boostActive || w.state === 'flyby' || w.state === 'dogfight'
@@ -506,6 +615,28 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.nextWaypointTimer = 0
         }
       } else if (w.state === 'patrol') {
+        // Habilidades únicas de Peppy (Guarda) e Phantom (Carga Compartilhada): saem da patrulha
+        // pra uma posição de escolta junto ao jogador quando prontas e a condição de cada uma bate.
+        if (!w.abilityActive && w.abilityCooldown <= 0) {
+          if (w.profile.abilityId === 'guard' && shieldNotFull) {
+            w.state = 'escort'
+            w.escortKind = 'guard'
+            w.stateTimer = 0
+            w.abilityActive = true
+            w.abilityTimer = 0
+            w.abilityApplied = false
+          } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
+            w.state = 'escort'
+            w.escortKind = 'assist'
+            w.stateTimer = 0
+            w.abilityActive = true
+            w.abilityTimer = 0
+          }
+        }
+
+        // Se a habilidade acabou de assumir (state virou 'escort' acima), o resto do corpo da
+        // patrulha não roda neste frame — só entra aqui se continuar em 'patrol'.
+        if (w.state === 'patrol') {
         // Se estiver em modo foco, prioriza os alvos táticos imediatamente
         if (squadronCommandMode === 'focus') {
           squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
@@ -598,6 +729,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.fireCooldown = 0.6 + Math.random() * 0.6
           }
         }
+        }
       } else if (w.state === 'flyby') {
         // Rasante rápido cortando a tela
         if (w.stateTimer > 1.9 || w.mesh.position.distanceTo(w.patrolTarget) < 6.0) {
@@ -626,6 +758,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           const dist = toEnemy.length()
           const aimDir = toEnemy.clone().normalize()
 
+          // Falco: converte esse engajamento numa investida em aríete quando a habilidade está
+          // pronta e a distância dá espaço pra uma corrida de aproximação limpa.
+          if (w.profile.abilityId === 'ram' && !w.abilityActive && w.abilityCooldown <= 0 &&
+              dist >= RAM_MIN_RANGE && dist <= RAM_MAX_RANGE) {
+            w.state = 'ram'
+            w.stateTimer = 0
+            w.abilityActive = true
+            w.abilityTimer = 0
+          } else {
           // Mira e aproxima-se mantendo standoff de combate
           w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(aimDir, -16)
 
@@ -648,6 +789,86 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.stateTimer = 0
             w.fireCooldown = squadronCommandMode === 'focus' ? 0.3 : w.profile.fireInterval + Math.random() * 0.5
             w.nextWaypointTimer = squadronCommandMode === 'focus' ? 0.4 : 1.6
+          }
+          }
+        }
+      } else if (w.state === 'ram') {
+        // ============ INVESTIDA ARÍETE (Falco) ============
+        w.abilityTimer += dt
+        const target = w.targetEnemy
+        const targetLost = !target || target.dying || !target.mesh
+        if (targetLost) {
+          w.abilityActive = false
+          w.abilityCooldown = abilityCooldownFor(w.profile)
+          w.state = 'patrol'
+          w.stateTimer = 0
+          w.targetEnemy = null
+          w.nextWaypointTimer = 0
+        } else {
+          w.patrolTarget.copy(target.mesh.position)
+          const distNow = w.mesh.position.distanceTo(target.mesh.position)
+          if (distNow < RAM_HIT_RADIUS || w.abilityTimer > RAM_TIMEOUT_S) {
+            if (distNow < RAM_HIT_RADIUS && enemies && enemies.resolveProjectileHit) {
+              const isBig = target.kind === 'boss' || target.kind === 'golden'
+              const hit = enemies.resolveProjectileHit(w.mesh.position, target.mesh.position, {
+                damage: isBig ? RAM_DAMAGE_VS_BOSS : RAM_DAMAGE,
+                isHoming: false,
+                hitBuffer: RAM_HIT_RADIUS,
+              })
+              if (hit) {
+                if (effects && effects.hitSpark) effects.hitSpark(target.mesh.position, w.profile.laserColor)
+                if (effects && effects.shockwave) effects.shockwave(target.mesh.position, w.profile.laserColor, 0.6)
+                if (hit.killed) {
+                  enemyKills++
+                  enemyKillPoints += (hit.enemyKillPoints || 0)
+                }
+                if (hit.bossDefeated) {
+                  bossDefeated = true
+                  bossHitWorldPos = hit.worldPos ? hit.worldPos.clone() : target.mesh.position.clone()
+                }
+                if (hit.goldenSpecialHit) {
+                  goldenSpecialHit = true
+                  goldenHitWorldPos = hit.worldPos ? hit.worldPos.clone() : target.mesh.position.clone()
+                }
+              }
+            }
+            w.abilityActive = false
+            w.abilityCooldown = abilityCooldownFor(w.profile)
+            w.state = 'patrol'
+            w.stateTimer = 0
+            w.targetEnemy = null
+            w.nextWaypointTimer = 0
+          }
+        }
+      } else if (w.state === 'escort') {
+        // ============ ESCOLTA (Peppy: Guarda / Phantom: Carga Compartilhada) ============
+        w.abilityTimer += dt
+        const side = w.profile.homeSide * ESCORT_SIDE_OFFSET
+        w.patrolTarget.copy(playerPos)
+          .addScaledVector(frame.right, side)
+          .addScaledVector(frame.up, ESCORT_UP_OFFSET)
+          .addScaledVector(frame.forward, ESCORT_FORWARD_OFFSET)
+
+        if (w.escortKind === 'guard') {
+          if (!w.abilityApplied && w.mesh.position.distanceTo(playerPos) < GUARD_TRIGGER_RANGE) {
+            w.abilityApplied = true
+            shieldGrants += 1
+          }
+          if (w.abilityTimer > GUARD_ESCORT_S) {
+            w.abilityActive = false
+            w.abilityApplied = false
+            w.abilityCooldown = abilityCooldownFor(w.profile)
+            w.state = 'patrol'
+            w.stateTimer = 0
+            w.nextWaypointTimer = 0
+          }
+        } else if (w.escortKind === 'assist') {
+          if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
+            w.abilityActive = false
+            w.abilityCooldown = abilityCooldownFor(w.profile)
+            w.state = 'patrol'
+            w.stateTimer = 0
+            w.nextWaypointTimer = 0
           }
         }
       }
@@ -674,7 +895,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (w.state === 'regroup' || distToPlayer > 35) cruiseSpeed += 32
       }
       if (boostActive || w.state === 'flyby') cruiseSpeed *= 1.65
+      else if (w.state === 'ram') cruiseSpeed *= 2.2
       else if (w.state === 'dogfight') cruiseSpeed *= 1.2
+      else if (w.state === 'escort') cruiseSpeed *= 1.3
 
       const desiredVelocity = targetDir.multiplyScalar(cruiseSpeed)
 
@@ -691,12 +914,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       // Aceleração com inércia suave
-      const accelRate = w.state === 'flyby' ? 6.0 : (w.state === 'dogfight' ? 2.3 : 2.5)
+      const accelRate = w.state === 'flyby' || w.state === 'ram' ? 6.0 : (w.state === 'dogfight' ? 2.3 : 2.5)
       w.velocity.lerp(desiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
-      // Orientação: no dogfight mira firme no inimigo; na patrulha plana suavemente com roll sutil
-      if (w.state === 'dogfight' && w.targetEnemy && w.targetEnemy.mesh && !w.targetEnemy.dying) {
+      // Orientação: no dogfight/investida mira firme no alvo; na patrulha plana suavemente com roll sutil
+      if ((w.state === 'dogfight' || w.state === 'ram') && w.targetEnemy && w.targetEnemy.mesh && !w.targetEnemy.dying) {
         const toEnemy = w.targetEnemy.mesh.position.clone().sub(w.mesh.position)
         if (toEnemy.lengthSq() > 1e-4) {
           const aimQuat = new THREE.Quaternion().setFromUnitVectors(FORWARD_AXIS, toEnemy.normalize())
@@ -719,13 +942,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
     }
-
-    let enemyKills = 0
-    let enemyKillPoints = 0
-    let bossDefeated = false
-    let bossHitWorldPos = null
-    let goldenSpecialHit = false
-    let goldenHitWorldPos = null
 
     // 2. Atualiza os lasers disparados pelos companheiros
     for (let i = activeLasers.length - 1; i >= 0; i--) {
@@ -765,6 +981,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             goldenSpecialHit = true
             goldenHitWorldPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
           }
+          // Slippy: o próximo tiro que acertar (mata ou não) depois do cooldown pronto solta um
+          // orbe de reparo no ponto do impacto — proc no acerto, não em cada disparo.
+          const owner = laser.owner
+          if (owner && owner.profile.abilityId === 'repair' && !owner.abilityActive && owner.abilityCooldown <= 0) {
+            healOrbSpawns.push(hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone())
+            owner.abilityCooldown = abilityCooldownFor(owner.profile)
+          }
           scene.remove(laser.mesh)
           activeLasers.splice(i, 1)
           continue
@@ -779,6 +1002,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       bossHitWorldPos,
       goldenSpecialHit,
       goldenHitWorldPos,
+      shieldGrants,
+      healOrbSpawns,
     }
   }
 
@@ -818,6 +1043,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     getWingmanPositions: () => activeWingmen.map((w) => w.mesh.position.clone()),
     getWingmanCount: () => activeWingmen.length,
     getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
+    getAbilityStates,
+    applyAbilityCooldownCard,
+    getAssistChargeMult,
     dispose,
   }
 }

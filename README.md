@@ -2,7 +2,7 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.71.0-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.72.0-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
@@ -47,7 +47,7 @@ O sistema de estudo do Star-Anki foi projetado respeitando rigorosamente a regra
 - **Giro Completo / Rolamento (Barrel Roll - `Z` ou `C`):** Manobra defensiva que concede frames de invencibilidade e reflete projéteis inimigos quando combinada com cartas de deflexão.
 - **Propulsor de Aceleração (`A`):** Impulso frontal para escapar de encurralamentos ou colidir usando a carta de Aríete.
 - **Freio Reverso / Repulsor (`S`):** Desaceleração tática com jatos frontais reversos para alinhar disparos em alvos que passam velozes.
-- **Esquadrão Aliado Autônomo:** Até 4 companheiros de equipe (*Falco, Peppy, Slippy, Phantom*) que realizam voos planados realistas, cobrem os flancos e travam mira nos inimigos. Modo foco (`F`) permite direcionar todo o fogo do esquadrão a um alvo prioritário.
+- **Esquadrão Aliado Autônomo:** Até 4 companheiros de equipe (*Falco, Peppy, Slippy, Phantom*) que realizam voos planados realistas, cobrem os flancos e travam mira nos inimigos. Modo foco (`F`) permite direcionar todo o fogo do esquadrão a um alvo prioritário. Cada piloto também tem uma habilidade única com cooldown próprio (Falco: Investida Aríete, Peppy: Guarda, Slippy: Reparo de Campo, Phantom: Carga Compartilhada), com ícones de status ao lado do placar e cartas roguelike dedicadas pra reduzir cada cooldown.
 
 ---
 
@@ -73,7 +73,7 @@ A cada resposta correta, escolha entre 3 cartas de upgrade sorteadas para person
 - **Armas:** Mais projéteis por disparo, aumento de velocidade de carga do homing, ricochete entre alvos, aumento de cadência.
 - **Defesa:** Aumento da capacidade de escudos, tempo de regeneração reduzido, maior duração de invencibilidade no rolamento.
 - **Mobilidade:** Eficiência do propulsor, aríete de dano no boost, giro rebatedor de tiros inimigos.
-- **Esquadrão:** Recrutamento de novos pilotos aliados para a ala.
+- **Esquadrão:** Recrutamento de novos pilotos aliados para a ala, além de cartas "Vínculo" que reduzem o cooldown da habilidade única de cada piloto já recrutado.
 
 ---
 

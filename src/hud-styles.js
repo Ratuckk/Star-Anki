@@ -155,6 +155,90 @@ export function injectHudExtraStyles() {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* ============ ÍCONES DE COOLDOWN DO ESQUADRÃO (v0.72.0) ============ */
+/* 4 emblemas hexagonais ao lado do placar (Opção B do canvas de design, escolhida pelo usuário):
+   ecoa o clip-path triangular já usado nos pips de vida, sem empurrar o resto da HUD — mora
+   dentro de .hud-topbar-row, num flex row junto do texto de pontos/combo, então a largura real
+   do placar nunca colide com os ícones (ao contrário de um left fixo "chutado"). */
+.hud-squad-abilities {
+  display: flex;
+  gap: 5px;
+  pointer-events: none;
+}
+.hud-ability-hex {
+  position: relative;
+  width: 28px;
+  height: 24px;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  background: rgba(20, 24, 32, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ab-color, #38bdf8);
+  transition: filter 0.2s ease;
+}
+.hud-ability-hex::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  box-shadow: inset 0 0 0 2px #333944;
+  transition: box-shadow 0.2s ease;
+}
+.hud-ability-icon {
+  position: relative;
+  z-index: 2;
+  font-size: 12px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px #000);
+}
+.hud-ability-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.hud-ability-num {
+  position: absolute;
+  bottom: -1px;
+  right: 0px;
+  z-index: 3;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+/* Bloqueado: piloto ainda não recrutado — contorno vazado, sem preenchimento nem glifo visível */
+.hud-ability-hex.locked {
+  background: transparent;
+}
+.hud-ability-hex.locked::before {
+  box-shadow: inset 0 0 0 1.5px #333944;
+}
+.hud-ability-hex.locked .hud-ability-icon { opacity: 0.28; }
+/* Pronta: contorno + glow pulsam suavemente na cor do piloto */
+@keyframes hud-ability-ready-pulse {
+  0%, 100% { filter: drop-shadow(0 0 1px var(--ab-color)); }
+  50%      { filter: drop-shadow(0 0 6px var(--ab-color)); }
+}
+.hud-ability-hex.ready {
+  animation: hud-ability-ready-pulse 2s ease-in-out infinite;
+}
+.hud-ability-hex.ready::before {
+  box-shadow: inset 0 0 0 2px var(--ab-color);
+}
+/* Em cooldown: fatia cônica escura varre o hexágono (hud-ability-sweep, --pct setado via JS) */
+.hud-ability-hex.cooling::before {
+  box-shadow: inset 0 0 0 2px #333944;
+}
+/* Ativa: contorno branco sólido + glow forte fixo, sem pulsar — a habilidade está acontecendo agora */
+.hud-ability-hex.active {
+  filter: drop-shadow(0 0 9px var(--ab-color));
+}
+.hud-ability-hex.active::before {
+  box-shadow: inset 0 0 0 2.5px #fff;
+}
+
 /* ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============ */
 /* Pedido do usuário: overhaul do design pra ficar "mais dinamico e epico" — console militar com
    segmentos angulares em vez das 3 barras retas antigas. Mantém a mesma posição de tela (canto
@@ -1103,6 +1187,7 @@ export function injectHudExtraStyles() {
 /* ============ OVERHAUL DE CUTSCENES CINEMÁTICAS ============ */
 .reticle,
 .hud-status,
+.hud-topbar-row,
 .hud-vitals-cluster,
 .hud-horizon,
 .hud-minimap,
@@ -1115,6 +1200,7 @@ export function injectHudExtraStyles() {
 /* Ocultação limpa de miras, barras e status de combate durante cutscenes cinemáticas */
 .cinematic-active .reticle,
 .cinematic-active .hud-status,
+.cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-horizon,
 .cinematic-active .hud-question,

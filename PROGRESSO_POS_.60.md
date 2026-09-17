@@ -28,13 +28,11 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 - [x] **Decidir**: abrir explicação pausa mais ou é só painel sobreposto?
   → Painel sobreposto sem efeito extra no tempo. O jogo já está pausado pela tela de card/feedback. ✅ v0.61.0
 - [ ] **Perguntas de cenário** — testar aplicação prática, não só definição.
-- [ ] **Habilidades únicas por piloto do esquadrão** (Falco/Peppy/Slippy/Phantom) — investida em
-  aríete, proteção, item consumível de cura ao contato e assistência ao tiro carregado, cada uma
-  com cooldown de 10-20s reduzível por carta (só se aquele piloto estiver recrutado), com ícones
-  de cooldown no extremo topo-esquerdo da HUD. Planejado em detalhe (mapeamento de habilidades,
-  máquina de estados, integração por arquivo, novas cartas, reflow de HUD, decisões em aberto) em
-  [PLANO_HABILIDADES_ESQUADRAO.md](PLANO_HABILIDADES_ESQUADRAO.md) — **não implementado ainda**,
-  aguardando confirmação do usuário sobre as decisões em aberto (seção 9 do plano).
+- [x] **Habilidades únicas por piloto do esquadrão** (Falco/Peppy/Slippy/Phantom) — investida em
+  aríete, guarda (escudo), reparo de campo (cura) e carga compartilhada (assiste o tiro
+  carregado), cada uma com cooldown próprio reduzível por carta (só se aquele piloto estiver
+  recrutado), com ícones de cooldown ao lado do placar. Planejado em
+  [PLANO_HABILIDADES_ESQUADRAO.md](PLANO_HABILIDADES_ESQUADRAO.md), implementado em ✅ v0.72.0.
 
 ### P3 — Especulativo / requer decisão
 - [ ] **Bônus de pontos por abrir explicação em erros**.
@@ -43,6 +41,95 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 ---
 
 ## Histórico de Entregas pós-v0.60.0
+
+### Habilidades Únicas do Esquadrão (Investida/Guarda/Reparo/Carga Compartilhada) + Ícones de Cooldown na HUD — v0.72.0
+
+Implementação do [PLANO_HABILIDADES_ESQUADRAO.md](PLANO_HABILIDADES_ESQUADRAO.md) (planejado numa
+sessão anterior, junto de um canvas de design com 3 opções visuais — usuário escolheu a **Opção
+B: Emblemas Hexagonais**, ao lado do placar). Mapeamento confirmado pelo usuário como proposto:
+Falco → Investida Aríete, Peppy → Guarda, Slippy → Reparo de Campo, Phantom → Carga Compartilhada.
+
+1. **Máquina de estados estendida (`src/combat/wingmen.js`)**: cada `WINGMAN_PROFILES[i]` ganhou
+   `abilityId`/`abilityCooldownBase`/`abilityCooldownFloor`. Dois estados novos além dos 4
+   existentes (`patrol/flyby/dogfight/regroup`): **`ram`** (Falco — só Falco tem `abilityId:
+   'ram'`, então só ele entra nesse estado) e **`escort`** (Peppy e Phantom, diferenciados por
+   `escortKind: 'guard' | 'assist'`, reaproveitando a mesma lógica de "voar até perto do jogador e
+   segurar posição" pros dois em vez de duplicar).
+   - **Falco (Investida)**: dentro do `dogfight`, se a habilidade está pronta e o alvo está a
+     20-45u de distância, vira `ram` — acelera a 2.2x, mira firme no alvo, e ao cruzar o raio de
+     colisão aplica dano via `enemies.resolveProjectileHit` (6 contra inimigos normais, 2 contra
+     chefe/dourado — não trivializa esses encontros). Timeout de 2.5s evita ficar preso perseguindo
+     um alvo que fugiu.
+   - **Peppy (Guarda)**: sai da patrulha pra uma posição de escolta ao lado do jogador quando o
+     escudo não está cheio; ao chegar perto, concede +1 carga de escudo (`player.grantShieldPip()`,
+     método novo — igual ao efeito da carta `extra-shield-charge`, mas sem mexer no teto) e segura
+     a posição por 4s antes de voltar à patrulha.
+   - **Slippy (Reparo de Campo)**: sem estado de voo novo — é um proc no combate normal. O próximo
+     laser de Slippy que acertar depois do cooldown pronto spawna, no ponto do impacto, uma
+     variante nova do coletável de micro-orbe (`effects.spawnMicroOrbe(pos, {kind:'heal'})`, cor
+     verde em vez do ciano/amarelo do orbe de Frenesi Anki) que cura 1 de vida ao ser coletada.
+   - **Phantom (Carga Compartilhada)**: ao segurar o disparo por ≥0.35s contínuos, Phantom acopla
+     ao lado do jogador (mesmo padrão de escolta da Peppy) e multiplica o acúmulo de
+     `state.fireHeldMs` por 1.5x em `game-loop.js` enquanto acoplado (acelera carga E progressão de
+     alvos travados numa só mudança, já que ambos dependem do mesmo `fireHeldMs`) — teto de 3s de
+     assistência pra não travar se o jogador segurar pra sempre.
+   - **Cooldowns**: 14s (Falco) / 20s (Peppy) / 18s (Slippy) / 16s (Phantom), começam a metade
+     disso no spawn (não ficam prontas no primeiro segundo), reduzidos em -25% multiplicativo por
+     carta até um piso de 50% do valor base.
+   - **Fix de soft-lock encontrado no caminho**: `toggleCommand` (tecla `F`, foco de fogo) forçava
+     `state='dogfight'`/`state='patrol'` em TODOS os wingmen incondicionalmente. Um piloto no meio
+     de uma investida/escolta (`abilityActive=true`) que fosse puxado à força pra outro estado
+     ficaria com `abilityActive` travado em `true` pra sempre — nada mais o desligaria, e a
+     habilidade daquele piloto nunca mais dispararia de novo na partida. Corrigido pulando
+     wingmen com `abilityActive===true` nos dois branches de `toggleCommand` — a habilidade termina
+     sozinha, o comando de foco pega ele na sequência.
+2. **Cartas roguelike novas (`src/roguelike.js`)**: `wingman-ram-cooldown` (☄️), `wingman-guard-
+   cooldown` (🔰), `wingman-repair-cooldown` (🩹), `wingman-assist-cooldown` (🔗) — só entram no
+   sorteio se aquele piloto específico já estiver recrutado (`player.js: buildCardExcludeSet()`,
+   mesmo padrão de `wingmanCount >= WINGMAN_CAP` já usado pra carta `wingman`). O efeito de fato
+   mora em `combat/wingmen.js` (`applyAbilityCooldownCard`), acionado por `flow-question.js`
+   (`applyRoguelikeCard`) logo depois de `player.applyCard()` — mesmo ponto único onde `wingman`/
+   `extra-life`/etc. já disparam seus efeitos colaterais (VFX, sync com combat).
+3. **Integração enxuta (`src/combat/index.js`)**: como `createCombatSystem` já recebe `player`
+   (pra outra coisa, não precisou de encanamento novo), os efeitos que tocam o jogador (cura,
+   carga de escudo) resolvem inteiramente dentro de `combat/index.js` — `wingmen.js` só devolve
+   dados puros (`shieldGrants`, `healOrbSpawns`, mesmo padrão de `enemyKills`/`bossDefeated` que já
+   retornava). `game-loop.js` só precisou de 3 mudanças: passar `homingCharging: isCharging` pro
+   `combat.update()`, multiplicar `state.fireHeldMs` por `combat.getAssistChargeMult()`, e chamar
+   `hud.setSquadronAbilities(combat.getAbilityStates())` junto dos outros syncs de HUD por frame.
+4. **HUD — Opção B do canvas de design, com ajuste de robustez em cima do mockup**: o mockup
+   original posicionava os 4 hexágonos num `left` fixo "chutado" ao lado do texto de pontos. Na
+   implementação real isso foi trocado por um `.hud-topbar-row` (flex row de verdade, `gap:14px`)
+   contendo o texto `.hud-status` E o novo `.hud-squad-abilities` como irmãos flex — os ícones
+   sempre encostam exatamente onde o texto termina, sem risco de sobrepor "Pontos: 999999 · Combo
+   x9.99" num placar de partida longa (o canto superior direito já está ocupado pelo minimapa, não
+   dava pra simplesmente mover pra lá). 4 slots SEMPRE existem (não aparecem/somem ao recrutar) —
+   só o estado visual muda: **bloqueado** (contorno vazado, piloto ainda não recrutado) →
+   **pronto** (glow pulsante na cor do piloto) → **em cooldown** (fatia cônica escura varre o
+   hexágono, número nos 3s finais) → **ativa** (contorno branco sólido, glow forte fixo, sem
+   pulsar). `.hud-topbar-row` entrou na mesma lista de `.cinematic-active` que já escondia
+   `.hud-status`/`.hud-vitals-cluster` durante cutscenes.
+
+**Testado**: `node --check` nos 10 arquivos tocados e `node src/selftest.mjs`, 100% ok. **Testado
+ao vivo** (`preview_start "static"`, Modo Arcade, esquadrão completo): confirmado via
+`javascript_tool` que os 4 hexágonos renderizam com cor/ícone/título corretos por piloto
+(`#38bdf8`/☄️/Falco, `#fbbf24`/🔰/Peppy, `#fde047`/🩹/Slippy, `#f43f5e`/🔗/Phantom) logo ao lado do
+placar, sem sobrepor nada. Zero erro de console durante toda a sessão de combate real (esquadrão
+atirando, matando inimigos, pontos subindo). Confirmado que o painel de debug oferece "Vínculo:
+Peppy" no sorteio de cartas (categoria `defensivo`, junto de duas outras cartas balanceadas por
+categoria) e que escolhê-la não lança exceção nenhuma — e que o estado dos ícones evolui
+corretamente ao vivo com dados reais do jogo (Peppy e Phantom transicionaram de `cooling` pra
+`ready` sozinhos conforme o cooldown inicial esgotava; Falco e Slippy permaneceram `cooling`,
+condizente com já terem dado suas habilidades pelo menos uma vez durante o combate observado).
+**Limitação de ambiente já documentada, não é bug**: observar um ciclo completo de cooldown em
+tempo real (7-20s de tempo de jogo) esbarra na mesma limitação de rAF sem foco de SO desta sessão
+do Browser pane (mesma categoria já registrada em v0.62.3/v0.63.x/v0.68.0/v0.71.0) — compensado
+verificando a transição de estado via inspeção direta do DOM ao vivo em vez de observação visual
+em tempo real corrido.
+
+**Versão**: v0.71.0 → **v0.72.0**
+
+---
 
 ### Overhaul do Cluster de Vida/Escudo/Boost/Vidas — "Esquadrão de Elite" (`src/hud-game.js`, `src/hud-styles.js`, `index.html`) — v0.71.0
 

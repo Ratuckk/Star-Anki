@@ -172,7 +172,11 @@ export function createGameLoop(deps) {
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging && combat.tryFire(nosePos, fireDirection)) rail.triggerRecoil()
-      state.fireHeldMs += dt * 1000
+      // Phantom (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
+      // tiro teleguiado. Lê o estado do frame ANTERIOR (squadron.update ainda não rodou neste
+      // frame) — defasagem de ~16ms, imperceptível e sem dependência circular.
+      const assistMult = combat.getAssistChargeMult ? combat.getAssistChargeMult() : 1
+      state.fireHeldMs += dt * 1000 * assistMult
       if (isCharging) {
         const atMax = state.fireHeldMs >= player.config.homingChargeMaxMs
         if (atMax && !state.chargeMaxSignaled) {
@@ -384,6 +388,7 @@ export function createGameLoop(deps) {
       allowBossOrbHit: state.phase === 'bossBuildup',
       boostActive: boostOn,
       shipHitboxPoints,
+      homingCharging: isCharging,
     })
 
     // ============ HIT MARKER ============
@@ -708,6 +713,7 @@ export function createGameLoop(deps) {
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax())
     hud.updateCollectedCards(player.getCollectedCards())
+    if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
 
     hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 

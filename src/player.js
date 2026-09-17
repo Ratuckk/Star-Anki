@@ -229,6 +229,16 @@ export function createPlayerSystem(session) {
         case 'propulsion-ram':
           ramCardActive = true
           break
+        // Cartas "Vínculo" (reduzem o cooldown da habilidade única de cada piloto do esquadrão)
+        // não mexem em nenhum stat local — o multiplicador de cooldown mora no sistema de
+        // esquadrão (combat/wingmen.js), aplicado por flow-question.js logo após applyCard()
+        // retornar aqui. Só precisam cair nos cases pra contar em collectedCards (bandeja de
+        // cartas) e pra pickRandomCards não rejeitar o id como desconhecido.
+        case 'wingman-ram-cooldown':
+        case 'wingman-guard-cooldown':
+        case 'wingman-repair-cooldown':
+        case 'wingman-assist-cooldown':
+          break
         default:
           return false
       }
@@ -273,6 +283,12 @@ export function createPlayerSystem(session) {
       if (shieldRegenDelayMs <= SHIELD_REGEN_DELAY_FLOOR_MS) exclude.add('faster-shield-recharge')
       if (fireCooldown <= FIRE_COOLDOWN_FLOOR) exclude.add('faster-fire')
       if (fullSpinIframeMs >= FULL_SPIN_IFRAME_MS_CAP) exclude.add('longer-dodge-iframe')
+      // Cartas "Vínculo": só aparecem se aquele piloto específico já estiver recrutado
+      // (setWingmanCount preenche por ordem de id 0→3, então presença por id é monotônica).
+      if (wingmanCount <= 0) exclude.add('wingman-ram-cooldown')
+      if (wingmanCount <= 1) exclude.add('wingman-guard-cooldown')
+      if (wingmanCount <= 2) exclude.add('wingman-repair-cooldown')
+      if (wingmanCount <= 3) exclude.add('wingman-assist-cooldown')
       return exclude
     },
 
@@ -366,6 +382,16 @@ export function createPlayerSystem(session) {
       shieldValue = shieldMax
       shieldRegenDelayTimer = 0
       return shieldMax - before
+    },
+
+    // Guarda do Peppy (habilidade única do esquadrão): topa 1 carga de escudo, sem alterar o
+    // teto (diferente da carta 'extra-shield-charge', que aumenta shieldMax). Não mexe no delay
+    // de regen — é um bônus pontual, não uma recarga completa.
+    grantShieldPip(amount = 1) {
+      if (!Number.isFinite(amount) || amount <= 0) return 0
+      const before = shieldValue
+      shieldValue = Math.min(shieldMax, shieldValue + amount)
+      return shieldValue - before
     },
 
     // debug "Aplicar buffs máximos": pula direto pro teto, ignorando o ganho gradual por carta.
