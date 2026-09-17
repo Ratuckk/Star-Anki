@@ -299,5 +299,27 @@ Conforme especificado pelo usuário e mapeado no checklist [`SONS_TODO.md`](SONS
    - `node src/selftest.mjs`: **100% aprovado** (*"78 Sound Cues validadas"*).
    - `node --check` validado em todos os 18 arquivos modificados: **0 erros**.
 
+### Reorganização da Documentação — Pasta `progresso/`
+
+Pedido do usuário: criar uma pasta específica para onde devem ficar os patch notes e documentos
+de progresso, em vez de espalhados soltos na raiz do projeto junto com planos/checklists.
+
+1. **Criada a pasta [`progresso/`](.)** e movidos pra dentro dela (via `git mv`, histórico
+   preservado) os documentos que registram trabalho já feito: `PROGRESSO.md` (renomeado de
+   `progresso.md` — corrige o casing divergente já documentado como pendência antiga),
+   `PROGRESSO_POS_0.30.md`, `PROGRESSO_POS_0.50.md`, `PROGRESSO_POS_.60.md`,
+   `PROGRESSO_POS_.70.md` (este arquivo), `REGISTRO_AUDITORIA_E_CORRECOES.md` e
+   `Info mudancas.md`.
+2. **Ficaram na raiz** os documentos de planejamento/checklist (natureza diferente — descrevem
+   trabalho ainda NÃO feito ou processo a seguir, não histórico): `TEMPLATE_INIMIGOS.md`,
+   `BACKLOG.md`, `SONS_TODO.md`, `PLANO_HABILIDADES_ESQUADRAO.md` e
+   `OVERHAUL_ESTADOS_INIMIGOS.md` (plano de FSM ainda não implementado).
+3. **Links atualizados** em `CLAUDE.md`, `README.md` e `PLANO_HABILIDADES_ESQUADRAO.md` pra
+   apontar pro novo caminho `progresso/...`. Os links cruzados *entre* os arquivos que se
+   moveram juntos não precisaram de mudança (continuam irmãos na mesma pasta).
+4. **Convenção daqui pra frente**: todo novo patch note / atualização de progresso vai em
+   `progresso/`; a raiz fica só pra planejamento, checklists obrigatórios e docs de projeto
+   (`README.md`, `CLAUDE.md`).
+
 
 
