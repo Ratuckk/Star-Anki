@@ -3,6 +3,7 @@ import { DEBUG_ACTIONS, DEBUG_CATEGORY_ORDER } from './debug.js'
 import { CARD_CATEGORY_LABEL, CARD_CATEGORY_COLOR, ROGUELIKE_CARDS } from './roguelike.js'
 import { COLOR_MAP, shapeMarkup, showScreen } from './hud-shared.js'
 import { injectHudExtraStyles } from './hud-styles.js'
+import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -150,33 +151,66 @@ export function createGameHud() {
   root.appendChild(horizon)
   const horizonLine = horizon.querySelector('.hud-horizon-line')
 
+  // ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============
+  // Pedido do usuário: "console militar angular" com segmentos discretos em vez de barras lisas.
+  // Mantém a mesma API pública (setLives/setShield/setStatus/setBoost) e a mesma posição de tela
+  // (canto superior esquerdo) — só a apresentação interna mudou.
+  const vitalsCluster = document.createElement('div')
+  vitalsCluster.className = 'hud-vitals-cluster'
+  root.appendChild(vitalsCluster)
+
   const livesBar = document.createElement('div')
   livesBar.className = 'hud-lives-bar'
-  root.appendChild(livesBar)
+  vitalsCluster.appendChild(livesBar)
   let livePips = []
   let livePipsMax = null
+  let prevLives = null
 
   const shieldBar = document.createElement('div')
-  shieldBar.className = 'hud-bar-wrap hud-shield-wrap'
-  root.appendChild(shieldBar)
-  const shieldFill = document.createElement('div')
-  shieldFill.className = 'hud-bar-fill hud-shield-fill'
-  shieldBar.appendChild(shieldFill)
+  shieldBar.className = 'hud-bar-wrap hud-shield-wrap hud-bar-row'
+  vitalsCluster.appendChild(shieldBar)
+  shieldBar.innerHTML = '<span class="hud-bar-label">Esc</span>'
+  const shieldSegs = document.createElement('div')
+  shieldSegs.className = 'hud-segs'
+  shieldBar.appendChild(shieldSegs)
+  let shieldSegEls = []
+  let shieldSegsMax = null
+  let prevShield = null
 
   const healthBar = document.createElement('div')
-  healthBar.className = 'hud-bar-wrap hud-health-wrap'
-  root.appendChild(healthBar)
-  const healthFill = document.createElement('div')
-  healthFill.className = 'hud-bar-fill hud-health-fill'
-  healthBar.appendChild(healthFill)
+  healthBar.className = 'hud-bar-wrap hud-health-wrap hud-bar-row'
+  vitalsCluster.appendChild(healthBar)
+  healthBar.innerHTML = '<span class="hud-bar-label">Vida</span>'
+  const healthSegs = document.createElement('div')
+  healthSegs.className = 'hud-segs'
+  healthBar.appendChild(healthSegs)
+  let healthSegEls = []
+  let healthSegsMax = null
+  let prevHealth = null
 
   const boostBar = document.createElement('div')
   boostBar.className = 'hud-bar-wrap hud-boost-wrap'
-  root.appendChild(boostBar)
+  vitalsCluster.appendChild(boostBar)
   const boostFill = document.createElement('div')
   boostFill.className = 'hud-bar-fill hud-boost-fill'
   boostBar.appendChild(boostFill)
   let prevBoostCharge = 1
+
+  function rebuildSegs(container, count) {
+    container.innerHTML = ''
+    return Array.from({ length: count }, () => {
+      const seg = document.createElement('div')
+      seg.className = 'hud-seg'
+      container.appendChild(seg)
+      return seg
+    })
+  }
+
+  function flashVitalsHit() {
+    vitalsCluster.classList.remove('hit-flash')
+    void vitalsCluster.offsetWidth
+    vitalsCluster.classList.add('hit-flash')
+  }
 
   // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
   const cardsTray = document.createElement('div')
@@ -967,7 +1001,15 @@ export function createGameHud() {
 
     setStatus({ health, maxHealth = health, score, combo }) {
       status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
-      healthFill.style.width = `${Math.max(0, Math.min(1, health / maxHealth)) * 100}%`
+      const roundedHealth = Math.round(health)
+      if (maxHealth !== healthSegsMax) {
+        healthSegsMax = maxHealth
+        healthSegEls = rebuildSegs(healthSegs, maxHealth)
+      }
+      healthSegEls.forEach((seg, i) => seg.classList.toggle('fill-health', i < roundedHealth))
+      healthBar.classList.toggle('crit', maxHealth > 0 && health / maxHealth <= LOW_HEALTH_THRESHOLD_FRAC)
+      if (prevHealth != null && roundedHealth < prevHealth) flashVitalsHit()
+      prevHealth = roundedHealth
     },
 
     setLives(lives, maxLives = lives) {
@@ -980,12 +1022,29 @@ export function createGameHud() {
           livesBar.appendChild(pip)
           return pip
         })
+        prevLives = null
       }
-      livePips.forEach((pip, i) => pip.classList.toggle('filled', i < lives))
+      livePips.forEach((pip, i) => {
+        const filled = i < lives
+        if (prevLives != null && i < prevLives && !filled) {
+          pip.classList.remove('lost')
+          void pip.offsetWidth
+          pip.classList.add('lost')
+        }
+        pip.classList.toggle('filled', filled)
+      })
+      prevLives = lives
     },
 
     setShield(value, maxValue) {
-      shieldFill.style.width = `${Math.max(0, Math.min(1, value / maxValue)) * 100}%`
+      const roundedShield = Math.round(value)
+      if (maxValue !== shieldSegsMax) {
+        shieldSegsMax = maxValue
+        shieldSegEls = rebuildSegs(shieldSegs, maxValue)
+      }
+      shieldSegEls.forEach((seg, i) => seg.classList.toggle('fill-shield', i < roundedShield))
+      if (prevShield != null && roundedShield < prevShield) flashVitalsHit()
+      prevShield = roundedShield
     },
 
     setBoost(charge, active) {

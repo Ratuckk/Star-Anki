@@ -155,6 +155,105 @@ export function injectHudExtraStyles() {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============ */
+/* Pedido do usuário: overhaul do design pra ficar "mais dinamico e epico" — console militar com
+   segmentos angulares em vez das 3 barras retas antigas. Mantém a mesma posição de tela (canto
+   superior esquerdo) e a mesma API do hud (setLives/setStatus/setShield/setBoost inalteradas). */
+.hud-vitals-cluster {
+  position: absolute;
+  top: 40px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 220px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 3px #000);
+}
+.hud-vitals-cluster.hit-flash {
+  animation: hud-vitals-hitflash 260ms ease-out;
+}
+@keyframes hud-vitals-hitflash {
+  0%   { filter: brightness(2.2) saturate(0) drop-shadow(0 1px 3px #000); }
+  100% { filter: brightness(1) drop-shadow(0 1px 3px #000); }
+}
+
+.hud-lives-bar { display: flex; gap: 6px; }
+.hud-life-pip {
+  width: 20px;
+  height: 20px;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+  background: rgba(20, 24, 32, 0.75);
+  border: 1px solid #333944;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.hud-life-pip.filled {
+  background: #5ad1ff;
+  border-color: #5ad1ff;
+  box-shadow: 0 0 8px rgba(90, 209, 255, 0.75);
+}
+.hud-life-pip.lost {
+  animation: hud-pip-shatter 450ms cubic-bezier(.36,.07,.19,.97);
+}
+@keyframes hud-pip-shatter {
+  0%   { transform: scale(1,1) rotate(0deg); opacity: 1; }
+  30%  { transform: scale(1.5,.55) rotate(6deg); opacity: .7; }
+  60%  { transform: scale(.7,1.35) rotate(-8deg); opacity: .85; }
+  100% { transform: scale(1,1) rotate(0deg); opacity: 1; }
+}
+
+.hud-bar-row { display: flex; align-items: center; gap: 8px; }
+.hud-bar-label {
+  font: 700 10px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7c8aa8;
+  width: 30px;
+  flex: none;
+}
+.hud-segs { display: flex; gap: 3px; flex: 1; height: 20px; }
+.hud-shield-wrap .hud-segs { height: 12px; }
+.hud-seg {
+  flex: 1;
+  background: rgba(20, 24, 32, 0.75);
+  border: 1px solid #333944;
+  clip-path: polygon(22% 0, 100% 0, 78% 100%, 0 100%);
+  transition: background .15s, box-shadow .15s;
+}
+.hud-seg.fill-health { background: #3df0a6; box-shadow: 0 0 6px rgba(61,240,166,.7); }
+.hud-seg.fill-shield { background: #4a9bff; box-shadow: 0 0 6px rgba(74,155,255,.7); }
+.hud-health-wrap.crit .hud-seg.fill-health {
+  animation: hud-seg-crit 550ms infinite alternate;
+}
+@keyframes hud-seg-crit {
+  from { filter: brightness(1); }
+  to   { filter: brightness(1.8) hue-rotate(-30deg); }
+}
+
+.hud-boost-wrap {
+  height: 11px;
+  border: 1px solid #333944;
+  clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%);
+  overflow: hidden;
+}
+.hud-boost-fill {
+  height: 100%;
+  width: 100%;
+  background: #ffb545;
+  box-shadow: 0 0 8px rgba(255,181,69,.7) inset;
+  transition: width 0.15s ease-out;
+}
+.hud-boost-wrap.active .hud-boost-fill {
+  background-color: #ffd54a;
+  background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.35) 0 6px, transparent 6px 14px);
+  background-size: 200% 100%;
+  animation: hud-boost-stripes .5s linear infinite;
+}
+@keyframes hud-boost-stripes {
+  from { background-position: 0 0; }
+  to   { background-position: -40px 0; }
+}
+
 /* ============ FLASH "BOOST PRONTO" ============ */
 @keyframes boost-ready-flash {
   0%   { box-shadow: 0 0 0 0 rgba(43,255,136,0.95); }
@@ -1004,8 +1103,7 @@ export function injectHudExtraStyles() {
 /* ============ OVERHAUL DE CUTSCENES CINEMÁTICAS ============ */
 .reticle,
 .hud-status,
-.hud-lives-bar,
-.hud-bar-wrap,
+.hud-vitals-cluster,
 .hud-horizon,
 .hud-minimap,
 .hud-boss-fight-bar,
@@ -1017,11 +1115,7 @@ export function injectHudExtraStyles() {
 /* Ocultação limpa de miras, barras e status de combate durante cutscenes cinemáticas */
 .cinematic-active .reticle,
 .cinematic-active .hud-status,
-.cinematic-active .hud-lives-bar,
-.cinematic-active .hud-shield-wrap,
-.cinematic-active .hud-health-wrap,
-.cinematic-active .hud-boost-wrap,
-.cinematic-active .hud-bar-wrap,
+.cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-horizon,
 .cinematic-active .hud-question,
 .cinematic-active .hud-legend,
