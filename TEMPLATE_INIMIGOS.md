@@ -13,7 +13,7 @@ Regras duras:
 1. **Nunca assuma um valor "razoável" ou "parecido com outro inimigo"** só porque
    parece óbvio ou consistente. Pergunte. Mesmo se a resposta parecer óbvia demais
    pra perguntar, pergunte mesmo assim — "óbvio pra mim" já causou retrabalho antes
-   neste projeto (ver o histórico de reescritas da Sentinela em `PROGRESSO_POS_.60.md`).
+   neste projeto (ver o histórico de reescritas da Sentinela em `progresso/PROGRESSO_POS_.60.md`).
 2. **Se uma resposta do usuário deixar uma sub-pergunta sem cobertura, pergunte de
    novo** em vez de preencher a lacuna por conta própria. Ex.: se o usuário descreve
    o movimento mas não diz o que acontece em modo arena, isso NÃO virou "implícito

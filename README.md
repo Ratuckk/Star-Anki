@@ -196,7 +196,7 @@ Star-Anki/
 │       ├── detrito.js      # Asteroides e destroços físicos
 │       ├── golden.js       # Mini-chefe Anomalia Dourada
 │       └── boss.js         # Chefe principal de setor
-└── PROGRESSO_POS_.60.md    # Histórico detalhado de versões e changelog
+└── progresso/              # Patch notes e histórico detalhado de versões
 ```
 
 ---
@@ -204,8 +204,12 @@ Star-Anki/
 ## 📜 Histórico e Evolução
 
 Para detalhes minuciosos sobre o desenvolvimento e os patches de cada versão:
-- [PROGRESSO_POS_.60.md](PROGRESSO_POS_.60.md) — Documentação a partir da versão v0.60.0 (v0.61.0, v0.62.0).
-- [PROGRESSO_POS_0.50.md](PROGRESSO_POS_0.50.md) — Histórico de versões v0.51.0 a v0.60.0.
+- [progresso/PROGRESSO_POS_.70.md](progresso/PROGRESSO_POS_.70.md) — **Arquivo atual**, v0.75.0 em diante.
+- [progresso/PROGRESSO_POS_.60.md](progresso/PROGRESSO_POS_.60.md) — v0.61.0 → v0.74.1 (congelado).
+- [progresso/PROGRESSO_POS_0.50.md](progresso/PROGRESSO_POS_0.50.md) — v0.51.9 → v0.60.0 (congelado).
+- [progresso/PROGRESSO_POS_0.30.md](progresso/PROGRESSO_POS_0.30.md) — v0.34.0 → v0.50.0 (congelado).
+- [progresso/PROGRESSO.md](progresso/PROGRESSO.md) — Histórico até v0.33.x (congelado).
+- [progresso/REGISTRO_AUDITORIA_E_CORRECOES.md](progresso/REGISTRO_AUDITORIA_E_CORRECOES.md) — Auditoria completa de bugs e otimização de desempenho (v0.76.0).
 - [BACKLOG.md](BACKLOG.md) — Registro de ideias e próximos recursos planejados.
 
 ---

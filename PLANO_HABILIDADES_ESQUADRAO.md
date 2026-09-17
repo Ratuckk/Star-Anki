@@ -1,7 +1,7 @@
 # Plano: Habilidades Únicas do Esquadrão (Falco, Peppy, Slippy, Phantom)
 
 Documento de planejamento — **nada aqui foi implementado ainda**. Serve de especificação completa
-para uma entrega futura. Ver [PROGRESSO_POS_.60.md](PROGRESSO_POS_.60.md) para o histórico do
+para uma entrega futura. Ver [progresso/PROGRESSO_POS_.60.md](progresso/PROGRESSO_POS_.60.md) para o histórico do
 sistema de esquadrão atual (`src/combat/wingmen.js`, overhaul de agressividade/movimento cinemático
 na v0.70.0) que este plano estende.
 
