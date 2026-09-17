@@ -10,11 +10,12 @@ import * as THREE from 'three'
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
-const PROJECTILE_SPEED = 60
+const PROJECTILE_SPEED = 84 // 60 * 1.4 (pedido do usuário: +40% de velocidade no tiro normal)
 // pedido do usuário: tiro normal (não-carregado) some sozinho depois de 8s de voo — o teto de
-// ALCANCE abaixo subiu junto (60u/s * 8s = 480) só pra não cortar o tiro ANTES do tempo em voo
-// reto; o timer (ver PLAYER_PROJECTILE_LIFETIME) é o que efetivamente decide na prática.
-const PROJECTILE_MAX_RANGE = 500
+// ALCANCE abaixo sobe junto com PROJECTILE_SPEED (velocidade * 8s + folga) só pra não cortar o
+// tiro ANTES do tempo em voo reto; o timer (ver PLAYER_PROJECTILE_LIFETIME) é o que efetivamente
+// decide na prática.
+const PROJECTILE_MAX_RANGE = 700
 const PLAYER_PROJECTILE_LIFETIME = 8
 const PROJECTILE_LATERAL_SPACING = 1.6
 const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)

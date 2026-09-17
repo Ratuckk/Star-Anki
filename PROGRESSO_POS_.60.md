@@ -42,6 +42,50 @@ para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.m
 
 ## Histórico de Entregas pós-v0.60.0
 
+### Aliados: Conclusão do Plano de Reestruturação + Propulsores Discretos + Tiro Normal +40% — v0.73.2
+
+Atendendo a três pedidos do usuário: (1) confirmar/concluir as mudanças do plano de reestruturação
+do Antigravity ("Plano de Reestruturação: Movimentação dos Aliados & Correção da Sentinela",
+Proposta 2 escolhida), (2) vídeo mostrando os aliados "chacoalhando", com movimentação "muito
+rápida e nem um pouco suave" comparada à nave do jogador, e (3) aumentar a velocidade do tiro
+normal do jogador em 40%.
+
+1. **Duração de dogfight ajustada pra bater com a Proposta 2 (4 a 6 segundos)**: as condições de
+   saída em `src/combat/wingmen.js` estavam em ~2.8s (conclusão normal da rajada) e 4.2s (timeout
+   de segurança) — abaixo do range pedido. Ajustado pra 4.2s e 6.0s respectivamente, e o número de
+   disparos por rajada subiu de 3 para 5 (cadência igual) pra manter o piloto ativamente atirando
+   durante toda a janela em vez de terminar a munição cedo e ficar "flutuando" perto do alvo.
+   Confirmado por teste ao vivo: contra alvos que realmente sobrevivem o suficiente, o combate
+   agora ocupa essa janela; contra alvos fracos ou que saem de alcance, ele termina antes — como
+   esperado (a diagnose contra inimigos de debug/curta duração no primeiro teste foi descartada:
+   o alvo estava sendo removido pelo despawn "passou por trás da câmera", não por bug).
+2. **Causa raiz real do "chacoalhar" identificada por telemetria frame a frame**: ao sair de
+   `dogfight`/`ram`/`escort`, o alvo de voo (`w.patrolTarget`) pulava INSTANTANEAMENTE do inimigo
+   perseguido para a vaga de formação. Isso fazia o cálculo de `cruiseSpeed` (compensação de
+   "alongSlot" pra alcançar a formação) disparar — medido ao vivo: velocidade subindo de 6.7 para
+   73.4u/s em 0.6s e depois derrapando de volta pra 37.7u/s em apenas 0.08s. Voando estável em
+   formação, essa arrancada-e-freada abrupta é exatamente o "transe chacoalhando" do vídeo. Fix:
+   `w.patrolTarget` agora usa `.lerp(formationSlotPos, 1 - exp(-2.2*dt))` em vez de `.copy()` no
+   estado `patrol` — o alvo de voo desliza suavemente do ponto antigo pro novo em vez de saltar,
+   virando a "curva ampla e elegante de retorno" que o próprio plano do Antigravity pedia.
+   Confirmado por telemetria: pico de velocidade caiu de 73→~50u/s e o delta máximo entre frames
+   consecutivos ficou em 6.2u/s (antes, saltos sustentados de ~7u/s por MUITOS frames seguidos —
+   sem nunca escapar da faixa 7-50, sem o pico-e-freada abrupto).
+3. **Propulsores dos aliados reduzidos**: pedido do usuário — a nave do próprio jogador
+   (`buildShip` em `src/rail.js`) não tem chama de propulsor nenhuma, só corpo/asa/barbatanas; os
+   aliados tinham um "bolhão" grande (raio 0.12-0.18, chegando a 2.5x de escala no boost) que
+   chamava atenção demais perto da nave pequena. Reduzido: geometria base de raio 0.12/0.18→
+   0.06/0.09, escala de boost de 2.5x→1.6x, oscilação de marcha-lenta de ±0.25→±0.12. Confirmado
+   visualmente por screenshot ao vivo.
+4. **Tiro normal do jogador +40%**: `PROJECTILE_SPEED` em `src/combat/projectiles.js` subiu de 60
+   para 84 (afeta o tiro reto normal E o "giro rebatedor"/deflect, que reusa o mesmo projétil —
+   não afeta o tiro teleguiado/carregado, que já tem sua própria constante `HOMING_PROJECTILE_SPEED`
+   separada). `PROJECTILE_MAX_RANGE` subiu proporcionalmente (500→700) pra continuar sendo só um
+   teto de segurança acima do alcance real definido pelo tempo de vida do tiro (8s), sem cortar o
+   voo antes da hora.
+
+---
+
 ### Fix: Aliados Travados/Sem Reação em Combate — `AIM_SPREAD_RAD` Não Declarada — v0.73.1
 
 Atendendo ao relato do usuário ("os aliados simplesmente não fazem nada e ficam voando desse jeito

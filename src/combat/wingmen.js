@@ -143,10 +143,14 @@ const ESCORT_FORWARD_OFFSET = 2.5
 
 // ============ CONSTRUTORES DE MODELOS 3D ÚNICOS ============
 
+// Pedido do usuário: o caça do jogador (buildShip em rail.js) não tem chama de propulsor
+// nenhuma — só corpo/asa/barbatanas. Os aliados tinham um "bolhão" de 0.12-0.18 de raio que
+// ficava enorme e chamava atenção demais perto da nave pequena. Reduzido a um brilho discreto,
+// coerente com o resto do modelo minimalista da frota.
 function createThrusterLight(color) {
-  const geo = new THREE.CylinderGeometry(0.12, 0.18, 0.45, 8)
+  const geo = new THREE.CylinderGeometry(0.06, 0.09, 0.24, 8)
   geo.rotateX(Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 })
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75 })
   return new THREE.Mesh(geo, mat)
 }
 
@@ -623,11 +627,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (w.engagementCooldown > 0) w.engagementCooldown -= dt
       if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
 
-      // Fogo das turbinas reage a boost ou manobras
+      // Fogo das turbinas reage a boost ou manobras — discreto, sem "inchar" a nave inteira
       const isThrusting = boostActive || w.state === 'dogfight' || w.state === 'ram'
       for (const t of w.thrusters) {
-        const boostScale = isThrusting ? 2.5 : 1.0 + Math.sin(elapsed * 16 + w.profile.id) * 0.25
-        t.scale.set(isThrusting ? 1.4 : 1.0, isThrusting ? 1.4 : 1.0, boostScale)
+        const boostScale = isThrusting ? 1.6 : 1.0 + Math.sin(elapsed * 16 + w.profile.id) * 0.12
+        t.scale.set(isThrusting ? 1.15 : 1.0, isThrusting ? 1.15 : 1.0, boostScale)
       }
 
       const distToPlayer = w.mesh.position.distanceTo(playerPos)
@@ -666,7 +670,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.stateTimer = 0
         }
       } else if (w.state === 'patrol') {
-        w.patrolTarget.copy(formationSlotPos)
+        // Pedido do usuário: ao sair de dogfight/ram/escolta, o alvo de voo pulava instantaneamente
+        // do inimigo perseguido pra vaga de formação — o salto brusco de alongSlot (ver cálculo de
+        // cruiseSpeed abaixo) fazia a velocidade disparar e derrapar de volta em menos de 0.1s
+        // ("chacoalhando"). Suaviza o PONTO perseguido, não só a velocidade, pra virar uma curva
+        // larga e gradual (pedido do plano: "curva ampla e elegante de retorno à sua ala").
+        w.patrolTarget.lerp(formationSlotPos, 1 - Math.exp(-2.2 * dt))
 
         // Habilidades únicas de Peppy (Guarda) e Phantom (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
@@ -725,7 +734,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidates[0].kind} #${candidates[0].id} a ${w.mesh.position.distanceTo(candidates[0].mesh.position).toFixed(1)}u`, { elapsed })
                   w.state = 'dogfight'
                   w.stateTimer = 0
-                  w.burstRemaining = 3
+                  w.burstRemaining = 5
                   w.burstTimer = 0.35
                 } else {
                   w.fireCooldown = 1.2 + Math.random() * 0.8
@@ -742,7 +751,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         // ============ PERSEGUIÇÃO E DOGFIGHT DISCIPLINADO ============
         const enemyLost = !w.targetEnemy || w.targetEnemy.dying || !w.targetEnemy.mesh ||
           w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 110 ||
-          w.stateTimer > 4.2
+          w.stateTimer > 6.0
 
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
@@ -782,7 +791,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               fireWingmanLaser(w, muzzleOffset, spreadDir)
             }
 
-            if (w.burstRemaining <= 0 && w.stateTimer > 2.8) {
+            if (w.burstRemaining <= 0 && w.stateTimer > 4.2) {
               telemetry.recordEvent(w.profile.name, 'combat', 'Concluiu rajada de ataque no dogfight. Retornando à formação', { elapsed })
               w.state = 'patrol'
               w.stateTimer = 0
