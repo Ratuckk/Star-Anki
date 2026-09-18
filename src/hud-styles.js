@@ -639,6 +639,85 @@ export function injectHudExtraStyles() {
   animation: boost-ready-flash 650ms ease-out;
 }
 
+/* ============ CLUSTER ORBITAL DE VIDA/ESCUDO/BOOST — arcos ao redor da nave (v0.78.0) ============ */
+/* Alternativa ao cluster de canto acima, escolhida em Configurações (settings.vitalsHudStyle =
+   'orbital'). Mesma API pública em hud-game.js (setLives/setStatus/setShield/setBoost) — só a
+   apresentação muda: 3 arcos SVG lisos e concêntricos (escudo/vida/impulso, raio crescente) que
+   acompanham a projeção de tela da nave (setVitalsAnchor, chamado por game-loop.js) em vez de
+   ficar fixo no canto. Pedido do usuário: "só arcos", sem segmentos/lâminas individuais.
+   Geometria (viewBox -200 -260 400 300, âncora da nave em 0,0) validada visualmente num
+   protótipo de design antes de virar código — ver canvas de exploração do HUD. */
+.hud-vitals-orbital {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40vmin;
+  height: 30vmin;
+  min-width: 260px;
+  min-height: 195px;
+  transform: translate(-50%, -86.7%);
+  pointer-events: none;
+  z-index: 6;
+  filter: drop-shadow(0 1px 3px #000);
+}
+.hud-vitals-orbital.hit-flash {
+  animation: hud-vitals-hitflash 260ms ease-out;
+}
+.hud-vitals-orbital-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+.hvo-arc {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.15s linear, stroke 0.2s ease;
+}
+.hvo-shield { stroke: #4a9bff; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(74,155,255,.7)); }
+.hvo-health { stroke: #3df0a6; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(61,240,166,.65)); }
+.hvo-boost  { stroke: #ffd54a; stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); opacity: .4; }
+.hvo-boost.active {
+  opacity: 1;
+  animation: hvo-boost-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes hvo-boost-pulse {
+  from { filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); }
+  to   { filter: drop-shadow(0 0 11px rgba(255,213,74,1)); }
+}
+.hvo-boost.ready-flash {
+  animation: hvo-boost-ready-flash 650ms ease-out;
+}
+@keyframes hvo-boost-ready-flash {
+  0%   { stroke-width: 13px; filter: drop-shadow(0 0 16px rgba(255,213,74,1)); }
+  100% { stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); }
+}
+.hvo-health.crit {
+  animation: hvo-health-crit 550ms infinite alternate;
+}
+@keyframes hvo-health-crit {
+  from { stroke: #3df0a6; filter: drop-shadow(0 0 5px rgba(61,240,166,.65)); }
+  to   { stroke: #ff5c5c; filter: drop-shadow(0 0 9px rgba(255,92,92,.9)); }
+}
+.hvo-life-pip {
+  fill: rgba(20, 24, 32, 0.75);
+  stroke: #333944;
+  stroke-width: 1.5px;
+  transition: fill 0.15s, stroke 0.15s;
+}
+.hvo-life-pip.filled {
+  fill: #5ad1ff;
+  stroke: #5ad1ff;
+  filter: drop-shadow(0 0 5px rgba(90,209,255,.75));
+}
+.hvo-life-pip.lost {
+  animation: hvo-pip-lost-flash 450ms ease-out;
+}
+@keyframes hvo-pip-lost-flash {
+  0%   { fill: #ffffff; stroke: #ffffff; filter: drop-shadow(0 0 9px #fff); }
+  100% { fill: rgba(20, 24, 32, 0.75); stroke: #333944; filter: none; }
+}
+
 /* ============ MOTION LINES (boost) ============ */
 .hud-motion-lines {
   position: absolute;
@@ -1498,6 +1577,7 @@ export function injectHudExtraStyles() {
 .hud-status,
 .hud-topbar-row,
 .hud-vitals-cluster,
+.hud-vitals-orbital,
 .hud-horizon,
 .hud-minimap,
 .hud-boss-fight-bar,
@@ -1511,6 +1591,7 @@ export function injectHudExtraStyles() {
 .cinematic-active .hud-status,
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
+.cinematic-active .hud-vitals-orbital,
 .cinematic-active .hud-horizon,
 .cinematic-active .hud-question,
 .cinematic-active .hud-legend,

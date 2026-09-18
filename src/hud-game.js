@@ -4,6 +4,7 @@ import { CARD_CATEGORY_LABEL, CARD_CATEGORY_COLOR, ROGUELIKE_CARDS } from './rog
 import { COLOR_MAP, shapeMarkup, showScreen } from './hud-shared.js'
 import { injectHudExtraStyles } from './hud-styles.js'
 import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
+import { getSettings } from './settings.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -240,49 +241,35 @@ export function createGameHud() {
   root.appendChild(horizon)
   const horizonLine = horizon.querySelector('.hud-horizon-line')
 
-  // ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============
-  // Pedido do usuário: "console militar angular" com segmentos discretos em vez de barras lisas.
-  // Mantém a mesma API pública (setLives/setShield/setStatus/setBoost) e a mesma posição de tela
-  // (canto superior esquerdo) — só a apresentação interna mudou.
-  const vitalsCluster = document.createElement('div')
-  vitalsCluster.className = 'hud-vitals-cluster'
-  root.appendChild(vitalsCluster)
+  // ============ CLUSTER DE VIDA/ESCUDO/BOOST ============
+  // Duas apresentações atrás da MESMA API pública (setLives/setStatus/setShield/setBoost) —
+  // settings.vitalsHudStyle escolhe qual. 'classic' = placas angulares fixas no canto superior
+  // esquerdo (overhaul v0.71.0, pedido do usuário: "console militar angular" com segmentos
+  // discretos). 'orbital' = 3 arcos SVG lisos e concêntricos que acompanham a projeção de tela
+  // da nave (pedido do usuário, v0.78.0: HUD "ao redor da própria nave" em vez de canto fixo;
+  // ver setVitalsAnchor abaixo e a chamada em game-loop.js). Lida uma única vez aqui na criação
+  // do HUD — mesmo padrão de shipVisual/startingWingmen: só reflete no próximo jogo, não troca
+  // ao vivo em partida.
+  const useOrbitalVitals = getSettings().vitalsHudStyle === 'orbital'
+  const SVG_NS = 'http://www.w3.org/2000/svg'
 
-  const livesBar = document.createElement('div')
-  livesBar.className = 'hud-lives-bar'
-  vitalsCluster.appendChild(livesBar)
+  let vitalsCluster
+  // clássico
+  let livesBar, shieldSegsEl, healthSegsEl, healthBarWrap, boostBar, boostFill
   let livePips = []
   let livePipsMax = null
-  let prevLives = null
-
-  const shieldBar = document.createElement('div')
-  shieldBar.className = 'hud-bar-wrap hud-shield-wrap hud-bar-row'
-  vitalsCluster.appendChild(shieldBar)
-  shieldBar.innerHTML = '<span class="hud-bar-label">Esc</span>'
-  const shieldSegs = document.createElement('div')
-  shieldSegs.className = 'hud-segs'
-  shieldBar.appendChild(shieldSegs)
   let shieldSegEls = []
   let shieldSegsMax = null
-  let prevShield = null
-
-  const healthBar = document.createElement('div')
-  healthBar.className = 'hud-bar-wrap hud-health-wrap hud-bar-row'
-  vitalsCluster.appendChild(healthBar)
-  healthBar.innerHTML = '<span class="hud-bar-label">Vida</span>'
-  const healthSegs = document.createElement('div')
-  healthSegs.className = 'hud-segs'
-  healthBar.appendChild(healthSegs)
   let healthSegEls = []
   let healthSegsMax = null
+  // orbital
+  let orbitalSvg, healthArc, shieldArc, boostArc
+  let orbitalLifePips = []
+  let orbitalLifePipsMax = null
+  // compartilhado
+  let prevLives = null
+  let prevShield = null
   let prevHealth = null
-
-  const boostBar = document.createElement('div')
-  boostBar.className = 'hud-bar-wrap hud-boost-wrap'
-  vitalsCluster.appendChild(boostBar)
-  const boostFill = document.createElement('div')
-  boostFill.className = 'hud-bar-fill hud-boost-fill'
-  boostBar.appendChild(boostFill)
   let prevBoostCharge = 1
 
   function rebuildSegs(container, count) {
@@ -299,6 +286,89 @@ export function createGameHud() {
     vitalsCluster.classList.remove('hit-flash')
     void vitalsCluster.offsetWidth
     vitalsCluster.classList.add('hit-flash')
+  }
+
+  // posições (no espaço local do SVG, mesmo sistema de coordenadas dos arcos) da trilha de
+  // pontinhos de vida na ponta da varredura — extrapola pra além do 3º ponto se maxLives > 3
+  // (startingWingmen/cartas 'extra-life' podem levar até LIVES_CAP=5 em player.js)
+  const ORBITAL_LIFE_PIP_STEP = [-18, -20]
+  const ORBITAL_LIFE_PIP_START = [-178, -166]
+  function orbitalLifePipPos(i) {
+    return [
+      ORBITAL_LIFE_PIP_START[0] + ORBITAL_LIFE_PIP_STEP[0] * i,
+      ORBITAL_LIFE_PIP_START[1] + ORBITAL_LIFE_PIP_STEP[1] * i,
+    ]
+  }
+  function rebuildOrbitalLifePips(count) {
+    orbitalLifePips.forEach((el) => el.remove())
+    return Array.from({ length: count }, (_, i) => {
+      const [cx, cy] = orbitalLifePipPos(i)
+      const c = document.createElementNS(SVG_NS, 'circle')
+      c.setAttribute('class', 'hvo-life-pip')
+      c.setAttribute('cx', String(cx))
+      c.setAttribute('cy', String(cy))
+      c.setAttribute('r', '7')
+      orbitalSvg.appendChild(c)
+      return c
+    })
+  }
+  function makeOrbitalArc(className, d) {
+    const path = document.createElementNS(SVG_NS, 'path')
+    path.setAttribute('class', `hvo-arc ${className}`)
+    path.setAttribute('pathLength', '100')
+    path.setAttribute('d', d)
+    orbitalSvg.appendChild(path)
+    return path
+  }
+
+  if (!useOrbitalVitals) {
+    vitalsCluster = document.createElement('div')
+    vitalsCluster.className = 'hud-vitals-cluster'
+    root.appendChild(vitalsCluster)
+
+    livesBar = document.createElement('div')
+    livesBar.className = 'hud-lives-bar'
+    vitalsCluster.appendChild(livesBar)
+
+    const shieldBarWrap = document.createElement('div')
+    shieldBarWrap.className = 'hud-bar-wrap hud-shield-wrap hud-bar-row'
+    shieldBarWrap.innerHTML = '<span class="hud-bar-label">Esc</span>'
+    vitalsCluster.appendChild(shieldBarWrap)
+    shieldSegsEl = document.createElement('div')
+    shieldSegsEl.className = 'hud-segs'
+    shieldBarWrap.appendChild(shieldSegsEl)
+
+    healthBarWrap = document.createElement('div')
+    healthBarWrap.className = 'hud-bar-wrap hud-health-wrap hud-bar-row'
+    healthBarWrap.innerHTML = '<span class="hud-bar-label">Vida</span>'
+    vitalsCluster.appendChild(healthBarWrap)
+    healthSegsEl = document.createElement('div')
+    healthSegsEl.className = 'hud-segs'
+    healthBarWrap.appendChild(healthSegsEl)
+
+    boostBar = document.createElement('div')
+    boostBar.className = 'hud-bar-wrap hud-boost-wrap'
+    vitalsCluster.appendChild(boostBar)
+    boostFill = document.createElement('div')
+    boostFill.className = 'hud-bar-fill hud-boost-fill'
+    boostBar.appendChild(boostFill)
+  } else {
+    vitalsCluster = document.createElement('div')
+    vitalsCluster.className = 'hud-vitals-orbital'
+    root.appendChild(vitalsCluster)
+
+    orbitalSvg = document.createElementNS(SVG_NS, 'svg')
+    orbitalSvg.setAttribute('class', 'hud-vitals-orbital-svg')
+    orbitalSvg.setAttribute('viewBox', '-200 -260 400 300')
+    vitalsCluster.appendChild(orbitalSvg)
+
+    // geometria validada visualmente num protótipo de design antes de virar código: 3 arcos
+    // concêntricos varrendo de ~100° (perto da nave, baixo-direita) a ~-60° (ponta, cima-
+    // esquerda) em torno da âncora (0,0) = posição da nave. Raio interno = escudo (1ª linha de
+    // defesa), médio = vida, externo = impulso (recurso, não "perigo", fica mais longe do casco).
+    shieldArc = makeOrbitalArc('hvo-shield', 'M 93.6 16.5 A 95 95 0 0 0 -82.3 -47.5')
+    healthArc = makeOrbitalArc('hvo-health', 'M 126.1 22.2 A 128 128 0 0 0 -110.8 -64.0')
+    boostArc = makeOrbitalArc('hvo-boost', 'M 158.6 27.9 A 161 161 0 0 0 -139.4 -80.5')
   }
 
   // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
@@ -1125,60 +1195,108 @@ export function createGameHud() {
     setStatus({ health, maxHealth = health, score, combo }) {
       status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
       const roundedHealth = Math.round(health)
-      if (maxHealth !== healthSegsMax) {
-        healthSegsMax = maxHealth
-        healthSegEls = rebuildSegs(healthSegs, maxHealth)
+      const isCrit = maxHealth > 0 && health / maxHealth <= LOW_HEALTH_THRESHOLD_FRAC
+      if (!useOrbitalVitals) {
+        if (maxHealth !== healthSegsMax) {
+          healthSegsMax = maxHealth
+          healthSegEls = rebuildSegs(healthSegsEl, maxHealth)
+        }
+        healthSegEls.forEach((seg, i) => seg.classList.toggle('fill-health', i < roundedHealth))
+        healthBarWrap.classList.toggle('crit', isCrit)
+      } else {
+        const frac = maxHealth > 0 ? Math.max(0, Math.min(1, health / maxHealth)) : 0
+        healthArc.style.strokeDashoffset = String((1 - frac) * 100)
+        healthArc.classList.toggle('crit', isCrit)
       }
-      healthSegEls.forEach((seg, i) => seg.classList.toggle('fill-health', i < roundedHealth))
-      healthBar.classList.toggle('crit', maxHealth > 0 && health / maxHealth <= LOW_HEALTH_THRESHOLD_FRAC)
       if (prevHealth != null && roundedHealth < prevHealth) flashVitalsHit()
       prevHealth = roundedHealth
     },
 
     setLives(lives, maxLives = lives) {
-      if (maxLives !== livePipsMax) {
-        livePipsMax = maxLives
-        livesBar.innerHTML = ''
-        livePips = Array.from({ length: maxLives }, () => {
-          const pip = document.createElement('div')
-          pip.className = 'hud-life-pip'
-          livesBar.appendChild(pip)
-          return pip
-        })
-        prevLives = null
-      }
-      livePips.forEach((pip, i) => {
-        const filled = i < lives
-        if (prevLives != null && i < prevLives && !filled) {
-          pip.classList.remove('lost')
-          void pip.offsetWidth
-          pip.classList.add('lost')
+      if (!useOrbitalVitals) {
+        if (maxLives !== livePipsMax) {
+          livePipsMax = maxLives
+          livesBar.innerHTML = ''
+          livePips = Array.from({ length: maxLives }, () => {
+            const pip = document.createElement('div')
+            pip.className = 'hud-life-pip'
+            livesBar.appendChild(pip)
+            return pip
+          })
+          prevLives = null
         }
-        pip.classList.toggle('filled', filled)
-      })
+        livePips.forEach((pip, i) => {
+          const filled = i < lives
+          if (prevLives != null && i < prevLives && !filled) {
+            pip.classList.remove('lost')
+            void pip.offsetWidth
+            pip.classList.add('lost')
+          }
+          pip.classList.toggle('filled', filled)
+        })
+      } else {
+        if (maxLives !== orbitalLifePipsMax) {
+          orbitalLifePipsMax = maxLives
+          orbitalLifePips = rebuildOrbitalLifePips(maxLives)
+          prevLives = null
+        }
+        orbitalLifePips.forEach((pip, i) => {
+          const filled = i < lives
+          if (prevLives != null && i < prevLives && !filled) {
+            pip.classList.remove('lost')
+            void pip.getBoundingClientRect()
+            pip.classList.add('lost')
+          }
+          pip.classList.toggle('filled', filled)
+        })
+      }
       prevLives = lives
     },
 
     setShield(value, maxValue) {
       const roundedShield = Math.round(value)
-      if (maxValue !== shieldSegsMax) {
-        shieldSegsMax = maxValue
-        shieldSegEls = rebuildSegs(shieldSegs, maxValue)
+      if (!useOrbitalVitals) {
+        if (maxValue !== shieldSegsMax) {
+          shieldSegsMax = maxValue
+          shieldSegEls = rebuildSegs(shieldSegsEl, maxValue)
+        }
+        shieldSegEls.forEach((seg, i) => seg.classList.toggle('fill-shield', i < roundedShield))
+      } else {
+        const frac = maxValue > 0 ? Math.max(0, Math.min(1, value / maxValue)) : 0
+        shieldArc.style.strokeDashoffset = String((1 - frac) * 100)
       }
-      shieldSegEls.forEach((seg, i) => seg.classList.toggle('fill-shield', i < roundedShield))
       if (prevShield != null && roundedShield < prevShield) flashVitalsHit()
       prevShield = roundedShield
     },
 
     setBoost(charge, active) {
-      boostFill.style.width = `${Math.max(0, Math.min(1, charge)) * 100}%`
-      boostBar.classList.toggle('active', !!active)
-      if (charge >= 1 && prevBoostCharge < 1) {
-        boostBar.classList.remove('ready-flash')
-        void boostBar.offsetWidth
-        boostBar.classList.add('ready-flash')
+      const frac = Math.max(0, Math.min(1, charge))
+      if (!useOrbitalVitals) {
+        boostFill.style.width = `${frac * 100}%`
+        boostBar.classList.toggle('active', !!active)
+        if (charge >= 1 && prevBoostCharge < 1) {
+          boostBar.classList.remove('ready-flash')
+          void boostBar.offsetWidth
+          boostBar.classList.add('ready-flash')
+        }
+      } else {
+        boostArc.style.strokeDashoffset = String((1 - frac) * 100)
+        boostArc.classList.toggle('active', !!active)
+        if (charge >= 1 && prevBoostCharge < 1) {
+          boostArc.classList.remove('ready-flash')
+          void boostArc.getBoundingClientRect()
+          boostArc.classList.add('ready-flash')
+        }
       }
       prevBoostCharge = charge
+    },
+
+    // só tem efeito no estilo orbital (no-op no clássico, que fica fixo no canto) — chamado
+    // incondicionalmente pelo game-loop a cada frame com a posição da nave projetada na tela.
+    setVitalsAnchor(xFrac, yFrac) {
+      if (!useOrbitalVitals) return
+      vitalsCluster.style.left = `${xFrac * 100}%`
+      vitalsCluster.style.top = `${yFrac * 100}%`
     },
 
     setQuestion(text) {

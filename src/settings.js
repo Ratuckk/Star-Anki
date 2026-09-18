@@ -9,6 +9,9 @@ const DEFAULTS = {
   shipVisual: 'default',
   // companheiros de início na ala (0 a 4 pilotos)
   startingWingmen: 0,
+  // estilo do cluster de vida/escudo/impulso: 'classic' (placas fixas no canto) ou 'orbital'
+  // (arcos que acompanham a nave na tela) — ver hud-game.js
+  vitalsHudStyle: 'classic',
 }
 
 function readAll() {

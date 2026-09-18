@@ -135,6 +135,43 @@ export function showSettingsScreen({ onBack }) {
   }
   renderShipButtons()
 
+  // seletor do estilo do cluster de vida/escudo/impulso: canto fixo (clássico, como sempre foi)
+  // vs. arcos que acompanham a nave na tela (orbital — pedido do usuário). Mesmo padrão do
+  // seletor de nave acima: setSetting persiste, mas createGameHud só lê isso na criação do HUD,
+  // então a troca vale a partir do próximo jogo, não ao vivo em partida.
+  const vitalsStyleRow = document.createElement('div')
+  vitalsStyleRow.className = 'settings-row'
+  const vitalsStyleLabel = document.createElement('label')
+  vitalsStyleLabel.textContent = 'Estilo do HUD de vida/escudo/impulso'
+  vitalsStyleRow.appendChild(vitalsStyleLabel)
+
+  const vitalsStyleButtonsWrap = document.createElement('div')
+  vitalsStyleButtonsWrap.className = 'btn-row'
+  const VITALS_STYLE_OPTIONS = [
+    { id: 'classic', label: 'Clássico (canto)' },
+    { id: 'orbital', label: 'Orbital (ao redor da nave)' },
+  ]
+  const vitalsStyleButtons = {}
+  for (const option of VITALS_STYLE_OPTIONS) {
+    const btn = document.createElement('button')
+    btn.className = 'btn-secondary'
+    btn.textContent = option.label
+    btn.addEventListener('click', () => {
+      setSetting('vitalsHudStyle', option.id)
+      renderVitalsStyleButtons()
+    })
+    vitalsStyleButtons[option.id] = btn
+    vitalsStyleButtonsWrap.appendChild(btn)
+  }
+  vitalsStyleRow.appendChild(vitalsStyleButtonsWrap)
+  visualSection.appendChild(vitalsStyleRow)
+
+  function renderVitalsStyleButtons() {
+    const current = getSettings().vitalsHudStyle
+    for (const [id, btn] of Object.entries(vitalsStyleButtons)) btn.classList.toggle('active', id === current)
+  }
+  renderVitalsStyleButtons()
+
   root.appendChild(visualSection)
 
   // Fase 9 (ideia all-range 5): sensibilidade de giro configurável

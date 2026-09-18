@@ -767,6 +767,20 @@ export function createGameLoop(deps) {
     hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax())
+    // HUD orbital (settings.vitalsHudStyle): âncora dos arcos = projeção na tela da nave, mesmo
+    // padrão de setReticlePosition/updateSquadronNoticePosition abaixo. Clamp com margem generosa
+    // porque o cluster se estende bem mais PRA CIMA da âncora do que pros lados/baixo (a
+    // varredura vai de baixo-direita a cima-esquerda) — sem isso o leque cortaria no topo da tela
+    // quando a nave sobe perto da borda. No-op no estilo clássico (setVitalsAnchor primeiro checa
+    // useOrbitalVitals e retorna sem fazer nada).
+    if (hud.setVitalsAnchor) {
+      const vitalsAnchorPos = playerPos.clone().addScaledVector(noseFrame.up, 0.9)
+      const ndcVitals = vitalsAnchorPos.project(camera)
+      hud.setVitalsAnchor(
+        THREE.MathUtils.clamp((ndcVitals.x + 1) / 2, 0.18, 0.82),
+        THREE.MathUtils.clamp((1 - ndcVitals.y) / 2, 0.34, 0.90)
+      )
+    }
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
     if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())

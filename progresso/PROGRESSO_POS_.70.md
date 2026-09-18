@@ -564,5 +564,47 @@ e o fix do esquadrão acima, que ainda não tinham gerado bump).
    `enemy.depth` no spawn confirmou os 62 exatos, então a constante está certa; o desvio é só no
    metro usado pra verificar, não no valor aplicado.
 
+### v0.78.0 — HUD orbital de vida/escudo/impulso (opção alternativa nas Configurações)
+
+Pedido do usuário: explorou num canvas de design separado (fora deste fluxo) várias opções pra
+tirar o cluster de vida/escudo/impulso do canto fixo da tela e colocar ao redor da própria nave;
+depois de iterar o visual até chegar em arcos lisos e concêntricos (sem segmentos/lâminas
+individuais — pedido explícito: "sua ideia... é muito detalhada visualmente e pode distrair"),
+pediu pra implementar como **opção alternativa em Configurações**, não substituindo o cluster de
+canto existente.
+
+1. **`settings.js`**: novo campo `vitalsHudStyle` (`'classic'` default | `'orbital'`), mesmo
+   padrão de `shipVisual`/`startingWingmen` — persistido via `setSetting`, lido uma única vez por
+   `createGameHud()` na criação do HUD (não troca ao vivo em partida, só no próximo jogo).
+2. **`hud-settings.js`**: novo seletor de 2 botões na seção "Visual" (mesmo padrão visual do
+   seletor de nave existente).
+3. **`hud-game.js`**: o bloco que criava o cluster de canto virou um `if (!useOrbitalVitals) {...}
+   else {...}` — ramo clássico inalterado (mesmos elementos/classes de sempre), ramo novo constrói
+   um `<svg>` com 3 `<path>` concêntricos (escudo raio 95 / vida raio 128 / impulso raio 161,
+   varredura de ~100° a ~-60° ao redor da âncora, cima-esquerda) usando `pathLength="100"` +
+   `stroke-dashoffset` pra encolher/crescer de forma lisa (sem keyframes fake — o offset é escrito
+   direto a partir da fração real de vida/escudo/boost a cada chamada de `setStatus/setShield/
+   setBoost`, o que dá de graça uma transição suave via `transition: stroke-dashoffset` no CSS).
+   Vidas viram `<circle>` numa trilha na ponta da varredura (mesma lógica de rebuild-on-max-change
+   do cluster clássico). Crítico de vida (`LOW_HEALTH_THRESHOLD_FRAC`), hit-flash, boost ativo e
+   boost-pronto têm equivalente visual no arco (pulso de cor/glow em vez de segmento piscando).
+   Novo método `setVitalsAnchor(xFrac, yFrac)` (no-op no clássico) posiciona o cluster orbital via
+   `left/top` em `%`, mesmo padrão de `setReticlePosition`.
+4. **`game-loop.js`**: chama `setVitalsAnchor` a cada frame com a posição da nave projetada na
+   tela (`playerPos` + leve offset em `noseFrame.up`, via `.project(camera)`, mesmo padrão já
+   usado por `setReticlePosition`/`updateSquadronNoticePosition`/threat pointers) — clamp de
+   margem generosa (x 0.18-0.82, y 0.34-0.90) porque o cluster se estende bem mais pra cima da
+   âncora que pros lados/baixo (a varredura vai de baixo-direita a cima-esquerda), evitando cortar
+   no topo da tela quando a nave sobe perto da borda.
+5. **CSS** (`hud-styles.js`): novo bloco `.hud-vitals-orbital`/`.hvo-*`; `.hud-vitals-orbital`
+   também entrou nas duas listas de seletores que escondem HUD durante cutscenes cinemáticas
+   (`.cinematic-active .hud-vitals-cluster, ...`) — sem isso o cluster orbital ficaria visível por
+   cima de cutscenes, já que aquela regra listava só a classe do cluster clássico.
+6. **Validação**: `node --check` em todos os arquivos tocados + `selftest.mjs` 100% aprovado.
+   Testado ao vivo via `preview_start`: alternado o setting nas Configurações (persiste em
+   `localStorage`), confirmado visualmente em partida real (não só mockup) que os 3 arcos
+   aparecem, encolhem corretamente com dano real (escudo chegou a 0 = arco some, vida crítica =
+   arco pisca vermelho via classe `.crit`), acompanham a nave se movendo pela tela, e que o
+   cluster clássico continua idêntico a antes (zero regressão) com o setting em `'classic'`.
 
 
