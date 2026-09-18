@@ -537,7 +537,7 @@ export function injectHudExtraStyles() {
    superior esquerdo) e a mesma API do hud (setLives/setStatus/setShield/setBoost inalteradas). */
 .hud-vitals-cluster {
   position: absolute;
-  bottom: 12px;
+  top: 56px;
   left: 12px;
   display: flex;
   flex-direction: column;
