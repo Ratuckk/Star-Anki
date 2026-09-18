@@ -491,5 +491,43 @@ quebrada só existe em modo trilho, nunca em arena), fica exatamente igual ao de
      (comportamento já documentado, não relacionado).
    - `node --check` + `node src/selftest.mjs` 100% aprovado depois da correção do 2º bug.
 
+### Correção: Esquadrão "em transe" (aliados quase parados na tela, atacam raramente sozinhos)
+
+Reportado pelo usuário com vídeo (`2026-09-17 22-09-27.mp4`) — extraí frames com ffmpeg pra
+confirmar visualmente antes de mexer em [`src/combat/wingmen.js`](../src/combat/wingmen.js): os
+4 aliados ficavam essencialmente parados na posição relativa à câmera por vários segundos, com um
+leve "flutuar" (ease-in-ease-out), e só entravam em combate via comando manual `[D]`. O usuário
+não lembrava de ter pedido esse resultado — e não pediu: são efeitos colaterais reais de tuning
+anterior (v0.70.0 "menos agressivo", fix do "chacoalhar" em v0.73.2) que, somados, foram longe
+demais. Usuário escolheu corrigir a suavização + soltar mais o alcance de patrulha e a frequência
+de ataque automático, sem voltar ao "ataca tudo com mira perfeita" de antes.
+
+1. **Bug real (suavização em dobro)**: `patrolTarget` era suavizado com `lerp(_wmSlotPos,
+   1-exp(-2.2*dt))` A CADA FRAME do estado `patrol`, mas `_wmSlotPos` (vaga de formação) já se
+   move sozinha todo frame porque segue o jogador — suavizar um alvo que nunca para de se mover
+   cria um atraso permanente (matemática de filtro exponencial seguindo uma rampa: ~22 unidades de
+   atraso constante em cruzeiro, bem acima da margem de ±4u que a lógica de `cruiseSpeed`
+   já tolerava sem corrigir). Depois disso, a velocidade era suavizada DE NOVO em cima do alvo já
+   atrasado — duas camadas de amortecimento empilhadas, a causa direta do "transe". Fix: o lerp
+   agora só roda nos primeiros 0.6s depois de entrar em `patrol` (cobre a curva suave de retorno
+   que o v0.73.2 pediu, pro caso de sair de dogfight/ram/escolta); depois disso, `patrolTarget`
+   acompanha a vaga em tempo real e a suavização de velocidade (`accelRate`) sozinha já basta pro
+   "voo macio" sem o atraso extra.
+2. **"Mais alcance de patrulha"**: adicionado um componente de vaguear lento e largo (~35-55s de
+   período, 5.5/2.2 unidades de amplitude) somado ao micro-flutuar rápido que já existia — a vaga
+   de formação em si passa a variar visivelmente ao longo do tempo em vez de ser um ponto fixo,
+   sem virar "fly-by livre" (opção que o usuário rejeitou explicitamente por risco de reintroduzir
+   o caos de antes).
+3. **Engajamento automático mais frequente**: chance de checagem 45%→65%, cone de detecção à
+   frente alargado (`dotForward` 0.2→-0.15, de ~78° pra ~99° de meio-ângulo), alcance de detecção
+   65→80u (trilho) e 60→75u (arena), cooldown de reengajamento depois de um dogfight reduzido de
+   5-8.5s pra 3-5.5s. Mantido intacto: só 1 aliado briga por vez, dano/precisão/duração de rajada
+   (isso não fazia parte da reclamação e evita voltar ao "ataca tudo" já nerfado antes).
+4. **Validação**: `node --check` + `selftest.mjs` 100% aprovado. Ao vivo via
+   `window.__starAnki`: amostrado offset de cada aliado em relação ao jogador a cada 10 frames por
+   10s — percurso relativo real de 83 a 144 unidades por aliado (antes, visualmente perto de zero
+   no vídeo do usuário); log de voo confirmou 3 aliados diferentes (Slippy, Phantom, Peppy)
+   engajando sozinhos contra alvos distintos nos mesmos 10s, sem nenhum comando `[D]` manual.
+
 
 

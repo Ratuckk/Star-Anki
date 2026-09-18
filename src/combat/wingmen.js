@@ -717,9 +717,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // ============ FORMAÇÃO TÁTICA STAR FOX 64 (CALMA E CINEMATOGRÁFICA) ============
       // Vaga dedicada de cada piloto em relação à nave do jogador
       const slot = FORMATION_SLOTS[w.profile.id] || { side: w.profile.homeSide * 11, up: 0, forward: 8 }
-      // Flutuação sutil de marcha lenta (idle float): oscilação suave de baixa frequência (~4-5s)
+      // Flutuação de marcha lenta (idle float): micro-oscilação rápida (~4-5s, igual antes) somada
+      // a um vaguear lento e largo (~35-55s) — pedido do usuário ("mais alcance de patrulha"): sem
+      // isso a vaga de formação era um ponto fixo demais, lendo como "presos" em vez de voando.
       const idleX = Math.sin(elapsed * 0.7 + w.profile.id * 1.6) * 0.55
+        + Math.sin(elapsed * 0.11 + w.profile.id * 3.3) * 5.5
       const idleY = Math.cos(elapsed * 0.5 + w.profile.id * 2.1) * 0.35
+        + Math.cos(elapsed * 0.09 + w.profile.id * 2.7) * 2.2
 
       _wmSlotPos.copy(playerPos)
       if (inArena) {
@@ -751,12 +755,21 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.stateTimer = 0
         }
       } else if (w.state === 'patrol') {
-        // Pedido do usuário: ao sair de dogfight/ram/escolta, o alvo de voo pulava instantaneamente
-        // do inimigo perseguido pra vaga de formação — o salto brusco de alongSlot (ver cálculo de
-        // cruiseSpeed abaixo) fazia a velocidade disparar e derrapar de volta em menos de 0.1s
-        // ("chacoalhando"). Suaviza o PONTO perseguido, não só a velocidade, pra virar uma curva
-        // larga e gradual (pedido do plano: "curva ampla e elegante de retorno à sua ala").
-        w.patrolTarget.lerp(_wmSlotPos, 1 - Math.exp(-2.2 * dt))
+        // Pedido do usuário (v0.73.2): ao sair de dogfight/ram/escolta, o alvo de voo pulava
+        // instantaneamente do inimigo perseguido pra vaga de formação — o salto brusco de
+        // alongSlot (ver cálculo de cruiseSpeed abaixo) fazia a velocidade disparar e derrapar de
+        // volta em menos de 0.1s ("chacoalhando"). A curva suave (lerp) resolvia isso, mas ficava
+        // ligada o tempo todo — como a vaga de formação (_wmSlotPos) já se move sozinha a cada
+        // frame (segue o jogador), suavizar um alvo que NUNCA para de se mexer cria um atraso
+        // permanente de perseguição (bug achado por vídeo do usuário: aliados "em transe",
+        // sempre alguns metros atrás de onde deveriam estar). Fix: só suaviza nos primeiros 0.6s
+        // depois de entrar em patrol (cobre a curva de retorno); depois disso, segue a vaga em
+        // tempo real — a suavização de velocidade abaixo (accelRate) já cuida do "voo macio".
+        if (w.stateTimer < 0.6) {
+          w.patrolTarget.lerp(_wmSlotPos, 1 - Math.exp(-2.2 * dt))
+        } else {
+          w.patrolTarget.copy(_wmSlotPos)
+        }
 
         // Habilidades únicas de Peppy (Guarda) e Phantom (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
@@ -811,13 +824,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             const othersInDogfight = activeWingmen.some((other, oIdx) => oIdx !== idx && other.state === 'dogfight')
             if (!othersInDogfight) {
               const alive = getAliveEnemies()
-              if (alive.length > 0 && Math.random() < 0.45) {
+              // Pedido do usuário ("mais alcance de patrulha", sem voltar pro "ataca tudo"
+              // perfeito de antes): cone de detecção e chance de engajar alargados moderadamente
+              // — continuam raros o bastante pra não sentir robótico, só não tão raros a ponto de
+              // precisar quase sempre do comando [D] manual pra ver algum aliado brigar sozinho.
+              if (alive.length > 0 && Math.random() < 0.65) {
                 const candidates = alive.filter((e) => {
                   _wmRel.copy(e.mesh.position).sub(w.mesh.position)
                   const d = _wmRel.length()
-                  if (inArena) return d < 60
+                  if (inArena) return d < 75
                   const dotForward = d > 1e-4 ? (_wmRel.dot(frame.forward) / d) : 0
-                  return dotForward > 0.2 && d < 65
+                  return dotForward > -0.15 && d < 80
                 })
                 if (candidates.length > 0) {
                   candidates.sort((a, b) => w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position))
@@ -851,7 +868,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.stateTimer = 0
           w.targetEnemy = null
           w.fireCooldown = 1.5
-          w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (5.0 + Math.random() * 3.5)
+          w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.5)
           if (squadronCommandMode === 'focus') {
             squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
           }
@@ -891,7 +908,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               w.stateTimer = 0
               w.targetEnemy = null
               w.fireCooldown = 1.5
-              w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (5.0 + Math.random() * 3.0)
+              w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.0)
             }
           }
         }
