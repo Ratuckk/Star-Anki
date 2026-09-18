@@ -607,4 +607,28 @@ canto existente.
    arco pisca vermelho via classe `.crit`), acompanham a nave se movendo pela tela, e que o
    cluster clássico continua idêntico a antes (zero regressão) com o setting em `'classic'`.
 
+### Ficha HTML preenchível do TEMPLATE_INIMIGOS.md (ferramenta, sem versão de jogo)
+
+Pedido do usuário: uma versão em HTML do `TEMPLATE_INIMIGOS.md` pra preencher e colar de volta no
+chat, em vez de responder o checklist inteiro em texto corrido.
+
+1. Publicado como Artifact (link privado do usuário, fora do repo) — `SECTIONS` no script espelha
+   fielmente as 14 seções (0-13) do `.md`, uma `<textarea>` por pergunta, autosave em
+   `localStorage`, indicador de progresso, navegação rápida por seção, e um botão "Gerar resumo"
+   que monta markdown só com as seções tocadas (perguntas em branco viram `(não respondido)` em
+   vez de sumir silenciosamente).
+2. Botão por seção "Inimigo não usa / não tem" pra marcar uma seção inteira como não aplicável
+   (em vez de deixar tudo em branco, que ficaria ambíguo com "esquecido") — desabilita os campos
+   da seção e o resumo imprime "Não se aplica a este inimigo" pra ela.
+3. **`TEMPLATE_INIMIGOS.md` ganhou perguntas novas nas seções 5/6/7** (pedido do usuário, faltavam
+   no checklist original) — espelhadas também na ficha HTML:
+   - Seção 5: se o dano do projétil do inimigo varia por nível de dificuldade (mín/máx).
+   - Seção 6: se o HP varia por nível de dificuldade (mín/máx); se regenera vida (taxa/gatilho/
+     teto); se cria um escudo/barreira PRÓPRIO (camada de HP extra separada da vida — diferente do
+     escudo refletor que já existia na pergunta de bloqueio); se é totalmente imune a tiro normal
+     (dano zero, não só bloqueio parcial).
+   - Seção 7: se é totalmente imune a tiro carregado/teleguiado (dano zero).
+   Nenhum inimigo existente usa essas mecânicas hoje — são perguntas em aberto pra inimigos
+   futuros, mesmo padrão de "não existe referência ainda" já usado em outros itens do template.
+
 

@@ -185,6 +185,9 @@ grande telegrafado); Sentinela dispara um mecanismo totalmente próprio (a moldu
 - [ ] Dano contra a vida e contra o escudo do jogador (podem ser valores
       diferentes — o padrão de laser do Chefe/Dourado causa 1 de dano de escudo
       fixo, mas a Ampulheta-mega causa 4).
+- [ ] Esse dano varia por nível de dificuldade? Se sim, valor mínimo e valor
+      máximo (por dificuldade, ou a fórmula/escala usada) — ou é um valor fixo
+      igual em qualquer dificuldade?
 - [ ] É reto (voa em linha desde o disparo) ou telegrafado com alvo travado
       durante um tempo antes de disparar de fato (padrão Chefe/Dourado: a posição
       alvo continua re-rastreando o jogador durante todo o telegraph, "sem trava
@@ -206,8 +209,23 @@ faz um dash evasivo reativo e pode teleportar se sobreviver a um hit.
 
 - [ ] HP total (e portanto, quantos tiros normais de dano padrão são necessários
       pra matar — faça a conta junto com o usuário, não deixe implícito).
-- [ ] Existe algum bloqueio/imunidade parcial? Se sim, qual dos dois padrões
-      existentes se aplica (ou é um terceiro totalmente novo)?
+- [ ] O HP varia por nível de dificuldade? Se sim, valor mínimo e valor máximo
+      (liste por dificuldade, ou a fórmula/escala usada) — ou é um valor fixo
+      igual em qualquer dificuldade?
+- [ ] Regenera vida com o tempo? Se sim: taxa (HP por segundo ou por intervalo),
+      gatilho pra começar/parar de regenerar (ex.: só fora de combate, só se não
+      tomar dano por X segundos), e existe um teto (não regenera acima de um
+      valor)?
+- [ ] Cria um escudo/barreira PRÓPRIO (uma camada de HP extra, separada da vida,
+      que precisa ser quebrada antes do dano chegar à vida real — diferente do
+      escudo refletor abaixo, que não absorve, só devolve o tiro)? Se sim: quanto
+      absorve, se recarrega depois de quebrado (quando e em quanto tempo), e tem
+      efeito visual próprio?
+- [ ] É totalmente IMUNE a tiro normal (dano zero, não apenas bloqueio parcial —
+      só morre de outra forma, ex. só por tiro carregado)?
+- [ ] Existe algum bloqueio/imunidade parcial (diferente da imunidade total
+      acima)? Se sim, qual dos dois padrões existentes se aplica (ou é um
+      terceiro totalmente novo)?
   - Escudo refletor (bloqueia e devolve o projétil, como o Chefe) — em qual
     condição liga/desliga?
   - Blindagem direcional (bloqueia só de um lado específico, como a Fragata) —
@@ -233,6 +251,7 @@ sair — é uma pergunta em aberto pra qualquer inimigo novo.
 
 - [ ] O dano do tiro carregado/teleguiado é o padrão (4 normal / 6 carga máxima)
       ou precisa de um valor próprio?
+- [ ] É totalmente IMUNE a tiro carregado/teleguiado (dano zero)?
 - [ ] É elegível ao splash de dano em área da carga máxima (padrão pra todo
       inimigo na lista genérica) ou deveria ser IMUNE a esse splash (como o
       Dourado é hoje, só recebendo dano do hit direto)?
