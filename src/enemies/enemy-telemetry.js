@@ -105,6 +105,7 @@ export function createEnemyTelemetry() {
 
       let state = 'patrol'
       if (e.dying) state = 'dying'
+      else if (e.fsm) state = e.fsm.currentState // Blaster/Tank já migrados pra FSM — leitura direta e determinística
       else if (e.telegraphTimer > 0) state = 'telegraph'
       else if (e.fireTimer !== undefined && e.fireTimer <= 0.25) state = 'ready_to_fire'
       else if (e.state) state = e.state

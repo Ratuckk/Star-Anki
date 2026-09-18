@@ -474,5 +474,89 @@ assert.deepStrictEqual(receivedParams?.worldPos, [10, 20, 30], 'Handler deve rec
 // Desregistra manipulador após o teste
 registerAudioHandler(null)
 
-console.log(`OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09 + ${totalCueCount} Sound Cues validadas).`)
+// ---------------------------------------------------------------------------
+// 11. Overhaul FSM dos Inimigos (Fase 1: Blaster + Tank) — motor genérico e fidelidade de valores
+// ---------------------------------------------------------------------------
+import { createStateMachine, ENEMY_STATES } from './enemies/state-machine.js'
+
+// 11.1 Motor de FSM (state-machine.js) — módulo real, sem dependência de Three.js
+const fsmLog = []
+const fsmEnemy = { id: 'x' }
+const fsmConfig = {
+  A: {
+    onEnter: () => fsmLog.push('enterA'),
+    onExit: () => fsmLog.push('exitA'),
+    update: () => fsmLog.push('updateA'),
+  },
+  B: {
+    onEnter: (enemy, ctx, payload) => fsmLog.push(`enterB:${payload}`),
+  },
+}
+const fsm = createStateMachine(fsmEnemy, fsmConfig, 'A')
+assert.strictEqual(fsm.currentState, 'A', 'estado inicial deve ser o passado em createStateMachine')
+assert.strictEqual(fsm.isIn('A'), true, 'isIn deve refletir o estado atual')
+
+fsm.update(0.5)
+assert.ok(fsmLog.includes('updateA'), 'update() deve chamar o update do estado atual')
+assert.ok(fsm.timeInState >= 0.5, 'timeInState deve acumular o dt passado pra update()')
+
+fsm.transition('B', 'payload-teste')
+assert.deepStrictEqual(fsmLog.slice(-2), ['exitA', 'enterB:payload-teste'], 'transition deve chamar onExit do estado atual e onEnter do alvo, nessa ordem, repassando o payload')
+assert.strictEqual(fsm.previousState, 'A', 'previousState deve registrar o estado anterior após a transição')
+assert.strictEqual(fsm.timeInState, 0, 'timeInState deve zerar ao entrar num novo estado')
+
+assert.throws(
+  () => fsm.transition('ESTADO_INEXISTENTE'),
+  /ESTADO_INEXISTENTE/,
+  'transition para um estado que não existe em statesConfig deve lançar erro claro (evita bug silencioso de digitação)',
+)
+assert.throws(
+  () => createStateMachine({}, fsmConfig, 'ESTADO_INEXISTENTE'),
+  /ESTADO_INEXISTENTE/,
+  'createStateMachine com estado inicial inexistente deve lançar erro claro',
+)
+
+// 11.2 Enum ENEMY_STATES usado por Blaster/Tank — trava contra rename acidental
+for (const key of ['SPAWNING', 'ENGAGED', 'TELEGRAPHING', 'ATTACKING', 'RECOVERY', 'CRITICAL_TUMBLE', 'DISENGAGING']) {
+  assert.strictEqual(ENEMY_STATES[key], key, `ENEMY_STATES.${key} deve existir (usado por blaster.js/tank.js)`)
+}
+
+// 11.3 Fidelidade de valores preservados na migração (Blaster/Tank não são importáveis aqui —
+// dependem de Three.js via import map do navegador — então a checagem é a mesma fórmula pura
+// usada dentro de enemies/shared.js:computeInFireRange, replicada localmente, igual ao padrão já
+// usado acima em evaluateRailCombatEngagement/simulateVermeSegmentUpdate)
+function simulateComputeInFireRange(distToPlayer, relativeForward, inArena) {
+  const ENEMY_FIRE_MIN_DISTANCE = 8
+  const ENEMY_FIRE_RANGE = 55
+  const ENEMY_ARENA_FIRE_MAX_DISTANCE = 48
+  if (distToPlayer <= ENEMY_FIRE_MIN_DISTANCE) return false
+  return inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE : (relativeForward > 0 && relativeForward < ENEMY_FIRE_RANGE)
+}
+assert.strictEqual(simulateComputeInFireRange(5, 10, false), false, 'distância abaixo do mínimo (8) nunca deve estar em alcance de tiro')
+assert.strictEqual(simulateComputeInFireRange(30, 10, false), true, 'no trilho, à frente e dentro de 55u deve estar em alcance')
+assert.strictEqual(simulateComputeInFireRange(30, -5, false), false, 'no trilho, atrás do jogador (relativeForward<=0) nunca deve estar em alcance')
+assert.strictEqual(simulateComputeInFireRange(60, 60, false), false, 'no trilho, com relativeForward além de 55u não deve estar em alcance')
+assert.strictEqual(simulateComputeInFireRange(40, 0, true), true, 'em arena, dentro de 48u deve estar em alcance independente de relativeForward')
+assert.strictEqual(simulateComputeInFireRange(50, 0, true), false, 'em arena, além de 48u não deve estar em alcance')
+
+// shotsFired >= 4 → disengaging (Blaster e Tank, ver fireEnemyProjectile em enemies/index.js)
+function simulateShotsFiredDisengage(shotsFiredBefore) {
+  const shotsFired = shotsFiredBefore + 1
+  return { shotsFired, disengaging: shotsFired >= 4 }
+}
+assert.strictEqual(simulateShotsFiredDisengage(2).disengaging, false, 'no 3º tiro ainda não deve desengajar')
+assert.strictEqual(simulateShotsFiredDisengage(3).disengaging, true, 'no 4º tiro deve desengajar')
+
+// wing-break (CRITICAL_TUMBLE) só em hit NÃO letal — um hit letal mata direto, sem quebrar a asa
+// (ver resolveProjectileHit em enemies/index.js: o branch de breakBlasterWing é o `else` do `if (killed)`)
+function simulateBlasterHitOutcome(hp, damage, wingBrokenBefore) {
+  const killed = hp - damage <= 0
+  const wingBreaks = !killed && !wingBrokenBefore
+  return { killed, wingBreaks }
+}
+assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, false), { killed: false, wingBreaks: true }, 'hit não-letal com asa intacta deve quebrar a asa')
+assert.deepStrictEqual(simulateBlasterHitOutcome(2, 2, false), { killed: true, wingBreaks: false }, 'hit letal (dano >= hp) deve matar direto, sem quebrar a asa')
+assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, true), { killed: false, wingBreaks: false }, 'asa já quebrada não quebra de novo')
+
+console.log(`OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09 + ${totalCueCount} Sound Cues validadas + FSM de Inimigos Fase 1 Blaster/Tank).`)
 

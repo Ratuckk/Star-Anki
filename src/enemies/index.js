@@ -1,12 +1,15 @@
 import * as THREE from 'three'
-import { PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR } from './shared.js'
+import {
+  PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR,
+  ENEMY_FIRE_RANGE, ENEMY_FIRE_MIN_DISTANCE, ENEMY_ARENA_FIRE_MAX_DISTANCE,
+} from './shared.js'
 import { createEnemyTelemetry } from './enemy-telemetry.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
   BLASTER_PROFILES,
-  spawnBlaster, updateBlasterArenaMovement, updateBlasterRailMovement, blasterPassBehind, blasterColor, disposeBlaster,
+  spawnBlaster, blasterColor, disposeBlaster,
   triggerBlasterRecoil, breakBlasterWing,
 } from './blaster.js'
 import { MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm } from './miniSwarm.js'
@@ -57,12 +60,10 @@ const ENEMY_FIRE_INTERVAL_MIN = 1500
 const ENEMY_FIRE_INTERVAL_MAX = 3000
 // Pedido do usuário: combate estilo Star Fox 64 — inimigos não atiram de 120u de distância (onde
 // mal são visíveis na tela). Eles se aproximam até a faixa de 55u para abrir fogo, com aviso
-// visual (telegraph) claro antes de cada disparo.
-const ENEMY_FIRE_RANGE = 55
-const ENEMY_FIRE_MIN_DISTANCE = 8
+// visual (telegraph) claro antes de cada disparo. (ENEMY_FIRE_RANGE/MIN_DISTANCE/ARENA_MAX agora
+// moram em shared.js — reaproveitados pelo cálculo de inFireRange do Blaster/Tank já migrados.)
 const ENEMY_PROJECTILE_SPEED = 24
 const ENEMY_PROJECTILE_MAX_RANGE = 65
-const ENEMY_ARENA_FIRE_MAX_DISTANCE = 48
 const ENEMY_PROJECTILE_HIT_RADIUS = 1.6
 const ENEMY_AIM_ERROR_DEG = 5
 
@@ -188,6 +189,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // ============ dispatch por kind (cada classe expõe seu pedaço, ver arquivo próprio) ============
   function hitRadiusFor(enemy) {
     switch (enemy.kind) {
+      case BLASTER_KIND: return BLASTER_HIT_RADIUS
       case BOSS_KIND: return BOSS_HIT_RADIUS
       case TIME_KIND: return TIME_HIT_RADIUS
       case MINI_SWARM_KIND: return miniSwarmHitRadius()
@@ -205,6 +207,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
   function deathDurationFor(enemy) {
     switch (enemy.kind) {
+      case BLASTER_KIND: return BLASTER_DEATH_DURATION
       case BOSS_KIND: return BOSS_DEATH_DURATION
       case TIME_KIND: return TIME_DEATH_DURATION
       case TANK_KIND: return TANK_DEATH_DURATION
@@ -239,6 +242,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   function killPointsFor(kind) {
+    if (kind === BLASTER_KIND || kind === TANK_KIND) return BLASTER_KILL_BONUS
     if (kind === DETRITO_KIND) return DETRITO_KILL_BONUS
     if (kind === REPLICA_KIND) return REPLICA_KILL_BONUS
     if (kind === FRAGATA_KIND) return FRAGATA_KILL_BONUS
@@ -248,8 +252,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return BLASTER_KILL_BONUS
   }
 
+  // Blaster e Tank não chegam mais aqui (auto-contidos via enemy.fsm — ver o branch logo após o
+  // do MiniSwarm em updateEnemies).
   function passBehindFor(enemy) {
-    if (enemy.kind === BLASTER_KIND) return blasterPassBehind(enemy)
     if (enemy.kind === TIME_KIND) return timePassBehind(enemy)
     if (enemy.kind === SENTINELA_KIND) return sentinelaPassBehind(enemy)
     if (enemy.kind === REPLICA_KIND) return replicaPassBehind()
@@ -393,6 +398,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         continue
       }
 
+      // Blaster e Tank migraram pra FSM formal (ver enemies/state-machine.js e blaster.js/tank.js)
+      // — cada um cuida do próprio movimento, telegraph/disparo e despawn, igual ao MiniSwarm acima.
+      if (enemy.fsm) {
+        enemy.fsm.update(dt, { dt, playerPosition, frame, inArena, effects, rail, scene, fireEnemyProjectile, randomEnemyFireInterval, removeEnemy })
+        continue
+      }
+
       const isDetrito = enemy.kind === DETRITO_KIND
       const isIma = enemy.kind === IMA_KIND
       if (enemy.kind === BOSS_KIND) {
@@ -416,9 +428,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // pedido do usuário: inimigos comuns muito lentos em arena — *0.5 limitava a metade da
         // velocidade do jogador, subido pra *0.7. Fragata mantém *0.5 de propósito (ela é uma
         // "parede móvel" que só precisa alcançar o standoff, não perseguir agressivamente).
-        if (enemy.kind === BLASTER_KIND) {
-          updateBlasterArenaMovement(enemy, dt, playerPosition, frame, rail.getArenaSpeed() * 0.7)
-        } else if (enemy.kind === FRAGATA_KIND) {
+        if (enemy.kind === FRAGATA_KIND) {
           updateFragataMovement(enemy, dt, playerPosition, rail.getArenaSpeed() * 0.5)
         } else {
           // tank/time (genérico): chase reto ou órbita, mesma lógica de sempre — default do
@@ -437,8 +447,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       } else {
         // modo trilho
-        if (enemy.kind === BLASTER_KIND) updateBlasterRailMovement(enemy, dt, rail)
-        else if (enemy.kind === SENTINELA_KIND) {
+        if (enemy.kind === SENTINELA_KIND) {
           updateSentinelaMovement(enemy, dt, frame, rail)
           // BUG FIX: Sentinela em LEAVING voa pra FRENTE (mais rápido que o jogador), então o
           // pass-behind normal abaixo (que despawna quem ficou ATRÁS) nunca dispara nela — ela
@@ -466,23 +475,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // Star Fox 64: Inimigos que já ultrapassaram o jogador no trilho (relativeForward <= 0) não giram 180° para trás!
         if (enemy.kind !== REPLICA_KIND && enemy.kind !== VERME_KIND && !enemy.disengaging) {
           if (relativeForward > 0) {
-            const rollZ = enemy.kind === BLASTER_KIND ? enemy.mesh.rotation.z : null
             enemy.mesh.lookAt(playerPosition)
-            if (rollZ !== null) {
-              enemy.mesh.rotateZ(rollZ)
-            }
           }
         }
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
-
-        if (enemy.kind === BLASTER_KIND && effects && effects.enemyThrusterTrail) {
-          if (!enemy.trailTimer) enemy.trailTimer = 0
-          enemy.trailTimer -= dt
-          if (enemy.trailTimer <= 0) {
-            enemy.trailTimer = 0.05
-            effects.enemyThrusterTrail(enemy.mesh.position, colorFor(enemy))
-          }
-        }
 
         const passBehind = passBehindFor(enemy)
         const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
@@ -1037,14 +1033,6 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             if (enemyHit.squadronId && activeSquadrons.has(enemyHit.squadronId)) {
               const sq = activeSquadrons.get(enemyHit.squadronId)
               sq.remaining--
-              if (sq.leaderId === enemyHit.id) {
-                for (const ally of enemies) {
-                  if (ally.squadronId === enemyHit.squadronId && !ally.dying) {
-                    ally.panicked = true
-                    ally.panicTimer = 2.0
-                  }
-                }
-              }
               if (sq.remaining <= 0 && !sq.wiped) {
                 sq.wiped = true
                 activeSquadrons.delete(enemyHit.squadronId)
@@ -1058,7 +1046,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             }
           }
         } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
-          breakBlasterWing(enemyHit, Math.random() < 0.5 ? 'left' : 'right')
+          breakBlasterWing(enemyHit)
         }
         return {
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,

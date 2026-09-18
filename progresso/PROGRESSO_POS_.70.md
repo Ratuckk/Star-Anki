@@ -404,5 +404,73 @@ sem depender só de descrição verbal de bug.
    (100% aprovado, nenhuma regressão). Complementa selftest.mjs, não substitui — selftest cobre
    cenário sintético pré-commit, `aiValidator` cobre comportamento emergente de sessão real.
 
+### Overhaul FSM dos Inimigos — Fase 1 (Blaster + Tank)
+
+Pedido do usuário: prosseguir com `OVERHAUL_ESTADOS_INIMIGOS.md` (documento de implementação
+escrito pela ferramenta "Antigravity", sem passar pelo processo deste projeto). Regra dura do
+`CLAUDE.md`/`TEMPLATE_INIMIGOS.md` obrigou reler o código real e confirmar com o usuário antes de
+tocar em qualquer inimigo — o documento tinha números certos (Blaster: `recoilZ=-0.3`,
+`rotation.x=-0.35`, fórmula do `tumbleRollSpeed`, limiar de 4 tiros, telegraph 0.3s, todos
+conferidos) mas também **2 erros concretos verificados** em Boss/Golden (fora de escopo nesta
+fase, ficam pra quando chegar a vez deles): duração de transição de fase documentada como 2.0s
+(real: `PHASE_TRANSITION_DURATION_S=1.2`, o próprio código comenta "1.2s") e um vínculo inventado
+"transição ativa o escudo refletor" (o escudo é um ciclo independente de 7s/3s que na real
+**pausa**, não ativa, durante a transição). O documento também subestimava o quanto Blaster está
+entrelaçado com o loop compartilhado de `enemies/index.js` (Tank compartilha o mesmo mecanismo de
+tiro/telegraph/desengate; só Blaster e Tank de fato alcançavam o fallback `fireEnemyProjectile`
+hoje — Boss/Time/Sentinela desviam pra suas próprias funções).
+
+Usuário escolheu: **Blaster + Tank juntos nesta fase** (dividem o mesmo mecanismo de tiro — migrar
+só um deixaria o mecanismo "pela metade") e **remover só os campos mortos confirmados**
+(`panicked`/`panicTimer`, nunca lidos em lugar nenhum; o argumento `'left'/'right'` de
+`breakBlasterWing` que a função de 1 parâmetro sempre ignorava) — todo o resto, incluindo duas
+esquisitices encontradas (Blaster com asa quebrada girando ainda pode atirar; o giro de asa
+quebrada só existe em modo trilho, nunca em arena), fica exatamente igual ao de hoje.
+
+1. **[`src/enemies/state-machine.js`](../src/enemies/state-machine.js) (novo)**: motor de FSM
+   genérico e leve (`createStateMachine`, `ENEMY_STATES`), zero dependência de Three.js (roda em
+   Node puro, testável direto em `selftest.mjs`). `transition()` chama `onExit`→troca de
+   estado→`onEnter`; `update()` acumula `timeInState` e despacha pro estado atual; transição pra
+   estado inexistente lança erro claro.
+2. **[`src/enemies/blaster.js`](../src/enemies/blaster.js) reescrito**: FSM completa
+   (`SPAWNING→ENGAGED→TELEGRAPHING→ATTACKING→RECOVERY→ENGAGED`, `CRITICAL_TUMBLE`,
+   `DISENGAGING`), preservando os valores reais item por item. Achado durante testes ao vivo (e
+   corrigido antes de fechar): a primeira versão de `RECOVERY` sempre voltava pra `ENGAGED`, o que
+   fazia uma asa quebrada "curar sozinha" depois de 1 tiro — o código antigo checava `tumbleSpin`
+   *antes* de `disengaging` e ambos davam `return` (asa quebrada sempre vencia, pra sempre, mesmo
+   com 4 tiros completados); `RECOVERY` agora confere `wingBroken` primeiro e volta pra
+   `CRITICAL_TUMBLE` nesse caso, reproduzindo o mesmo predomínio.
+3. **[`src/enemies/tank.js`](../src/enemies/tank.js) reescrito**: mesma FSM, bem mais simples
+   (sem movimento próprio no trilho, sem `CRITICAL_TUMBLE` — Tank nunca teve conceito de asa).
+4. **[`src/enemies/shared.js`](../src/enemies/shared.js)**: ganhou `ENEMY_FIRE_RANGE`/
+   `ENEMY_FIRE_MIN_DISTANCE`/`ENEMY_ARENA_FIRE_MAX_DISTANCE` (movidos de `index.js`, mesmos
+   valores) e `enemyInFireRange(enemy, ctx)`, usado pelos dois.
+5. **`src/enemies/index.js`**: novo branch auto-contido (`if (enemy.fsm) { enemy.fsm.update(...);
+   continue }`) logo após o do MiniSwarm, seguindo o mesmo precedente já existente no código.
+   Removidos os branches agora mortos de Blaster no dispatch de movimento, no carve-out de
+   `lookAt`/`rotation.z` e no rastro do propulsor; `hitRadiusFor`/`deathDurationFor`/
+   `killPointsFor` ganharam casos explícitos pra Blaster/Tank (valores idênticos ao `default` que
+   usavam antes — zero mudança de comportamento pra quem continua usando esse default, como
+   MiniSwarm em `deathDurationFor`). `breakBlasterWing` perdeu o argumento `'left'/'right'` morto.
+6. **`src/enemies/enemy-telemetry.js`**: heurística de estado agora lê `enemy.fsm.currentState`
+   direto quando existe (Blaster/Tank), mantendo o fallback antigo pros 11 inimigos ainda não
+   migrados. Bug pré-existente e não relacionado encontrado mas **não corrigido** (fora de escopo,
+   avisado ao usuário): `specialInfo` do Blaster sempre imprime `"profile=padrao"` porque
+   `e.profile` é string, não `{name}`.
+7. **`src/selftest.mjs`**: nova Seção 11 — testes reais de `createStateMachine` (ordem
+   onExit/onEnter, `timeInState`, `isIn`, erro claro em transição/estado inicial inexistente) e
+   testes de fidelidade de valores (fórmula de `inFireRange`, limiar de 4 tiros, wing-break só em
+   hit não-letal) no padrão já usado no arquivo (função local simulando a lógica real, já que
+   Blaster/Tank dependem de Three.js via import map e não são importáveis em Node puro).
+8. **Validação**: `node --check` em todos os arquivos, `node src/selftest.mjs` 100% aprovado.
+   Testado ao vivo via `window.__starAnki` (porta 8420 estava ocupada por outra sessão servindo
+   uma cópia desatualizada de `blaster.js` — subi uma instância própria de
+   `tools/no-cache-server.py` na porta 8421 pra garantir arquivo fresco): ciclo completo
+   `SPAWNING→ENGAGED→TELEGRAPHING→ATTACKING(shotsFired++)→RECOVERY→ENGAGED` confirmado pra
+   Blaster e Tank; limiar de 4 tiros→`DISENGAGING` (`rotation.x=-0.35`) confirmado pros dois;
+   `CRITICAL_TUMBLE` confirmado disparando/telegrafando normalmente enquanto gira, e persistindo
+   através de múltiplos ciclos de tiro mesmo depois do limiar de desengate (é onde o bug do item 2
+   foi pego). Não tocado: os outros 11 tipos de inimigo, que continuam na fase seguinte.
+
 
 

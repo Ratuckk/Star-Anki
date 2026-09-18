@@ -6,6 +6,25 @@ import * as THREE from 'three'
 
 // Proibição de ficar atrás do jogador: qualquer inimigo que ultrapassar a profundidade -2.0 é removido
 export const PASS_BEHIND = -2.0
+
+// Janela de disparo genérica (Blaster/Tank/Boss/Time/Sentinela) — ver a nota histórica em
+// enemies/index.js sobre o pedido "estilo Star Fox 64" de não atirar de longe demais.
+export const ENEMY_FIRE_RANGE = 55
+export const ENEMY_FIRE_MIN_DISTANCE = 8
+export const ENEMY_ARENA_FIRE_MAX_DISTANCE = 48
+
+// Só usada pelos inimigos já migrados pra FSM (Blaster/Tank) — Boss é sempre "em alcance"
+// (unconditional) no loop genérico antigo, os outros ainda calculam isso inline lá.
+export function computeInFireRange(distToPlayer, relativeForward, inArena) {
+  if (distToPlayer <= ENEMY_FIRE_MIN_DISTANCE) return false
+  return inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE : (relativeForward > 0 && relativeForward < ENEMY_FIRE_RANGE)
+}
+
+export function enemyInFireRange(enemy, ctx) {
+  const relativeForward = ctx.inArena ? 0 : enemy.mesh.position.clone().sub(ctx.frame.position).dot(ctx.frame.forward)
+  const distToPlayer = enemy.mesh.position.distanceTo(ctx.playerPosition)
+  return computeInFireRange(distToPlayer, relativeForward, ctx.inArena)
+}
 // a geometria de todo cone deste projeto nasce apontando pro +Z local — usado pra virar o cone
 // na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 export const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
