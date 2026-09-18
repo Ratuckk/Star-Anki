@@ -745,4 +745,33 @@ baralho/config), não volta pro menu.
    tempo, um arquivo tocado por AMBAS pode ter suas mudanças misturadas no commit de qualquer uma
    das duas, mesmo que a outra sessão não tenha terminado — nenhuma automação evita isso hoje.
 
+### fix: Horda 9x menor do que devia (raio de colisão medido contra a referência errada)
+
+Usuário jogou de verdade e reportou: a Horda aparecia como "um círculo minúsculo cinza", nenhuma
+mecânica perceptível. Causa raiz: `HORDA_HIT_RADIUS` (v0.79.0) foi calculado contra o PONTO de
+colisão da nave (`rail.getShipHitboxPoints()`, raio 0.55 — só usado internamente pra hit-test),
+não contra o modelo visual real dela. A nave de verdade (`rail.js`, preset `'default'`) tem
+`wingHalfSpan=2.6` (envergadura real = 5.2) e `bodyLength=3.4` — "3 naves de largura e 3 naves de
+altura" media então ~15.6 × ~10.2, não ~1.1 × ~1.1. Raio corrigido: 1.65 → **6.5** (entre a
+Fragata, 3.74, e o Chefe, 7.7 — do tamanho certo pra "atirador comum mas bem maior"). Corrigido
+junto (todos proporcionais ao novo tamanho, todos eram baseados no raio errado):
+- Geometria do torus: `(1.3, 0.5)` → `(4.5, 2.0)` (mesma proporção raio/tubo, só escalada).
+- Cor de identidade: `0x6b7280`/emissive `0x2b2f36`/intensidade 0.6 → `0x9ca3af`/`0x4b5563`/0.9 —
+  o tom original era escuro demais contra o fundo preto do espaço, ilegível mesmo maior.
+- Distância de órbita (`HORDA_STANDOFF_FAR/NEAR`): 80/45 → 50/28 — a 80u ela ficava um ponto
+  quase invisível na tela o tempo todo, mesmo depois de aumentar o tamanho. Continua isenta do
+  teto genérico `ENEMY_FIRE_RANGE` (55u) em `index.js` por clareza (evita reintroduzir a mesma
+  fragilidade se o standoff for ajustado de novo no futuro), mesmo 50u já estando perto do limite.
+- Distância de spawn e magnitude da "turbulência" (chacoalha ao ser atingida) ajustadas junto.
+- `HORDA_HIT_RADIUS`/geometria/spawn distance eram os únicos valores derivados da medição errada
+  — dano/HP/contagem de filhotes/intervalo de tiro não dependiam disso, continuam iguais.
+
+**Lição pro próximo inimigo com medida relativa à nave do jogador**: `rail.getShipHitboxPoints()`
+retorna só o PONTO usado pra hit-test (colisão simplificada, raio 0.55) — não é o tamanho visual
+da nave. Pra "X naves de largura/altura", meça contra `SHIP_PRESETS[variant]` em `rail.js`
+(`wingHalfSpan*2` = envergadura real, `bodyLength` = comprimento real), não contra o ponto de
+colisão. Validado ao vivo de novo depois do fix (`window.__starAnki`, screenshot real): torus
+grande e claro, telegraph vermelho bem visível antes do tiro, split em mini-swarms continua
+funcionando no novo tamanho.
+
 

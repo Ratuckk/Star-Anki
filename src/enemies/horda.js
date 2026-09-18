@@ -10,18 +10,26 @@ import * as THREE from 'three'
 // explícito do usuário, mecânica nova sem precedente em nenhum outro inimigo hoje.
 export const HORDA_KIND = 'horda'
 
-// Hitbox: "3 naves de largura e 3 naves de altura" (nave = círculo de raio 0.55, ver
-// rail.getShipHitboxPoints) — 3 * (0.55*2) / 2 = 1.65 de raio.
-export const HORDA_HIT_RADIUS = 1.65
+// Hitbox: "3 naves de largura e 3 naves de altura". CORRIGIDO — a primeira versão usou o PONTO
+// de colisão da nave (raio 0.55, só usado internamente pra hit-test) em vez do modelo visual
+// real dela, e saiu 9x menor do que devia (ficava "um círculo minúsculo", flagrado pelo usuário
+// jogando de verdade). Medido contra a nave de verdade (rail.js, preset 'default'):
+// wingHalfSpan=2.6 → envergadura (largura) = 5.2; bodyLength=3.4 (altura/comprimento). 3x largura
+// = 15.6, 3x altura = 10.2 → raio médio ≈ (15.6/2 + 10.2/2) / 2 ≈ 6.45, arredondado pra 6.5 (fica
+// entre a Fragata, 3.74, e o Chefe, 7.7 — condizente com "atirador comum mas bem maior").
+export const HORDA_HIT_RADIUS = 6.5
 // Maior que o padrão (~0.2-0.3s) por ela ser bem maior — valor não especificado explicitamente,
 // escolhido por analogia (Fragata usa 0.3, ela é a segunda maior depois do Chefe).
 export const HORDA_DEATH_DURATION = 0.35
 export const HORDA_KILL_BONUS = 200
 // Cor de identidade (cinza) — usada no telegraph E no tingimento da explosão de morte, mesmo
 // dispatch genérico de colorFor() que todo outro inimigo usa. NÃO é a cor do projétil (vermelho,
-// só do projétil em si).
-export const HORDA_COLOR = 0x6b7280
-const HORDA_EMISSIVE = 0x2b2f36
+// só do projétil em si). CORRIGIDO — o tom original (0x6b7280 + emissive 0x2b2f36, intensidade
+// 0.6) era escuro demais contra o fundo preto do espaço, ficava ilegível a qualquer distância
+// mesmo depois de aumentar o tamanho. Mais claro/saturado e emissivo mais forte, mesma família
+// "cinza" (ainda não confunde com o azul-lavanda do Detrito nem o branco do Chefe).
+export const HORDA_COLOR = 0x9ca3af
+const HORDA_EMISSIVE = 0x4b5563
 // Folga maior que o padrão (-2.0) pra despawn por ficar atrás — ela é grande e orbita longe.
 export const HORDA_PASS_BEHIND = -5.0
 
@@ -45,28 +53,34 @@ export const HORDA_SHOTS_BEFORE_LEAVE = 6
 
 const HORDA_ORBIT_RADIUS = 12
 const HORDA_ORBIT_ANGULAR_SPEED = 0.35
-const HORDA_STANDOFF_FAR = 80 // distância-alvo normal (orbita "relativamente longe")
-const HORDA_STANDOFF_NEAR = 45 // distância-alvo enquanto o jogador está em impulso
+// CORRIGIDO — 80/45 deixava ela um ponto quase invisível na tela o tempo todo (some da
+// percepção do jogador mesmo depois de aumentar o tamanho). Ainda "relativamente longe" (mais
+// que o alcance genérico de 55u — por isso ela continua isenta de ENEMY_FIRE_RANGE, ver
+// index.js), mas dentro de uma distância onde o modelo bem maior (raio 6.5) realmente aparece.
+const HORDA_STANDOFF_FAR = 50 // distância-alvo normal (orbita "relativamente longe")
+const HORDA_STANDOFF_NEAR = 28 // distância-alvo enquanto o jogador está em impulso
 const HORDA_STANDOFF_CORRECTION_RATE = 0.6 // correção proporcional — funciona a qualquer velocidade de trilho
 
 const HORDA_SPIN_SPEED = 0.6 // giro cosmético em torno do próprio eixo, não afeta hitbox/mira
 
 export const HORDA_TURBULENCE_DURATION = 0.6 // "chacoalha" ao levar tiro sem morrer
-const HORDA_TURBULENCE_MAGNITUDE = 0.35
+const HORDA_TURBULENCE_MAGNITUDE = 1.2 // CORRIGIDO — proporcional ao novo tamanho (era 0.35, imperceptível num corpo de raio 6.5)
 
-const HORDA_SPAWN_DISTANCE_MIN = 75
-const HORDA_SPAWN_DISTANCE_MAX = 85
+// CORRIGIDO — alinhado ao novo HORDA_STANDOFF_FAR (era 75-85, herdado do standoff antigo de 80).
+const HORDA_SPAWN_DISTANCE_MIN = 45
+const HORDA_SPAWN_DISTANCE_MAX = 55
 const HORDA_BOX_X = 6
 const HORDA_BOX_Y = 4
 
 // Forma nova, ainda não usada por nenhum outro inimigo (pedido do usuário: "escolha uma forma
 // aleatória não vista ainda") — um torus grande combina com a ideia de "colmeia" que se parte em
-// enxame ao morrer.
-const enemyGeometry = new THREE.TorusGeometry(1.3, 0.5, 12, 24)
+// enxame ao morrer. Raio principal + tubo = HORDA_HIT_RADIUS (6.5), mesma proporção tubo/raio de
+// antes (~0.38) só escalada — CORRIGIDO junto com o hit radius (era 1.3/0.5, minúsculo).
+const enemyGeometry = new THREE.TorusGeometry(4.5, 2.0, 16, 32)
 const enemyMaterial = new THREE.MeshPhongMaterial({
   color: HORDA_COLOR,
   emissive: HORDA_EMISSIVE,
-  emissiveIntensity: 0.6,
+  emissiveIntensity: 0.9,
   flatShading: true,
 })
 
