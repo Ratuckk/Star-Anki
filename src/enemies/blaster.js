@@ -256,6 +256,22 @@ function runFireControl(enemy, dt, ctx) {
   }
 }
 
+// Único lugar que decide "pra onde volta depois de um ciclo de tiro" — usado tanto pelo bail-out
+// do TELEGRAPHING (alvo saiu de alcance) quanto pelo RECOVERY (terminou de atirar). Igual ao
+// comportamento antigo (updateBlasterRailMovement checava tumbleSpin ANTES de disengaging e ambos
+// davam `return` — asa quebrada sempre vencia): uma vez que a asa quebra, o Blaster nunca mais
+// "recupera" pra ENGAGED/DISENGAGING normal, só continua girando descontrolado (CRITICAL_TUMBLE)
+// pelo resto da vida dele, mesmo que também tenha atingido o limite de 4 tiros nesse meio tempo.
+function returnFromFireCycle(enemy, ctx) {
+  if (enemy.wingBroken) {
+    enemy.fsm.transition(ENEMY_STATES.CRITICAL_TUMBLE, null, ctx)
+  } else if (enemy.disengaging) {
+    enemy.fsm.transition(ENEMY_STATES.DISENGAGING, null, ctx)
+  } else {
+    enemy.fsm.transition(ENEMY_STATES.ENGAGED, null, ctx)
+  }
+}
+
 const BLASTER_STATES = {
   [ENEMY_STATES.SPAWNING]: {
     update(enemy, dt, ctx) {
@@ -297,8 +313,9 @@ const BLASTER_STATES = {
 
       if (!enemyInFireRange(enemy, ctx)) {
         // alvo escapou da janela de disparo durante o telegraph: cancela e volta pro estado normal
-        // (o antigo timer contínuo também nunca disparava fora de alcance nesse ponto)
-        enemy.fsm.transition(ENEMY_STATES.ENGAGED, null, ctx)
+        // (o antigo timer contínuo também nunca disparava fora de alcance nesse ponto) — mesma
+        // regra de precedência de returnFromFireCycle (asa quebrada nunca "cancela" o tumble)
+        returnFromFireCycle(enemy, ctx)
         return
       }
       enemy.fireTimer -= dt
@@ -318,18 +335,7 @@ const BLASTER_STATES = {
   [ENEMY_STATES.RECOVERY]: {
     onEnter(enemy, ctx) {
       enemy.fireTimer = ctx.randomEnemyFireInterval()
-      // Igual ao comportamento antigo (updateBlasterRailMovement checava tumbleSpin ANTES de
-      // disengaging e ambos davam `return` — ou seja, asa quebrada sempre vencia): uma vez que a
-      // asa quebra, o Blaster nunca mais "recupera" pra ENGAGED/DISENGAGING normal, só continua
-      // girando descontrolado (CRITICAL_TUMBLE) pelo resto da vida dele, mesmo que também tenha
-      // atingido o limite de 4 tiros nesse meio tempo.
-      if (enemy.wingBroken) {
-        enemy.fsm.transition(ENEMY_STATES.CRITICAL_TUMBLE, null, ctx)
-      } else if (enemy.disengaging) {
-        enemy.fsm.transition(ENEMY_STATES.DISENGAGING, null, ctx)
-      } else {
-        enemy.fsm.transition(ENEMY_STATES.ENGAGED, null, ctx)
-      }
+      returnFromFireCycle(enemy, ctx)
     },
   },
 

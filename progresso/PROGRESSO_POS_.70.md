@@ -471,6 +471,25 @@ quebrada só existe em modo trilho, nunca em arena), fica exatamente igual ao de
    `CRITICAL_TUMBLE` confirmado disparando/telegrafando normalmente enquanto gira, e persistindo
    através de múltiplos ciclos de tiro mesmo depois do limiar de desengate (é onde o bug do item 2
    foi pego). Não tocado: os outros 11 tipos de inimigo, que continuam na fase seguinte.
+9. **Segunda rodada de caça a bugs** (pedido explícito do usuário, "última checagem de gameplay"),
+   depois do commit acima:
+   - Testado tiro REAL do jogador (`combat.tryFire`) contra um Blaster de esquadrão até acertar —
+     confirma que o caminho de colisão de verdade (não só a transição de FSM forçada manualmente)
+     chega em `breakBlasterWing`/`CRITICAL_TUMBLE` corretamente.
+   - **2º bug achado e corrigido**: o bail-out do `TELEGRAPHING` (quando o alvo sai de alcance no
+     meio do telegraph) também voltava incondicionalmente pra `ENGAGED`, ignorando `wingBroken` —
+     mesma classe do bug do item 2, só que num ponto de transição diferente. Extraída a decisão
+     "pra onde volta depois de um ciclo de tiro" pra uma função só (`returnFromFireCycle`,
+     `wingBroken`→`CRITICAL_TUMBLE` sempre primeiro), reusada por `RECOVERY` e pelo bail-out do
+     `TELEGRAPHING` — impossível os dois pontos divergirem de novo no futuro.
+   - Sweep de compatibilidade: spawnados os 13 tipos de inimigo simultaneamente (incluindo Boss/
+     Golden/Fragata de fora, e squadron) e rodados ~240 frames — zero erros de console, zero
+     exceções no loop, `getEnemySnapshots`/`getMinimapBlips`/`getHitboxTargets` sem lançar. O
+     desaparecimento de Tank/Time/Detrito/Ima/MiniSwarm depois de alguns segundos é o despawn por
+     distância percorrida genérico (pré-existente, eles não têm movimento próprio no trilho pra
+     acompanhar o avanço do trilho) — não é regressão. Fragata não spawna fora de arena
+     (comportamento já documentado, não relacionado).
+   - `node --check` + `node src/selftest.mjs` 100% aprovado depois da correção do 2º bug.
 
 
 
