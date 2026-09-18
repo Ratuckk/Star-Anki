@@ -631,7 +631,7 @@ chat, em vez de responder o checklist inteiro em texto corrido.
    Nenhum inimigo existente usa essas mecânicas hoje — são perguntas em aberto pra inimigos
    futuros, mesmo padrão de "não existe referência ainda" já usado em outros itens do template.
 
-### Novo inimigo: Horda (atirador grande, fusão Blaster + Mini-Swarm)
+### v0.79.0 — Novo inimigo: Horda (atirador grande, fusão Blaster + Mini-Swarm)
 
 Ficha completa preenchida pelo usuário via [TEMPLATE_INIMIGOS.md](../TEMPLATE_INIMIGOS.md) (versão
 HTML), com duas rodadas de perguntas de clarificação antes de codar (checklist do template
