@@ -25,9 +25,10 @@ export const IMA_FIELD_STRENGTH = 180
 const GROUP_MIN = 3
 const GROUP_MAX = 5
 const SPREAD = 3.5
-// Pedido do usuário: estilo Star Fox 64 — surge visível a 40-65u
-const SPAWN_DISTANCE_MIN = 40
-const SPAWN_DISTANCE_MAX = 65
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 40-65u (atualizado +20%, ver pedido
+// "inimigos no mínimo 20% mais distantes")
+const SPAWN_DISTANCE_MIN = 48 // 40 * 1.2
+const SPAWN_DISTANCE_MAX = 78 // 65 * 1.2
 const BOX_X = 6
 const BOX_Y = 5
 

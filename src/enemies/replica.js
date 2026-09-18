@@ -14,9 +14,10 @@ export const REPLICA_HIT_RADIUS = 1.87 // 1.7 * 1.10 (+10%)
 export const REPLICA_DEATH_DURATION = 0.2
 export const REPLICA_HP = 3
 export const REPLICA_KILL_BONUS = 30
-// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-70u
-const SPAWN_DISTANCE_MIN = 45
-const SPAWN_DISTANCE_MAX = 70
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-70u (atualizado +20%, ver pedido
+// "inimigos no mínimo 20% mais distantes")
+const SPAWN_DISTANCE_MIN = 54 // 45 * 1.2
+const SPAWN_DISTANCE_MAX = 84 // 70 * 1.2
 const BOX_X = 6
 const BOX_Y = 4
 

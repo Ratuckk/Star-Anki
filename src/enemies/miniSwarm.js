@@ -23,9 +23,10 @@ const MINI_SWARM_DIVE_PASS_BEHIND = -2.0
 const MINI_SWARM_DIVE_BEHIND_GRACE_S = 0.15
 const MINI_SWARM_DIVE_OFFSET_FADE_DIST = 15
 // Pedido do usuário: combate estilo Star Fox 64 — esquadrão surge visível (48-75u) e mergulha
-// em direção à câmera de forma dinâmica e legível.
-const BLASTER_SPAWN_DISTANCE_MIN = 48
-const BLASTER_SPAWN_DISTANCE_MAX = 75
+// em direção à câmera de forma dinâmica e legível. (atualizado +20%, ver pedido "inimigos no
+// mínimo 20% mais distantes")
+const BLASTER_SPAWN_DISTANCE_MIN = 58 // 48 * 1.2 = 57.6, arredondado pra cima
+const BLASTER_SPAWN_DISTANCE_MAX = 90 // 75 * 1.2
 const BLASTER_BOX_X = 9
 const BLASTER_BOX_Y = 6
 

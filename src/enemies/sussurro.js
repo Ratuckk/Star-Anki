@@ -15,9 +15,10 @@ export const SUSSURRO_HP = 2
 export const SUSSURRO_KILL_BONUS = 25
 export const SUSSURRO_SUMMON_AFTER_S = 6 // sobreviveu esse tempo sem morrer → chama reforços
 
-// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
-const SPAWN_DISTANCE_MIN = 45
-const SPAWN_DISTANCE_MAX = 75
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u (atualizado +20%, ver pedido
+// "inimigos no mínimo 20% mais distantes")
+const SPAWN_DISTANCE_MIN = 54 // 45 * 1.2
+const SPAWN_DISTANCE_MAX = 90 // 75 * 1.2
 const BOX_X = 7
 const BOX_Y = 5
 const ADVANCE_SPEED = 8

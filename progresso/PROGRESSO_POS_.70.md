@@ -529,5 +529,40 @@ de ataque automático, sem voltar ao "ataca tudo com mira perfeita" de antes.
    no vídeo do usuário); log de voo confirmou 3 aliados diferentes (Slippy, Phantom, Peppy)
    engajando sozinhos contra alvos distintos nos mesmos 10s, sem nenhum comando `[D]` manual.
 
+### v0.77.0 — Inimigos 20% mais distantes no spawn + versão atualizada
+
+Pedido do usuário: "não esqueça de atualizar a versão" + "inimigos surjam no mínimo 20% mais
+distantes do jogador". Versão bumped `v0.76.1` → `v0.77.0` (cobre também a Fase 1 do overhaul FSM
+e o fix do esquadrão acima, que ainda não tinham gerado bump).
+
+1. **Levantamento antes de mexer**: toda constante de distância de spawn em `src/enemies/*.js` +
+   `src/main-constants.js` (Golden). Achados que mudam a forma de aplicar o pedido:
+   - Em modo ARENA, `spawnPositionForEnemy()` (`shared.js`) **ignora** o min/max de cada inimigo e
+     usa sempre `ENEMY_ARENA_SPAWN_MIN/MAX` — inclusive Boss (`ENEMY_ARENA_SPAWN_MAX*0.6` a
+     `ENEMY_ARENA_SPAWN_MAX`) e Fragata (que passa `50, 85` pra essa função, mas como só spawna em
+     arena, esses dois números são código morto).
+   - Sentinela tem `SPAWN_DISTANCE_MIN/MAX` (45/70) declarados mas **nunca lidos** — a posição
+     real usa `ENGAGE_STANDOFF` (48u fixo), mantido durante a luta INTEIRA (não só no spawn).
+     Perguntei ao usuário se queria escalar isso também — respondeu que sim, mas com **+30%** em
+     vez de +20% (justamente por ser a distância de combate inteira, não só a de entrada).
+   - Boss orbes de pergunta (`BOSS_SPREAD_MIN/MAX_BASE`) e a distância de preview cinematográfico
+     do Boss/Dourado (`ARENA_PREVIEW_DISTANCE=220`) são categorias diferentes (alvo de
+     pergunta / cutscene, não "inimigo aparecendo") — não tocados.
+2. **+20% aplicado** (arredondado, nunca abaixo de 20%) em: `BLASTER_SPAWN_DISTANCE_MIN/MAX`
+   (45/75→54/90), Tank (45/70→54/84), TimeEnemy (45/75→54/90), Detrito (45/80→54/96), Ima
+   (40/65→48/78), Replica (45/70→54/84), Sussurro (45/75→54/90), Verme (45/75→54/90), MiniSwarm
+   (48/75→58/90, 58 arredondado pra cima de 57.6), `ENEMY_ARENA_SPAWN_MIN/MAX` em `shared.js`
+   (45/80→54/96 — cobre automaticamente Boss e Fragata via a mesma função), `GOLDEN_SPREAD_MIN/MAX`
+   em `main-constants.js` (40/90→48/108, com os defaults internos de `golden.js` sincronizados).
+3. **+30% aplicado** em: `ENGAGE_STANDOFF` da Sentinela (48→62).
+4. **Validação**: `node --check` + `selftest.mjs` 100% aprovado. Ao vivo via
+   `window.__starAnki`: spawnado cada um dos 10 tipos "normais" e medida a distância real até o
+   jogador no instante do spawn — todas dentro da faixa nova esperada. A Sentinela mediu 48.4u de
+   distância ao jogador nesse teste (não os 62 esperados) por causa de um desalinhamento
+   pré-existente e não relacionado entre `rail.getSpawnFrame()` (usado por `projectSentinelaToWorld`,
+   ~14u atrás do frame atual do jogador no momento do teste) e a posição real do jogador — o campo
+   `enemy.depth` no spawn confirmou os 62 exatos, então a constante está certa; o desvio é só no
+   metro usado pra verificar, não no valor aplicado.
+
 
 

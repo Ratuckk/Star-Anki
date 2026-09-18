@@ -113,8 +113,9 @@ export const REVIEW_ENEMY_INTERVAL_MULT = 0.6
 
 export const GOLDEN_INTERVAL_MIN_MS = 45000
 export const GOLDEN_INTERVAL_MAX_MS = 100000
-export const GOLDEN_SPREAD_MIN = 40
-export const GOLDEN_SPREAD_MAX = 90
+// Pedido do usuário: inimigos no mínimo 20% mais distantes (era 40-90)
+export const GOLDEN_SPREAD_MIN = 48 // 40 * 1.2
+export const GOLDEN_SPREAD_MAX = 108 // 90 * 1.2
 
 export const TIME_ENEMY_SPAWN_CHANCE = 0.2
 // v0.34.0: variante grande da ampulheta — sorteada dentro do mesmo branch de spawn da normal

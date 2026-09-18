@@ -6,9 +6,10 @@ import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 export const TIME_KIND = 'time'
 export const TIME_COLOR = 0xd500f9 // Magenta neon vibrante
 const TIME_EMISSIVE = 0x660088
-// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u
-const SPAWN_DISTANCE_MIN = 45
-const SPAWN_DISTANCE_MAX = 75
+// Pedido do usuário: estilo Star Fox 64 — surge visível a 45-75u (atualizado: +20%, ver pedido
+// "inimigos no mínimo 20% mais distantes")
+const SPAWN_DISTANCE_MIN = 54 // 45 * 1.2
+const SPAWN_DISTANCE_MAX = 90 // 75 * 1.2
 const BOX_X = 7
 const BOX_Y = 5
 export const TIME_HIT_RADIUS = 1.98 // 1.8 * 1.10 (+10%)

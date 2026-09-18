@@ -12,12 +12,15 @@ export const SENTINELA_HIT_RADIUS = 2.2 // 10% maior (era 2.0)
 export const SENTINELA_DEATH_DURATION = 0.25
 export const SENTINELA_HP = 10
 
+// Código morto (nunca lido em lugar nenhum deste arquivo — a posição de spawn real usa
+// ENGAGE_STANDOFF abaixo). Não atualizados pelo pedido "20% mais distantes" de propósito: mexer
+// em constante sem uso nenhum não muda o jogo, só ficaria enganoso deixar como se fizesse algo.
 const SPAWN_DISTANCE_MIN = 45
 const SPAWN_DISTANCE_MAX = 70
 const BOX_X = 6
 const BOX_Y = 4
 
-const ENGAGE_STANDOFF = 48 // distância-alvo fixa à frente da nave durante os 4 ataques
+const ENGAGE_STANDOFF = 62 // 48 * 1.3 — pedido do usuário (inimigos 20% mais distantes; Sentinela +30% à parte, já que este valor é a distância de combate inteira dela, não só o spawn)
 const LATERAL_TRACK_RATE = 7 // rastreamento lateral suave do jogador
 const LEAVE_SPEED = 32 // velocidade de fuga após o 4º disparo
 export const SENTINELA_SHOTS_TOTAL = 4

@@ -15,8 +15,8 @@ export const BLASTER_HIT_RADIUS = 2.28 // 2.07 * 1.10
 export const BLASTER_DEATH_DURATION = 0.2
 export const BLASTER_KILL_BONUS = 30
 
-export const BLASTER_SPAWN_DISTANCE_MIN = 45
-export const BLASTER_SPAWN_DISTANCE_MAX = 75
+export const BLASTER_SPAWN_DISTANCE_MIN = 54 // 45 * 1.2 — pedido do usuário (inimigos 20% mais distantes)
+export const BLASTER_SPAWN_DISTANCE_MAX = 90 // 75 * 1.2
 export const BLASTER_BOX_X = 5.2
 export const BLASTER_BOX_Y = 3.4
 

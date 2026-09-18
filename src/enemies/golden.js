@@ -115,7 +115,9 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
 
   return {
     spawn(opts = {}) {
-      const { distanceMin = 40, distanceMax = 90 } = opts
+      // defaults só usados se chamado sem opts — o caminho real vem de GOLDEN_SPREAD_MIN/MAX em
+      // main-constants.js, mantidos em sincronia (pedido: inimigos 20% mais distantes)
+      const { distanceMin = 48, distanceMax = 108 } = opts
       const frame = rail.getFrameAt(0)
       const azimuth = Math.random() * Math.PI * 2
       const elevation = (Math.random() * 2 - 1) * THREE.MathUtils.degToRad(50)

@@ -16,8 +16,8 @@ export const DETRITO_HP = 9
 export const DETRITO_KILL_BONUS = BLASTER_KILL_BONUS / 2 // bônus menor, não é alvo de combate de verdade
 
 // bounds de spawn estilo Star Fox 64: visíveis e legíveis na pista
-const SPAWN_DISTANCE_MIN = 45
-const SPAWN_DISTANCE_MAX = 80
+const SPAWN_DISTANCE_MIN = 54 // 45 * 1.2 — pedido do usuário (inimigos 20% mais distantes)
+const SPAWN_DISTANCE_MAX = 96 // 80 * 1.2
 const BOX_X = 11
 const BOX_Y = 8
 const SPIN_RATE_MIN = 0.12

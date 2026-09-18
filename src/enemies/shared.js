@@ -76,8 +76,10 @@ export function randomSpawnAroundArena(rail, distanceMin, distanceMax) {
   return center.add(offset)
 }
 
-export const ENEMY_ARENA_SPAWN_MIN = 45
-export const ENEMY_ARENA_SPAWN_MAX = 80
+// Pedido do usuário: inimigos no mínimo 20% mais distantes (era 45-80; também define a faixa de
+// spawn do Boss em arena, ver boss.js: ENEMY_ARENA_SPAWN_MAX*0.6 a ENEMY_ARENA_SPAWN_MAX).
+export const ENEMY_ARENA_SPAWN_MIN = 54 // 45 * 1.2
+export const ENEMY_ARENA_SPAWN_MAX = 96 // 80 * 1.2
 
 export function spawnPositionForEnemy(rail, distanceMin, distanceMax, boxX, boxY) {
   return rail.isArena()
