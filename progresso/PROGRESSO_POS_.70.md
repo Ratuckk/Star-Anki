@@ -177,6 +177,61 @@ Atendendo à seleção das 5 melhorias de Qualidade de Vida (QOL) aprovadas pelo
 
 ---
 
+### Hotfix crítico: crash imediato ao iniciar qualquer gameplay — v0.76.1
+
+**Sintoma reportado pelo usuário**: jogo crashava assim que o gameplay começava no GitHub Pages
+(`ratuckk.github.io/Star-Anki`). Reproduzido no navegador: após pular a decolagem, a cena
+congelava (nenhum novo frame renderizado) e o console enchia com `ReferenceError` a cada frame.
+
+**Causa raiz**: na Etapa 7a do overhaul de organização (extração de `runFrame()`/`tick()` de
+`main.js` para `src/game-loop.js`, commit `7a6d9b8`), vários vetores temporários do módulo foram
+renomeados com prefixo `_` (`_fireDirection`, `_reticleWorldPos`, etc. — reuso pra evitar alocação
+por frame) mas **duas leituras não foram atualizadas**, ficando com o nome antigo sem `_`:
+- [src/game-loop.js:413](../src/game-loop.js:413) — `combat.update(dt, playerPos, { ...,
+  aimDirection: fireDirection, ... })` (deveria ser `_fireDirection`). Essa chamada roda
+  incondicionalmente todo frame de combate, então o `ReferenceError` disparava imediatamente ao
+  sair da cutscene de decolagem — não é um bug de borda, é o primeiro frame de gameplay real.
+- [src/game-loop.js:492](../src/game-loop.js:492) — `const ndc = reticleWorldPos.project(camera)`
+  (deveria ser `_reticleWorldPos`), um pouco mais adiante na mesma função — só seria alcançado
+  depois de corrigir o primeiro.
+
+Como módulos ES rodam em modo estrito, ler um identificador nunca declarado lança
+`ReferenceError` (não `undefined` silencioso). Como o erro acontecia ANTES de
+`renderer.render(scene, camera)` (final de `runFrame`), a tela congelava no último frame
+renderizado com sucesso (a cutscene) enquanto o loop `requestAnimationFrame` continuava
+reagendando e re-falhando silenciosamente no mesmo ponto — daí o "crash" sem tela de erro visível
+pro jogador, só travamento total.
+
+**Por que passou pela validação anterior**: o `node --check` citado na seção de QOL acima só
+valida sintaxe — `fireDirection` e `reticleWorldPos` são identificadores sintaticamente válidos,
+só nunca foram declarados. Só um `ReferenceError` em tempo de execução (ou lint com
+`no-undef`) pegaria isso. Vale considerar adicionar ESLint com essa regra ao fluxo de validação.
+
+**Correção**: `_fireDirection` e `_reticleWorldPos` nos dois pontos. Como `.project(camera)` muta
+o vetor in-place, confirmado via grep que `_reticleWorldPos` não é lido de novo depois da linha
+492 no mesmo frame (é reescrito do zero no início do próximo frame, linha 179), então a mutação é
+segura.
+
+**Validação**: reproduzido o crash ao vivo no `ratuckk.github.io/Star-Anki` antes da correção
+(erro idêntico no console). Localmente, o painel do navegador ficou oculto durante boa parte do
+teste (a app hospedeira estava minimizada), o que suspende o `requestAnimationFrame` mas não o
+`document.visibilityState` — sintoma: `state.launchCutsceneTimer` não decrementava mesmo após
+segundos reais de espera. Contornado usando o hook de debug `window.__starAnki.step(frames, dtMs)`
+(chama `runFrame` diretamente, sem depender de rAF) pra avançar manualmente até a fase de combate
+e rodar 500 frames simulados (~8.3s) de combate real — zero exceções, 15 inimigos ativos, jogador
+avançando normalmente. `grep` confirmou que não sobrou nenhuma outra referência sem `_` a
+`cosmicTint1/2/3`, `baseColor`, `blendedShift`, `finalColor`, `threatProj`, `threatCamDir`,
+`toThreat` ou `minimapRel` (os outros temporários do mesmo padrão em `game-loop.js`).
+
+**Nota lateral (não é bug)**: o `service-worker.js` do projeto é network-first pra assets da
+própria origem (só cai pro cache em modo offline), então não contribuiu pro crash nem atrasa a
+propagação deste fix pros jogadores — a próxima visita já busca o `game-loop.js` corrigido da
+rede.
+
+- **Versão**: `v0.76.0` → **`v0.76.1`**.
+
+---
+
 ### Auditoria Geral de Bugs, Ações Insolicitadas de IA e Otimização de GC — v0.76.0
 
 Documento de auditoria dedicado completo criado em [`REGISTRO_AUDITORIA_E_CORRECOES.md`](REGISTRO_AUDITORIA_E_CORRECOES.md).

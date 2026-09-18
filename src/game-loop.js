@@ -410,7 +410,7 @@ export function createGameLoop(deps) {
     const shipHitboxPoints = rail.getShipHitboxPoints ? rail.getShipHitboxPoints() : null
     const events = combat.update(dt, playerPos, {
       enemiesActive,
-      aimDirection: fireDirection,
+      aimDirection: _fireDirection,
       ramDamage: ramActive ? RAM_DAMAGE : 0,
       allowBossOrbHit: state.phase === 'bossBuildup',
       boostActive: boostOn,
@@ -489,7 +489,7 @@ export function createGameLoop(deps) {
       hud.showCombatEventBanner('FRENESI DE FOCO!', 'DISPARO TRIPLO ACELERADO (5S)', 'frenzy')
     }
 
-    const ndc = reticleWorldPos.project(camera)
+    const ndc = _reticleWorldPos.project(camera)
     hud.setReticlePosition(
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
       THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
