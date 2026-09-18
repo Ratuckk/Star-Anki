@@ -1171,16 +1171,54 @@
     text-shadow: 0 1px 4px #000;
     pointer-events: none;
   }
-  .hud-pause {
+  /* ============ MENU DE PAUSA (overhaul v0.80.0) ============ */
+  /* mesmo padrão visual do .card-choice-overlay (upgrade de carta) — overlay full-screen com
+     blur, por cima do jogo congelado dentro do próprio #game-screen, não uma tela via showScreen */
+  .pause-overlay {
     position: absolute;
     inset: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(11, 13, 18, 0.6);
-    color: #f5f5f7;
-    font-size: 2rem;
-    font-weight: 700;
+    gap: 1.4rem;
+    background: radial-gradient(circle at center, rgba(14, 23, 38, 0.92) 0%, rgba(6, 9, 15, 0.97) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 50;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+  .pause-panel {
+    width: min(480px, 92vw);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+  .pause-header {
+    text-align: center;
+    margin-bottom: 0.2rem;
+  }
+  .pause-menu-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+  .pause-menu-buttons button {
+    margin-top: 0;
+    width: 100%;
+  }
+  .pause-confirm-text {
+    color: #c7ccd4;
+    font-size: 0.95rem;
+    text-align: center;
+    margin: 0 0 0.4rem;
+  }
+  .pause-options-scroll {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 4px;
   }
 
   /* ============ BARRA DE VIDA DO CHEFE ============ */

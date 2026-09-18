@@ -689,4 +689,60 @@ cumprido à risca — várias respostas mudaram decisões de design, ver abaixo)
      segurança própria); qualquer inimigo novo com engajamento > ~10s no trilho vai precisar da
      mesma isenção ou vai sumir cedo demais do mesmo jeito.
 
+### v0.80.0 — Overhaul do menu de pausa (continuar/opções/reiniciar/sair)
+
+Pedido do usuário: antes disso, pausar (`Esc`/`P`, ver `keybindings.js`) só mostrava um "Pausado"
+sem nenhum botão (`.hud-pause` em `index.html`, sem nenhum CSS de verdade). Overhaul adiciona um
+menu de verdade com 4 opções, decididas via clarificação: (1) opções "básicas" = só o que faz
+efeito imediato na partida em andamento (visual/sensibilidade/keybinds — vida inicial e esquadrão
+inicial ficaram de fora de propósito, só valem pra próxima partida); (2) Reiniciar/Sair exigem
+confirmação (descartam pontuação/progresso); (3) "Reiniciar" = mesma partida do zero (mesmo
+baralho/config), não volta pro menu.
+
+1. **`src/hud-pause.js`** (novo) — overlay que fica POR CIMA do jogo congelado dentro do próprio
+   `#game-screen` (mesmo padrão do `.card-choice-overlay` de upgrade de carta, não é uma tela via
+   `showScreen()`). Views internas: menu principal (Continuar/Opções/Reiniciar/Sair) → Opções
+   (3 seções reaproveitadas, ver abaixo) → confirmação (texto de aviso + Sim/Cancelar) antes de
+   Reiniciar ou Sair. `hide()` limpa qualquer listener de rebind de teclado ainda pendente.
+2. **`src/hud-settings.js` refatorado** — as 3 seções que a pausa reusa (Visual: barra de vida dos
+   inimigos/nave/estilo do HUD vital; Sensibilidade: giro em arena; Controles: rebind de teclado)
+   viraram builders exportados (`buildVisualSection`/`buildSensitivitySection`/
+   `buildKeybindSection`) em vez de código inline dentro de `showSettingsScreen` — evita duplicar
+   ~180 linhas entre a tela de Configurações completa (pré-jogo) e o painel enxuto da pausa.
+   `buildKeybindSection` retorna `{el, cleanup}` porque precisa de um listener global de keydown
+   pro modo "Pressione uma tecla..." — `showSettingsScreen` e `hud-pause.js` chamam `cleanup()`
+   nos seus próprios pontos de saída (senão o listener vaza). Gamepad ficou de fora da pausa de
+   propósito (só a tela de Configurações completa continua tendo).
+3. **`src/game-menu.js`**: `playAgain` (já existia, só uso interno do botão "Jogar de novo" do fim
+   de setor) e `restart` agora também são passados dentro do objeto `menu` que `startGame()` entrega
+   pro `mountGameFn` — antes só continham `sessionResults`/`renderEndScreen`/`startingWingmen`.
+4. **`src/mount-game.js`**: `hud.bindPauseMenu({ onResume, onRestart, onExitToMenu })` chamado
+   depois que `teardown()` já existe no closure — `onRestart`/`onExitToMenu` seguem o mesmo
+   contrato que `endSector()` já usava (`teardown()` da partida atual, depois o próximo passo).
+5. **CSS novo em `index.html`**: `.pause-overlay`/`.pause-panel`/`.pause-menu-buttons`/
+   `.pause-confirm-text`/`.pause-options-scroll` — reaproveita classes já existentes pra tudo mais
+   (`.card-choice-badge`/`.card-choice-title` no cabeçalho, `.btn-secondary`/`.btn-danger`/
+   `.back-link`/`.settings-section`/`.keybind-*` no corpo). `.hud-pause` (não mais usada) removida.
+6. **Validado ao vivo** via `window.__starAnki.step()` + eventos de teclado DESPACHADOS DIRETO NA
+   PÁGINA (`window.dispatchEvent(new KeyboardEvent(...))`) — o `computer.key()` do navegador do
+   Claude não estava chegando nos listeners da página nesta sessão (pane em segundo plano
+   suspendia `requestAnimationFrame` também, confirmado via `state.lastTime` parado enquanto
+   `performance.now()` seguia andando). Fluxo completo testado: pausar → abrir Opções → rebind de
+   tecla (entra/sai do modo "Pressione uma tecla...", sem travar) → Voltar → Continuar (despausa) →
+   pausar de novo → Reiniciar → confirmação → Cancelar (volta pro menu, não reinicia) → Reiniciar
+   de verdade (nova sessão, mesmo baralho, `window.__starAnki` recriado) → pausar → Sair →
+   confirmação → Sair de verdade (volta pro `#pregame-screen`, `window.__starAnki` removido). Zero
+   erros novos no console em qualquer ponto do fluxo.
+7. **Armadilha de sessão concorrente**: outra sessão trabalhando no MESMO repositório (usuário
+   rodando duas conversas em paralelo) commitou `08abbfe` ("v0.78.2 — HUD orbital") enquanto as
+   edições desta entrega em `src/hud-game.js` ainda estavam só no working tree — o `git add`
+   daquela sessão varreu junto as mudanças da pausa que já estavam no mesmo arquivo (import de
+   `buildPauseOverlay`, `pauseOverlay`, `bindPauseMenu`), então parte do código da pausa foi parar
+   num commit sobre HUD orbital, já publicado (`git push`) antes desta entrega perceber. Não dá
+   pra desfazer isso sem reescrever histórico já publicado — os arquivos restantes desta entrega
+   (`hud-pause.js`, `hud-settings.js`, `game-menu.js`, `mount-game.js`, `index.html`) foram
+   commitados normalmente por cima. **Lição**: com duas sessões editando o mesmo repo ao mesmo
+   tempo, um arquivo tocado por AMBAS pode ter suas mudanças misturadas no commit de qualquer uma
+   das duas, mesmo que a outra sessão não tenha terminado — nenhuma automação evita isso hoje.
+
 

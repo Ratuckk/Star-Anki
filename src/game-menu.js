@@ -83,6 +83,11 @@ export function createGameMenu(mountGameFn) {
       sessionResults,
       renderEndScreen,
       startingWingmen: settings.startingWingmen || 0,
+      // menu de pausa (overhaul v0.80.0) — "Sair pro Menu Principal"/"Reiniciar Partida" chamam
+      // isso depois de já terem rodado teardown() da partida atual (mount-game.js), mesmo
+      // contrato que endSector()/renderEndScreen já seguiam pro "Jogar de novo" do fim de setor.
+      restart,
+      playAgain,
     })
   }
 
@@ -253,5 +258,9 @@ export function createGameMenu(mountGameFn) {
     })
   }
 
-  return { restart }
+  // `playAgain` era só interno (chamado pelo botão "Jogar de novo" da tela de fim de setor) —
+  // agora também é chamado pelo menu de pausa ("Reiniciar Partida", overhaul v0.80.0) — o
+  // chamador é responsável por rodar teardown() da partida atual ANTES de chamar isso (mesmo
+  // contrato que endSector() já seguia).
+  return { restart, playAgain }
 }

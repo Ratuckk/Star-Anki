@@ -6,85 +6,12 @@ import {
 import { showScreen } from './hud-shared.js'
 import { SHIP_VISUAL_OPTIONS } from './rail.js'
 
-// Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
-// de comportamento.
-export function showSettingsScreen({ onBack }) {
-  showScreen('settings')
-  const root = document.getElementById('settings-screen')
-  root.innerHTML = ''
-
-  let gamepadRaf = null
-  let waitingRebindAction = null
-  let waitingRebindBtn = null
-  let waitingGpAction = null
-  let waitingGpBtn = null
-  // botões pressionados no frame anterior — usado só pra detectar a borda de subida enquanto
-  // se espera o próximo aperto pra mapear uma ação (evita capturar o mesmo aperto que abriu o
-  // modo "Pressione um botão..." se ele ainda estiver segurado)
-  let prevGpButtonsPressed = {}
-
-  const back = document.createElement('button')
-  back.className = 'back-link'
-  back.textContent = '← Voltar'
-  back.addEventListener('click', () => { cleanup(); onBack() })
-  root.appendChild(back)
-
-  const title = document.createElement('h2')
-  title.textContent = 'Configurações'
-  root.appendChild(title)
-
-  const lifeSection = document.createElement('div')
-  lifeSection.className = 'settings-section'
-  const lifeTitle = document.createElement('h3')
-  lifeTitle.textContent = 'Vida'
-  lifeSection.appendChild(lifeTitle)
-
-  const lifeRow = document.createElement('div')
-  lifeRow.className = 'settings-row'
-  const lifeLabel = document.createElement('label')
-  lifeLabel.textContent = 'Vida inicial'
-  lifeRow.appendChild(lifeLabel)
-  const lifeInput = document.createElement('input')
-  lifeInput.type = 'number'
-  lifeInput.min = '1'
-  lifeInput.max = '20'
-  lifeInput.value = String(getSettings().startingHealth)
-  lifeInput.addEventListener('change', () => {
-    const n = Math.max(1, Math.min(20, Math.round(Number(lifeInput.value)) || 1))
-    lifeInput.value = String(n)
-    setSetting('startingHealth', n)
-  })
-  lifeRow.appendChild(lifeInput)
-  lifeSection.appendChild(lifeRow)
-
-  const wingmanRow = document.createElement('div')
-  wingmanRow.className = 'settings-row'
-  const wingmanLabel = document.createElement('label')
-  wingmanLabel.textContent = 'Companheiros iniciais na ala'
-  wingmanRow.appendChild(wingmanLabel)
-  const wingmanSelect = document.createElement('select')
-  const wingmanOpts = [
-    { val: 0, text: 'Nenhum (Voo Solo)' },
-    { val: 1, text: '1 Ala (Falco)' },
-    { val: 2, text: '2 Alas (Falco & Peppy)' },
-    { val: 3, text: '3 Alas (Falco, Peppy & Slippy)' },
-    { val: 4, text: '4 Alas (Esquadrão Completo)' },
-  ]
-  wingmanOpts.forEach((o) => {
-    const opt = document.createElement('option')
-    opt.value = String(o.val)
-    opt.textContent = o.text
-    if ((getSettings().startingWingmen || 0) === o.val) opt.selected = true
-    wingmanSelect.appendChild(opt)
-  })
-  wingmanSelect.addEventListener('change', () => {
-    setSetting('startingWingmen', Number(wingmanSelect.value) || 0)
-  })
-  wingmanRow.appendChild(wingmanSelect)
-  lifeSection.appendChild(wingmanRow)
-
-  root.appendChild(lifeSection)
-
+// Overhaul do menu de pausa (v0.80.0): as 3 seções abaixo (Visual/Sensibilidade/Controles de
+// teclado) precisavam existir tanto aqui (tela de Configurações completa, pré-jogo) quanto no
+// painel de "opções básicas" da pausa (hud-pause.js, dentro de uma partida em andamento) — em
+// vez de duplicar o HTML/lógica nos dois lugares, viraram builders exportados e reaproveitados
+// pelos dois. `showSettingsScreen` continua idêntico a antes pra quem já usa (pregame/game-menu).
+export function buildVisualSection() {
   const visualSection = document.createElement('div')
   visualSection.className = 'settings-section'
   const visualTitle = document.createElement('h3')
@@ -172,9 +99,11 @@ export function showSettingsScreen({ onBack }) {
   }
   renderVitalsStyleButtons()
 
-  root.appendChild(visualSection)
+  return visualSection
+}
 
-  // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
+// Fase 9 (ideia all-range 5): sensibilidade de giro configurável
+export function buildSensitivitySection() {
   const allRangeSection = document.createElement('div')
   allRangeSection.className = 'settings-section'
   const allRangeTitle = document.createElement('h3')
@@ -201,7 +130,17 @@ export function showSettingsScreen({ onBack }) {
   turnRow.appendChild(turnInput)
   turnRow.appendChild(turnValueLabel)
   allRangeSection.appendChild(turnRow)
-  root.appendChild(allRangeSection)
+  return allRangeSection
+}
+
+// Editor de teclado (não inclui gamepad — a tela de Configurações completa continua sendo o
+// único lugar pra isso, ver showSettingsScreen abaixo). Retorna {el, cleanup} porque precisa de
+// um listener global de keydown pro modo "Pressione uma tecla..." — quem monta isso num overlay
+// que pode fechar (ex.: painel de pausa) PRECISA chamar cleanup() antes de descartar o `el`,
+// senão o listener vaza e continua capturando teclas depois do painel sumir.
+export function buildKeybindSection() {
+  let waitingRebindAction = null
+  let waitingRebindBtn = null
 
   const controlsSection = document.createElement('div')
   controlsSection.className = 'settings-section'
@@ -221,7 +160,6 @@ export function showSettingsScreen({ onBack }) {
     renderBindRows()
   })
   controlsSection.appendChild(resetBtn)
-  root.appendChild(controlsSection)
 
   function renderBindRows() {
     bindRows.innerHTML = ''
@@ -265,6 +203,92 @@ export function showSettingsScreen({ onBack }) {
     renderBindRows()
   }
   window.addEventListener('keydown', onRebindKeyDown)
+
+  return { el: controlsSection, cleanup: () => window.removeEventListener('keydown', onRebindKeyDown) }
+}
+
+// Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
+// de comportamento.
+export function showSettingsScreen({ onBack }) {
+  showScreen('settings')
+  const root = document.getElementById('settings-screen')
+  root.innerHTML = ''
+
+  let gamepadRaf = null
+  let waitingGpAction = null
+  let waitingGpBtn = null
+  // botões pressionados no frame anterior — usado só pra detectar a borda de subida enquanto
+  // se espera o próximo aperto pra mapear uma ação (evita capturar o mesmo aperto que abriu o
+  // modo "Pressione um botão..." se ele ainda estiver segurado)
+  let prevGpButtonsPressed = {}
+
+  const back = document.createElement('button')
+  back.className = 'back-link'
+  back.textContent = '← Voltar'
+  back.addEventListener('click', () => { cleanup(); onBack() })
+  root.appendChild(back)
+
+  const title = document.createElement('h2')
+  title.textContent = 'Configurações'
+  root.appendChild(title)
+
+  const lifeSection = document.createElement('div')
+  lifeSection.className = 'settings-section'
+  const lifeTitle = document.createElement('h3')
+  lifeTitle.textContent = 'Vida'
+  lifeSection.appendChild(lifeTitle)
+
+  const lifeRow = document.createElement('div')
+  lifeRow.className = 'settings-row'
+  const lifeLabel = document.createElement('label')
+  lifeLabel.textContent = 'Vida inicial'
+  lifeRow.appendChild(lifeLabel)
+  const lifeInput = document.createElement('input')
+  lifeInput.type = 'number'
+  lifeInput.min = '1'
+  lifeInput.max = '20'
+  lifeInput.value = String(getSettings().startingHealth)
+  lifeInput.addEventListener('change', () => {
+    const n = Math.max(1, Math.min(20, Math.round(Number(lifeInput.value)) || 1))
+    lifeInput.value = String(n)
+    setSetting('startingHealth', n)
+  })
+  lifeRow.appendChild(lifeInput)
+  lifeSection.appendChild(lifeRow)
+
+  const wingmanRow = document.createElement('div')
+  wingmanRow.className = 'settings-row'
+  const wingmanLabel = document.createElement('label')
+  wingmanLabel.textContent = 'Companheiros iniciais na ala'
+  wingmanRow.appendChild(wingmanLabel)
+  const wingmanSelect = document.createElement('select')
+  const wingmanOpts = [
+    { val: 0, text: 'Nenhum (Voo Solo)' },
+    { val: 1, text: '1 Ala (Falco)' },
+    { val: 2, text: '2 Alas (Falco & Peppy)' },
+    { val: 3, text: '3 Alas (Falco, Peppy & Slippy)' },
+    { val: 4, text: '4 Alas (Esquadrão Completo)' },
+  ]
+  wingmanOpts.forEach((o) => {
+    const opt = document.createElement('option')
+    opt.value = String(o.val)
+    opt.textContent = o.text
+    if ((getSettings().startingWingmen || 0) === o.val) opt.selected = true
+    wingmanSelect.appendChild(opt)
+  })
+  wingmanSelect.addEventListener('change', () => {
+    setSetting('startingWingmen', Number(wingmanSelect.value) || 0)
+  })
+  wingmanRow.appendChild(wingmanSelect)
+  lifeSection.appendChild(wingmanRow)
+
+  root.appendChild(lifeSection)
+
+  root.appendChild(buildVisualSection())
+  root.appendChild(buildSensitivitySection())
+
+  const { el: controlsSection, cleanup: cleanupKeybindSection } = buildKeybindSection()
+  root.appendChild(controlsSection)
 
   const gpSection = document.createElement('div')
   gpSection.className = 'settings-section'
@@ -445,7 +469,7 @@ export function showSettingsScreen({ onBack }) {
   pollGamepad()
 
   function cleanup() {
-    window.removeEventListener('keydown', onRebindKeyDown)
+    cleanupKeybindSection()
     if (gamepadRaf) cancelAnimationFrame(gamepadRaf)
   }
 }

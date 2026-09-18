@@ -312,6 +312,27 @@ export function mountGame(session, deck, menu) {
     releaseGameOrientation()
   }
 
+  // ============ MENU DE PAUSA (overhaul v0.80.0, pedido do usuário) ============
+  // onResume espelha exatamente o toggle que o game-loop já fazia pro atalho de pausa (P/Esc) —
+  // ver isActionPressed(...,'pause') em game-loop.js. onRestart/onExitToMenu reusam o mesmo
+  // contrato de endSector() (teardown() da partida atual, depois o próximo passo do menu) — a
+  // confirmação "tem certeza?" já aconteceu dentro do próprio overlay (hud-pause.js) antes de
+  // qualquer um desses dois ser chamado.
+  hud.bindPauseMenu({
+    onResume: () => {
+      state.paused = false
+      hud.setPaused(false)
+    },
+    onRestart: () => {
+      teardown()
+      menu.playAgain()
+    },
+    onExitToMenu: () => {
+      teardown()
+      menu.restart()
+    },
+  })
+
   // ============ GAME LOOP (etapa 7a) ============
   // Extraído pra game-loop.js. Depois de criado, o loop é o único ponto que lê `state` a cada
   // frame — recebe tudo que precisa por referência. `currentHomingAllowedTargets` migrou pra
