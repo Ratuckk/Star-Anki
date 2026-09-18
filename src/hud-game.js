@@ -2,6 +2,7 @@ import { getBindings } from './keybindings.js'
 import { DEBUG_ACTIONS, DEBUG_CATEGORY_ORDER } from './debug.js'
 import { CARD_CATEGORY_LABEL, CARD_CATEGORY_COLOR, ROGUELIKE_CARDS } from './roguelike.js'
 import { COLOR_MAP, shapeMarkup, showScreen } from './hud-shared.js'
+import { buildPauseOverlay } from './hud-pause.js'
 import { injectHudExtraStyles } from './hud-styles.js'
 import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 import { getSettings } from './settings.js'
@@ -263,7 +264,7 @@ export function createGameHud() {
   let healthSegEls = []
   let healthSegsMax = null
   // orbital
-  let orbitalSvg, healthArc, shieldArc, boostArc
+  let orbitalSvg, healthArc, shieldArc, boostArc, orbitalLifePipsGroup
   let orbitalLifePips = []
   let orbitalLifePipsMax = null
   // compartilhado
@@ -291,8 +292,15 @@ export function createGameHud() {
   // posições (no espaço local do SVG, mesmo sistema de coordenadas dos arcos) da trilha de
   // pontinhos de vida na ponta da varredura — extrapola pra além do 3º ponto se maxLives > 3
   // (startingWingmen/cartas 'extra-life' podem levar até LIVES_CAP=5 em player.js)
-  const ORBITAL_LIFE_PIP_STEP = [-18, -20]
-  const ORBITAL_LIFE_PIP_START = [-178, -166]
+  // v0.78.1 — geometria refeita pra bater com a referência do usuário: varredura de ~90°
+  // (era ~180°+, formava uma "cúpula" simétrica em cima da nave) concentrada no quadrante
+  // SUPERIOR-ESQUERDO relativo à nave (âncora local 0,0), com a nave perto da ponta
+  // inferior-direita do arco em vez de centralizada embaixo dele. Pontinhos continuam a
+  // mesma direção da varredura, logo depois da ponta do arco mais externo (impulso).
+  // v0.78.2 — offset/step reduzidos na mesma proporção que os arcos (raios menores, ver
+  // makeOrbitalArc abaixo) pra continuar logo depois da ponta do arco de impulso.
+  const ORBITAL_LIFE_PIP_STEP = [-7, -8]
+  const ORBITAL_LIFE_PIP_START = [-81, -29]
   function orbitalLifePipPos(i) {
     return [
       ORBITAL_LIFE_PIP_START[0] + ORBITAL_LIFE_PIP_STEP[0] * i,
@@ -308,7 +316,7 @@ export function createGameHud() {
       c.setAttribute('cx', String(cx))
       c.setAttribute('cy', String(cy))
       c.setAttribute('r', '7')
-      orbitalSvg.appendChild(c)
+      orbitalLifePipsGroup.appendChild(c)
       return c
     })
   }
@@ -319,6 +327,28 @@ export function createGameHud() {
     path.setAttribute('d', d)
     orbitalSvg.appendChild(path)
     return path
+  }
+
+  // v0.78.2 — pedido do usuário: cada componente (arco de vida/escudo/impulso, trilha de vidas)
+  // só aparece quando o valor que representa muda (gasto ou recuperado), e desaparece devagar
+  // depois de um tempo parado — em vez de ficar sempre visível. classList.add('is-active') faz
+  // aparecer na hora (transição rápida via CSS), o timeout reagenda a cada mudança e remove a
+  // classe depois do hold, disparando a transição de saída lenta (ver .hvo-arc/.hvo-lifepips
+  // em hud-styles.js).
+  const orbitalFadeTimers = new WeakMap()
+  const ORBITAL_FADE_HOLD_MS = 1100
+  function pulseOrbitalVisible(el) {
+    if (!el) return
+    const existing = orbitalFadeTimers.get(el)
+    if (existing) clearTimeout(existing)
+    el.classList.add('is-active')
+    orbitalFadeTimers.set(
+      el,
+      setTimeout(() => {
+        el.classList.remove('is-active')
+        orbitalFadeTimers.delete(el)
+      }, ORBITAL_FADE_HOLD_MS)
+    )
   }
 
   if (!useOrbitalVitals) {
@@ -362,13 +392,22 @@ export function createGameHud() {
     orbitalSvg.setAttribute('viewBox', '-200 -260 400 300')
     vitalsCluster.appendChild(orbitalSvg)
 
-    // geometria validada visualmente num protótipo de design antes de virar código: 3 arcos
-    // concêntricos varrendo de ~100° (perto da nave, baixo-direita) a ~-60° (ponta, cima-
-    // esquerda) em torno da âncora (0,0) = posição da nave. Raio interno = escudo (1ª linha de
-    // defesa), médio = vida, externo = impulso (recurso, não "perigo", fica mais longe do casco).
-    shieldArc = makeOrbitalArc('hvo-shield', 'M 93.6 16.5 A 95 95 0 0 0 -82.3 -47.5')
-    healthArc = makeOrbitalArc('hvo-health', 'M 126.1 22.2 A 128 128 0 0 0 -110.8 -64.0')
-    boostArc = makeOrbitalArc('hvo-boost', 'M 158.6 27.9 A 161 161 0 0 0 -139.4 -80.5')
+    // v0.78.1 — geometria refeita a pedido do usuário (imagem de referência): varredura de
+    // ~90° (era ~180°+, formava uma "cúpula" simétrica acima da nave) de -75° (quase reto pra
+    // cima, um pouco à direita — perto da nave) a -165° (quase reto pra esquerda, um pouco pra
+    // cima — ponta do arco) em torno da âncora (0,0) = posição da nave, concentrada no
+    // quadrante SUPERIOR-ESQUERDO. Raio interno = escudo (1ª linha de defesa), médio = vida,
+    // externo = impulso (recurso, não "perigo", fica mais longe do casco).
+    // v0.78.2 — raios reduzidos de novo (57/77/97 → 43/58/73) a pedido do usuário, pra ficar
+    // ainda mais perto da nave; deslocamento pra esquerda fica no translateX do container
+    // (hud-styles.js), não na geometria dos arcos.
+    shieldArc = makeOrbitalArc('hvo-shield', 'M 11.13 -41.54 A 43 43 0 0 0 -41.54 -11.13')
+    healthArc = makeOrbitalArc('hvo-health', 'M 15.01 -56.02 A 58 58 0 0 0 -56.02 -15.01')
+    boostArc = makeOrbitalArc('hvo-boost', 'M 18.89 -70.51 A 73 73 0 0 0 -70.51 -18.89')
+
+    orbitalLifePipsGroup = document.createElementNS(SVG_NS, 'g')
+    orbitalLifePipsGroup.setAttribute('class', 'hvo-lifepips')
+    orbitalSvg.appendChild(orbitalLifePipsGroup)
   }
 
   // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
@@ -743,11 +782,9 @@ export function createGameHud() {
     fragata: 'plus', verme: 'plus',
   }
 
-  const pause = document.createElement('div')
-  pause.className = 'hud-pause'
-  pause.textContent = 'Pausado'
-  pause.hidden = true
-  root.appendChild(pause)
+  // Overhaul do menu de pausa (v0.80.0, pedido do usuário) — antes era só um "Pausado" sem
+  // botão nenhum. O overlay de verdade (continuar/opções/reiniciar/sair) mora em hud-pause.js.
+  const pauseOverlay = buildPauseOverlay(root)
 
   const cardChoiceOverlay = document.createElement('div')
   cardChoiceOverlay.className = 'card-choice-overlay'
@@ -1207,12 +1244,14 @@ export function createGameHud() {
         const frac = maxHealth > 0 ? Math.max(0, Math.min(1, health / maxHealth)) : 0
         healthArc.style.strokeDashoffset = String((1 - frac) * 100)
         healthArc.classList.toggle('crit', isCrit)
+        if (prevHealth == null || roundedHealth !== prevHealth) pulseOrbitalVisible(healthArc)
       }
       if (prevHealth != null && roundedHealth < prevHealth) flashVitalsHit()
       prevHealth = roundedHealth
     },
 
     setLives(lives, maxLives = lives) {
+      const livesChanged = prevLives == null || lives !== prevLives
       if (!useOrbitalVitals) {
         if (maxLives !== livePipsMax) {
           livePipsMax = maxLives
@@ -1249,6 +1288,7 @@ export function createGameHud() {
           }
           pip.classList.toggle('filled', filled)
         })
+        if (livesChanged) pulseOrbitalVisible(orbitalLifePipsGroup)
       }
       prevLives = lives
     },
@@ -1264,6 +1304,7 @@ export function createGameHud() {
       } else {
         const frac = maxValue > 0 ? Math.max(0, Math.min(1, value / maxValue)) : 0
         shieldArc.style.strokeDashoffset = String((1 - frac) * 100)
+        if (prevShield == null || roundedShield !== prevShield) pulseOrbitalVisible(shieldArc)
       }
       if (prevShield != null && roundedShield < prevShield) flashVitalsHit()
       prevShield = roundedShield
@@ -1287,6 +1328,9 @@ export function createGameHud() {
           void boostArc.getBoundingClientRect()
           boostArc.classList.add('ready-flash')
         }
+        // ativo (impulsionando = gastando) ou variação real de carga (gasto/recarga) reacende
+        // o arco; epsilon evita repique por ruído de ponto flutuante quando a carga está parada
+        if (active || Math.abs(frac - prevBoostCharge) > 0.0005) pulseOrbitalVisible(boostArc)
       }
       prevBoostCharge = charge
     },
@@ -1366,8 +1410,16 @@ export function createGameHud() {
     },
 
     setPaused(paused) {
-      pause.hidden = !paused
+      if (paused) pauseOverlay.show()
+      else pauseOverlay.hide()
       root.classList.toggle('game-paused', !!paused)
+    },
+
+    // chamado por mount-game.js depois que teardown()/menu já existem no closure dela — o HUD
+    // nasce antes disso, então o bind das ações reais (que precisam de teardown) vem depois,
+    // separado da criação do overlay em si.
+    bindPauseMenu(handlers) {
+      pauseOverlay.bind(handlers)
     },
 
     setCountdown(n, urgent) {
@@ -2276,6 +2328,9 @@ export function createGameHud() {
       closeExplDrawer()
       detachExplKeyHandler()
       lastResolvedCard = null
+      // se a pausa for desmontada com o painel de opções (rebind de teclado) aberto, sem isso o
+      // listener global de keydown daquela seção vazava pra depois do fim da partida
+      pauseOverlay.hide()
       root.classList.remove('cinematic-active', 'game-paused')
       cardsTray.innerHTML = ''
       prevCardsSignature = ''

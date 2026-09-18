@@ -651,11 +651,16 @@ export function injectHudExtraStyles() {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 40vmin;
-  height: 30vmin;
-  min-width: 260px;
-  min-height: 195px;
-  transform: translate(-50%, -86.7%);
+  /* v0.78.1 — 20% menor a pedido do usuário */
+  width: 32vmin;
+  height: 24vmin;
+  min-width: 208px;
+  min-height: 156px;
+  /* v0.78.2 — translateX extra desloca a âncora (nave) pra dentro do cluster, fazendo os
+     arcos ficarem mais à esquerda da nave em vez de centralizados sobre ela; opacity
+     reduzida a pedido do usuário (HUD um pouco mais discreta) */
+  transform: translate(-50%, -86.7%) translateX(-1.6vmin);
+  opacity: 0.82;
   pointer-events: none;
   z-index: 6;
   filter: drop-shadow(0 1px 3px #000);
@@ -672,11 +677,27 @@ export function injectHudExtraStyles() {
 .hvo-arc {
   fill: none;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.15s linear, stroke 0.2s ease;
+  /* v0.78.1 — faltava isso: sem stroke-dasharray, o strokeDashoffset que hud-game.js já
+     atualizava por vida/escudo/impulso não tinha NENHUM efeito visual (o traço ficava sempre
+     sólido/cheio, só o brilho/cor mudava). pathLength="100" no path normaliza o comprimento
+     pra 100 unidades — dasharray 100 cria 1 traço de 100 + 1 vão de 100, e o dashoffset (0..100
+     vindo de hud-game.js) revela progressivamente menos traço conforme o valor cai. */
+  stroke-dasharray: 100;
+  /* v0.78.2 — a pedido do usuário: cada arco fica invisível por padrão e só "surge" quando o
+     valor que ele representa muda (gasto ou recuperado) — hud-game.js alterna a classe
+     is-active via pulseOrbitalVisible() a cada mudança de vida/escudo/impulso. Transição de
+     entrada rápida (0.12s, ver .is-active abaixo), saída lenta (1.3s) pra "dessurgir" aos
+     poucos depois do hold. */
+  opacity: 0;
+  transition: stroke-dashoffset 0.15s linear, stroke 0.2s ease, opacity 1.3s ease-out;
+}
+.hvo-arc.is-active {
+  opacity: 1;
+  transition: stroke-dashoffset 0.15s linear, stroke 0.2s ease, opacity 0.12s ease-out;
 }
 .hvo-shield { stroke: #4a9bff; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(74,155,255,.7)); }
 .hvo-health { stroke: #3df0a6; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(61,240,166,.65)); }
-.hvo-boost  { stroke: #ffd54a; stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); opacity: .4; }
+.hvo-boost  { stroke: #ffd54a; stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); }
 .hvo-boost.active {
   opacity: 1;
   animation: hvo-boost-pulse 0.5s ease-in-out infinite alternate;
@@ -693,11 +714,22 @@ export function injectHudExtraStyles() {
   100% { stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); }
 }
 .hvo-health.crit {
+  /* vida crítica é um estado de perigo contínuo — fica visível mesmo sem mudar a cada frame,
+     não some no meio do sistema de fade-por-mudança dos outros arcos */
+  opacity: 1 !important;
   animation: hvo-health-crit 550ms infinite alternate;
 }
 @keyframes hvo-health-crit {
   from { stroke: #3df0a6; filter: drop-shadow(0 0 5px rgba(61,240,166,.65)); }
   to   { stroke: #ff5c5c; filter: drop-shadow(0 0 9px rgba(255,92,92,.9)); }
+}
+.hvo-lifepips {
+  opacity: 0;
+  transition: opacity 1.3s ease-out;
+}
+.hvo-lifepips.is-active {
+  opacity: 1;
+  transition: opacity 0.12s ease-out;
 }
 .hvo-life-pip {
   fill: rgba(20, 24, 32, 0.75);
