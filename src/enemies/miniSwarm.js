@@ -9,6 +9,12 @@ const MINI_ENEMY_HIT_RADIUS = 2.42 // 2.2 * 1.10 (+10%)
 const MINI_SWARM_MIN_COUNT = 5
 const MINI_SWARM_MAX_COUNT = 10
 const MINI_SWARM_SPACING = 2
+// Fase "spreadOut" — só usada pelos filhotes que a Horda solta ao morrer (spawnMiniSwarmFromHorda
+// abaixo). Substitui a fase PATROL normal inteira (não é um estado adicional antes dela): em vez
+// de balançar em formação atrás de um líder, cada filhote nasce no ponto exato onde a Horda
+// morreu e se afasta radialmente dos outros por HORDA_SPLIT_SPREAD_DURATION_S antes de entrar no
+// TELEGRAPH/DIVE normal — daí em diante é 100% o mesmo comportamento do mini-swarm comum.
+export const HORDA_SPLIT_SPREAD_DURATION_S = 4
 const MINI_SWARM_PATROL_SPEED = 28
 const MINI_SWARM_PATROL_AMPLITUDE = 10
 const MINI_SWARM_PATROL_DURATION_MIN = 1.2
@@ -92,12 +98,61 @@ export function spawnMiniSwarm(scene, rail, nextId) {
   return group
 }
 
+// filhotes soltos pela Horda ao morrer (não é um spawn "normal" de fila — nasce um grupo inteiro
+// no ponto exato da morte dela, count decidido por quem chama). Cada um sorteia seu próprio
+// ângulo/raio de afastamento (raio calculado pra manter ~1 nave de distância entre vizinhos no
+// círculo, igual pedido do usuário) — ver a fase 'spreadOut' em updateMiniSwarm acima.
+const HORDA_CHILD_NEIGHBOR_SPACING = 1.2 // ~1 nave de distância (nave = círculo de raio 0.55)
+export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
+  const spreadRadius = count > 1
+    ? HORDA_CHILD_NEIGHBOR_SPACING / (2 * Math.sin(Math.PI / count))
+    : 0
+  const group = []
+  for (let i = 0; i < count; i += 1) {
+    const variant = MINI_SWARM_VARIANT_IDS[Math.floor(Math.random() * MINI_SWARM_VARIANT_IDS.length)]
+    const mesh = new THREE.Mesh(enemyGeometry, variantMaterials.get(variant))
+    mesh.position.copy(originPos)
+    mesh.scale.setScalar(MINI_ENEMY_SCALE)
+    scene.add(mesh)
+    group.push({
+      id: nextId(), mesh, kind: MINI_SWARM_KIND, dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: Infinity,
+      variant,
+      swarmState: 'spreadOut',
+      spreadOrigin: originPos.clone(),
+      spreadAngle: (i / count) * Math.PI * 2 + Math.random() * 0.3,
+      spreadRadius,
+      spreadTimer: HORDA_SPLIT_SPREAD_DURATION_S,
+      telegraphTimer: 0,
+      diveDir: null,
+      diveCorePos: null,
+      diveElapsed: 0,
+      diveAnglePhase: Math.random() * Math.PI * 2,
+    })
+  }
+  return group
+}
+
 // patrulha balançando de um lado a outro por um tempo, depois trava mira (telegraph, pedido do
 // usuário) e mergulha em direção ao jogador — reto (straight), em zigue-zague (zigzag) ou em
 // hélice (spiral), conforme a variante sorteada no spawn. Nunca atira. Remove sozinho (não usa
 // o pass-behind genérico do loop principal porque tem seu próprio teto de tempo de mergulho).
 export function updateMiniSwarm(enemy, dt, ctx) {
   const { playerPosition, frame, elapsed, removeEnemy } = ctx
+  if (enemy.swarmState === 'spreadOut') {
+    enemy.spreadTimer -= dt
+    const t = THREE.MathUtils.clamp(1 - Math.max(0, enemy.spreadTimer) / HORDA_SPLIT_SPREAD_DURATION_S, 0, 1)
+    const target = enemy.spreadOrigin.clone()
+      .addScaledVector(frame.right, Math.cos(enemy.spreadAngle) * enemy.spreadRadius)
+      .addScaledVector(frame.up, Math.sin(enemy.spreadAngle) * enemy.spreadRadius)
+    enemy.mesh.position.lerpVectors(enemy.spreadOrigin, target, t)
+    enemy.mesh.lookAt(playerPosition)
+    if (enemy.spreadTimer <= 0) {
+      enemy.swarmState = 'telegraph'
+      enemy.telegraphTimer = MINI_SWARM_TELEGRAPH_S
+      triggerSoundCue(ENEMY_SOUND_CUES.mini_swarm_dive_telegraph, { worldPos: enemy.mesh.position, variant: enemy.variant })
+    }
+    return
+  }
   if (enemy.swarmState === 'patrol') {
     enemy.patrolTimer -= dt
     const wobble = Math.sin(elapsed * 2 + enemy.patrolPhase) * MINI_SWARM_PATROL_AMPLITUDE

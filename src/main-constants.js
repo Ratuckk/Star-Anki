@@ -137,6 +137,10 @@ export const REPLICA_SPAWN_CHANCE = 0.1
 export const VERME_SPAWN_CHANCE = 0.08
 export const SUSSURRO_SPAWN_CHANCE = 0.1
 export const FRAGATA_SPAWN_CHANCE = 0.15
+// Horda: última checagem da cadeia (ver game-loop.js), só rola se Time/MiniSwarm/Sentinela/
+// Réplica/Verme/Sussurro já falharam nesse tick — o nominal 30% (pedido do usuário) já sai bem
+// mais raro que isso na prática por causa da posição no fim da cadeia.
+export const HORDA_SPAWN_CHANCE = 0.3
 export const IMA_SPAWN_INTERVAL_MIN_MS = 10000
 export const IMA_SPAWN_INTERVAL_MAX_MS = 18000
 

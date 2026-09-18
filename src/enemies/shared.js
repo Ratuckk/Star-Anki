@@ -25,6 +25,21 @@ export function enemyInFireRange(enemy, ctx) {
   const distToPlayer = enemy.mesh.position.distanceTo(ctx.playerPosition)
   return computeInFireRange(distToPlayer, relativeForward, ctx.inArena)
 }
+
+// "Nível de dificuldade" (1-9) pra escalar HP/dano de inimigos que pedem isso explicitamente —
+// hoje só a Horda usa. NÃO existe um conceito de "nível" em nenhum outro lugar do jogo: a
+// dificuldade real é o wrongAnswerCount contínuo (ver applyDifficulty em flow-progression.js).
+// Em modo arcade (deck.isNoDeck) não há perguntas erradas pra contar, então o nível sobe por
+// pontuação (session.score) em vez de erros — pedido explícito do usuário.
+const DIFFICULTY_LEVEL_MAX = 9
+const DIFFICULTY_LEVEL_WRONG_STEP = 2 // +1 nível a cada 2 erros
+const DIFFICULTY_LEVEL_SCORE_STEP = 10000 // +1 nível a cada 10000 pontos (modo arcade)
+export function getDifficultyLevel({ wrongAnswerCount = 0, score = 0, isNoDeck = false } = {}) {
+  const steps = isNoDeck
+    ? Math.floor(score / DIFFICULTY_LEVEL_SCORE_STEP)
+    : Math.floor(wrongAnswerCount / DIFFICULTY_LEVEL_WRONG_STEP)
+  return 1 + Math.min(DIFFICULTY_LEVEL_MAX - 1, Math.max(0, steps))
+}
 // a geometria de todo cone deste projeto nasce apontando pro +Z local — usado pra virar o cone
 // na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 export const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)

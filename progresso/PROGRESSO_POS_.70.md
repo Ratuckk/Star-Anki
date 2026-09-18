@@ -631,4 +631,62 @@ chat, em vez de responder o checklist inteiro em texto corrido.
    Nenhum inimigo existente usa essas mecânicas hoje — são perguntas em aberto pra inimigos
    futuros, mesmo padrão de "não existe referência ainda" já usado em outros itens do template.
 
+### Novo inimigo: Horda (atirador grande, fusão Blaster + Mini-Swarm)
+
+Ficha completa preenchida pelo usuário via [TEMPLATE_INIMIGOS.md](../TEMPLATE_INIMIGOS.md) (versão
+HTML), com duas rodadas de perguntas de clarificação antes de codar (checklist do template
+cumprido à risca — várias respostas mudaram decisões de design, ver abaixo).
+
+1. **`src/enemies/horda.js`** (novo) — só trilho, órbita distante do jogador (raio 12, ângulo
+   0.35 rad/s) mantendo um standoff-alvo de 80u (45u durante o impulso do jogador) via **correção
+   proporcional em cima da própria variável `depth`** (não remede a posição projetada contra
+   outro frame — ver armadilha #1 abaixo). Dispara projétil genérico (`fireEnemyProjectile`
+   estendida com `enemy.projectileOpts` — geometria/material/velocidade/hitRadius/maxRange/dano
+   customizados por inimigo, sem quebrar ninguém que não define isso) grande e vermelho, mira
+   perfeita, dano 5 (+1 por nível de dificuldade), até 6 tiros então foge (mesmo padrão de fuga do
+   Blaster). Ao morrer (qualquer via — tiro normal/carregado/splash/aríete), se parte num grupo de
+   mini-swarms DE VERDADE (`spawnMiniSwarmFromHorda` em `miniSwarm.js`, kind reaproveitado 100%)
+   que passam 4s numa fase nova `spreadOut` (substitui a patrulha normal) se afastando ~1 nave de
+   distância entre vizinhos antes de entrar no telegraph/mergulho padrão. HP 15/dano 5/quantidade
+   de filhotes 5, todos +1 por nível — nível travado no momento do spawn.
+2. **`getDifficultyLevel()` (novo, `enemies/shared.js`)** — nível 1-9, pequeno helper reusável
+   (só a Horda usa por enquanto) que traduz o `wrongAnswerCount` contínuo do jogo (não existe
+   "nível" discreto em lugar nenhum) em nível: +1 a cada 2 erros; em **modo arcade** (`deck.
+   isNoDeck`, onde não há perguntas erradas pra contar) usa `session.score` em vez disso, +1 a
+   cada 10000 pontos — pedido explícito do usuário. `isNoDeck` precisou ser plumbado até
+   `game-loop.js` (não existia lá antes — `mount-game.js` agora passa `isNoDeck: !!deck?.isNoDeck`
+   nos deps do `createGameLoop`).
+3. **Mudança de balanceamento pedida pelo usuário, escopo global** (não só Horda): toque simples
+   (sem carta "impulso aríete") só mata de verdade o Mini-Swarm agora — todo outro inimigo (Chefe/
+   Dourado já eram assim; Blaster/Tank/Detrito/Sentinela/Fragata/etc. agora também) é imune a
+   toque simples, precisa da carta pra sofrer dano de contato de verdade. Mudança de **uma linha**
+   em `enemies/index.js` (inverteu a condição `!== BOSS_KIND` pra `=== MINI_SWARM_KIND`) porque o
+   dano de aríete (`ramDamage>0`) já era genérico pra qualquer kind — só a exceção de imunidade
+   era hardcoded pro Chefe.
+4. **Wingmen "focam mais" na Horda** — único caso de PRIORIDADE de alvo no jogo (`combat/
+   wingmen.js`, candidatos de dogfight autônomo agora ordenam Horda primeiro, distância depois; até
+   aqui todo inimigo só era excluído/incluído da lista, nunca priorizado dentro dela).
+5. **Painel de debug**: `spawnHorda` em `debug.js`/`debug-actions.js`.
+6. **Validado com `aiValidator.expect()`** (FLUXO_VALIDACAO_IA.md): stats escaladas certas no
+   spawn, grupo de split com o tamanho/posição certos, e que toque simples só remove Mini-Swarm —
+   16/16 expectativas passaram no teste ao vivo (ver item 7).
+7. **Duas armadilhas reais pegas testando ao vivo** (`window.__starAnki.step(frames, dtMs)`,
+   modo arcade, `sa.combat.spawnHorda(nível)`) — guarde pra próximos inimigos com movimento
+   "auto-regulado" (que tenta manter uma distância-alvo em vez de só avançar):
+   - **Nunca remedir uma posição já projetada por `rail.getSpawnFrame()` contra outro frame** (ex.:
+     `rail.getFrameAt(0)`, usado pelo despawn genérico) pra fechar um controlador proporcional — os
+     dois frames não são o mesmo ponto/orientação, e o erro medido errado se realimenta e diverge
+     (a Horda saía disparada a dezenas de unidades por segundo em poucos segundos de teste). A
+     correção certa usa a própria variável de estado (`depth`) como fonte da verdade, sem
+     remedição via posição de mundo.
+   - **O despawn genérico de trilho tem um teto de 180u percorridas desde o spawn** (`rail.
+     getDistance() - enemy.spawnRailDist > 180`), pensado pra inimigos que cruzam a tela rápido
+     (Blaster/Tank). Um inimigo com engajamento longo de propósito (Horda: órbita + até 6 tiros a
+     ~3s cada, ~18-20s) estourava esse teto e desaparecia com só 2-3 tiros disparados, MESMO
+     ficando numa posição relativa perfeitamente saudável (`relativeForward`/`screenY` normais) —
+     o teto mede distância ABSOLUTA percorrida pelo trilho, não "está fora de posição". Isento a
+     Horda desse teto especificamente (ela já tem standoff/PASS_BEHIND/offScreenAbove como rede de
+     segurança própria); qualquer inimigo novo com engajamento > ~10s no trilho vai precisar da
+     mesma isenção ou vai sumir cedo demais do mesmo jeito.
+
 

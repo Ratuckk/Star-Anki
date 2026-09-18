@@ -145,6 +145,7 @@ export function createDebugActions(deps) {
     spawnVerme: () => combat.spawnVerme(),
     spawnImaSwarm: () => combat.spawnImaSwarm(),
     spawnSussurro: () => combat.spawnSussurro(),
+    spawnHorda: () => combat.spawnHorda(),
     forceCorrect: () => forceAnswerOutcome(true),
     forceWrong: () => forceAnswerOutcome(false),
     addScore: () => { session.score += 100 },

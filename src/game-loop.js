@@ -29,12 +29,14 @@ import {
   REVIEW_ENEMY_INTERVAL_MULT,
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
+  HORDA_SPAWN_CHANCE,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
   BOSS_ENEMY_INTERVAL_MULT,
   LEVEL_BACKGROUNDS,
 } from './main-constants.js'
+import { getDifficultyLevel } from './enemies/shared.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -60,6 +62,7 @@ export function createGameLoop(deps) {
     progression, cutscenes, bossFlow, questionFlow,
     environment,
     enterCombat, applyHealthLoss, endSector,
+    isNoDeck,
   } = deps
 
   function triggerDebrisStorm(durationMs = 15000) {
@@ -648,6 +651,9 @@ export function createGameLoop(deps) {
             combat.spawnVerme()
           } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
             combat.spawnSussurro()
+          } else if (Math.random() < HORDA_SPAWN_CHANCE) {
+            const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck })
+            combat.spawnHorda(level)
           } else {
             const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
             if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {

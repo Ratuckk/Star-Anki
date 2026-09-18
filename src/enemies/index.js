@@ -4,6 +4,7 @@ import {
   ENEMY_FIRE_RANGE, ENEMY_FIRE_MIN_DISTANCE, ENEMY_ARENA_FIRE_MAX_DISTANCE,
 } from './shared.js'
 import { createEnemyTelemetry } from './enemy-telemetry.js'
+import { aiValidator } from '../ai-validator.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
@@ -12,7 +13,9 @@ import {
   spawnBlaster, blasterColor, disposeBlaster,
   triggerBlasterRecoil, breakBlasterWing,
 } from './blaster.js'
-import { MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm } from './miniSwarm.js'
+import {
+  MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, spawnMiniSwarmFromHorda, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm,
+} from './miniSwarm.js'
 import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, disposeTank } from './tank.js'
 import {
   TIME_KIND, TIME_HIT_RADIUS, TIME_DEATH_DURATION, TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS,
@@ -53,6 +56,11 @@ import {
   SUSSURRO_KIND, SUSSURRO_COLOR, SUSSURRO_HIT_RADIUS, SUSSURRO_DEATH_DURATION, SUSSURRO_KILL_BONUS,
   spawnSussurro, updateSussurro, sussurroShouldSummon, disposeSussurro,
 } from './sussurro.js'
+import {
+  HORDA_KIND, HORDA_COLOR, HORDA_HIT_RADIUS, HORDA_DEATH_DURATION, HORDA_KILL_BONUS, HORDA_PASS_BEHIND,
+  HORDA_FIRE_INTERVAL_MS, HORDA_SHOTS_BEFORE_LEAVE,
+  spawnHorda as spawnHordaEnemy, updateHordaMovement, updateHordaSpin, triggerHordaTurbulence, disposeHorda,
+} from './horda.js'
 
 export { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS }
 
@@ -201,6 +209,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case VERME_KIND: return VERME_HIT_RADIUS
       case IMA_KIND: return IMA_HIT_RADIUS
       case SUSSURRO_KIND: return SUSSURRO_HIT_RADIUS
+      case HORDA_KIND: return HORDA_HIT_RADIUS
       default: return BLASTER_HIT_RADIUS
     }
   }
@@ -218,6 +227,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case VERME_KIND: return VERME_DEATH_DURATION
       case IMA_KIND: return IMA_DEATH_DURATION
       case SUSSURRO_KIND: return SUSSURRO_DEATH_DURATION
+      case HORDA_KIND: return HORDA_DEATH_DURATION
       default: return BLASTER_DEATH_DURATION
     }
   }
@@ -237,6 +247,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case VERME_KIND: return VERME_COLOR
       case IMA_KIND: return IMA_COLOR
       case SUSSURRO_KIND: return SUSSURRO_COLOR
+      case HORDA_KIND: return HORDA_COLOR
       default: return 0xff5a3d
     }
   }
@@ -249,6 +260,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (kind === VERME_KIND) return VERME_KILL_BONUS
     if (kind === IMA_KIND) return IMA_KILL_BONUS
     if (kind === SUSSURRO_KIND) return SUSSURRO_KILL_BONUS
+    if (kind === HORDA_KIND) return HORDA_KILL_BONUS
     return BLASTER_KILL_BONUS
   }
 
@@ -258,13 +270,33 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (enemy.kind === TIME_KIND) return timePassBehind(enemy)
     if (enemy.kind === SENTINELA_KIND) return sentinelaPassBehind(enemy)
     if (enemy.kind === REPLICA_KIND) return replicaPassBehind()
+    if (enemy.kind === HORDA_KIND) return HORDA_PASS_BEHIND
     return PASS_BEHIND
+  }
+
+  // Horda morreu (por qualquer via — tiro normal/carregado, splash, aríete): solta o grupo de
+  // mini-swarms de verdade (spawnMiniSwarmFromHorda, ver miniSwarm.js) no ponto exato da morte.
+  function triggerHordaSplitIfNeeded(enemy) {
+    if (!enemy || enemy.kind !== HORDA_KIND) return
+    const expectedCount = enemy.splitCount || 5
+    const group = spawnMiniSwarmFromHorda(scene, rail, () => nextEnemyId++, enemy.mesh.position, expectedCount)
+    aiValidator.expect(
+      'Horda solta exatamente splitCount mini-swarms ao morrer, todos vivos e no ponto da morte',
+      () => group.length === expectedCount && group.every((g) => g.hp === 1 && g.mesh.position.distanceTo(enemy.mesh.position) < 0.01),
+      { expectedCount, actualCount: group.length, hordaId: enemy.id },
+    )
+    registerSpawnGroup(group)
+  }
+
+  function hordaFireInterval() {
+    return (HORDA_FIRE_INTERVAL_MS / enemyAggression) / 1000
   }
 
   // ============ disparo genérico (blaster/tank/time-normal/rajada do chefe/dourado) ============
   const WORLD_UP_AXIS = new THREE.Vector3(0, 1, 0)
   function fireEnemyProjectile(enemy, playerPosition, extraAngleRad = 0) {
-    const mesh = new THREE.Mesh(enemyProjectileGeometry, enemyProjectileMaterial)
+    const po = enemy?.projectileOpts
+    const mesh = new THREE.Mesh(po?.geometry || enemyProjectileGeometry, po?.material || enemyProjectileMaterial)
     mesh.position.copy(enemy.mesh.position)
 
     const direction = playerPosition.clone().sub(enemy.mesh.position).normalize()
@@ -273,19 +305,28 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       direction.applyAxisAngle(WORLD_UP_AXIS, extraAngleRad)
     }
 
-    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * enemyAimErrorDeg)
+    const aimErrorDeg = po?.perfectAim ? 0 : enemyAimErrorDeg
+    const errAngle = THREE.MathUtils.degToRad((Math.random() * 2 - 1) * aimErrorDeg)
     const errAxis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
     direction.applyAxisAngle(errAxis, errAngle)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 
     scene.add(mesh)
-    enemyProjectiles.push({ mesh, velocity: direction.multiplyScalar(ENEMY_PROJECTILE_SPEED + enemyProjectileSpeedBonus), traveled: 0 })
+    const speed = (po?.speed ?? ENEMY_PROJECTILE_SPEED) + enemyProjectileSpeedBonus
+    enemyProjectiles.push({
+      mesh, velocity: direction.multiplyScalar(speed), traveled: 0,
+      hitRadius: po?.hitRadius,
+      maxRange: po?.maxRange,
+      shieldDamage: po?.damage,
+    })
     triggerSoundCue(ENEMY_SOUND_CUES.blaster_fire, { enemyId: enemy?.id, kind: enemy?.kind, worldPos: enemy?.mesh?.position })
 
     if (enemy) {
       enemy.shotsFired = (enemy.shotsFired || 0) + 1
-      // Inimigos genéricos puxam para cima e vão embora voando após atacarem 4 vezes
-      if (enemy.shotsFired >= 4 && (enemy.kind === BLASTER_KIND || enemy.kind === TANK_KIND)) {
+      // Inimigos genéricos puxam para cima e vão embora voando após atacarem N vezes (4 pro
+      // Blaster/Tank, 6 pra Horda — pedido explícito do usuário)
+      const disengageAtShots = enemy.kind === HORDA_KIND ? HORDA_SHOTS_BEFORE_LEAVE : 4
+      if (enemy.shotsFired >= disengageAtShots && (enemy.kind === BLASTER_KIND || enemy.kind === TANK_KIND || enemy.kind === HORDA_KIND)) {
         enemy.disengaging = true
         enemy.fireTimer = Infinity
       }
@@ -367,6 +408,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
                 ramKills += 1
                 ramKillPoints += killPointsFor(enemy.kind)
                 if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies, rail)
+                triggerHordaSplitIfNeeded(enemy)
                 if (effects) effects.explosion(enemy.mesh.position, colorFor(enemy), 1.6, { rings: true })
               }
             }
@@ -374,8 +416,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           continue
         }
         enemy.ramHitActive = false
-        if (enemy.kind !== BOSS_KIND) {
-          if (enemy.kind === VERME_KIND) severChainAt(enemy, enemies, rail)
+        // pedido do usuário: toque simples (sem carta aríete) só mata de verdade o Mini-Swarm —
+        // todo outro inimigo (Chefe/Dourado já eram assim; agora Blaster/Tank/Detrito/etc. também)
+        // é imune a toque simples, precisa de dano de aríete de verdade pra sofrer qualquer coisa.
+        aiValidator.expect(
+          'Toque simples (sem carta aríete) só remove o Mini-Swarm — todo outro inimigo é imune',
+          () => enemy.kind === MINI_SWARM_KIND || !enemy.dying,
+          { kind: enemy.kind, ramDamage },
+        )
+        if (enemy.kind === MINI_SWARM_KIND) {
           removeEnemy(enemy)
           continue
         }
@@ -457,6 +506,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
         else if (enemy.kind === REPLICA_KIND) updateReplicaMovement(enemy, dt, rail, frame)
         else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, rail)
+        else if (enemy.kind === HORDA_KIND) updateHordaMovement(enemy, dt, frame, rail, opts.boostActive)
         else if (enemy.kind === SUSSURRO_KIND) {
           updateSussurro(enemy, dt, rail)
           if (sussurroShouldSummon(enemy)) {
@@ -479,9 +529,17 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
         if (enemy.kind === TIME_KIND) updateTimeSpin(enemy, dt)
+        if (enemy.kind === HORDA_KIND && !enemy.disengaging) updateHordaSpin(enemy, dt)
 
         const passBehind = passBehindFor(enemy)
-        const passedDistance = (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
+        // Horda é isenta do teto genérico de 180u percorridas: ela se engaja de propósito por bem
+        // mais tempo que um Blaster (órbita segurando standoff + até 6 disparos a ~3s cada, ~18s+
+        // de engajamento) — sem essa isenção, o próprio avanço do trilho a despawnava por "tempo
+        // demais em cena" bem antes de completar o ciclo de tiros (bug real, pego em teste: sumia
+        // com só 2-3 tiros disparados). O standoff/PASS_BEHIND/offScreenAbove dela já bastam como
+        // rede de segurança.
+        const passedDistance = enemy.kind !== HORDA_KIND
+          && (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
         const offScreenAbove = enemy.screenY != null && enemy.screenY > 11.0
         if (relativeForward < passBehind || passedDistance || offScreenAbove) { removeEnemy(enemy); continue }
       }
@@ -495,13 +553,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
       const inFireRange = distToPlayer > ENEMY_FIRE_MIN_DISTANCE && (
         inArena ? distToPlayer <= ENEMY_ARENA_FIRE_MAX_DISTANCE
-          : enemy.kind === BOSS_KIND || (relativeForward > 0 && relativeForward < ENEMY_FIRE_RANGE)
+          // Horda orbita bem além de ENEMY_FIRE_RANGE (55u) de propósito — "alcance o maior
+          // possível", mesma isenção que o Chefe já tem.
+          : enemy.kind === BOSS_KIND || enemy.kind === HORDA_KIND || (relativeForward > 0 && relativeForward < ENEMY_FIRE_RANGE)
       )
 
       // Estilo Star Fox 64: inimigos fora da zona visível de combate não queimam seu timer
       // até disparar no vácuo ou entrar atirando no susto. Segura em 0.45s até que se aproximem,
       // garantindo que sempre executem o telegraph visual (0.3s) antes do primeiro disparo.
-      if (!inFireRange && enemy.kind !== BOSS_KIND) {
+      if (!inFireRange && enemy.kind !== BOSS_KIND && enemy.kind !== HORDA_KIND) {
         if (enemy.fireTimer < 0.45) enemy.fireTimer = 0.45
       }
 
@@ -525,7 +585,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (!handled) fireEnemyProjectile(enemy, playerPosition)
         enemy.fireTimer = enemy.kind === BOSS_KIND
           ? randomBossFireInterval()
-          : enemy.kind === SENTINELA_KIND ? SENTINELA_FIRE_INTERVAL : randomEnemyFireInterval()
+          : enemy.kind === SENTINELA_KIND ? SENTINELA_FIRE_INTERVAL
+            : enemy.kind === HORDA_KIND ? hordaFireInterval() : randomEnemyFireInterval()
       }
 
       if (enemy.kind === BOSS_KIND) updateBossLaser(scene, enemy, dt, playerPosition, effects, bossLaserCtx)
@@ -840,6 +901,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       registerSpawn(enemy)
     },
 
+    spawnHorda(level = 1) {
+      const enemy = spawnHordaEnemy(scene, rail, nextEnemyId++, level)
+      if (!enemy) return
+      enemy.fireTimer = hordaFireInterval()
+      aiValidator.expect(
+        'Horda nasce com HP/dano/splitCount escalados corretamente pro nível de dificuldade recebido',
+        () => enemy.hp > 0 && enemy.hp === enemy.maxHp && enemy.projectileOpts.damage >= 5 && enemy.splitCount >= 5 && level >= 1 && level <= 9,
+        { level, hp: enemy.hp, damage: enemy.projectileOpts.damage, splitCount: enemy.splitCount },
+      )
+      registerSpawn(enemy)
+    },
+
     // Fase de ideias de inimigos: fonte do campo magnético do Enxame-Ímã, consumida direto por
     // combat/projectiles.js (só o tiro NORMAL reage — o teleguiado ignora, ver comentário lá)
     getMagnetSources: () => {
@@ -933,6 +1006,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           } else {
             enemyKillPoints += points
             if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
+            triggerHordaSplitIfNeeded(e)
             if (effects) effects.explosion(e.mesh.position, colorFor(e), 1.6, { rings: true })
             enemyKills += 1
           }
@@ -1026,6 +1100,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
               triggerSoundCue(ENEMY_SOUND_CUES.generic_death, { enemyId: enemyHit.id, kind: enemyHit.kind, worldPos: enemyHit.mesh.position.clone() })
             }
             if (enemyHit.kind === VERME_KIND) severChainAt(enemyHit, enemies, rail)
+            triggerHordaSplitIfNeeded(enemyHit)
             const killColor = isHoming ? HOMING_EXPLOSION_COLOR : colorFor(enemyHit)
             if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6, { rings: true })
 
@@ -1047,6 +1122,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
           breakBlasterWing(enemyHit)
+        } else if (enemyHit.kind === HORDA_KIND) {
+          triggerHordaTurbulence(enemyHit)
         }
         return {
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
@@ -1062,7 +1139,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     getEnemyCount() {
-      return enemies.reduce((n, e) => n + (!e.dying && e.kind !== DETRITO_KIND && e.kind !== IMA_KIND ? 1 : 0), 0)
+      // Horda conta como 3 vagas do teto (pedido do usuário — ela é grande/forte o bastante pra
+      // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres)
+      return enemies.reduce((n, e) => {
+        if (e.dying || e.kind === DETRITO_KIND || e.kind === IMA_KIND) return n
+        return n + (e.kind === HORDA_KIND ? 3 : 1)
+      }, 0)
     },
 
     getEnemySnapshots: () => enemies
@@ -1195,6 +1277,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       disposeVerme()
       disposeIma()
       disposeSussurro()
+      disposeHorda()
     },
   }
 }

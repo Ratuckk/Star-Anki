@@ -44,6 +44,7 @@ export const DEBUG_ACTIONS = [
   { id: 'spawnVerme', label: 'Spawnar verme-corrente', category: 'Spawns' },
   { id: 'spawnImaSwarm', label: 'Spawnar enxame-ímã', category: 'Spawns' },
   { id: 'spawnSussurro', label: 'Spawnar sussurro (invoca reforço)', category: 'Spawns' },
+  { id: 'spawnHorda', label: 'Spawnar horda (atirador grande, se parte em mini-swarms)', category: 'Spawns' },
   { id: 'forceCorrect', label: 'Forçar acerto da pergunta', category: 'Pergunta' },
   { id: 'forceWrong', label: 'Forçar erro da pergunta', category: 'Pergunta' },
   { id: 'addScore', label: '+100 pontos', category: 'Jogador' },

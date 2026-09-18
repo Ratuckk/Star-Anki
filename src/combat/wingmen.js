@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createWingmanTelemetry } from './wingman-telemetry.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
+import { HORDA_KIND } from '../enemies/horda.js'
 
 // ============ ESQUADRÃO STAR FOX (WINGMEN IA DE VOO LIVRE) ============
 // Sistema de companheiros de equipe autônomos, vivos e úteis (v0.54.1).
@@ -837,7 +838,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   return dotForward > -0.15 && d < 80
                 })
                 if (candidates.length > 0) {
-                  candidates.sort((a, b) => w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position))
+                  // pedido do usuário: Horda tem "foco maior" dos wingmen — sempre preferida sobre
+                  // qualquer outro alvo elegível, mesmo um mais perto (única prioridade desse tipo
+                  // no jogo hoje; todo outro inimigo só entra/sai da lista de alvos, nunca é
+                  // priorizado dentro dela)
+                  candidates.sort((a, b) => {
+                    const aHorda = a.kind === HORDA_KIND ? 0 : 1
+                    const bHorda = b.kind === HORDA_KIND ? 0 : 1
+                    if (aHorda !== bHorda) return aHorda - bHorda
+                    return w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position)
+                  })
                   w.targetEnemy = candidates[0]
                   telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidates[0].kind} #${candidates[0].id} a ${w.mesh.position.distanceTo(candidates[0].mesh.position).toFixed(1)}u`, { elapsed })
                   w.state = 'dogfight'

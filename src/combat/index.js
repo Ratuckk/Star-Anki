@@ -141,6 +141,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnVerme: () => enemies.spawnVerme(),
     spawnImaSwarm: () => enemies.spawnImaSwarm(),
     spawnSussurro: () => enemies.spawnSussurro(),
+    spawnHorda: (level) => enemies.spawnHorda(level),
 
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),

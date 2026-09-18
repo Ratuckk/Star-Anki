@@ -322,6 +322,7 @@ export function mountGame(session, deck, menu) {
     progression, cutscenes, bossFlow, questionFlow,
     environment,
     enterCombat, applyHealthLoss, endSector,
+    isNoDeck: !!deck?.isNoDeck,
   })
 
   // ============ FORCE-ANSWER-OUTCOME (debug) ============
