@@ -37,7 +37,17 @@ const material = new THREE.MeshPhongMaterial({
   opacity: 0.88,
 })
 
-export function spawnReplica(scene, rail, id) {
+// Arquétipo "enxame" (escala devagar, 0.5/nível — ver blasterStatsForLevel em blaster.js pro
+// raciocínio completo).
+const REPLICA_HP_PER_LEVEL = 0.5
+const REPLICA_HP_CAP = 7
+export function replicaStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(REPLICA_HP_CAP, Math.round(REPLICA_HP + steps * REPLICA_HP_PER_LEVEL)) }
+}
+
+export function spawnReplica(scene, rail, id, level = 1) {
+  const stats = replicaStatsForLevel(level)
   if (rail.isArena()) return null
   const position = randomSpawnPositionOnPath(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   const mesh = new THREE.Mesh(geometry, material)
@@ -45,7 +55,7 @@ export function spawnReplica(scene, rail, id) {
   scene.add(mesh)
   triggerSoundCue(ENEMY_SOUND_CUES.replica_spawn, { worldPos: position })
   return {
-    id, mesh, kind: REPLICA_KIND, dying: false, deathT: 0, hp: REPLICA_HP, maxHp: REPLICA_HP, fireTimer: Infinity,
+    id, mesh, kind: REPLICA_KIND, dying: false, deathT: 0, hp: stats.hp, maxHp: stats.hp, fireTimer: Infinity,
     clock: 0,
     history: [], // { t, x, y } — amostras do lateral do jogador, mais antiga primeiro
     alongDistance: SPAWN_DISTANCE_MIN,

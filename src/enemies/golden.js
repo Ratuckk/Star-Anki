@@ -15,6 +15,17 @@ const GOLDEN_DEATH_DURATION = 0.25
 const GOLDEN_PULSE_SPEED = 4
 const GOLDEN_PULSE_AMOUNT = 0.18
 const GOLDEN_HP = 70 // 40 + 30 (pedido do usuário)
+// Mesmo tratamento do Chefe (ver boss.js): nível 1-9 não usa a fórmula genérica dos outros
+// inimigos — +15hp/nível igual ao chefe, e encolhe os cooldowns de dash/teleporte (mais evasivo
+// em níveis altos) em vez de escalar dano (ela não tem dano próprio fora do fireEnemyProjectile
+// padrão). Sem teto próprio — mesmo raciocínio do chefe, 9 níveis * 15 já é o teto prático.
+const GOLDEN_HP_PER_LEVEL = 15
+const GOLDEN_LEVEL_COOLDOWN_SHRINK_PER_LEVEL = 0.05
+const GOLDEN_LEVEL_COOLDOWN_SHRINK_CAP = 0.5
+function goldenCooldownShrinkFor(level) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return 1 - Math.min(GOLDEN_LEVEL_COOLDOWN_SHRINK_CAP, steps * GOLDEN_LEVEL_COOLDOWN_SHRINK_PER_LEVEL)
+}
 const GOLDEN_CHASE_SPEED = 10
 // pedido do usuário: "se teleportar pelo mapa 1 vez a cada 10 segundos quando for atingido por
 // disparos" — cooldown próprio, reiniciado a cada teleporte de verdade (não a cada hit)
@@ -117,7 +128,11 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     spawn(opts = {}) {
       // defaults só usados se chamado sem opts — o caminho real vem de GOLDEN_SPREAD_MIN/MAX em
       // main-constants.js, mantidos em sincronia (pedido: inimigos 20% mais distantes)
-      const { distanceMin = 48, distanceMax = 108 } = opts
+      const { distanceMin = 48, distanceMax = 108, level = 1 } = opts
+      const shrink = goldenCooldownShrinkFor(level)
+      const dashCooldownS = GOLDEN_DASH_COOLDOWN_S * shrink
+      const teleportCooldownS = GOLDEN_TELEPORT_COOLDOWN_S * shrink
+      const hp = GOLDEN_HP + Math.max(0, (level || 1) - 1) * GOLDEN_HP_PER_LEVEL
       const frame = rail.getFrameAt(0)
       const azimuth = Math.random() * Math.PI * 2
       const elevation = (Math.random() * 2 - 1) * THREE.MathUtils.degToRad(50)
@@ -136,11 +151,12 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         id: nextId(), mesh, dying: false, deathT: 0,
         kind: GOLDEN_KIND,
         radius: GOLDEN_HIT_RADIUS,
-        hp: GOLDEN_HP, maxHp: GOLDEN_HP, fireTimer: randomGoldenFireInterval(),
+        hp, maxHp: hp, fireTimer: randomGoldenFireInterval(),
         minionTimer: MINION_INTERVAL_MIN + Math.random() * (MINION_INTERVAL_MAX - MINION_INTERVAL_MIN),
         laserCooldown: GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
         laserTelegraphTimer: 0,
         laserTargetPos: null,
+        dashCooldownS, teleportCooldownS,
         distanceMin, distanceMax, teleportCooldownTimer: 0,
         dashCooldownTimer: 0,
         dashTimer: 0,
@@ -218,7 +234,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           g.mesh.rotation.z += dt * 12
         } else {
           if (distToPlayer <= GOLDEN_DASH_TRIGGER_DIST && g.dashCooldownTimer <= 0 && distToPlayer > 1e-4) {
-            g.dashCooldownTimer = GOLDEN_DASH_COOLDOWN_S
+            g.dashCooldownTimer = g.dashCooldownS
             g.dashTimer = GOLDEN_DASH_DURATION_S
             const dirNorm = toPlayer.clone().normalize()
             const up = new THREE.Vector3(0, 1, 0)
@@ -305,7 +321,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       } else {
         // Dash evasivo reativo a tiros recebidos
         if (goldenHit.dashCooldownTimer <= 0.6) {
-          goldenHit.dashCooldownTimer = GOLDEN_DASH_COOLDOWN_S
+          goldenHit.dashCooldownTimer = goldenHit.dashCooldownS
           goldenHit.dashTimer = GOLDEN_DASH_DURATION_S
           const lateral = new THREE.Vector3(Math.random() < 0.5 ? -1 : 1, (Math.random() - 0.5) * 0.4, 0).normalize()
           goldenHit.dashDir.copy(lateral)
@@ -317,7 +333,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           const oldPos = goldenHit.mesh.position.clone()
           const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax)
           goldenHit.mesh.position.copy(newPos)
-          goldenHit.teleportCooldownTimer = GOLDEN_TELEPORT_COOLDOWN_S
+          goldenHit.teleportCooldownTimer = goldenHit.teleportCooldownS
           triggerSoundCue(ENEMY_SOUND_CUES.golden_teleport, { oldPos, newPos })
           if (effects) {
             effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)

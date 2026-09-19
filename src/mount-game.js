@@ -16,6 +16,7 @@ import { getSummary, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat/index.js'
 import { createEnemiesSystem } from './enemies/index.js'
+import { getDifficultyLevel } from './enemies/shared.js'
 import { createPlayerSystem } from './player.js'
 import { createPlayerTelemetry } from './player-telemetry.js'
 import { createEffectsSystem } from './effects.js'
@@ -35,7 +36,7 @@ import { createGameLoop } from './game-loop.js'
 import {
   GROUND_Y,
   LEVEL_BACKGROUNDS,
-  BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT,
+  BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT, BOSS_NO_DECK_SCORE_INTERVAL,
   CYCLE_MS,
   NORMAL_SPAWN_INTERVAL_MS, REVIEW_ENEMY_INTERVAL_MULT,
   ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR,
@@ -188,6 +189,14 @@ export function mountGame(session, deck, menu) {
     enemyIntervalMax: enemyIntervalMaxInit,
     enemyAggression: 1,
     wrongAnswerCount: 0,
+    // Modo sem baralho: session.pointer fica preso em 0 pra sempre (ver flow-question.js,
+    // enterAlternatives), então (pointer+1) % BOSS_EVERY_QUESTIONS nunca bate — o chefe usa
+    // pontuação acumulada desde o último chefe em vez disso (ver enterCombat/BOSS_NO_DECK_SCORE_INTERVAL).
+    bossNoDeckScoreCheckpoint: 0,
+    // último nível 1-9 exibido — usado só pra saber quando MOSTRAR o flash de subida (nunca de
+    // descida, retrocesso é silencioso por pedido do usuário). O indicador persistente (HUD)
+    // sempre mostra o valor atual, independente disso.
+    lastDifficultyLevel: 1,
     extraSpawnPerBatch: 0,
     enemyDamageValue: 1,
     enemyCap: 0,
@@ -219,6 +228,17 @@ export function mountGame(session, deck, menu) {
   state.detritoTimer = progression.randomDetritoInterval()
   state.imaTimer = progression.randomImaInterval()
   state.bonusTimer = progression.randomBonusInterval()
+
+  // Nível de dificuldade 1-9 por inimigo (distinto do eixo contínuo wrongAnswerCount que
+  // applyDifficulty já usa pra spawn rate/agressividade — os dois coexistem). Registrado uma
+  // única vez aqui porque só este arquivo tem `state`/`session`/`deck` no mesmo escopo;
+  // enemies/index.js chama esse provider internamente em cada spawnX() (ver
+  // setDifficultyLevelProvider lá).
+  enemies.setDifficultyLevelProvider(() => getDifficultyLevel({
+    wrongAnswerCount: state.wrongAnswerCount,
+    score: session.score,
+    isNoDeck: !!deck?.isNoDeck,
+  }))
 
   // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
   // `environment` entrou nas deps só pra decolagem chamar environment.update() (ver
@@ -256,7 +276,9 @@ export function mountGame(session, deck, menu) {
   // ============ ENTER-COMBAT (estado inicial de cada ciclo) ============
   function enterCombat() {
     state.phase = 'combat'
-    state.isBossCycle = (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
+    state.isBossCycle = deck?.isNoDeck
+      ? (session.score - state.bossNoDeckScoreCheckpoint) >= BOSS_NO_DECK_SCORE_INTERVAL
+      : (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
     state.isReviewQuestion = (session.history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
     state.cycleTimer = state.isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
     state.enemyTimer = progression.randomEnemyInterval() * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)

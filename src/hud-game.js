@@ -1229,8 +1229,9 @@ export function createGameHud() {
   return {
     sceneRoot,
 
-    setStatus({ health, maxHealth = health, score, combo }) {
+    setStatus({ health, maxHealth = health, score, combo, difficultyLevel }) {
       status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
+        + (difficultyLevel ? ` · Nível ${difficultyLevel}/9` : '')
       const roundedHealth = Math.round(health)
       const isCrit = maxHealth > 0 && health / maxHealth <= LOW_HEALTH_THRESHOLD_FRAC
       if (!useOrbitalVitals) {

@@ -50,8 +50,18 @@ function projectVermeHeadToWorld(enemy, rail) {
 
 // spawna a cadeia inteira já como entradas independentes e comuns — hit/dano/morte reaproveitam
 // 100% o pipeline padrão de inimigo, sem nenhum caso especial no hit-test
-export function spawnVerme(scene, rail, makeId) {
+// Arquétipo "atirador" — escala linear, +1/nível, mas com teto baixo (6): são 4 elos por cadeia
+// (SEGMENT_COUNT), então o HP efetivo total já escala 4x mais rápido que um inimigo solo.
+const VERME_HP_PER_LEVEL = 1
+const VERME_HP_CAP = 6
+export function vermeStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(VERME_HP_CAP, VERME_HP + steps * VERME_HP_PER_LEVEL) }
+}
+
+export function spawnVerme(scene, rail, makeId, level = 1) {
   if (rail.isArena()) return []
+  const stats = vermeStatsForLevel(level)
   const distanceAhead = SPAWN_DISTANCE_MIN + Math.random() * (SPAWN_DISTANCE_MAX - SPAWN_DISTANCE_MIN)
   const screenX = (Math.random() * 2 - 1) * BOX_X
   const screenY = (Math.random() * 2 - 1) * BOX_Y
@@ -60,7 +70,7 @@ export function spawnVerme(scene, rail, makeId) {
     const mesh = new THREE.Mesh(geometry, material)
     scene.add(mesh)
     const enemy = {
-      id: makeId(), mesh, kind: VERME_KIND, dying: false, deathT: 0, hp: VERME_HP, maxHp: VERME_HP, fireTimer: Infinity,
+      id: makeId(), mesh, kind: VERME_KIND, dying: false, deathT: 0, hp: stats.hp, maxHp: stats.hp, fireTimer: Infinity,
       followTarget: null,
       // profundidade decrescente por elo (i=0 é o mais à frente/cabeça) — mesmo screenX/screenY
       // pra todos, já que nascem alinhados na mesma linha reta

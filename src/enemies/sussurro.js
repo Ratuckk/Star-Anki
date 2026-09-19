@@ -43,8 +43,18 @@ function projectSussurroToWorld(enemy, rail) {
     .addScaledVector(frame.up, enemy.screenY)
 }
 
-export function spawnSussurro(scene, rail, id) {
+// Arquétipo "enxame" (escala devagar, 0.5/nível — ver blasterStatsForLevel em blaster.js pro
+// raciocínio completo).
+const SUSSURRO_HP_PER_LEVEL = 0.5
+const SUSSURRO_HP_CAP = 6
+export function sussurroStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(SUSSURRO_HP_CAP, Math.round(SUSSURRO_HP + steps * SUSSURRO_HP_PER_LEVEL)) }
+}
+
+export function spawnSussurro(scene, rail, id, level = 1) {
   if (rail.isArena()) return null
+  const stats = sussurroStatsForLevel(level)
   const distanceAhead = SPAWN_DISTANCE_MIN + Math.random() * (SPAWN_DISTANCE_MAX - SPAWN_DISTANCE_MIN)
   const screenX = (Math.random() * 2 - 1) * BOX_X
   const screenY = (Math.random() * 2 - 1) * BOX_Y
@@ -52,7 +62,7 @@ export function spawnSussurro(scene, rail, id) {
   const mesh = new THREE.Mesh(geometry, baseMaterial.clone())
   scene.add(mesh)
   const enemy = {
-    id, mesh, kind: SUSSURRO_KIND, dying: false, deathT: 0, hp: SUSSURRO_HP, maxHp: SUSSURRO_HP, fireTimer: Infinity,
+    id, mesh, kind: SUSSURRO_KIND, dying: false, deathT: 0, hp: stats.hp, maxHp: stats.hp, fireTimer: Infinity,
     depth: distanceAhead, screenX, screenY,
     aliveMs: 0,
     pulseTimer: Math.random() * PULSE_INVISIBLE_MS, // dessincroniza vários sussurros entre si

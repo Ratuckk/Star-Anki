@@ -6,14 +6,16 @@
 // comportamento em relação ao código que vivia inline no main.js.
 
 import {
-  BOSS_BASE_HP, BOSS_HP_PER_ERROR, BOSS_BUILDUP_MS, BOSS_HUNT_BONUS_MS,
+  BOSS_BASE_HP, BOSS_HP_PER_ERROR, BOSS_HP_PER_LEVEL, BOSS_BUILDUP_MS, BOSS_HUNT_BONUS_MS,
   BOSS_QUESTION_COUNT, BOSS_DEFEAT_BONUS, BOSS_SUMMON_CUTSCENE_MS,
   ARENA_CUTSCENE_MS, FEEDBACK_MS, WRONG_FEEDBACK_MS,
   GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX,
   DEATH_CUTSCENE_MS, BOSS_DEATH_CUTSCENE_MS,
+  BOSS_EVERY_QUESTIONS, BOSS_NO_DECK_SCORE_INTERVAL,
 } from './main-constants.js'
 import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
+import { getDifficultyLevel } from './enemies/shared.js'
 
 export function createBossFlow(deps) {
   const {
@@ -41,11 +43,25 @@ export function createBossFlow(deps) {
 
   function enterBossBuildup() {
     state.phase = 'bossBuildup'
-    state.bossBuildupTimer = BOSS_BUILDUP_MS
     state.bossHealthBonus = 0
-    state.bossOrbsRemaining = BOSS_QUESTION_COUNT
     state.questionResult = null
+    // consumido AQUI (não em enterCombat, que só decide o gatilho) — pro próximo chefe sem
+    // baralho contar só a pontuação ganha DEPOIS deste. Inofensivo em modo com baralho (ninguém
+    // lê esse campo fora do ramo isNoDeck abaixo).
+    state.bossNoDeckScoreCheckpoint = session.score
     rail.enterArena()
+    if (deck?.isNoDeck) {
+      // Sem baralho não há pergunta pra caçar orbe nenhum (ver comentário em main-constants.js,
+      // BOSS_NO_DECK_SCORE_INTERVAL) — pula a caçada inteira (bossBuildup/triggerBossQuestion)
+      // e vai direto pro finishBossHunt, que já dispara a cutscene de invocação antes da luta
+      // de verdade (senão o combate começava "no susto"). rail.enterArena() acima continua
+      // rodando igual ao fluxo normal — sem ele o chefe nasceria/lutaria no modo trilho errado.
+      state.bossOrbsRemaining = 0
+      finishBossHunt()
+      return
+    }
+    state.bossBuildupTimer = BOSS_BUILDUP_MS
+    state.bossOrbsRemaining = BOSS_QUESTION_COUNT
     hud.setBossActive(true, state.bossOrbsRemaining)
     hud.setCountdown(null)
     for (let i = 0; i < currentBossExtraEnemies(); i += 1) combat.spawnEnemy()
@@ -161,8 +177,9 @@ export function createBossFlow(deps) {
     hud.setCountdown(null)
     hud.setBossTint(true)
     combat.clearAllCombatants()
-    const bossHp = BOSS_BASE_HP + state.bossHealthBonus
-    combat.spawnBossEnemy(bossHp)
+    const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: !!deck?.isNoDeck })
+    const bossHp = BOSS_BASE_HP + state.bossHealthBonus + BOSS_HP_PER_LEVEL * Math.max(0, level - 1)
+    combat.spawnBossEnemy(bossHp, level)
     hud.setBossFight(true, bossHp, bossHp)
 
     hud.damageFlash()
@@ -179,7 +196,8 @@ export function createBossFlow(deps) {
   function enterGoldenArena() {
     state.phase = 'goldenArena'
     rail.enterArena()
-    combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX })
+    const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: !!deck?.isNoDeck })
+    combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX, level })
     hud.setGoldenActive(true)
   }
 

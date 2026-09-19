@@ -46,6 +46,11 @@ const material = new THREE.MeshPhongMaterial({
 })
 const titanicMaterial = new THREE.MeshPhongMaterial({ color: 0x8d7b72, flatShading: true, shininess: 6 })
 
+// Não é um arquétipo enxame/atirador/miniboss limpo (obstáculo destrutível, não IA de combate) —
+// escala linear como um "atirador", mas só nos não-titânicos (ver uso abaixo).
+const DETRITO_HP_PER_LEVEL = 1
+const DETRITO_LEVEL_HP_CAP = 15
+
 export function spawnDetrito(scene, rail, id, opts = {}) {
   const isTitanic = !!opts.titanic
   const boxX = isTitanic ? BOX_X * 1.4 : BOX_X
@@ -56,10 +61,13 @@ export function spawnDetrito(scene, rail, id, opts = {}) {
   // tamanho variável por spawn — respeita teto de gigantes
   const scale = opts.scale || rollDetritoScale(isTitanic, opts.allowGiant !== false)
   mesh.scale.setScalar(scale)
-  // HP escala proporcionalmente com o tamanho do asteroide
+  // HP escala proporcionalmente com o tamanho do asteroide, mais um bônus de nível de
+  // dificuldade — só pros NÃO-titânicos (pedido do plano: os titânicos já são o teto de
+  // ameaça do tipo, +HP por nível ficaria redundante em cima do tamanho). Teto 15 pro total.
+  const levelSteps = Math.max(0, (opts.level || 1) - 1)
   const hp = isTitanic
     ? Math.round(38 + scale * 2.4)
-    : Math.max(3, Math.round(3 + scale * 3.2))
+    : Math.min(DETRITO_LEVEL_HP_CAP, Math.max(3, Math.round(3 + scale * 3.2)) + levelSteps * DETRITO_HP_PER_LEVEL)
   // rotação inicial aleatória
   mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
   scene.add(mesh)

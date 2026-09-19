@@ -39,8 +39,19 @@ const shieldMaterial = new THREE.MeshPhongMaterial({
   emissiveIntensity: 0.8,
 })
 
-export function spawnFragata(scene, rail, id) {
+// Arquétipo "miniboss" (junto com Tank/Horda) — escala rápido, 1.5/nível (ver tankStatsForLevel
+// em tank.js pro raciocínio completo). Fragata não tem dano próprio hoje (fireTimer: Infinity,
+// nunca atira — só toma dano por aríete/tiro), então só o HP escala.
+const FRAGATA_HP_PER_LEVEL = 1.5
+const FRAGATA_HP_CAP = 18
+export function fragataStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(FRAGATA_HP_CAP, Math.round(FRAGATA_HP + steps * FRAGATA_HP_PER_LEVEL)) }
+}
+
+export function spawnFragata(scene, rail, id, level = 1) {
   if (!rail.isArena()) return null
+  const stats = fragataStatsForLevel(level)
   const position = spawnPositionForEnemy(rail, 50, 85, 7, 5)
   // grupo NUNCA rotaciona (sem lookAt/rotation) — assim a posição local da placa (`shieldFacing`)
   // é diretamente a direção mundial, sem precisar converter espaço a cada checagem de dano
@@ -52,7 +63,7 @@ export function spawnFragata(scene, rail, id) {
   group.position.copy(position)
   scene.add(group)
   return {
-    id, mesh: group, kind: FRAGATA_KIND, dying: false, deathT: 0, hp: FRAGATA_HP, maxHp: FRAGATA_HP, fireTimer: Infinity,
+    id, mesh: group, kind: FRAGATA_KIND, dying: false, deathT: 0, hp: stats.hp, maxHp: stats.hp, fireTimer: Infinity,
     shieldFacing: new THREE.Vector3(1, 0, 0),
     shieldMesh: shield,
   }

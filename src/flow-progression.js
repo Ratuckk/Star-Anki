@@ -89,7 +89,9 @@ export function createProgressionFlow(deps) {
     combat.setEnemyProjectileSpeedBonus(state.wrongAnswerCount * ENEMY_PROJECTILE_SPEED_PER_WRONG)
     combat.setEnemyAimError?.(Math.max(1.2, 5.0 - state.wrongAnswerCount * 0.7))
     player?.setWrongCount?.(state.wrongAnswerCount)
-    hud?.showTierIncrease?.(state.wrongAnswerCount)
+    // showTierIncrease (nível 1-9 real, não wrongAnswerCount) é disparado no tick de game-loop.js
+    // agora — precisa rodar todo frame pra também pegar a escalada por PONTUAÇÃO do modo sem
+    // baralho (aqui só roda em resposta errada, que não existe nesse modo).
   }
 
   function applyBossDifficulty() {

@@ -124,8 +124,17 @@ function projectSentinelaToWorld(enemy, rail) {
     .addScaledVector(frame.up, enemy.screenY)
 }
 
-export function spawnSentinela(scene, rail, id) {
+// Arquétipo "atirador" (junto com Verme/Ampulheta) — escala linear, +1/nível.
+const SENTINELA_HP_PER_LEVEL = 1
+const SENTINELA_HP_CAP = 18
+export function sentinelaStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(SENTINELA_HP_CAP, SENTINELA_HP + steps * SENTINELA_HP_PER_LEVEL) }
+}
+
+export function spawnSentinela(scene, rail, id, level = 1) {
   if (rail.isArena()) return null
+  const stats = sentinelaStatsForLevel(level)
   const mesh = new THREE.Mesh(geometry, material)
   scene.add(mesh)
   const lateral = rail.getPlayerLateral ? rail.getPlayerLateral() : { x: 0, y: 0 }
@@ -135,8 +144,8 @@ export function spawnSentinela(scene, rail, id) {
     kind: SENTINELA_KIND,
     dying: false,
     deathT: 0,
-    hp: SENTINELA_HP,
-    maxHp: SENTINELA_HP,
+    hp: stats.hp,
+    maxHp: stats.hp,
     fireTimer: 1.2,
     shotsFired: 0,
     state: SENTINELA_STATE_ENGAGING,

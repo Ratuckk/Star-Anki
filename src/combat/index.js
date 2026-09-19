@@ -131,7 +131,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnTimeEnemy: () => enemies.spawnTimeEnemy(),
     spawnTimeEnemyMega: () => enemies.spawnTimeEnemyMega(),
     spawnTankEnemy: (hp) => enemies.spawnTankEnemy(hp),
-    spawnBossEnemy: (hp) => enemies.spawnBossEnemy(hp),
+    spawnBossEnemy: (hp, level) => enemies.spawnBossEnemy(hp, level),
     spawnGoldenSpecial: (opts) => enemies.spawnGoldenSpecial(opts),
     spawnDetrito: (count, opts) => enemies.spawnDetrito(count, opts),
     spawnTitanicDetrito: (opts) => enemies.spawnTitanicDetrito(opts),
@@ -141,7 +141,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnVerme: () => enemies.spawnVerme(),
     spawnImaSwarm: () => enemies.spawnImaSwarm(),
     spawnSussurro: () => enemies.spawnSussurro(),
-    spawnHorda: (level) => enemies.spawnHorda(level),
+    spawnHorda: () => enemies.spawnHorda(),
 
     getEnemyCount: () => enemies.getEnemyCount(),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),

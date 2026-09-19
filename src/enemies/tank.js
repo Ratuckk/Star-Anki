@@ -13,6 +13,15 @@ export const TANK_HIT_RADIUS = 2.57 // 2.34 * 1.10 (+10%)
 export const TANK_DEATH_DURATION = 0.2
 const TANK_SCALE = 2.29 // 2.08 * 1.10 (+10%)
 export const TANK_DEFAULT_HP = 15
+// Arquétipo "miniboss" (junto com Fragata/Horda) — escala RÁPIDO, 1.5/nível: é um encontro raro
+// e único (spawn de debug/eventos pontuais), não um volume de naves — o pico de ameaça precisa
+// ser sentido de verdade nível a nível.
+const TANK_HP_PER_LEVEL = 1.5
+const TANK_HP_CAP = 27
+export function tankStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(TANK_HP_CAP, Math.round(TANK_DEFAULT_HP + steps * TANK_HP_PER_LEVEL)) }
+}
 const SPAWN_DISTANCE_MIN = 54 // 45 * 1.2 — pedido do usuário (inimigos 20% mais distantes)
 const SPAWN_DISTANCE_MAX = 84 // 70 * 1.2
 const BOX_X = 7

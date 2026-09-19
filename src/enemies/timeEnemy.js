@@ -29,6 +29,28 @@ const TIME_MEGA_LASER_SPEED = 50
 const TIME_MEGA_LASER_HIT_RADIUS = 2.2
 const TIME_MEGA_LASER_MAX_RANGE = 180
 const TIME_MEGA_SHIELD_DAMAGE = 4
+const TIME_MEGA_SHIELD_DAMAGE_PER_LEVEL = 0.5
+const TIME_MEGA_SHIELD_DAMAGE_CAP = 8
+
+// Arquétipo "atirador" — escala linear, +1/nível.
+const TIME_HP_PER_LEVEL = 1
+const TIME_HP_CAP = 10
+export function timeStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(TIME_HP_CAP, TIME_MAX_HP + steps * TIME_HP_PER_LEVEL) }
+}
+
+// Variante mega — mesmo arquétipo, teto mais alto (é maior/mais rara); dano do laser (próprio,
+// não passa por enemyDamageValue) também escala, separado do HP.
+const TIME_MEGA_HP_PER_LEVEL = 1
+const TIME_MEGA_HP_CAP = 16
+export function timeMegaStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return {
+    hp: Math.min(TIME_MEGA_HP_CAP, TIME_MEGA_HP + steps * TIME_MEGA_HP_PER_LEVEL),
+    shieldDamage: Math.min(TIME_MEGA_SHIELD_DAMAGE_CAP, Math.round(TIME_MEGA_SHIELD_DAMAGE + steps * TIME_MEGA_SHIELD_DAMAGE_PER_LEVEL)),
+  }
+}
 
 // Geometria da ampulheta +10% maior (0.99 raio, 1.43 altura)
 const timeEnemyGeometry = new THREE.ConeGeometry(0.99, 1.43, 4)
@@ -56,7 +78,8 @@ function buildMesh(material) {
   return group
 }
 
-export function spawnTimeEnemy(scene, rail, id) {
+export function spawnTimeEnemy(scene, rail, id, level = 1) {
+  const stats = timeStatsForLevel(level)
   const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   const mesh = buildMesh(timeEnemyMaterial)
   mesh.position.copy(position)
@@ -64,12 +87,13 @@ export function spawnTimeEnemy(scene, rail, id) {
   triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_time_dilation_field, { worldPos: position, variant: 'normal' })
   return {
     id, mesh, kind: TIME_KIND, dying: false, deathT: 0,
-    hp: TIME_MAX_HP, maxHp: TIME_MAX_HP, fireTimer: null,
+    hp: stats.hp, maxHp: stats.hp, fireTimer: null,
     speedFactor: TIME_SPEED_FACTOR,
   }
 }
 
-export function spawnTimeEnemyMega(scene, rail, id) {
+export function spawnTimeEnemyMega(scene, rail, id, level = 1) {
+  const stats = timeMegaStatsForLevel(level)
   const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   const mesh = buildMesh(timeMegaMaterial)
   mesh.position.copy(position)
@@ -78,9 +102,10 @@ export function spawnTimeEnemyMega(scene, rail, id) {
   triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_time_dilation_field, { worldPos: position, variant: 'mega' })
   return {
     id, mesh, kind: TIME_KIND, dying: false, deathT: 0,
-    hp: TIME_MEGA_HP, maxHp: TIME_MEGA_HP, fireTimer: null,
+    hp: stats.hp, maxHp: stats.hp, fireTimer: null,
     speedFactor: TIME_SPEED_FACTOR,
     variant: 'mega',
+    megaShieldDamage: stats.shieldDamage,
   }
 }
 
@@ -116,7 +141,7 @@ export function timeFire(scene, enemy, playerPosition, ctx) {
   ctx.pushLaser({
     mesh, geo, mat, velocity: direction.multiplyScalar(TIME_MEGA_LASER_SPEED), traveled: 0,
     maxRange: TIME_MEGA_LASER_MAX_RANGE, hitRadius: TIME_MEGA_LASER_HIT_RADIUS,
-    shieldDamage: TIME_MEGA_SHIELD_DAMAGE,
+    shieldDamage: enemy.megaShieldDamage ?? TIME_MEGA_SHIELD_DAMAGE,
   })
   return true
 }

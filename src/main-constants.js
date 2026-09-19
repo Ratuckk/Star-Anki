@@ -58,7 +58,15 @@ export const BOSS_BASE_HP = 33 // era 3 (pedido do usuário: +30 de vida inicial
 // antigo `bossHealthMultiplier *= 2` (dobrava a cada erro/orbe sem resposta, virava
 // exponencial rápido demais) por um bônus aditivo simples, mais fácil de calibrar
 export const BOSS_HP_PER_ERROR = 20
+// Nível de dificuldade 1-9 (eixo separado de bossHealthBonus/BOSS_HP_PER_ERROR acima — ver
+// enemies/shared.js getDifficultyLevel) soma +15hp/nível por cima, sem teto próprio (o teto
+// prático é 9 níveis * 15 = +120). Dourado usa o mesmo valor (GOLDEN_HP_PER_LEVEL em golden.js).
+export const BOSS_HP_PER_LEVEL = 15
 export const BOSS_DEFEAT_BONUS = 500
+// Modo sem baralho (arcade): não há perguntas erradas nem session.pointer que avance de verdade
+// (fica preso em 0, ver flow-question.js), então o chefe dispara por pontuação acumulada desde o
+// último chefe em vez do ciclo de perguntas.
+export const BOSS_NO_DECK_SCORE_INTERVAL = 15000
 export const BOSS_SPREAD_MIN_BASE = 45
 export const BOSS_SPREAD_MAX_BASE = 95
 export const BOSS_SPREAD_STEP = 12

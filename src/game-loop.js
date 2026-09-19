@@ -652,8 +652,7 @@ export function createGameLoop(deps) {
           } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
             combat.spawnSussurro()
           } else if (Math.random() < HORDA_SPAWN_CHANCE) {
-            const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck })
-            combat.spawnHorda(level)
+            combat.spawnHorda()
           } else {
             const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
             if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {
@@ -770,7 +769,14 @@ export function createGameLoop(deps) {
 
     if (state.stopped) return
 
-    hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
+    // nível 1-9 (eixo por-inimigo, distinto do wrongAnswerCount contínuo que applyDifficulty já
+    // usa) — recalculado todo frame (não só em resposta errada) pra também refletir a escalada
+    // por PONTUAÇÃO do modo sem baralho. Flash de subida dispara aqui (retrocesso é silencioso).
+    const difficultyLevel = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck })
+    if (difficultyLevel > state.lastDifficultyLevel) hud.showTierIncrease(difficultyLevel)
+    state.lastDifficultyLevel = difficultyLevel
+
+    hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier, difficultyLevel })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax())
     // HUD orbital (settings.vitalsHudStyle): âncora dos arcos = projeção na tela da nave, mesmo

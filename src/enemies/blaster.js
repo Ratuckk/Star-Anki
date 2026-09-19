@@ -374,7 +374,19 @@ const BLASTER_STATES = {
   },
 }
 
+// Arquétipo "enxame" (junto com Mini-Swarm/Réplica/Ima/Sussurro) — escala DEVAGAR: o volume de
+// naves (squadron) já é a dificuldade, não precisa cada uma virar um tanque também. Passo 0.5/
+// nível, mesmo teto (6) que uma escala linear completa bateria, só mais gradual.
+const BLASTER_HP_BASE = 2
+const BLASTER_HP_PER_LEVEL = 0.5
+const BLASTER_HP_CAP = 6
+export function blasterStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(BLASTER_HP_CAP, Math.round(BLASTER_HP_BASE + steps * BLASTER_HP_PER_LEVEL)) }
+}
+
 export function spawnBlaster(scene, rail, id, opts = {}) {
+  const stats = blasterStatsForLevel(opts.level)
   const distanceAhead = opts.depth ?? (BLASTER_SPAWN_DISTANCE_MIN + Math.random() * (BLASTER_SPAWN_DISTANCE_MAX - BLASTER_SPAWN_DISTANCE_MIN))
   const screenX = opts.screenX ?? ((Math.random() * 2 - 1) * BLASTER_BOX_X)
   const screenY = opts.screenY ?? ((Math.random() * 2 - 1) * BLASTER_BOX_Y)
@@ -391,8 +403,8 @@ export function spawnBlaster(scene, rail, id, opts = {}) {
     kind: BLASTER_KIND,
     dying: false,
     deathT: 0,
-    hp: 2,
-    maxHp: 2,
+    hp: stats.hp,
+    maxHp: stats.hp,
     fireTimer: null,
     shotsFired: 0,
     disengaging: false,

@@ -42,7 +42,17 @@ const material = new THREE.MeshPhongMaterial({
   opacity: 0.95,
 })
 
-export function spawnImaSwarm(scene, rail, makeId) {
+// Arquétipo "enxame" (escala devagar, 0.5/nível — ver blasterStatsForLevel em blaster.js pro
+// raciocínio completo).
+const IMA_HP_PER_LEVEL = 0.5
+const IMA_HP_CAP = 8
+export function imaStatsForLevel(level = 1) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return { hp: Math.min(IMA_HP_CAP, Math.round(IMA_HP + steps * IMA_HP_PER_LEVEL)) }
+}
+
+export function spawnImaSwarm(scene, rail, makeId, level = 1) {
+  const stats = imaStatsForLevel(level)
   const count = GROUP_MIN + Math.floor(Math.random() * (GROUP_MAX - GROUP_MIN + 1))
   const base = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
   triggerSoundCue(ENEMY_SOUND_CUES.ima_polar_pulse, { worldPos: base })
@@ -55,7 +65,7 @@ export function spawnImaSwarm(scene, rail, makeId) {
       (Math.random() * 2 - 1) * SPREAD,
     ))
     scene.add(mesh)
-    group.push({ id: makeId(), mesh, kind: IMA_KIND, dying: false, deathT: 0, hp: IMA_HP, maxHp: IMA_HP, fireTimer: Infinity })
+    group.push({ id: makeId(), mesh, kind: IMA_KIND, dying: false, deathT: 0, hp: stats.hp, maxHp: stats.hp, fireTimer: Infinity })
   }
   return group
 }

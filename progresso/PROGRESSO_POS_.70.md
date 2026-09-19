@@ -774,4 +774,122 @@ colisão. Validado ao vivo de novo depois do fix (`window.__starAnki`, screensho
 grande e claro, telegraph vermelho bem visível antes do tiro, split em mini-swarms continua
 funcionando no novo tamanho.
 
+### v0.81.0 — Sistema de dificuldade por níveis 1-9 (todos os inimigos) + fixes reais da Horda + Boss/Dourado no modo sem baralho + indicador de nível no HUD
+
+Rodada grande baseada num documento de planejamento trazido pelo usuário. **Armadilha real
+pega logo no início**: o documento listava os 8 itens do §2 (fixes da Horda) como "já
+implementado" — o usuário confirmou que isso era falso (nunca colou o código, uma sessão
+anterior escreveu o doc como se tivesse feito). Conferido lendo o `git diff` real antes de
+mexer em qualquer coisa: só o guard de arena (§2.1) e a hitbox (fix separado, `896cf52`)
+existiam de fato; os outros 6 sub-itens (HP cap, 2 travas, split reancorado, spin, espaçamento,
+invencibilidade pós-spawn) foram implementados nesta entrega, não numa sessão anterior. Havia
+também um diff uncommitted de sessão anterior em 16 arquivos (`PROJECTILE_SPEED` pra 360, etc.)
+e uma pasta `Docs/` não rastreada — **descartados a pedido do usuário** (`git checkout --`), não
+fazem parte desta entrega.
+
+**§2 — fixes da Horda (todos os 8 itens, ver commit `4ecb2be`)**:
+1. `src/enemies/horda.js`: removido o guard `if (rail.isArena()) return null` — se aparecer em
+   arena por bug, o branch genérico de perseguição em `enemies/index.js` já cobre.
+2. HP com teto real: `HORDA_HP_PER_LEVEL` 1 → 1.25 + `HORDA_HP_CAP = 25` (bate o teto exato no
+   nível 9, 15 + 8*1.25 = 25).
+3. `src/combat/lockon.js`: `maxLocksForEntity(e)` novo — Horda aceita até 2 travas simultâneas
+   (chefe/dourado continuam sem teto próprio, resto continua 1). Substituiu o antigo booleano
+   `isBigLockTarget` por uma contagem numérica por entidade.
+4/6/8. `src/enemies/miniSwarm.js`: filhotes soltos pela Horda (`spawnMiniSwarmFromHorda`) agora
+   guardam a origem do espalhamento como **depth/lateral relativos ao frame vivo do jogador**
+   (`spreadOriginDepthStart/Target`, `spreadOriginRight/Up`), reprojetados a cada tick em vez de
+   um `Vector3` de mundo congelado no spawn — o jogador avança dezenas de unidades durante os 4s
+   de `spreadOut` (trilho sempre anda), então o ponto de espalhamento "andava" junto do frame
+   atual só depois desta mudança; antes, o cull de "ficou atrás" disparava assim que a fase
+   seguinte comparava contra o frame atual. Espaçamento entre vizinhos `1.2 → 5.2` (era medido
+   contra o raio do ponto de colisão, 0.55, igual ao erro que a própria Horda teve — corrigido
+   pra envergadura real da nave). `SPREAD_MIN_TARGET_DEPTH = 200` garante um corredor de
+   mergulho decente mesmo quando a Horda morre perto (órbita a só 28-50u); `MINI_SWARM_DIVE_MAX_S`
+   7 → 10 pra dar tempo de cruzar essa distância maior sem cull por tempo.
+5. Giro cosmético: `rotateZ` era no-op visual (TorusGeometry nasce simétrico em torno do próprio
+   eixo Z — o "buraco" do donut aponta pra lá); trocado por `rotateY`, que tumba o torus de
+   verdade. Campo `enemy.spinAngle` acumulado só de referência.
+7. `src/enemies/index.js`: `spawnInvincibleTimer` (campo genérico, decai uma vez por frame em
+   `updateEnemies`) — só os filhotes da Horda nascem com 0.4s de graça (mini-swarm comum nasce
+   com 0, sem mudança de comportamento). Checado em toque simples/aríete (via `isColliding`),
+   `resolveProjectileHit` e `applyAreaDamage`.
+
+**§1 — nível de dificuldade 1-9 aplicado a TODOS os inimigos** (antes só a Horda usava
+`getDifficultyLevel`, ver `shared.js`). Dois eixos continuam coexistindo por design:
+`applyDifficulty`/`wrongAnswerCount` (contínuo, spawn rate/agressividade/dano-padrão, ver
+`flow-progression.js`, **inalterado**) e o nível 1-9 (por inimigo, HP/comportamento próprio).
+Curva mantida **linear** (aprovado pelo usuário — rejeitou a opção de raiz quadrada do §4.1 do
+plano). Arquétipos diferenciados por velocidade de escala (aprovado, §4.2 do plano):
+
+- **Provider centralizado** (`src/enemies/index.js`): `setDifficultyLevelProvider(fn)` +
+  `currentDifficultyLevel()` internos — `mount-game.js` registra UMA VEZ, logo depois do
+  `state` ficar pronto, uma closure que chama `getDifficultyLevel({wrongAnswerCount,
+  score, isNoDeck})`. Escolhido em vez de plumbar `level` manualmente por ~15 call sites de
+  `spawnX()` (a opção citada no documento como "mais limpa" mas mais invasiva) porque
+  `state`/`session` não estão no escopo de `enemies/index.js`. Bônus colateral: os spawns do
+  painel de debug (`debug-actions.js`) agora também recebem o nível real em vez de sempre 1.
+- **Arquétipo "enxame"** (escala devagar, +0.5/nível — o volume já é a dificuldade): Blaster
+  (2→6), Réplica (3→7), Sussurro (2→6), Ima (4→8). Mini-Swarm comum continua sem escalar (1hp
+  fixo, pedido explícito do plano — só os filhotes da Horda usam HP diferente, e nem isso, 1hp
+  sempre, só ganham a invencibilidade pós-spawn).
+- **Arquétipo "atirador"** (linear, +1/nível): Sentinela (10→18), Verme por elo (3→6, teto cedo
+  de propósito — 4 elos por cadeia já multiplicam o HP efetivo), Ampulheta normal (5→10),
+  Ampulheta mega (10→16, dano do laser também escala 4→8 — é o único dano próprio dela, não
+  passa por `enemyDamageValue`). Detrito ganha +1hp/nível só nos NÃO-titânicos, teto 15 total,
+  somado por cima da fórmula de HP-por-escala existente (`spawnDetrito` já não usava a constante
+  `DETRITO_HP`, era 100% derivada de `scale` — o bônus de nível entra como termo adicional).
+- **Arquétipo "miniboss"** (rápido, +1.5/nível — são os momentos de pico): Tank (15→27, mantém o
+  parâmetro `hp` como override opcional pro debug — só usa o valor por nível se `hp` não for
+  passado), Fragata (6→18, sem dano próprio hoje — só o HP escala). Horda usa seu próprio passo
+  fracionário (1.25) já existente, ver §2.2 acima.
+- **Chefe e Dourado** (tratamento à parte, não usam a fórmula genérica): `+15hp/nível` sem teto
+  próprio (9 níveis * 15 = +120 na prática), somado por cima do `bossHealthBonus`/`GOLDEN_HP`
+  já existentes — nível não substitui a fonte de HP antiga, adiciona um termo novo. Chefe:
+  intervalo de laser encolhe até 50% (nível 9), `rotationSpeedMult` sobe até +40% — calculado no
+  PONTO DE USO (`enemy.difficultyLevel`, guardado no spawn), nunca mutando `BOSS_PHASES`
+  (array compartilhado entre todas as lutas). Dourado: cooldown de dash/teleporte encolhe até
+  50% também, mesmo raciocínio (`dashCooldownS`/`teleportCooldownS` por instância). Chefe recebe
+  o nível em `flow-boss.js → enterBossFight` (só ali tem `state`/`session`/`deck` no escopo,
+  igual o Dourado em `enterGoldenArena` — não usam o provider genérico porque já tinham escopo
+  próprio, ao contrário dos ~10 inimigos comuns).
+
+**§3 — Chefe/Dourado no modo sem baralho** (bug real, não pedido de feature): em
+`deck.isNoDeck`, `session.queue.length === 1` (card dummy único) e
+`session.pointer = (pointer+1) % queue.length` (ver `flow-question.js`) fica **preso em 0 pra
+sempre** — `(0+1) % BOSS_EVERY_QUESTIONS` nunca bate 0, então `state.isBossCycle` era sempre
+`false` a partida inteira e o chefe nunca aparecia no modo arcade.
+- `main-constants.js`: `BOSS_NO_DECK_SCORE_INTERVAL = 15000` (novo).
+- `mount-game.js → enterCombat()`: `state.isBossCycle` agora ramifica por `deck?.isNoDeck` —
+  sem baralho usa `session.score - state.bossNoDeckScoreCheckpoint >= 15000` em vez do ciclo de
+  perguntas. Checkpoint novo (`state.bossNoDeckScoreCheckpoint`, inicia em 0) consumido dentro
+  de `enterBossBuildup()` (não em `enterCombat`, que só decide o gatilho) — assim o próximo
+  chefe sem baralho conta só a pontuação ganha DEPOIS deste.
+- `flow-boss.js → enterBossBuildup()`: ramifica por `deck?.isNoDeck` **internamente**, mesmo
+  call site de sempre (`bossFlow.startArenaCutscene('boss', bossFlow.enterBossBuildup)`, zero
+  mudança em `game-loop.js`) — sem baralho pula a caçada de orbes inteira (não spawna orbes nem
+  inimigos extra) mas MANTÉM `rail.enterArena()` (crítico — sem isso o chefe nasceria/lutaria no
+  modo trilho errado) e vai direto pra `finishBossHunt()`, que já dispara a cutscene de
+  invocação (`bossSummon`) antes de `enterBossFight` — senão o combate começava "no susto"
+  (pedido explícito do documento de planejamento).
+
+**§4.3 — indicador de nível no HUD** (aprovado): `hud.setStatus()` ganhou o campo opcional
+`difficultyLevel`, anexado na mesma string de placar/combo (`"Pontos: X · Combo xY · Nível
+Z/9"`) — sem elemento novo de DOM. Recalculado TODO FRAME em `game-loop.js` (não só em resposta
+errada) porque o modo sem baralho escala por pontuação, não por erro — `applyDifficulty()` não
+roda nesse modo. Flash de transição (`hud.showTierIncrease`) trocado pra usar o nível real 1-9
+em vez do `wrongAnswerCount` cru que mostrava antes (`state.lastDifficultyLevel`, novo campo de
+state, só dispara o flash quando o nível SOBE — descida por `decayDifficulty` fica silenciosa,
+pedido explícito do documento).
+
+**§4.1 rejeitado, §4.2 aprovado** — ver decisões do usuário acima.
+
+**Verificação**: todos os ~20 arquivos tocados passaram em `node --check` (sintaxe limpa) e
+todo call site de toda função de spawn alterada foi conferido manualmente (grep + leitura) pra
+consistência de assinatura — incluindo os wrappers em `combat/index.js` e os spawns do painel
+de debug. **Não foi possível validar ao vivo no navegador nesta entrega** — o Browser pane desta
+sessão ficou preso em `net::ERR_CONNECTION_REFUSED` contra o servidor local mesmo após reiniciar
+o preview e o tab várias vezes (falha de infraestrutura da sessão, não do código — confirmado
+porque nem uma página em branco carregava). Recomendo rodar `window.__starAnki` / `aiValidator`
+manualmente na próxima sessão antes de mexer em qualquer coisa deste sistema de novo.
+
 

@@ -141,11 +141,27 @@ export const bossShieldMaterial = new THREE.MeshPhongMaterial({
   blending: THREE.AdditiveBlending,
 })
 
-function randomLaserInterval(phaseCfg) {
-  return phaseCfg.laserIntervalMin + Math.random() * (phaseCfg.laserIntervalMax - phaseCfg.laserIntervalMin)
+// ============ NÍVEL DE DIFICULDADE (1-9) ============
+// Chefe/Dourado não usam a fórmula genérica de xStatsForLevel(level) dos outros inimigos — o HP
+// deles já escala pelo eixo de erros da caçada de orbes (bossHealthBonus, ver flow-boss.js);
+// aqui o nível 1-9 governa FREQUÊNCIA de ataque (laser mais rápido, giro mais agressivo), não HP
+// (o +15hp/nível é somado em flow-boss.js na hora de montar bossHp, não aqui). Teto de 50% de
+// redução no intervalo do laser (nível 9 nunca fica instantâneo).
+const BOSS_LEVEL_LASER_SHRINK_PER_LEVEL = 0.05
+const BOSS_LEVEL_LASER_SHRINK_CAP = 0.5
+const BOSS_LEVEL_ROTATION_MULT_PER_LEVEL = 0.05
+
+function laserIntervalShrinkFor(level) {
+  const steps = Math.max(0, (level || 1) - 1)
+  return 1 - Math.min(BOSS_LEVEL_LASER_SHRINK_CAP, steps * BOSS_LEVEL_LASER_SHRINK_PER_LEVEL)
 }
 
-export function spawnBossEnemy(scene, rail, id, hp) {
+function randomLaserInterval(phaseCfg, level = 1) {
+  const shrink = laserIntervalShrinkFor(level)
+  return (phaseCfg.laserIntervalMin + Math.random() * (phaseCfg.laserIntervalMax - phaseCfg.laserIntervalMin)) * shrink
+}
+
+export function spawnBossEnemy(scene, rail, id, hp, level = 1) {
   const position = randomSpawnAroundArena(rail, ENEMY_ARENA_SPAWN_MAX * 0.6, ENEMY_ARENA_SPAWN_MAX)
   const mesh = new THREE.Mesh(bossEnemyGeometry, bossPhaseMaterials[0])
   mesh.position.copy(position)
@@ -159,7 +175,8 @@ export function spawnBossEnemy(scene, rail, id, hp) {
   triggerSoundCue(ENEMY_SOUND_CUES.boss_entrance, { worldPos: position, hp })
   return {
     id, mesh, kind: BOSS_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1,
-    laserCooldown: randomLaserInterval(BOSS_PHASES[0]),
+    difficultyLevel: level,
+    laserCooldown: randomLaserInterval(BOSS_PHASES[0], level),
     laserTelegraphTimer: 0,
     laserTargetPos: null,
     shieldMesh,
@@ -231,7 +248,7 @@ export function updateBossMovement(enemy, dt, playerPosition) {
       // troca material — efeito visual principal da transição (a cor muda)
       enemy.mesh.material = bossPhaseMaterials[enemy.phase]
       // rearma cooldowns pra não herdar cadência da fase anterior
-      enemy.laserCooldown = randomLaserInterval(nextPhase)
+      enemy.laserCooldown = randomLaserInterval(nextPhase, enemy.difficultyLevel)
       enemy.laserTelegraphTimer = 0
       enemy.laserTargetPos = null
       enemy.laserBurstRemaining = 0
@@ -251,6 +268,7 @@ export function updateBossMovement(enemy, dt, playerPosition) {
     enemy.mesh.lookAt(playerPosition)
   }
   const rotMult = enemy.phaseConfig.rotationSpeedMult
+    * (1 + Math.max(0, (enemy.difficultyLevel || 1) - 1) * BOSS_LEVEL_ROTATION_MULT_PER_LEVEL)
   enemy.mesh.rotateX(dt * 0.6 * rotMult)
   enemy.mesh.rotateY(dt * 0.9 * rotMult)
 
@@ -395,7 +413,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
         enemy.laserBurstTimer = cfg.laserBurstDelayS
       } else {
         enemy.laserTargetPos = null
-        enemy.laserCooldown = randomLaserInterval(cfg)
+        enemy.laserCooldown = randomLaserInterval(cfg, enemy.difficultyLevel)
       }
     }
     return
@@ -415,7 +433,7 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
           enemy.laserBurstTimer = cfg.laserBurstDelayS
         } else {
           enemy.laserTargetPos = null
-          enemy.laserCooldown = randomLaserInterval(cfg)
+          enemy.laserCooldown = randomLaserInterval(cfg, enemy.difficultyLevel)
         }
       }
     }

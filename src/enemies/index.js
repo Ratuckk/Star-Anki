@@ -16,7 +16,7 @@ import {
 import {
   MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, spawnMiniSwarmFromHorda, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm,
 } from './miniSwarm.js'
-import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, disposeTank } from './tank.js'
+import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, tankStatsForLevel, disposeTank } from './tank.js'
 import {
   TIME_KIND, TIME_HIT_RADIUS, TIME_DEATH_DURATION, TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS,
   spawnTimeEnemy, spawnTimeEnemyMega, updateTimeSpin, timePassBehind, timeColor, timeFire, disposeTimeEnemy,
@@ -110,6 +110,18 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   let enemyAimErrorDeg = ENEMY_AIM_ERROR_DEG
   let bossDefeatedPending = false
   let bossDefeatedWorldPos = null
+  // ============ NÍVEL DE DIFICULDADE (1-9) POR INIMIGO ============
+  // Opção B do planejamento: em vez de plumbar wrongAnswerCount/session.score/isNoDeck até cada
+  // um dos ~15 call sites de spawnX() (state/session não estão no escopo deste arquivo), quem
+  // monta o jogo (mount-game.js, que TEM esse escopo) registra um provider uma vez no boot. Cada
+  // spawnX() abaixo chama currentDifficultyLevel() internamente. Sem provider registrado (ex.:
+  // debug/teste isolado), cai em nível 1 — mesmo comportamento de antes desta mudança.
+  let difficultyLevelProvider = null
+  function currentDifficultyLevel() {
+    if (!difficultyLevelProvider) return 1
+    const lvl = Math.round(difficultyLevelProvider())
+    return Number.isFinite(lvl) ? Math.max(1, Math.min(9, lvl)) : 1
+  }
 
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
   const telemetry = createEnemyTelemetry()
@@ -737,7 +749,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
   return {
     spawnEnemy() {
-      const enemy = spawnBlaster(scene, rail, nextEnemyId++)
+      const enemy = spawnBlaster(scene, rail, nextEnemyId++, { level: currentDifficultyLevel() })
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
     },
@@ -748,12 +760,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const formation = formationType || types[Math.floor(Math.random() * types.length)]
       const archetype = BLASTER_PROFILES[Math.floor(Math.random() * BLASTER_PROFILES.length)].id
       const baseDepth = 55 + Math.random() * 15
+      const level = currentDifficultyLevel()
       const group = []
 
       if (formation === 'vFormation') {
         const leader = spawnBlaster(scene, rail, nextEnemyId++, {
           profile: archetype, depth: baseDepth, screenX: 0, screenY: 1.5,
-          isLeader: true, squadronId: sId,
+          isLeader: true, squadronId: sId, level,
         })
         leader.fireTimer = randomEnemyFireInterval()
         group.push(leader)
@@ -766,7 +779,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         for (const off of offsets) {
           const wingman = spawnBlaster(scene, rail, nextEnemyId++, {
             profile: archetype, depth: baseDepth + off.d, screenX: off.x, screenY: off.y,
-            isLeader: false, squadronId: sId,
+            isLeader: false, squadronId: sId, level,
           })
           wingman.fireTimer = randomEnemyFireInterval()
           group.push(wingman)
@@ -776,7 +789,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         for (let i = 0; i < xs.length; i++) {
           const ship = spawnBlaster(scene, rail, nextEnemyId++, {
             profile: archetype, depth: baseDepth + i * 2, screenX: xs[i], screenY: 1.2,
-            isLeader: i === 1, squadronId: sId,
+            isLeader: i === 1, squadronId: sId, level,
           })
           ship.fireTimer = randomEnemyFireInterval()
           group.push(ship)
@@ -786,7 +799,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         for (let i = 0; i < depths.length; i++) {
           const ship = spawnBlaster(scene, rail, nextEnemyId++, {
             profile: archetype, depth: depths[i], screenX: (i % 2 === 0 ? -1.2 : 1.2), screenY: 1.2 - i * 0.4,
-            isLeader: i === 0, squadronId: sId,
+            isLeader: i === 0, squadronId: sId, level,
           })
           ship.fireTimer = randomEnemyFireInterval()
           group.push(ship)
@@ -802,7 +815,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           const off = pincerOffsets[i]
           const ship = spawnBlaster(scene, rail, nextEnemyId++, {
             profile: archetype, depth: baseDepth + off.d, screenX: off.x, screenY: off.y,
-            isLeader: i === 0, squadronId: sId,
+            isLeader: i === 0, squadronId: sId, level,
           })
           ship.fireTimer = randomEnemyFireInterval()
           group.push(ship)
@@ -829,32 +842,34 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnTimeEnemy() {
-      const enemy = spawnTimeEnemy(scene, rail, nextEnemyId++)
+      const enemy = spawnTimeEnemy(scene, rail, nextEnemyId++, currentDifficultyLevel())
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
     },
 
     spawnTimeEnemyMega() {
-      const enemy = spawnTimeEnemyMega(scene, rail, nextEnemyId++)
+      const enemy = spawnTimeEnemyMega(scene, rail, nextEnemyId++, currentDifficultyLevel())
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
     },
 
-    spawnTankEnemy(hp = TANK_DEFAULT_HP) {
-      const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, hp)
+    spawnTankEnemy(hp = null) {
+      const resolvedHp = hp ?? tankStatsForLevel(currentDifficultyLevel()).hp
+      const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
     },
 
     spawnTitanicDetrito(opts = {}) {
       const activeGiants = enemies.filter((e) => e.kind === DETRITO_KIND && e.isGiant && !e.dying).length
+      const withLevel = { level: currentDifficultyLevel(), ...opts }
       if (activeGiants >= 2) {
         // Teto de 2 gigantes ativos respeitado: gera detrito comum menor no lugar
-        const regular = spawnDetrito(scene, rail, nextEnemyId++, { ...opts, allowGiant: false })
+        const regular = spawnDetrito(scene, rail, nextEnemyId++, { ...withLevel, allowGiant: false })
         registerSpawn(regular)
         return regular
       }
-      const enemy = spawnTitanicDetrito(scene, rail, nextEnemyId++, opts)
+      const enemy = spawnTitanicDetrito(scene, rail, nextEnemyId++, withLevel)
       registerSpawn(enemy)
       return enemy
     },
@@ -863,10 +878,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const activeGiants = enemies.filter((e) => e.kind === DETRITO_KIND && e.isGiant && !e.dying).length
       let giantsAllowed = Math.max(0, 2 - activeGiants)
       const n = Math.max(1, Math.min(15, count))
+      const level = currentDifficultyLevel()
       const spawned = []
       for (let i = 0; i < n; i++) {
         const canBeGiant = giantsAllowed > 0 && opts.allowGiant !== false
-        const enemy = spawnDetrito(scene, rail, nextEnemyId++, { ...opts, allowGiant: canBeGiant })
+        const enemy = spawnDetrito(scene, rail, nextEnemyId++, { level, ...opts, allowGiant: canBeGiant })
         if (enemy.isGiant) {
           giantsAllowed--
         }
@@ -877,36 +893,41 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnSentinela() {
-      const enemy = spawnSentinela(scene, rail, nextEnemyId++)
+      const enemy = spawnSentinela(scene, rail, nextEnemyId++, currentDifficultyLevel())
       registerSpawn(enemy)
     },
 
     spawnReplica() {
-      const enemy = spawnReplica(scene, rail, nextEnemyId++)
+      const enemy = spawnReplica(scene, rail, nextEnemyId++, currentDifficultyLevel())
       registerSpawn(enemy)
     },
 
     spawnFragata() {
-      const enemy = spawnFragata(scene, rail, nextEnemyId++)
+      const enemy = spawnFragata(scene, rail, nextEnemyId++, currentDifficultyLevel())
       registerSpawn(enemy)
     },
 
     spawnVerme() {
-      const segments = spawnVerme(scene, rail, () => nextEnemyId++)
+      const segments = spawnVerme(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
       registerSpawnGroup(segments)
     },
 
     spawnImaSwarm() {
-      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++)
+      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
       registerSpawnGroup(group)
     },
 
     spawnSussurro() {
-      const enemy = spawnSussurro(scene, rail, nextEnemyId++)
+      const enemy = spawnSussurro(scene, rail, nextEnemyId++, currentDifficultyLevel())
       registerSpawn(enemy)
     },
 
-    spawnHorda(level = 1) {
+    setDifficultyLevelProvider(fn) {
+      difficultyLevelProvider = fn
+    },
+
+    spawnHorda() {
+      const level = currentDifficultyLevel()
       const enemy = spawnHordaEnemy(scene, rail, nextEnemyId++, level)
       if (!enemy) return
       enemy.fireTimer = hordaFireInterval()
@@ -931,8 +952,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return sources
     },
 
-    spawnBossEnemy(hp) {
-      const boss = spawnBossEnemy(scene, rail, nextEnemyId++, hp)
+    spawnBossEnemy(hp, level = 1) {
+      const boss = spawnBossEnemy(scene, rail, nextEnemyId++, hp, level)
       enemies.push(boss)
       telemetry.recordEvent(boss.id, boss.kind, 'spawn', `CHEFE entrou em combate com ${boss.hp} HP!`, { hp: boss.hp, maxHp: boss.maxHp })
     },
