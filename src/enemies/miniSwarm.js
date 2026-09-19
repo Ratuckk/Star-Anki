@@ -15,6 +15,11 @@ const MINI_SWARM_SPACING = 2
 // morreu e se afasta radialmente dos outros por HORDA_SPLIT_SPREAD_DURATION_S antes de entrar no
 // TELEGRAPH/DIVE normal — daí em diante é 100% o mesmo comportamento do mini-swarm comum.
 export const HORDA_SPLIT_SPREAD_DURATION_S = 4
+// CORRIGIDO — grace period de invencibilidade logo após o split (a Horda morre no meio de um
+// tiro/splash que já tinha acerto "em voo"; sem isso, um projétil ainda vivo no frame do split
+// podia matar um filhote recém-nascido antes mesmo do jogador perceber ele na tela). Só os
+// filhotes soltos pela Horda usam — mini-swarm comum nasce sem essa graça (spawnInvincibleS: 0).
+export const MINI_SWARM_SPAWN_INVINCIBLE_S = 0.4
 const MINI_SWARM_PATROL_SPEED = 28
 const MINI_SWARM_PATROL_AMPLITUDE = 10
 const MINI_SWARM_PATROL_DURATION_MIN = 1.2
@@ -23,7 +28,10 @@ const MINI_SWARM_TELEGRAPH_S = 0.45
 const MINI_SWARM_DIVE_SPEED = 55
 const MINI_SWARM_DIVE_SPREAD = 7
 const MINI_SWARM_DIVE_TURN_RATE = 6
-const MINI_SWARM_DIVE_MAX_S = 7
+// 7 → 10: filhotes da Horda agora podem começar o mergulho de até SPREAD_MIN_TARGET_DEPTH (200u,
+// bem mais que a distância normal de mergulho, 58-90u) — 7s não bastava pra cruzar isso na
+// velocidade de mergulho padrão sem ser culled por tempo antes de chegar perto do jogador.
+const MINI_SWARM_DIVE_MAX_S = 10
 // Proibição de ficar atrás: ultrapassou a profundidade -2.0, é imediatamente removido
 const MINI_SWARM_DIVE_PASS_BEHIND = -2.0
 const MINI_SWARM_DIVE_BEHIND_GRACE_S = 0.15
@@ -93,6 +101,7 @@ export function spawnMiniSwarm(scene, rail, nextId) {
       diveCorePos: null,
       diveElapsed: 0,
       diveAnglePhase: Math.random() * Math.PI * 2,
+      spawnInvincibleTimer: 0,
     })
   }
   return group
@@ -102,11 +111,33 @@ export function spawnMiniSwarm(scene, rail, nextId) {
 // no ponto exato da morte dela, count decidido por quem chama). Cada um sorteia seu próprio
 // ângulo/raio de afastamento (raio calculado pra manter ~1 nave de distância entre vizinhos no
 // círculo, igual pedido do usuário) — ver a fase 'spreadOut' em updateMiniSwarm acima.
-const HORDA_CHILD_NEIGHBOR_SPACING = 1.2 // ~1 nave de distância (nave = círculo de raio 0.55)
+// "1 nave de distância" (envergadura real, ver SHIP_PRESETS.default em rail.js: wingHalfSpan*2 =
+// 5.2) — CORRIGIDO, media contra o raio do ponto de colisão (0.55) igual ao erro de escala que a
+// própria Horda teve (ver histórico em progresso/), ficava um aglomerado colado e ilegível.
+const HORDA_CHILD_NEIGHBOR_SPACING = 5.2
+// Profundidade mínima (à frente do frame VIVO do jogador) que o ponto de espalhamento deve
+// alcançar até o fim da fase spreadOut — dá um "corredor" de mergulho decente mesmo quando a
+// Horda morre perto (ela orbita a só 28-50u). Combinado com DIVE_MAX_S maior (ver abaixo) pra dar
+// tempo de cruzar essa distância sem ser culled por tempo antes de chegar perto do jogador.
+const SPREAD_MIN_TARGET_DEPTH = 200
 export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
   const spreadRadius = count > 1
     ? HORDA_CHILD_NEIGHBOR_SPACING / (2 * Math.sin(Math.PI / count))
     : 0
+  // Decompõe o ponto de morte da Horda (mundo absoluto) em coordenadas RELATIVAS ao frame vivo
+  // atual (rail.getFrameAt(0) — o mesmo "agora" usado pelo loop principal, não um frame travado
+  // tipo rail.getFrameAt(distânciaFixa)). CORRIGIDO — a versão antiga guardava spreadOrigin como
+  // um Vector3 absoluto de mundo, congelado no instante da morte; o jogador avança dezenas de
+  // unidades durante os 4s de spreadOut (trilho sempre anda), então o aglomerado ficava pra trás
+  // e o cull de "ficou atrás" (relativeForward < pass-behind) disparava assim que a fase seguinte
+  // media a posição contra o frame atual. Reancorando por depth/lateral (recalculados a cada tick
+  // em updateMiniSwarm a partir do frame ATUAL), o ponto de espalhamento "anda junto" do jogador.
+  const frame = rail.getFrameAt(0)
+  const toOrigin = originPos.clone().sub(frame.position)
+  const originDepth = toOrigin.dot(frame.forward)
+  const originRight = toOrigin.dot(frame.right)
+  const originUp = toOrigin.dot(frame.up)
+  const spreadOriginDepthTarget = Math.max(originDepth, SPREAD_MIN_TARGET_DEPTH)
   const group = []
   for (let i = 0; i < count; i += 1) {
     const variant = MINI_SWARM_VARIANT_IDS[Math.floor(Math.random() * MINI_SWARM_VARIANT_IDS.length)]
@@ -118,7 +149,10 @@ export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
       id: nextId(), mesh, kind: MINI_SWARM_KIND, dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: Infinity,
       variant,
       swarmState: 'spreadOut',
-      spreadOrigin: originPos.clone(),
+      spreadOriginDepthStart: originDepth,
+      spreadOriginDepthTarget,
+      spreadOriginRight: originRight,
+      spreadOriginUp: originUp,
       spreadAngle: (i / count) * Math.PI * 2 + Math.random() * 0.3,
       spreadRadius,
       spreadTimer: HORDA_SPLIT_SPREAD_DURATION_S,
@@ -127,6 +161,7 @@ export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
       diveCorePos: null,
       diveElapsed: 0,
       diveAnglePhase: Math.random() * Math.PI * 2,
+      spawnInvincibleTimer: MINI_SWARM_SPAWN_INVINCIBLE_S,
     })
   }
   return group
@@ -141,10 +176,18 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   if (enemy.swarmState === 'spreadOut') {
     enemy.spreadTimer -= dt
     const t = THREE.MathUtils.clamp(1 - Math.max(0, enemy.spreadTimer) / HORDA_SPLIT_SPREAD_DURATION_S, 0, 1)
-    const target = enemy.spreadOrigin.clone()
+    // Reancora a origem do espalhamento no frame VIVO de CADA tick (em vez de um Vector3 de
+    // mundo congelado no spawn) — a profundidade também rampeia até spreadOriginDepthTarget,
+    // dando um corredor de mergulho decente. Ver comentário em spawnMiniSwarmFromHorda.
+    const depthNow = THREE.MathUtils.lerp(enemy.spreadOriginDepthStart, enemy.spreadOriginDepthTarget, t)
+    const originNow = frame.position.clone()
+      .addScaledVector(frame.forward, depthNow)
+      .addScaledVector(frame.right, enemy.spreadOriginRight)
+      .addScaledVector(frame.up, enemy.spreadOriginUp)
+    const target = originNow.clone()
       .addScaledVector(frame.right, Math.cos(enemy.spreadAngle) * enemy.spreadRadius)
       .addScaledVector(frame.up, Math.sin(enemy.spreadAngle) * enemy.spreadRadius)
-    enemy.mesh.position.lerpVectors(enemy.spreadOrigin, target, t)
+    enemy.mesh.position.lerpVectors(originNow, target, t)
     enemy.mesh.lookAt(playerPosition)
     if (enemy.spreadTimer <= 0) {
       enemy.swarmState = 'telegraph'

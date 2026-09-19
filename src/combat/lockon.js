@@ -47,6 +47,16 @@ function isBigLockTarget(e) {
   return e.kind === 'boss' || e.kind === 'golden'
 }
 
+// Quantas travas o MESMO alvo pode acumular. Chefe/Dourado: sem teto próprio (só o orçamento
+// geral de maxAllowed limita). Horda: até 2 — ela é grande o bastante pra "merecer" mais de uma
+// trava mas não é um alvo-tipo-chefe (pedido explícito do usuário). Todo o resto: 1 (trava única,
+// comportamento original).
+function maxLocksForEntity(e) {
+  if (isBigLockTarget(e)) return Infinity
+  if (e.kind === 'horda') return 2
+  return 1
+}
+
 // temporário de módulo — evita alocar Vector3 novo a cada snapshot por frame
 const _tmpWorldPos = new THREE.Vector3()
 const _tmpOffset = new THREE.Vector3()
@@ -86,10 +96,10 @@ export function createLockOnSystem(rail, enemies) {
       const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()]
       for (const e of candidates) {
         if (lockedEnemies.length >= maxAllowed) break
-        const alreadyLocked = lockedEnemies.some((rec) => rec.entity === e)
-        // alvo comum já travado não trava de novo; alvo grande pode acumular quantas travas o
-        // orçamento (maxAllowed) permitir (o layout em anel cuida de espalhar visualmente)
-        if (!isBigLockTarget(e) && alreadyLocked) continue
+        const existingLocksForEntity = lockedEnemies.reduce((n, rec) => n + (rec.entity === e ? 1 : 0), 0)
+        // teto por entidade (ver maxLocksForEntity) — alvo comum trava só 1x, Horda até 2, chefe/
+        // dourado só limitado pelo orçamento geral (o layout em anel espalha visualmente)
+        if (existingLocksForEntity >= maxLocksForEntity(e)) continue
 
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()

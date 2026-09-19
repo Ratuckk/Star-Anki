@@ -362,6 +362,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
       const baseScale = enemy.mesh.scale.x || 1
+      // grace period de invencibilidade pós-spawn (hoje só os filhotes da Horda usam, ver
+      // MINI_SWARM_SPAWN_INVINCIBLE_S em miniSwarm.js) — decai uma vez por frame aqui, checado
+      // no toque simples/aríete abaixo e em resolveProjectileHit/applyAreaDamage mais adiante.
+      if (enemy.spawnInvincibleTimer > 0) enemy.spawnInvincibleTimer = Math.max(0, enemy.spawnInvincibleTimer - dt)
       if (enemy.dying) {
         enemy.deathT += dt / deathDuration
         const t = Math.max(0, 1 - enemy.deathT)
@@ -372,7 +376,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.deathScale = baseScale
 
       const ramExtra = ramDamage > 0 ? 5.0 : 0
-      const isColliding = shipPoints.some((pt) => pt.worldPos.distanceTo(enemy.mesh.position) <= hitRadius + pt.radius + ramExtra)
+      const isColliding = !(enemy.spawnInvincibleTimer > 0)
+        && shipPoints.some((pt) => pt.worldPos.distanceTo(enemy.mesh.position) <= hitRadius + pt.radius + ramExtra)
       if (isColliding) {
         hits += 1
         if (enemy.kind === BOSS_KIND) {
@@ -987,6 +992,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const hitsLog = []
       for (const e of enemies) {
         if (e.dying) continue
+        if (e.spawnInvincibleTimer > 0) continue
         if (e.mesh.position.distanceTo(center) > radius) continue
         if (e.kind === BOSS_KIND && e.isShieldActive) continue
         e.hp -= damage
@@ -1024,7 +1030,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const isHoming = !!projectileMeta.isHoming
       const hitBuffer = projectileMeta.hitBuffer || 0
 
-      const enemyHit = enemies.find((e) => !e.dying && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
+      const enemyHit = enemies.find((e) => !e.dying && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
         // Chefe: escudo refletor azul — a cada 7s ergue escudo por 3s que reflete tiros
         if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {

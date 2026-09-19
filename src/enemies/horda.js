@@ -42,7 +42,10 @@ const HORDA_PROJECTILE_HIT_RADIUS = 2.6
 const HORDA_PROJECTILE_MAX_RANGE = 160
 
 const HORDA_HP_BASE = 15
-const HORDA_HP_PER_LEVEL = 1
+// Arquétipo "miniboss" (junto com Tank/Fragata) — escala rápido, teto alcançado bem antes do
+// nível 9 (steps=8 * 1.25 = 10 → 25). Passo fracionário só ela usa, pra bater o teto redondo.
+const HORDA_HP_PER_LEVEL = 1.25
+const HORDA_HP_CAP = 25
 const HORDA_DAMAGE_BASE = 5
 const HORDA_DAMAGE_PER_LEVEL = 1
 const HORDA_SPLIT_COUNT_BASE = 5
@@ -97,7 +100,7 @@ const hordaProjectileMaterial = new THREE.MeshBasicMaterial({ color: HORDA_PROJE
 export function hordaStatsForLevel(level = 1) {
   const steps = Math.max(0, (level || 1) - 1)
   return {
-    hp: HORDA_HP_BASE + steps * HORDA_HP_PER_LEVEL,
+    hp: Math.min(HORDA_HP_CAP, Math.round(HORDA_HP_BASE + steps * HORDA_HP_PER_LEVEL)),
     damage: HORDA_DAMAGE_BASE + steps * HORDA_DAMAGE_PER_LEVEL,
     splitCount: HORDA_SPLIT_COUNT_BASE + steps * HORDA_SPLIT_COUNT_PER_LEVEL,
   }
@@ -112,7 +115,9 @@ function projectHordaToWorld(enemy, rail) {
 }
 
 export function spawnHorda(scene, rail, id, level = 1) {
-  if (rail.isArena()) return null // só existe em trilho — nunca deveria ser chamada em arena
+  // Só existe em trilho por design — mas se algo chamar em arena por bug, sobrevive: o branch
+  // genérico de perseguição em arena (enemies/index.js) já cobre qualquer kind sem tratamento
+  // especial. Pedido explícito do usuário — nenhum guard aqui.
   const stats = hordaStatsForLevel(level)
   const distanceAhead = HORDA_SPAWN_DISTANCE_MIN + Math.random() * (HORDA_SPAWN_DISTANCE_MAX - HORDA_SPAWN_DISTANCE_MIN)
   const screenX = (Math.random() * 2 - 1) * HORDA_BOX_X
@@ -140,6 +145,7 @@ export function spawnHorda(scene, rail, id, level = 1) {
     orbitCenterY: screenY,
     orbitAngle: Math.random() * Math.PI * 2,
     turbulenceTimer: 0,
+    spinAngle: Math.random() * Math.PI * 2,
     projectileOpts: {
       geometry: hordaProjectileGeometry,
       material: hordaProjectileMaterial,
@@ -195,8 +201,14 @@ export function updateHordaMovement(enemy, dt, frame, rail, boostActive) {
 
 // Giro cosmético — chamado DEPOIS do lookAt genérico do loop principal (mesmo padrão de
 // updateTimeSpin), senão o lookAt sobrescreveria a rotação a cada frame.
+// CORRIGIDO — rotateZ era no-op visual: TorusGeometry nasce simétrico em torno do próprio eixo Z
+// (o "buraco" do donut aponta pra Z), então girar nesse eixo não muda nada na tela. rotateY
+// tumba o torus de verdade (eixo perpendicular ao anel). Também trocado de rotation relativa
+// acumulada via rotateY (que já é acumulativa por natureza, sem precisar de spinAngle) — o campo
+// enemy.spinAngle fica só de referência/depuração, não é reaplicado do zero a cada frame.
 export function updateHordaSpin(enemy, dt) {
-  enemy.mesh.rotateZ(HORDA_SPIN_SPEED * dt)
+  enemy.spinAngle += HORDA_SPIN_SPEED * dt
+  enemy.mesh.rotateY(HORDA_SPIN_SPEED * dt)
 }
 
 // Hit não-letal — "chacoalha" (turbulência), efeito novo sem precedente no jogo.
