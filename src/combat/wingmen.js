@@ -133,6 +133,8 @@ const _wmLaserMuzzle = new THREE.Vector3()
 const _wmRel = new THREE.Vector3()
 const _wlPrevPos = new THREE.Vector3()
 const _wlStep = new THREE.Vector3()
+const _wmNoseToPlayer = new THREE.Vector3()
+const _wmInvQuat = new THREE.Quaternion()
 
 // Taxa de giro (rad/s, usada por quaternion.rotateTowards) e velocidade/aceleração de cruzeiro
 // agora vêm de `profile.flightProfile` (Overhaul de Personalidade, Ideia 1) — cada piloto tem o
@@ -174,6 +176,18 @@ const SQUADRON_COMMAND_COOLDOWN_S = 10.0
 const ESCORT_SIDE_OFFSET = 3.0
 const ESCORT_UP_OFFSET = 0.6
 const ESCORT_FORWARD_OFFSET = 2.5
+
+// ============ PERSONALIDADE DE FORMAÇÃO (Overhaul de Personalidade, Ideia 4) ============
+// Puramente cosmético — nenhum destes mexe em hitbox, colisão ou lógica de combate.
+const FALCO_WEAVE_PERIOD_S = 2.5 // ciclo completo da oscilação lateral
+const FALCO_WEAVE_AMPLITUDE = 3.0 // ±3u
+const PEPPY_NOSE_MAX_RAD = THREE.MathUtils.degToRad(10)
+const PEPPY_NOSE_EASE_RATE = 1.6 // rad/s aproximados em direção ao ângulo-alvo
+const SLIPPY_ROLL_DELAY_S = 0.3
+const SLIPPY_ROLL_HISTORY_MAX_S = 1.0 // poda o buffer além disso — mais que suficiente pro delay
+const KRYSTAL_CLOAK_CYCLE_S = 8.0
+const KRYSTAL_CLOAK_DURATION_S = 1.5
+const KRYSTAL_CLOAK_OPACITY = 0.35
 
 // ============ CONSTRUTORES DE MODELOS 3D ÚNICOS ============
 
@@ -400,6 +414,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const activeLasers = []
   let elapsed = 0
   let chargeHeldTimer = 0
+  // Slippy (Ideia 4): buffer do roll do JOGADOR pra imitar com 0.3s de atraso — um só histórico
+  // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
+  const playerRollHistory = []
+
+  function delayedPlayerRoll(delaySeconds) {
+    const targetT = elapsed - delaySeconds
+    for (let i = playerRollHistory.length - 1; i >= 0; i -= 1) {
+      if (playerRollHistory[i].t <= targetT) return playerRollHistory[i].roll
+    }
+    return playerRollHistory.length > 0 ? playerRollHistory[0].roll : 0
+  }
 
   const laserGeometry = new THREE.CylinderGeometry(0.09, 0.09, 1.4, 6)
   laserGeometry.rotateX(Math.PI / 2)
@@ -451,6 +476,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_EXTRA_TARGETS : 0
   }
 
+  // Coleta os materiais únicos de um mesh composto (grupo de partes) — usado pela Krystal pra
+  // animar opacidade (Ideia 4). buildWingmanShip já cria materiais NOVOS a cada chamada (nunca
+  // compartilhados entre instâncias — só há 1 Krystal viva por vez de qualquer forma), então não
+  // precisa clonar de novo aqui, só coletar as referências.
+  function collectMaterials(mesh) {
+    const materials = new Set()
+    mesh.traverse((child) => {
+      if (child.isMesh && child.material) materials.add(child.material)
+    })
+    return [...materials]
+  }
+
   function spawnMember(profileId) {
     const profile = WINGMAN_PROFILES[profileId]
     if (!profile) return null
@@ -494,6 +531,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       abilityTimer: 0,
       abilityApplied: false,
       escortKind: null, // 'guard' | 'assist' — só usado quando state === 'escort'
+      // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
+      krystalCloakTimer: 0, // Krystal: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
+      krystalMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
+    }
+    if (wingman.krystalMaterials) {
+      for (const m of wingman.krystalMaterials) m.transparent = true
     }
 
     activeWingmen.push(wingman)
@@ -700,6 +743,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (squadronCommandDurationTimer <= 0) deactivateFocusCommand()
     }
 
+    // Slippy (Ideia 4): amostra o roll do jogador uma vez por frame, poda o que já passou do
+    // delay + folga.
+    if (rail.getRollAngle) {
+      playerRollHistory.push({ t: elapsed, roll: rail.getRollAngle() })
+      while (playerRollHistory.length > 1 && playerRollHistory[0].t < elapsed - SLIPPY_ROLL_HISTORY_MAX_S) {
+        playerRollHistory.shift()
+      }
+    }
+
     // acumuladores das habilidades (declarados aqui, não só depois do loop de wingmen, porque
     // a investida do Falco resolve o acerto DENTRO do próprio loop de estados)
     let enemyKills = 0
@@ -734,6 +786,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // continua sendo a referência "neutra" pra quando a condição não se aplica mais).
       let reactiveForward = slot.forward
       let reactiveSide = slot.side
+      if (w.profile.id === 0) {
+        // Falco: oscilação lateral lenta na vaga (personalidade de formação, Ideia 4) — puramente
+        // cosmético, não muda `patrolTarget` de propósito (deixa o lerp/física de voo cuidar do
+        // resto, igual a qualquer outro deslocamento de vaga).
+        reactiveSide += Math.sin(elapsed * (Math.PI * 2 / FALCO_WEAVE_PERIOD_S)) * FALCO_WEAVE_AMPLITUDE
+      }
       if (w.profile.id === 1 && reactivity.playerLowHealth) {
         // Peppy: vida baixa do jogador → escolta mais apertada (vaga mais perto, não mais longe)
         reactiveForward = 2.0
@@ -1126,8 +1184,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       // Roll de banking suave estritamente limitado a [-0.38, 0.38] rad (±21.7°)
-      const lateralMove = w.velocity.dot(frame.right)
-      const targetRoll = THREE.MathUtils.clamp(-lateralMove * 0.012, -0.38, 0.38)
+      // Slippy (Ideia 4): em vez de bankar pelo próprio movimento lateral, imita o roll do
+      // JOGADOR com 0.3s de atraso — mesmo clamp/lerp de sempre, só troca a fonte do alvo.
+      let targetRoll
+      if (w.profile.id === 2) {
+        targetRoll = THREE.MathUtils.clamp(delayedPlayerRoll(SLIPPY_ROLL_DELAY_S), -0.38, 0.38)
+      } else {
+        const lateralMove = w.velocity.dot(frame.right)
+        targetRoll = THREE.MathUtils.clamp(-lateralMove * 0.012, -0.38, 0.38)
+      }
       w.smoothRoll = THREE.MathUtils.lerp(w.smoothRoll, (w.state === 'ram' ? 0 : targetRoll), 1 - Math.exp(-4.5 * dt))
 
       // Constrói a base ortonormal absoluta: Forward, Banked Right, Banked Up
@@ -1149,6 +1214,30 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       const turnRate = (w.state === 'dogfight' || w.state === 'ram') ? w.profile.flightProfile.aimTurnRate : w.profile.flightProfile.cruiseTurnRate
       w.mesh.quaternion.rotateTowards(_targetQuat, turnRate * dt)
+
+      // Peppy (Ideia 4): nariz sempre virando levemente pro jogador quando em formação — ajuste
+      // pequeno e incremental POR CIMA da orientação já resolvida acima (nunca mexe na base
+      // ortonormal principal), clampado a ±10° e a uma taxa própria de aproximação por frame.
+      // Recalculado do zero a cada frame a partir da orientação REAL atual (não acumula viés).
+      if (w.profile.id === 1 && w.state === 'patrol') {
+        _wmNoseToPlayer.copy(playerPos).sub(w.mesh.position)
+        if (_wmNoseToPlayer.lengthSq() > 1e-4) {
+          _wmNoseToPlayer.normalize()
+          _wmInvQuat.copy(w.mesh.quaternion).invert()
+          _wmNoseToPlayer.applyQuaternion(_wmInvQuat) // pro espaço local: x=right, z=forward
+          const yawNeeded = THREE.MathUtils.clamp(Math.atan2(_wmNoseToPlayer.x, _wmNoseToPlayer.z), -PEPPY_NOSE_MAX_RAD, PEPPY_NOSE_MAX_RAD)
+          const yawStep = THREE.MathUtils.clamp(yawNeeded, -PEPPY_NOSE_EASE_RATE * dt, PEPPY_NOSE_EASE_RATE * dt)
+          w.mesh.rotateY(yawStep)
+        }
+      }
+
+      // Krystal (Ideia 4): fica semi-transparente 1.5s a cada ciclo de 8s — só material, nada de
+      // hitbox/lógica (mesma hitbox/colisão sempre, ver risco baixo no documento).
+      if (w.profile.id === 3 && w.krystalMaterials) {
+        w.krystalCloakTimer = (w.krystalCloakTimer + dt) % KRYSTAL_CLOAK_CYCLE_S
+        const targetOpacity = w.krystalCloakTimer < KRYSTAL_CLOAK_DURATION_S ? KRYSTAL_CLOAK_OPACITY : 1.0
+        for (const m of w.krystalMaterials) m.opacity = targetOpacity
+      }
     }
 
     // 2. Atualiza os lasers disparados pelos companheiros
