@@ -25,6 +25,11 @@ export const WINGMAN_PROFILES = [
     // Perfil de voo (Overhaul de Personalidade, Ideia 1): rápido, giros apertados, corta o
     // horizonte — interceptador de verdade.
     flightProfile: { cruiseTurnRate: 2.6, aimTurnRate: 3.8, accelRate: 3.6, cruiseSpeed: 46 },
+    // Agressividade (Ideia 2): agressivo, atira muito, mira imperfeita. Documento propunha
+    // 0.65/6.5s "cru", mas o próprio §2.4 recomenda mitigar (histórico do projeto: 3 iterações
+    // overkill↔transe) — começando em 0.55/5.5s, mais perto do 0.65 antigo global só que com
+    // teto de segurança mais curto.
+    combatProfile: { engagementChance: 0.55, dogfightDuration: 5.5, detectionRange: 90, aimSpreadRad: 0.08 },
     modelType: 'interceptor',
     abilityId: 'ram',
     abilityLabel: 'Investida Aríete',
@@ -45,6 +50,9 @@ export const WINGMAN_PROFILES = [
     // Perfil de voo: pesado, mantém curso, vira devagar — o "defensor" não persegue alvo em
     // zigue-zague, prefere ir direto.
     flightProfile: { cruiseTurnRate: 1.5, aimTurnRate: 2.2, accelRate: 2.2, cruiseSpeed: 32 },
+    // Agressividade: defensivo, raramente engaja, tiros certeiros — não é o "wingman ruim", é o
+    // que fica perto e é letal quando engaja de verdade.
+    combatProfile: { engagementChance: 0.25, dogfightDuration: 3.5, detectionRange: 60, aimSpreadRad: 0.03 },
     modelType: 'bomber',
     abilityId: 'guard',
     abilityLabel: 'Guarda',
@@ -64,6 +72,8 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0.16,
     // Perfil de voo: equilibrado, levemente ágil.
     flightProfile: { cruiseTurnRate: 2.2, aimTurnRate: 3.0, accelRate: 3.0, cruiseSpeed: 40 },
+    // Agressividade: intermediário — meio-termo entre Falco e Peppy em tudo.
+    combatProfile: { engagementChance: 0.50, dogfightDuration: 4.5, detectionRange: 75, aimSpreadRad: 0.05 },
     modelType: 'scout',
     abilityId: 'repair',
     abilityLabel: 'Reparo de Campo',
@@ -83,6 +93,8 @@ export const WINGMAN_PROFILES = [
     burstDelay: 0.12,
     // Perfil de voo: fluido e controlado, elegante.
     flightProfile: { cruiseTurnRate: 2.4, aimTurnRate: 3.2, accelRate: 3.2, cruiseSpeed: 44 },
+    // Agressividade: cirúrgico, engaja quando vale — mira quase perfeita mesmo fora de combo alto.
+    combatProfile: { engagementChance: 0.40, dogfightDuration: 5.5, detectionRange: 80, aimSpreadRad: 0.03 },
     modelType: 'stealth',
     abilityId: 'assist',
     abilityLabel: 'Carga Compartilhada',
@@ -143,8 +155,9 @@ const _wmInvQuat = new THREE.Quaternion()
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
-// Dispersão angular (rad) da rajada de dogfight — mira imperfeita, tiros não saem 100% retos
-const AIM_SPREAD_RAD = 0.05
+// Dispersão angular (rad) da rajada de dogfight — mira imperfeita, tiros não saem 100% retos.
+// Valor base agora é por piloto (combatProfile.aimSpreadRad, Ideia 2 do Overhaul de
+// Personalidade); esta constante só documenta a origem histórica.
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 
 // ============ HABILIDADES ÚNICAS DO ESQUADRÃO ============
@@ -927,21 +940,26 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               // perfeito de antes): cone de detecção e chance de engajar alargados moderadamente
               // — continuam raros o bastante pra não sentir robótico, só não tão raros a ponto de
               // precisar quase sempre do comando [D] manual pra ver algum aliado brigar sozinho.
-              // Reatividade (Ideia 5), só o Falco por enquanto — vida baixa do jogador vence
+              // Agressividade assimétrica (Ideia 2): cada piloto tem o próprio engagementChance/
+              // detectionRange base (ver combatProfile em WINGMAN_PROFILES) em vez do valor único
+              // global de antes. Reatividade (Ideia 5), só o Falco — vida baixa do jogador vence
               // combo alto se as duas estiverem ativas ao mesmo tempo (prioridade fixa, §5.5 do
               // documento evita a ambiguidade "qual pesa mais").
-              let engagementChance = 0.65
+              let engagementChance = w.profile.combatProfile.engagementChance
               if (w.profile.id === 0) {
                 if (reactivity.playerLowHealth) engagementChance = 0.85
                 else if (reactivity.playerHighCombo) engagementChance = 0.70
               }
+              const detectionRange = w.profile.combatProfile.detectionRange
               if (alive.length > 0 && Math.random() < engagementChance) {
                 const candidates = alive.filter((e) => {
                   _wmRel.copy(e.mesh.position).sub(w.mesh.position)
                   const d = _wmRel.length()
-                  if (inArena) return d < 75
+                  // arena guarda a mesma proporção relativa (75/80) que já existia antes desta
+                  // mudança, só escalada pelo detectionRange do piloto em vez do 80 fixo
+                  if (inArena) return d < detectionRange * 0.9375
                   const dotForward = d > 1e-4 ? (_wmRel.dot(frame.forward) / d) : 0
-                  return dotForward > -0.15 && d < 80
+                  return dotForward > -0.15 && d < detectionRange
                 })
                 if (candidates.length > 0) {
                   // pedido do usuário: Horda tem "foco maior" dos wingmen — sempre preferida sobre
@@ -978,9 +996,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       } else if (w.state === 'dogfight') {
         // ============ PERSEGUIÇÃO E DOGFIGHT DISCIPLINADO ============
+        // Agressividade (Ideia 2): teto de segurança por piloto (combatProfile.dogfightDuration)
+        // em vez do 6.0 fixo global — Peppy sai antes (3.5s), Falco/Krystal ficam mais (5.5s).
         const enemyLost = !w.targetEnemy || w.targetEnemy.dying || !w.targetEnemy.mesh ||
           w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 110 ||
-          w.stateTimer > 6.0
+          w.stateTimer > w.profile.combatProfile.dogfightDuration
 
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
@@ -1016,7 +1036,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               w.burstTimer = 0.55
               // Krystal com combo alto: mira cirúrgica (reatividade, Ideia 5) — os outros 3
               // continuam com a dispersão padrão.
-              const aimSpread = (w.profile.id === 3 && reactivity.playerHighCombo) ? 0.02 : AIM_SPREAD_RAD
+              // Agressividade (Ideia 2): dispersão base vem de combatProfile.aimSpreadRad (Falco
+              // "metralhadora" 0.08, Peppy/Krystal certeiros 0.03, Slippy 0.05). Krystal com
+              // combo alto (Ideia 5) fica ainda mais cirúrgica por cima disso (0.02).
+              const aimSpread = (w.profile.id === 3 && reactivity.playerHighCombo) ? 0.02 : w.profile.combatProfile.aimSpreadRad
               _wmSpreadDir.copy(_wmAimDir)
                 .addScaledVector(frame.right, (Math.random() * 2 - 1) * aimSpread)
                 .addScaledVector(frame.up, (Math.random() * 2 - 1) * aimSpread)
@@ -1025,7 +1048,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               fireWingmanLaser(w, _wmLaserMuzzle, _wmSpreadDir)
             }
 
-            if (w.burstRemaining <= 0 && w.stateTimer > 4.2) {
+            // fim natural da rajada — mesma proporção (0.7) que 4.2/6.0 já tinha antes desta
+            // mudança, agora escalada pelo teto de segurança do piloto
+            if (w.burstRemaining <= 0 && w.stateTimer > w.profile.combatProfile.dogfightDuration * 0.7) {
               telemetry.recordEvent(w.profile.name, 'combat', 'Concluiu rajada de ataque no dogfight. Retornando à formação', { elapsed })
               w.state = 'patrol'
               w.stateTimer = 0
