@@ -892,4 +892,64 @@ o preview e o tab várias vezes (falha de infraestrutura da sessão, não do có
 porque nem uma página em branco carregava). Recomendo rodar `window.__starAnki` / `aiValidator`
 manualmente na próxima sessão antes de mexer em qualquer coisa deste sistema de novo.
 
+### v0.82.0 — Overhaul de Personalidade e Vida dos Wingmen (Ideias 1, 5, 4, 2)
+
+Baseado em `Docs/# Overhaul de Personalidade e Vida.md`, documento trazido pelo usuário (pasta
+`Docs/` na raiz do projeto, com mais 3 documentos de overhaul ainda não implementados — cutscene
+de vida perdida, fog como mecânica, spawn/despawn em 3 fases — escolhidos por serem os de maior
+escopo/risco, ficam pra depois). Ordem aprovada pelo usuário: Ideia 1 → 5 → 4 → 2, um commit por
+ideia (ver `bc8b22d`/`c596ecf`/`c3c5d61`/`5b63546`). **Ideia 3 (rádio) fica de fora** — bloqueada
+no próprio documento até o usuário decidir entre 3 opções visuais num protótipo HTML separado.
+
+1. **Rename Phantom → Krystal** (pedido explícito no topo do documento) — em todo o codebase
+   (`WINGMAN_PROFILES`, comentários, logs de telemetria, labels de debug/roguelike/audio-cues).
+2. **Ideia 1 — perfil de voo por piloto** (`src/combat/wingmen.js`): `WINGMAN_PROFILES` ganha
+   `flightProfile` (`cruiseTurnRate`/`aimTurnRate`/`accelRate`/`cruiseSpeed`), substituindo as
+   constantes globais únicas (`CRUISE_TURN_RATE`/`AIM_TURN_RATE`/`accelRate` fixo/`profile.speed`
+   compartilhados pelos 4). Falco rápido e giros apertados, Peppy pesado e vira devagar
+   (deliberadamente "o defensor", não "o wingman ruim"), Slippy equilibrado, Krystal fluida.
+3. **Ideia 5 — reatividade ao estado do jogador**: `src/combat/wingman-reactivity.js` (novo)
+   calcula `playerLowHealth`/`playerHighCombo`/`playerJustLostLife`/`playerBoosting` uma vez por
+   frame em `game-loop.js` (único lugar com `session`/`state.killChainCount`/`isNoDeck` no mesmo
+   escopo — `combat/index.js` só encaminha via `opts.reactivity`, sem saber de onde vem).
+   **Descoberta real ao implementar**: o documento propunha usar `session.comboMultiplier` (x2.0+)
+   como gatilho de "combo alto", mas esse valor **fica travado em 1.0 no modo sem baralho** — o
+   fluxo arcade nunca chama `resolveAnswer()` (só `enterCardChoice`, ver `flow-question.js`).
+   Pedido do usuário ao ser confrontado com essa ambiguidade: usar `killChainCount >= 7` (mesma
+   ordem de grandeza do x2.0 de perguntas: `(2.0-1.0)/COMBO_STEP(0.15) ≈ 6.7`) só no modo arcade;
+   no modo com baralho essa reação específica fica **desligada** por ora (decisão futura).
+   Falco (engajar mais/menos, recuar quando o jogador perde vida), Peppy (escolta mais apertada
+   com vida baixa, "escudo humano visual" por 3s — não bloqueia dano de verdade, só posição),
+   Slippy (foge do cone de boost, cura duas vezes mais rápido com vida baixa), Krystal (protege o
+   jogador em vez de si mesma ao escolher alvo, mira cirúrgica com combo alto, acelera no boost).
+4. **Ideia 4 — personalidade de formação** (puramente cosmético, zero mudança de hitbox/colisão):
+   Falco oscila lateralmente na vaga (±3u/2.5s); Peppy vira o nariz até ±10° em direção ao
+   jogador quando em patrulha (ajuste incremental por cima da base ortonormal principal,
+   recalculado do zero a cada frame — não acumula viés); Slippy imita o roll do JOGADOR
+   (`rail.getRollAngle()`) com 0.3s de atraso via buffer amostrado por frame, em vez de reagir ao
+   próprio movimento lateral; Krystal fica semi-transparente (opacidade 0.35) 1.5s a cada 8s.
+   **Nota de material corrigida**: o documento alertava que `mesh.material` seria compartilhado
+   entre wingmen do mesmo `modelType` (precisaria clonar pra Krystal) — não é verdade no código
+   atual, `buildWingmanShip`/`buildStealthShip` já criam materiais NOVOS a cada `spawnMember()`
+   (nunca há 2 instâncias vivas do mesmo perfil ao mesmo tempo de qualquer forma). Só precisou
+   coletar as referências (`collectMaterials()`) e marcar `transparent = true` nelas.
+5. **Ideia 2 — agressividade assimétrica** (a mais arriscada das 5, por último de propósito):
+   `WINGMAN_PROFILES` ganha `combatProfile` (`engagementChance`/`dogfightDuration`/
+   `detectionRange`/`aimSpreadRad`) substituindo os 4 valores globais únicos que todo piloto
+   compartilhava (chance 0.65, detecção 80/75u, timeout de dogfight 6.0s/4.2s, dispersão 0.05).
+   **Falco não usa o valor "cru" da tabela do documento** (0.65/6.5s) — o próprio documento (§2.4)
+   avisa que isso pode reintroduzir "overkill" (histórico do projeto: 3 iterações
+   overkill↔transe) e recomenda mitigar; usado 0.55/5.5s, mais perto do valor global antigo com
+   teto de segurança mais curto. As proporções internas que já existiam (timeout de rajada =
+   70% do timeout de dogfight; cone de arena = 93.75% do de trilho) foram preservadas ao escalar
+   pelos novos valores por piloto, em vez de reinventadas do zero.
+
+**Verificação**: `node --check` limpo em todos os arquivos tocados, cada ponto de uso conferido
+manualmente (grep + leitura) linha por linha durante a implementação. **De novo sem validação ao
+vivo no navegador** — o Browser pane desta sessão continuou preso (falha de carregamento de
+página) mesmo depois de reiniciar o preview no meio do overhaul (tentativa registrada, mesmo
+sintoma da entrega anterior). Prioridade #1 da próxima sessão: playtest manual real do esquadrão
+inteiro (`window.__starAnki`, painel de debug — spawnar os 4 wingmen, observar voo/dogfight/
+formação/habilidades por alguns minutos) antes de confiar cegamente no código destas 5 entregas.
+
 
