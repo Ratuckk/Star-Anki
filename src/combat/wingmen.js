@@ -683,6 +683,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const homingCharging = !!opts.homingCharging
     const shieldNotFull = !!opts.shieldNotFull
     const inArena = rail.isArena()
+    // Overhaul de Personalidade, Ideia 5 — estado do jogador, computado uma vez por frame em
+    // game-loop.js (único lugar com session/killChainCount/isNoDeck no escopo) e repassado até
+    // aqui via opts.reactivity. Fallback all-false cobre chamadas sem esse campo (debug/testes).
+    const reactivity = opts.reactivity || {
+      playerLowHealth: false, playerHighCombo: false, playerJustLostLife: false, playerBoosting: false,
+    }
 
     chargeHeldTimer = homingCharging ? chargeHeldTimer + dt : 0
 
@@ -724,6 +730,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // ============ FORMAÇÃO TÁTICA STAR FOX 64 (CALMA E CINEMATOGRÁFICA) ============
       // Vaga dedicada de cada piloto em relação à nave do jogador
       const slot = FORMATION_SLOTS[w.profile.id] || { side: w.profile.homeSide * 11, up: 0, forward: 8 }
+      // Reatividade (Ideia 5) — ajustes de peso na vaga, nunca no ponto de origem `slot` (que
+      // continua sendo a referência "neutra" pra quando a condição não se aplica mais).
+      let reactiveForward = slot.forward
+      let reactiveSide = slot.side
+      if (w.profile.id === 1 && reactivity.playerLowHealth) {
+        // Peppy: vida baixa do jogador → escolta mais apertada (vaga mais perto, não mais longe)
+        reactiveForward = 2.0
+      }
+      if (w.profile.id === 2 && reactivity.playerBoosting) {
+        // Slippy: se afasta lateralmente pra não ficar no cone de propulsão atrás do jogador
+        reactiveSide = slot.side + (slot.side >= 0 ? 6 : -6)
+      }
       // Flutuação de marcha lenta (idle float): micro-oscilação rápida (~4-5s, igual antes) somada
       // a um vaguear lento e largo (~35-55s) — pedido do usuário ("mais alcance de patrulha"): sem
       // isso a vaga de formação era um ponto fixo demais, lendo como "presos" em vez de voando.
@@ -735,14 +753,30 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       _wmSlotPos.copy(playerPos)
       if (inArena) {
         _wmSlotPos
-          .addScaledVector(frame.right, slot.side * 1.3 + idleX)
+          .addScaledVector(frame.right, reactiveSide * 1.3 + idleX)
           .addScaledVector(frame.up, slot.up + idleY)
-          .addScaledVector(frame.forward, slot.forward * 0.8)
+          .addScaledVector(frame.forward, reactiveForward * 0.8)
       } else {
         _wmSlotPos
-          .addScaledVector(frame.right, slot.side + idleX)
+          .addScaledVector(frame.right, reactiveSide + idleX)
           .addScaledVector(frame.up, slot.up + idleY)
-          .addScaledVector(frame.forward, slot.forward)
+          .addScaledVector(frame.forward, reactiveForward)
+      }
+      // Peppy: "escudo humano visual" por 3s logo depois do jogador perder uma vida — voa NA
+      // FRENTE dele em vez da vaga lateral normal. Puramente visual (não bloqueia dano, ver §5.4
+      // do documento) — sobrescreve a vaga calculada acima só enquanto a janela dura.
+      if (w.profile.id === 1 && reactivity.playerJustLostLife) {
+        _wmSlotPos.copy(playerPos).addScaledVector(frame.forward, 9)
+      }
+      // Falco: "recua pra vaga neutra" quando o jogador acabou de perder uma vida — interrompe
+      // um dogfight em andamento (não força ram/escort, que já têm saída própria) e volta pra
+      // formação, em vez de continuar perseguindo enquanto o jogador está vulnerável.
+      if (w.profile.id === 0 && reactivity.playerJustLostLife && w.state === 'dogfight') {
+        w.state = 'patrol'
+        w.stateTimer = 0
+        w.targetEnemy = null
+        w.fireCooldown = 1.5
+        w.engagementCooldown = 2.0
       }
 
       // 1. Regroup se ficou longe demais do jogador
@@ -835,7 +869,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               // perfeito de antes): cone de detecção e chance de engajar alargados moderadamente
               // — continuam raros o bastante pra não sentir robótico, só não tão raros a ponto de
               // precisar quase sempre do comando [D] manual pra ver algum aliado brigar sozinho.
-              if (alive.length > 0 && Math.random() < 0.65) {
+              // Reatividade (Ideia 5), só o Falco por enquanto — vida baixa do jogador vence
+              // combo alto se as duas estiverem ativas ao mesmo tempo (prioridade fixa, §5.5 do
+              // documento evita a ambiguidade "qual pesa mais").
+              let engagementChance = 0.65
+              if (w.profile.id === 0) {
+                if (reactivity.playerLowHealth) engagementChance = 0.85
+                else if (reactivity.playerHighCombo) engagementChance = 0.70
+              }
+              if (alive.length > 0 && Math.random() < engagementChance) {
                 const candidates = alive.filter((e) => {
                   _wmRel.copy(e.mesh.position).sub(w.mesh.position)
                   const d = _wmRel.length()
@@ -848,11 +890,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   // qualquer outro alvo elegível, mesmo um mais perto (única prioridade desse tipo
                   // no jogo hoje; todo outro inimigo só entra/sai da lista de alvos, nunca é
                   // priorizado dentro dela)
+                  // Krystal com o jogador em vida baixa: foca no inimigo mais próximo DO
+                  // JOGADOR (protege), não do mais conveniente pra ela mesma (reatividade,
+                  // Ideia 5) — os outros 3 pilotos continuam ordenando pela própria posição.
+                  const distanceRef = (w.profile.id === 3 && reactivity.playerLowHealth) ? playerPos : w.mesh.position
                   candidates.sort((a, b) => {
                     const aHorda = a.kind === HORDA_KIND ? 0 : 1
                     const bHorda = b.kind === HORDA_KIND ? 0 : 1
                     if (aHorda !== bHorda) return aHorda - bHorda
-                    return w.mesh.position.distanceTo(a.mesh.position) - w.mesh.position.distanceTo(b.mesh.position)
+                    return distanceRef.distanceTo(a.mesh.position) - distanceRef.distanceTo(b.mesh.position)
                   })
                   w.targetEnemy = candidates[0]
                   telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidates[0].kind} #${candidates[0].id} a ${w.mesh.position.distanceTo(candidates[0].mesh.position).toFixed(1)}u`, { elapsed })
@@ -910,9 +956,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 85) {
               w.burstRemaining -= 1
               w.burstTimer = 0.55
+              // Krystal com combo alto: mira cirúrgica (reatividade, Ideia 5) — os outros 3
+              // continuam com a dispersão padrão.
+              const aimSpread = (w.profile.id === 3 && reactivity.playerHighCombo) ? 0.02 : AIM_SPREAD_RAD
               _wmSpreadDir.copy(_wmAimDir)
-                .addScaledVector(frame.right, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
-                .addScaledVector(frame.up, (Math.random() * 2 - 1) * AIM_SPREAD_RAD)
+                .addScaledVector(frame.right, (Math.random() * 2 - 1) * aimSpread)
+                .addScaledVector(frame.up, (Math.random() * 2 - 1) * aimSpread)
                 .normalize()
               _wmLaserMuzzle.copy(w.mesh.position).addScaledVector(_wmSpreadDir, 1.3)
               fireWingmanLaser(w, _wmLaserMuzzle, _wmSpreadDir)
@@ -1030,8 +1079,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (alongSlot > 4.0) cruiseSpeed += Math.min(22, alongSlot * 2.0)
         else if (alongSlot < -4.0) cruiseSpeed = Math.max(25, cruiseSpeed + alongSlot * 1.5)
       }
-      if (boostActive) cruiseSpeed *= 1.45
-      else if (w.state === 'ram') cruiseSpeed *= 1.9
+      if (boostActive) {
+        cruiseSpeed *= 1.45
+        // Krystal "acompanha o boost" com um empurrão extra (reatividade, Ideia 5) — os outros 3
+        // já acompanham igual antes (o multiplicador acima é global, "sem mudança" pra eles).
+        if (w.profile.id === 3) cruiseSpeed *= 1.15
+      } else if (w.state === 'ram') cruiseSpeed *= 1.9
       else if (w.state === 'dogfight') cruiseSpeed *= 1.15
       else if (w.state === 'escort') cruiseSpeed *= 1.25
 
@@ -1142,7 +1195,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (owner && owner.profile.abilityId === 'repair' && !owner.abilityActive && owner.abilityCooldown <= 0) {
             const orbPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
             healOrbSpawns.push(orbPos)
-            owner.abilityCooldown = abilityCooldownFor(owner.profile)
+            // Reatividade (Ideia 5): vida baixa do jogador reduz o cooldown pela metade — o
+            // sistema de proc já é determinístico (sempre solta ao acertar com cooldown pronto),
+            // então "chance sobe 50%" vira "solta com o dobro de frequência" nesse estado.
+            owner.abilityCooldown = abilityCooldownFor(owner.profile) * (reactivity.playerLowHealth ? 0.5 : 1)
             triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
             telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
           }

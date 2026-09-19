@@ -249,6 +249,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         boostActive: opts.boostActive,
         homingCharging: opts.homingCharging,
         shieldNotFull: player.getShieldValue() < player.getShieldMax(),
+        reactivity: opts.reactivity,
       }) || {}
 
       // Habilidades únicas do esquadrão que afetam o jogador diretamente (Peppy: Guarda / Slippy:

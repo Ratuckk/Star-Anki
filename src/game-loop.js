@@ -37,6 +37,7 @@ import {
   LEVEL_BACKGROUNDS,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
+import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -64,6 +65,10 @@ export function createGameLoop(deps) {
     enterCombat, applyHealthLoss, endSector,
     isNoDeck,
   } = deps
+
+  // Overhaul de Personalidade dos wingmen, Ideia 5 — instância própria (não recriar por frame,
+  // precisa lembrar quando foi a última vida perdida entre ticks).
+  const wingmanReactivity = createWingmanReactivity()
 
   function triggerDebrisStorm(durationMs = 15000) {
     if (!ENVIRONMENT_CONFIG.enableDebrisStormEvent) return
@@ -411,6 +416,12 @@ export function createGameLoop(deps) {
     }
 
     const shipHitboxPoints = rail.getShipHitboxPoints ? rail.getShipHitboxPoints() : null
+    // Overhaul de Personalidade dos wingmen, Ideia 5 — calculado aqui (único lugar com session/
+    // player/state.killChainCount/isNoDeck no mesmo escopo) e repassado pra baixo (combat/index.js
+    // → wingmen.js) via opts, mesmo padrão de boostActive/homingCharging logo abaixo.
+    const reactivity = wingmanReactivity.update({
+      session, player, isNoDeck, killChainCount: state.killChainCount,
+    })
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimDirection: _fireDirection,
@@ -419,6 +430,7 @@ export function createGameLoop(deps) {
       boostActive: boostOn,
       shipHitboxPoints,
       homingCharging: isCharging,
+      reactivity,
     })
 
     // ============ HIT MARKER ============
