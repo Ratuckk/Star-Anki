@@ -37,7 +37,7 @@ export const ROGUELIKE_CARDS = [
   { id: 'wingman-ram-cooldown', category: 'ofensivo', label: 'Vínculo: Falco', icon: '☄️', description: 'Reduz o cooldown da Investida Aríete de Falco. Só disponível com Falco na ala.' },
   { id: 'wingman-guard-cooldown', category: 'defensivo', label: 'Vínculo: Peppy', icon: '🔰', description: 'Reduz o cooldown da Guarda de Peppy. Só disponível com Peppy na ala.' },
   { id: 'wingman-repair-cooldown', category: 'defensivo', label: 'Vínculo: Slippy', icon: '🩹', description: 'Reduz o cooldown do Reparo de Campo de Slippy. Só disponível com Slippy na ala.' },
-  { id: 'wingman-assist-cooldown', category: 'utilitario', label: 'Vínculo: Phantom', icon: '🔗', description: 'Reduz o cooldown da Carga Compartilhada de Phantom. Só disponível com Phantom na ala.' },
+  { id: 'wingman-assist-cooldown', category: 'utilitario', label: 'Vínculo: Krystal', icon: '🔗', description: 'Reduz o cooldown da Carga Compartilhada de Krystal. Só disponível com Krystal na ala.' },
 ]
 
 export function pickRandomCards(count, exclude = new Set()) {

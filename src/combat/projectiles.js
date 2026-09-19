@@ -11,7 +11,7 @@ import { PLAYER_SOUND_CUES, ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-c
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
-const PROJECTILE_SPEED = 84 // 60 * 1.4 (pedido do usuário: +40% de velocidade no tiro normal)
+const PROJECTILE_SPEED = 360
 // pedido do usuário: tiro normal (não-carregado) some sozinho depois de 8s de voo — o teto de
 // ALCANCE abaixo sobe junto com PROJECTILE_SPEED (velocidade * 8s + folga) só pra não cortar o
 // tiro ANTES do tempo em voo reto; o timer (ver PLAYER_PROJECTILE_LIFETIME) é o que efetivamente
@@ -20,7 +20,7 @@ const PROJECTILE_MAX_RANGE = 700
 const PLAYER_PROJECTILE_LIFETIME = 8
 const PROJECTILE_LATERAL_SPACING = 1.6
 const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
-const HOMING_PROJECTILE_DAMAGE = 4 // pedido do usuário: era 3
+const HOMING_PROJECTILE_DAMAGE = 3 // pedido do usuário: era 3
 // pedido do usuário: segurar o tiro carregado até o limite (carga máxima) aumenta o dano de 4
 // pra 6 — recompensa esperar o círculo de carga encher de verdade, não só passar do mínimo.
 const HOMING_PROJECTILE_DAMAGE_MAX_CHARGE = 6
@@ -38,7 +38,7 @@ const PLAYER_PROJECTILE_STEER_RATE = 2.2
 // cresce visualmente a cada projétil extra ganho por upgrade
 const PLAYER_PROJECTILE_GROWTH_PER_EXTRA = 0.15
 
-export const DEFAULT_FIRE_COOLDOWN = 0.2
+export const DEFAULT_FIRE_COOLDOWN = 0.15
 
 // v0.29.6: +25% no tiro normal (não no teleguiado) — a colisão é feita contra o SEGMENTO
 // percorrido no frame, então "aumentar a hitbox" aqui significa somar essa folga ao raio de

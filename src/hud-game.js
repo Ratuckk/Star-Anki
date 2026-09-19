@@ -147,7 +147,7 @@ export function createGameHud() {
   topbarRow.appendChild(status)
 
   // ============ ÍCONES DE COOLDOWN DO ESQUADRÃO (Opção B: emblemas hexagonais) ============
-  // 4 slots fixos (Falco/Peppy/Slippy/Phantom, mesma ordem de WINGMAN_PROFILES) ao lado do
+  // 4 slots fixos (Falco/Peppy/Slippy/Krystal, mesma ordem de WINGMAN_PROFILES) ao lado do
   // placar — ver PLANO_HABILIDADES_ESQUADRAO.md. A posição nunca "pula" quando um piloto novo
   // é recrutado porque os 4 slots sempre existem, só o estado visual muda (bloqueado → pronto).
   const SQUAD_ABILITY_ICONS = { ram: '☄️', guard: '🔰', repair: '🩹', assist: '🔗' }
@@ -2116,7 +2116,7 @@ export function createGameHud() {
     },
 
     // 4 slots fixos (ver criação de abilityHexEls acima) — states vem de combat.getAbilityStates(),
-    // sempre na ordem Falco/Peppy/Slippy/Phantom (mesma de WINGMAN_PROFILES).
+    // sempre na ordem Falco/Peppy/Slippy/Krystal (mesma de WINGMAN_PROFILES).
     setSquadronAbilities(states) {
       if (!Array.isArray(states) || states.length === 0) return
       const sig = states.map((s) => `${s.id}:${s.recruited ? 1 : 0}:${s.active ? 1 : 0}:${Math.ceil(s.cooldownRemaining)}`).join(';')

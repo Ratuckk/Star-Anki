@@ -86,7 +86,7 @@ export function createGameLoop(deps) {
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
     const windowMs = Math.max(250, player.config.homingChargeMaxMs - player.config.homingChargeMinMs)
-    // Phantom (Carga Compartilhada): +1 alvo de trava enquanto acoplado, empilhando com a carta
+    // Krystal (Carga Compartilhada): +1 alvo de trava enquanto acoplado, empilhando com a carta
     // 'more-homing-targets' sem passar do teto global — recalcula o passo de trava (lockStep) em
     // cima do teto efetivo pra o alvo extra ficar de fato alcançável dentro da mesma janela de
     // carga, não só um número de fachada que nunca é atingido.
@@ -192,7 +192,7 @@ export function createGameLoop(deps) {
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging && combat.tryFire(nosePos, _fireDirection)) rail.triggerRecoil()
-      // Phantom (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
+      // Krystal (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
       // tiro teleguiado. Lê o estado do frame ANTERIOR (squadron.update ainda não rodou neste
       // frame) — defasagem de ~16ms, imperceptível e sem dependência circular.
       const assistMult = combat.getAssistChargeMult ? combat.getAssistChargeMult() : 1

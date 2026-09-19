@@ -440,7 +440,7 @@ export const WINGMAN_SOUND_CUES = {
     category: 'sfx',
     spatial: true,
     loop: false,
-    triggerLogic: 'Phantom (Vanguarda Fantasma) sincroniza sistemas de armas, acelerando o tempo de carga em +50%.'
+    triggerLogic: 'Krystal (Vanguarda Fantasma) sincroniza sistemas de armas, acelerando o tempo de carga em +50%.'
   },
 }
 

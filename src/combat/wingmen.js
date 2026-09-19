@@ -22,7 +22,9 @@ export const WINGMAN_PROFILES = [
     fireInterval: 1.7,
     burstCount: 2,
     burstDelay: 0.14,
-    speed: 42,
+    // Perfil de voo (Overhaul de Personalidade, Ideia 1): rápido, giros apertados, corta o
+    // horizonte — interceptador de verdade.
+    flightProfile: { cruiseTurnRate: 2.6, aimTurnRate: 3.8, accelRate: 3.6, cruiseSpeed: 46 },
     modelType: 'interceptor',
     abilityId: 'ram',
     abilityLabel: 'Investida Aríete',
@@ -40,7 +42,9 @@ export const WINGMAN_PROFILES = [
     fireInterval: 2.4,
     burstCount: 1,
     burstDelay: 0,
-    speed: 36,
+    // Perfil de voo: pesado, mantém curso, vira devagar — o "defensor" não persegue alvo em
+    // zigue-zague, prefere ir direto.
+    flightProfile: { cruiseTurnRate: 1.5, aimTurnRate: 2.2, accelRate: 2.2, cruiseSpeed: 32 },
     modelType: 'bomber',
     abilityId: 'guard',
     abilityLabel: 'Guarda',
@@ -58,7 +62,8 @@ export const WINGMAN_PROFILES = [
     fireInterval: 1.9,
     burstCount: 2,
     burstDelay: 0.16,
-    speed: 38,
+    // Perfil de voo: equilibrado, levemente ágil.
+    flightProfile: { cruiseTurnRate: 2.2, aimTurnRate: 3.0, accelRate: 3.0, cruiseSpeed: 40 },
     modelType: 'scout',
     abilityId: 'repair',
     abilityLabel: 'Reparo de Campo',
@@ -67,7 +72,7 @@ export const WINGMAN_PROFILES = [
   },
   {
     id: 3,
-    name: 'Phantom',
+    name: 'Krystal',
     title: 'Vanguarda Fantasma',
     color: 0x7c3aed, // roxo estelar
     accentColor: 0xf43f5e, // rosa neon
@@ -76,7 +81,8 @@ export const WINGMAN_PROFILES = [
     fireInterval: 1.8,
     burstCount: 2,
     burstDelay: 0.12,
-    speed: 45,
+    // Perfil de voo: fluido e controlado, elegante.
+    flightProfile: { cruiseTurnRate: 2.4, aimTurnRate: 3.2, accelRate: 3.2, cruiseSpeed: 44 },
     modelType: 'stealth',
     abilityId: 'assist',
     abilityLabel: 'Carga Compartilhada',
@@ -93,8 +99,8 @@ export const WINGMAN_PROFILES = [
 // Slippy tinham `forward` NEGATIVO (-3 e -5, "atrás" do jogador) — como a câmera já fica atrás da
 // própria nave do jogador, isso colocava os dois quase em cima ou atrás da câmera. Medido ao vivo
 // via projeção NDC em 600 frames de voo livre: Slippy ficava visível em tela apenas 0.0% do tempo,
-// Peppy só 9.8% (contra 96.7% do Falco e 88.8% do Phantom). Ambos agora ficam À FRENTE da nave
-// também, só mais perto dela que Falco/Phantom — reconfirmado no mesmo teste: 90%+ pros quatro.
+// Peppy só 9.8% (contra 96.7% do Falco e 88.8% da Krystal). Ambos agora ficam À FRENTE da nave
+// também, só mais perto dela que Falco/Krystal — reconfirmado no mesmo teste: 90%+ pros quatro.
 export const FORMATION_SLOTS = [
   // Falco: Ala Esquerda Avançada (Ás Interceptor)
   { side: -11.0, up: 1.0, forward: 14.0 },
@@ -102,7 +108,7 @@ export const FORMATION_SLOTS = [
   { side: 12.5, up: -0.5, forward: 5.0 },
   // Slippy: Ala Esquerda Próxima (Batedor Solar)
   { side: -12.5, up: -0.5, forward: 4.0 },
-  // Phantom: Ala Direita Alta Avançada (Vanguarda Fantasma)
+  // Krystal: Ala Direita Alta Avançada (Vanguarda Fantasma)
   { side: 11.0, up: 2.2, forward: 16.0 },
 ]
 
@@ -128,9 +134,9 @@ const _wmRel = new THREE.Vector3()
 const _wlPrevPos = new THREE.Vector3()
 const _wlStep = new THREE.Vector3()
 
-// Taxa máxima de giro (rad/s) usada por quaternion.rotateTowards
-const CRUISE_TURN_RATE = 2.2 // ~126°/s — cruzeiro em formação suave
-const AIM_TURN_RATE = 3.2 // ~183°/s — mira em combate
+// Taxa de giro (rad/s, usada por quaternion.rotateTowards) e velocidade/aceleração de cruzeiro
+// agora vêm de `profile.flightProfile` (Overhaul de Personalidade, Ideia 1) — cada piloto tem o
+// próprio valor em vez de uma constante global única.
 
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
@@ -143,7 +149,7 @@ const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 // Uma ação autônoma por piloto (ver PLANO_HABILIDADES_ESQUADRAO.md), cada uma com cooldown
 // próprio (abilityCooldownBase, reduzido por carta até abilityCooldownFloor — ver
 // applyAbilityCooldownCard). Falco investe em aríete, Peppy dá guarda (escudo), Slippy solta
-// orbe de reparo ao acertar um tiro, Phantom acopla pra acelerar o tiro carregado do jogador.
+// orbe de reparo ao acertar um tiro, Krystal acopla pra acelerar o tiro carregado do jogador.
 const RAM_MIN_RANGE = 20
 const RAM_MAX_RANGE = 45
 const RAM_HIT_RADIUS = 2.2
@@ -438,7 +444,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_CHARGE_MULT : 1
   }
 
-  // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada do Phantom concede
+  // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada da Krystal concede
   // enquanto acoplado — empilha com a carta 'more-homing-targets', o teto (HOMING_MAX_TARGETS_CAP)
   // é respeitado do lado de fora (game-loop.js), aqui é só o bônus bruto.
   function getAssistExtraTargets() {
@@ -473,7 +479,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       laserMaterial,
       state: 'patrol', // 'patrol' | 'dogfight' | 'regroup' | 'escort' | 'ram'
       stateTimer: 0,
-      velocity: frame.forward.clone().multiplyScalar(profile.speed),
+      velocity: frame.forward.clone().multiplyScalar(profile.flightProfile.cruiseSpeed),
       smoothRoll: 0,
       patrolTarget: spawnPos.clone(),
       targetEnemy: null,
@@ -772,7 +778,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.patrolTarget.copy(_wmSlotPos)
         }
 
-        // Habilidades únicas de Peppy (Guarda) e Phantom (Carga Compartilhada)
+        // Habilidades únicas de Peppy (Guarda) e Krystal (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
           if (w.profile.abilityId === 'guard' && shieldNotFull) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
@@ -783,7 +789,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.abilityTimer = 0
             w.abilityApplied = false
           } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Phantom sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
+            telemetry.recordEvent(w.profile.name, 'ability', 'Krystal sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
             w.state = 'escort'
             w.escortKind = 'assist'
             w.stateTimer = 0
@@ -973,7 +979,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
         }
       } else if (w.state === 'escort') {
-        // ============ ESCOLTA (Peppy: Guarda / Phantom: Carga Compartilhada) ============
+        // ============ ESCOLTA (Peppy: Guarda / Krystal: Carga Compartilhada) ============
         w.abilityTimer += dt
         const side = w.profile.homeSide * ESCORT_SIDE_OFFSET
         w.patrolTarget.copy(playerPos)
@@ -999,7 +1005,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
         } else if (w.escortKind === 'assist') {
           if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Phantom concluída, retornando à formação', { elapsed })
+            telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Krystal concluída, retornando à formação', { elapsed })
             w.abilityActive = false
             w.abilityCooldown = abilityCooldownFor(w.profile)
             w.state = 'patrol'
@@ -1015,7 +1021,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (targetDist > 1e-4) _wmAimDir.copy(_wmToTarget).multiplyScalar(1 / targetDist)
       else _wmAimDir.copy(frame.forward)
 
-      let cruiseSpeed = w.profile.speed
+      let cruiseSpeed = w.profile.flightProfile.cruiseSpeed
       if (!inArena) {
         // No rail, compensa a velocidade do mundo (+48u/s)
         cruiseSpeed += 48
@@ -1043,8 +1049,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // Aceleração com inércia estável
-      const accelRate = w.state === 'ram' ? 5.5 : 3.0
+      // Aceleração com inércia estável (por piloto — ver flightProfile.accelRate)
+      const accelRate = w.state === 'ram' ? 5.5 : w.profile.flightProfile.accelRate
       w.velocity.lerp(_wmDesiredVelocity, 1 - Math.exp(-accelRate * dt))
       w.mesh.position.addScaledVector(w.velocity, dt)
 
@@ -1088,7 +1094,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       _rotMatrix.makeBasis(_bankedRight, _bankedUp, _fwdVec)
       _targetQuat.setFromRotationMatrix(_rotMatrix)
 
-      const turnRate = (w.state === 'dogfight' || w.state === 'ram') ? AIM_TURN_RATE : CRUISE_TURN_RATE
+      const turnRate = (w.state === 'dogfight' || w.state === 'ram') ? w.profile.flightProfile.aimTurnRate : w.profile.flightProfile.cruiseTurnRate
       w.mesh.quaternion.rotateTowards(_targetQuat, turnRate * dt)
     }
 

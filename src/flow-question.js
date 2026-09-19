@@ -8,7 +8,7 @@ import { pickRandomCards } from './roguelike.js'
 import { WRONG_FEEDBACK_MS } from './main-constants.js'
 
 // Cartas "Vínculo" → id do piloto (mesma ordem de WINGMAN_PROFILES em combat/wingmen.js:
-// 0 Falco, 1 Peppy, 2 Slippy, 3 Phantom).
+// 0 Falco, 1 Peppy, 2 Slippy, 3 Krystal).
 const WINGMAN_ABILITY_CARD_PROFILE_ID = {
   'wingman-ram-cooldown': 0,
   'wingman-guard-cooldown': 1,
