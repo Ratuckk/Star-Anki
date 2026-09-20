@@ -90,6 +90,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnSpecificWingman: (id) => squadron.spawnMember(id),
     removeSpecificWingman: (id) => squadron.removeMember(id),
     clearSquadron: () => squadron.clearSquadron(),
+    // Rádio dos aliados (Ideia 3): game-loop.js chama isso no momento em que o dano do jogador
+    // resolve — o wingman que comenta é sorteado dentro de wingmen.js, aqui é só o repasse.
+    notifyPlayerDamaged: () => squadron.triggerPlayerTookDamage?.(),
     getWingmanPositions: () => squadron.getWingmanPositions(),
     getActiveWingmen: () => squadron.getActiveMembers(),
     getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
@@ -310,6 +313,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         squadWipeBonus: squadWipeBonus || 0,
         focusFrenzyActivated,
         isFrenzyActive: focusFrenzyTimer > 0,
+        radioMessage: wingmanResult.radioMessage || null,
+        radioQueue: wingmanResult.radioQueue || null,
       }
     },
 

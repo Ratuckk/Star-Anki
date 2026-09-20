@@ -98,7 +98,7 @@ export function createGameLoop(deps) {
   function currentHomingAllowedTargets(heldMs) {
     const chargeMs = Math.max(0, heldMs - player.config.homingChargeMinMs)
     const windowMs = Math.max(250, player.config.homingChargeMaxMs - player.config.homingChargeMinMs)
-    // Krystal (Carga Compartilhada): +1 alvo de trava enquanto acoplado, empilhando com a carta
+    // Miyu (Carga Compartilhada): +1 alvo de trava enquanto acoplado, empilhando com a carta
     // 'more-homing-targets' sem passar do teto global — recalcula o passo de trava (lockStep) em
     // cima do teto efetivo pra o alvo extra ficar de fato alcançável dentro da mesma janela de
     // carga, não só um número de fachada que nunca é atingido.
@@ -270,7 +270,7 @@ export function createGameLoop(deps) {
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
       if (!isCharging && combat.tryFire(nosePos, _fireDirection)) rail.triggerRecoil()
-      // Krystal (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
+      // Miyu (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
       // tiro teleguiado. Lê o estado do frame ANTERIOR (squadron.update ainda não rodou neste
       // frame) — defasagem de ~16ms, imperceptível e sem dependência circular.
       const assistMult = combat.getAssistChargeMult ? combat.getAssistChargeMult() : 1
@@ -565,6 +565,18 @@ export function createGameLoop(deps) {
       (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
     if (chargedKillHappened) state.hitShakeTimer = Math.max(state.hitShakeTimer, HOMING_KILL_SHAKE_MS)
 
+    // ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
+    if (getSettings().wingmanRadioEnabled) {
+      // radioQueue (rajada de "prontidão" do [D], vários pilotos em fila) tem prioridade sobre um
+      // radioMessage avulso do mesmo frame — na prática nunca competem de verdade (o toggleCommand
+      // não passa pelo mesmo laço que gera radioMessage), mas a ordem deixa a intenção explícita.
+      if (events.radioQueue && hud.showWingmanRadioQueue) {
+        hud.showWingmanRadioQueue(events.radioQueue)
+      } else if (events.radioMessage && hud.showWingmanRadio) {
+        hud.showWingmanRadio(events.radioMessage)
+      }
+    }
+
     // ============ NÚMEROS DE DANO FLUTUANTES ============
     if (events.hitsLog && events.hitsLog.length > 0) {
       for (const h of events.hitsLog) {
@@ -718,6 +730,9 @@ export function createGameLoop(deps) {
 
       const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
       rail.triggerImpactSquash()
+      // Rádio (Ideia 3, evento player_take_damage — §3.5 do doc, decisão b): só reage a dano do
+      // JOGADOR, nunca do wingman (invulnerável). O piloto que fala é sorteado dentro do sistema.
+      combat.notifyPlayerDamaged?.()
 
       // Perda de controle por projétil de alto-impacto (nível 4 — Chefe/Dourado/Horda, ver
       // PROJECTILE_POWER_LEVEL em enemies/shared.js) — giro + pisca vermelho por 2s, pedido

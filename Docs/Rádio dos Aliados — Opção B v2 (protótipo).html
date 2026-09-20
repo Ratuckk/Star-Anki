@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Rádio dos Aliados — Opção B v2 (protótipo)</title>
+<style>
+  body{margin:0;background:#000;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;}
+  .demo{width:960px;height:300px;box-sizing:border-box;position:relative;overflow:hidden;background:radial-gradient(ellipse at 60% 25%, #0c1730 0%, #030509 62%, #000 100%);margin:0 auto;border-bottom:2px solid #111;}
+  .demo-title{position:absolute;left:20px;top:14px;padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:6px;font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;}
+  .demo-note{position:absolute;left:20px;top:42px;max-width:600px;font-size:11px;line-height:1.5;color:#64748b;}
+  .demo-note b{color:#94a3b8}
+  .restart{position:absolute;right:16px;bottom:14px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#cbd5e1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.25);border-radius:6px;padding:6px 12px;cursor:pointer;font-family:inherit;}
+  .restart:hover{background:rgba(255,255,255,0.16)}
+
+  /* painel quadrado (raio pequeno, cantos técnicos) — comum às 3 opções */
+  .panel{position:absolute;left:28px;bottom:30px;display:flex;align-items:center;gap:14px;padding:10px 20px 10px 10px;border-radius:4px;background:rgba(8,12,22,0.92);border:1px solid var(--pc, #38bdf8);box-shadow:0 0 18px var(--pg, rgba(56,189,248,0.4)), 0 6px 16px rgba(0,0,0,0.6);opacity:0;transform:translateY(14px);transition:opacity 140ms ease-out, transform 200ms ease-out, border-color 200ms, box-shadow 200ms;}
+  .panel.active{opacity:1;transform:translateY(0);}
+  .panel .corner{position:absolute;width:8px;height:8px;border-color:var(--pc, #38bdf8);opacity:.9;}
+  .panel .corner.tl{left:-1px;top:-1px;border-left:2px solid;border-top:2px solid;}
+  .panel .corner.tr{right:-1px;top:-1px;border-right:2px solid;border-top:2px solid;}
+  .panel .corner.bl{left:-1px;bottom:-1px;border-left:2px solid;border-bottom:2px solid;}
+  .panel .corner.br{right:-1px;bottom:-1px;border-right:2px solid;border-bottom:2px solid;}
+  .avatar-slot{position:relative;width:52px;height:52px;flex-shrink:0;border-radius:4px;overflow:hidden;border:2px solid var(--pc, #38bdf8);box-shadow:0 0 10px var(--pg, rgba(56,189,248,0.5));background:#0a0f1c;}
+  .avatar-slot img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated;}
+  .name{font-size:12px;font-weight:800;letter-spacing:.06em;color:#e2e8f0;text-transform:uppercase;}
+  .line{font-size:13px;color:#f8fafc;margin-top:2px;}
+
+  /* Opção 2: overlay de estática cobrindo o painel inteiro */
+  .panel-cover{position:absolute;inset:0;z-index:5;background:#05070c;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .panel-cover img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;opacity:.95;}
+  .panel-cover.done{display:none;}
+
+  /* Opção 3: glitch de entrada (corte por steps) + flicker de saída */
+  @keyframes glitchIn {
+    0%   { clip-path: inset(0 0 92% 0); transform: translateY(14px) translateX(-6px); }
+    15%  { clip-path: inset(40% 0 20% 0); transform: translateY(14px) translateX(4px); }
+    30%  { clip-path: inset(10% 0 60% 0); transform: translateY(8px) translateX(-3px); }
+    45%  { clip-path: inset(70% 0 5% 0); transform: translateY(4px) translateX(3px); }
+    60%  { clip-path: inset(0 0 30% 0); transform: translateY(0) translateX(-2px); }
+    80%  { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(1px); }
+    100% { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(0); }
+  }
+  .panel-glitch.entering{animation: glitchIn 260ms steps(2, end);}
+  @keyframes flicker {
+    0%,100%{opacity:1} 20%{opacity:.2} 40%{opacity:1} 60%{opacity:.15} 80%{opacity:1}
+  }
+  .panel-glitch.leaving{animation: flicker 180ms steps(1,end);}
+</style>
+</head>
+<body>
+
+<div class="demo" id="demo1">
+  <div class="demo-title">Opção 1 — Estática só no retrato</div>
+  <div class="demo-note">O painel (quadrado, cantos técnicos) entra normal. Só o <b>retrato</b> passa pelos
+    7 frames reais de "sintonia" da folha de sprites (bracket → ruído colorido → ruído escuro) antes de
+    estabilizar na foto do piloto. Nome/fala aparecem já no piloto certo, só a foto "resolve".</div>
+  <div class="panel" id="panel1" style="--pc:#3b82f6;--pg:rgba(59,130,246,0.55);">
+    <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+    <div class="avatar-slot"><img id="avatar1"></div>
+    <div><div class="name" id="name1"></div><div class="line" id="line1"></div></div>
+  </div>
+  <button class="restart" onclick="window.__demo1.restart()">Reiniciar</button>
+</div>
+
+<div class="demo" id="demo2">
+  <div class="demo-title">Opção 2 — Estática cobre o painel inteiro</div>
+  <div class="demo-note">O painel quadrado já abre com nome/retrato/fala prontos por baixo, mas
+    cobertos por uma estática que ocupa o painel <b>inteiro</b> (mesmos 7 frames, esticados). A
+    estática "some" de uma vez revelando a mensagem completa — como se a transmissão inteira
+    estivesse sendo sintonizada, não só a foto.</div>
+  <div class="panel" id="panel2" style="--pc:#10b981;--pg:rgba(16,185,129,0.55);">
+    <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+    <div class="avatar-slot"><img id="avatar2"></div>
+    <div><div class="name" id="name2"></div><div class="line" id="line2"></div></div>
+    <div class="panel-cover" id="cover2"><img id="coverimg2"></div>
+  </div>
+  <button class="restart" onclick="window.__demo2.restart()">Reiniciar</button>
+</div>
+
+<div class="demo" id="demo3">
+  <div class="demo-title">Opção 3 — Glitch de entrada/saída + estática no retrato</div>
+  <div class="demo-note">O painel inteiro "corta" pra dentro em fatias (glitch de steps, tipo troca de
+    canal) ao mesmo tempo em que o retrato passa pelos 7 frames de estática. Ao sumir, um flicker
+    rápido (pisca 2-3x) antes do fade — reforça a sensação de "sinal caindo" na saída, não só um
+    fade liso.</div>
+  <div class="panel panel-glitch" id="panel3" style="--pc:#f97316;--pg:rgba(249,115,22,0.55);">
+    <div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+    <div class="avatar-slot"><img id="avatar3"></div>
+    <div><div class="name" id="name3"></div><div class="line" id="line3"></div></div>
+  </div>
+  <button class="restart" onclick="window.__demo3.restart()">Reiniciar</button>
+</div>
+
+<script>
+const SP = 'radio-sprites/'
+const STATIC_FRAMES = [1,2,3,4,5,6,7].map(n => SP + 'static' + n + '.png')
+const SCRIPT = [
+  { name: 'Falco', color: '#3b82f6', sprite: SP + 'falco.png', text: "I'm on him, watch this!" },
+  { name: 'Peppy', color: '#10b981', sprite: SP + 'peppy.png', text: 'Do a barrel roll!' },
+  { name: 'Slippy', color: '#f97316', sprite: SP + 'slippy.png', text: 'Help me, Fox!' },
+  { name: 'Miyu', color: '#a855f7', sprite: SP + 'miyu.png', text: 'Target locked, firing.' },
+  { name: 'Falco', color: '#3b82f6', sprite: SP + 'falco.png', text: 'You call that flying?' },
+  { name: 'Peppy', color: '#10b981', sprite: SP + 'peppy.png', text: 'Fall back and regroup!' },
+  { name: 'Slippy', color: '#f97316', sprite: SP + 'slippy.png', text: 'Thanks, Fox!' },
+]
+const STATIC_FRAME_MS = 55
+const HOLD_MS = 2200
+
+function playStatic(imgEl, onDone) {
+  let i = 0
+  imgEl.src = STATIC_FRAMES[0]
+  const iv = setInterval(() => {
+    i += 1
+    if (i >= STATIC_FRAMES.length) { clearInterval(iv); onDone(); return }
+    imgEl.src = STATIC_FRAMES[i]
+  }, STATIC_FRAME_MS)
+  return iv
+}
+
+// ---------- Demo 1: estática só no retrato ----------
+function setupDemo1() {
+  const panel = document.getElementById('panel1')
+  const avatar = document.getElementById('avatar1')
+  const nameEl = document.getElementById('name1')
+  const lineEl = document.getElementById('line1')
+  let idx = 0, timers = []
+  function clearTimers() { timers.forEach(t => clearTimeout(t)); timers = [] }
+  function cycle() {
+    const cur = SCRIPT[idx]
+    panel.style.setProperty('--pc', cur.color)
+    panel.style.setProperty('--pg', cur.color + '80')
+    nameEl.textContent = cur.name
+    lineEl.textContent = cur.text
+    panel.classList.add('active')
+    playStatic(avatar, () => { avatar.src = cur.sprite })
+    timers.push(setTimeout(() => {
+      panel.classList.remove('active')
+      timers.push(setTimeout(() => { idx = (idx + 1) % SCRIPT.length; cycle() }, 380))
+    }, HOLD_MS))
+  }
+  window.__demo1 = { restart() { clearTimers(); idx = 0; panel.classList.remove('active'); cycle() } }
+  cycle()
+}
+
+// ---------- Demo 2: estática cobre o painel inteiro ----------
+function setupDemo2() {
+  const panel = document.getElementById('panel2')
+  const avatar = document.getElementById('avatar2')
+  const nameEl = document.getElementById('name2')
+  const lineEl = document.getElementById('line2')
+  const cover = document.getElementById('cover2')
+  const coverImg = document.getElementById('coverimg2')
+  let idx = 0, timers = []
+  function clearTimers() { timers.forEach(t => clearTimeout(t)); timers = [] }
+  function cycle() {
+    const cur = SCRIPT[idx]
+    panel.style.setProperty('--pc', cur.color)
+    panel.style.setProperty('--pg', cur.color + '80')
+    nameEl.textContent = cur.name
+    lineEl.textContent = cur.text
+    avatar.src = cur.sprite
+    cover.classList.remove('done')
+    panel.classList.add('active')
+    playStatic(coverImg, () => { cover.classList.add('done') })
+    timers.push(setTimeout(() => {
+      panel.classList.remove('active')
+      timers.push(setTimeout(() => { idx = (idx + 1) % SCRIPT.length; cycle() }, 380))
+    }, HOLD_MS))
+  }
+  window.__demo2 = { restart() { clearTimers(); idx = 0; panel.classList.remove('active'); cycle() } }
+  cycle()
+}
+
+// ---------- Demo 3: glitch de entrada/saída + estática no retrato ----------
+function setupDemo3() {
+  const panel = document.getElementById('panel3')
+  const avatar = document.getElementById('avatar3')
+  const nameEl = document.getElementById('name3')
+  const lineEl = document.getElementById('line3')
+  let idx = 0, timers = []
+  function clearTimers() { timers.forEach(t => clearTimeout(t)); timers = [] }
+  function cycle() {
+    const cur = SCRIPT[idx]
+    panel.style.setProperty('--pc', cur.color)
+    panel.style.setProperty('--pg', cur.color + '80')
+    nameEl.textContent = cur.name
+    lineEl.textContent = cur.text
+    panel.classList.remove('leaving')
+    panel.classList.add('active', 'entering')
+    playStatic(avatar, () => { avatar.src = cur.sprite })
+    timers.push(setTimeout(() => panel.classList.remove('entering'), 280))
+    timers.push(setTimeout(() => {
+      panel.classList.add('leaving')
+      timers.push(setTimeout(() => {
+        panel.classList.remove('active', 'leaving')
+        timers.push(setTimeout(() => { idx = (idx + 1) % SCRIPT.length; cycle() }, 200))
+      }, 190))
+    }, HOLD_MS))
+  }
+  window.__demo3 = { restart() { clearTimers(); idx = 0; panel.classList.remove('active','entering','leaving'); cycle() } }
+  cycle()
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupDemo1()
+  setupDemo2()
+  setupDemo3()
+})
+</script>
+</body>
+</html>

@@ -165,6 +165,35 @@ export function buildArcadeSection() {
   return arcadeSection
 }
 
+// Overhaul de Personalidade (Ideia 3): rádio dos aliados — frases curtas em momentos-chave,
+// puramente cosmético. Ver settings.js (wingmanRadioEnabled) e combat/wingman-radio.js.
+export function buildRadioSection() {
+  const radioSection = document.createElement('div')
+  radioSection.className = 'settings-section'
+  const radioTitle = document.createElement('h3')
+  radioTitle.textContent = 'Rádio do Esquadrão'
+  radioSection.appendChild(radioTitle)
+
+  const row = document.createElement('div')
+  row.className = 'settings-row'
+  const label = document.createElement('label')
+  label.textContent = 'Pilotos falam em momentos-chave (engajar, abate, vida baixa...)'
+  row.appendChild(label)
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.checked = getSettings().wingmanRadioEnabled
+  checkbox.addEventListener('change', () => setSetting('wingmanRadioEnabled', checkbox.checked))
+  row.appendChild(checkbox)
+  radioSection.appendChild(row)
+
+  const hint = document.createElement('p')
+  hint.className = 'settings-hint'
+  hint.textContent = 'Puramente cosmético — não muda comportamento, dano ou timing do esquadrão.'
+  radioSection.appendChild(hint)
+
+  return radioSection
+}
+
 // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
 export function buildSensitivitySection() {
   const allRangeSection = document.createElement('div')
@@ -350,6 +379,7 @@ export function showSettingsScreen({ onBack }) {
   root.appendChild(buildVisualSection())
   root.appendChild(buildFogSection())
   root.appendChild(buildArcadeSection())
+  root.appendChild(buildRadioSection())
   root.appendChild(buildSensitivitySection())
 
   const { el: controlsSection, cleanup: cleanupKeybindSection } = buildKeybindSection()

@@ -896,3 +896,49 @@ pra constante nomeada) — havia uma sessão concorrente com mudanças não comm
 arquivo (`game-loop.js`) no momento desta entrega; extrair essas duas constantes teria misturado
 esta entrega com o trabalho pendente da outra sessão, então foi revertido de propósito. Se quiser
 essa extração depois, é seguro fazer numa entrega isolada.
+
+## Rádio dos Aliados — correção de bug + expansão de conteúdo + fila de mensagens
+
+Entrega seguinte à implementação inicial do Rádio dos Aliados (ver seção acima). Usuário reportou
+bug visual real: **os retratos só trocavam um tempo DEPOIS da mensagem aparecer**, não junto com
+ela.
+
+**Causa raiz**: o flipbook de estática reatribuía `img.src` a cada 55ms (7 frames). Browsers
+cancelam o carregamento anterior assim que um novo `src` é atribuído — 55ms é rápido demais pra
+completar fetch+decode+paint de um frame antes do próximo substituir, então NENHUM frame de
+estática chegava a pintar; o `<img>` ficava com o retrato antigo (ou em branco) até o load final
+(por acaso lento o bastante pra sobreviver) trocar de repente, bem depois do texto já ter
+aparecido. **Fix**: os 7 frames de estática viraram `<img>` de verdade, pré-carregados 1x no mount
+do HUD e NUNCA MAIS têm `src` tocado — "tocar o flipbook" virou só alternar qual já tem a classe
+`visible` (opacity via CSS, sem nenhuma rede/decode no caminho crítico). Retrato final continua
+reatribuindo `src` (não tem pressão de tempo, 2.4s de hold sobram).
+
+**+52 falas novas** (pedido: mín. 40, referenciando inimigos/chefes/impulso/disparo carregado/
+habilidades "principalmente"/eventos): mais variedade nos 4 eventos de habilidade existentes (2-3
+falas cada agora, era 1); eventos novos — `engage_boss` (chefe/dourado, prioridade sobre o
+genérico via `engageEventFor()`), `engage_horda`/`engage_fragata` (inimigos com identidade visual
+forte), `boss_kill`/`golden_kill` (substituem `kill` genérico quando `hit.bossDefeated`/
+`goldenSpecialHit`), `boost_used` (edge-trigger em `opts.boostActive`), `charged_shot_used`
+(edge-trigger na SOLTA do carregado — `wasHomingCharging && !homingCharging`, só conta se segurou
+>0.3s, evita comentar em tap acidental), `focus_ready` (ver fila abaixo).
+
+**Fila de mensagens** (pedido: permitir uma fala depois da outra "como o botão de foco com todos
+os 4 se comunicando de prontidão"): canal novo `radioQueue` (array), separado do `radioMessage`
+singular — nasce em `toggleCommand()` quando o comando de foco ativa: cada piloto ativo (exceto
+quem está com `abilityActive`, mesma exceção do assign de alvo) fala uma linha de `focus_ready` via
+`wingmanRadio.getLine()` (lookup SEM cooldown — não é `trySpeak()`, senão só 1 dos 4 conseguiria
+falar por causa do cooldown global de 6s). HUD (`showWingmanRadioQueue`) tem fila própria + flag
+`wingmanRadioPlaying`: se já tem algo tocando, entra no fim da fila; ao terminar de sumir, encadeia
+a próxima automaticamente. `showWingmanRadio` (trigger avulso) continua interrompendo tudo e
+tocando na hora, comportamento inalterado.
+
+**Tamanho -15%** (pedido explícito): avatar 52px→44px, fonte do nome 12px→10px, fonte da fala
+13px→11px, padding/gap/cantos técnicos proporcionalmente menores.
+
+Testado ao vivo com `window.__starAnki` + `setManualStepping(true)` (stepping determinístico,
+necessário porque o `setInterval` do flipbook roda em tempo real de parede — testar com
+`step()`+`await sleep` competia com o próprio timer): confirmado via `MutationObserver` +
+inspeção de `naturalWidth`/classe `visible` que o frame 0 da estática fica visível IMEDIATAMENTE
+(síncrono, no mesmo tick da chamada), os 7 frames chegam pré-decodificados (`naturalWidth: 260`
+todos), e a rajada de prontidão do `[D]` realmente encadeia mensagens de pilotos diferentes em
+sequência (Falco "Locked and loaded!" confirmado). Zero erros de console.

@@ -27,6 +27,10 @@ const DEFAULTS = {
   // no arcade vira câmera lenta em vez de pausa (jogo continua rodando, só bem mais devagar) —
   // ver game-loop.js, ARCADE_CARD_CHOICE_TIME_SCALE.
   arcadeCardChoicePauses: true,
+  // Rádio dos aliados (Overhaul de Personalidade, Ideia 3) — pilotos falam frases curtas em
+  // momentos-chave (engajar, abate, aviso de vida baixa, etc). Puramente cosmético, sem efeito
+  // em IA/dano/timing — ver combat/wingman-radio.js e hud-game.js → showWingmanRadio.
+  wingmanRadioEnabled: true,
 }
 
 function readAll() {

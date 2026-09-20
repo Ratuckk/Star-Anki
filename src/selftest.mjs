@@ -558,5 +558,40 @@ assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, false), { killed: false, 
 assert.deepStrictEqual(simulateBlasterHitOutcome(2, 2, false), { killed: true, wingBreaks: false }, 'hit letal (dano >= hp) deve matar direto, sem quebrar a asa')
 assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, true), { killed: false, wingBreaks: false }, 'asa já quebrada não quebra de novo')
 
-console.log(`OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09 + ${totalCueCount} Sound Cues validadas + FSM de Inimigos Fase 1 Blaster/Tank).`)
+// ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
+import { createWingmanRadio } from './combat/wingman-radio.js'
+
+{
+  const radio = createWingmanRadio()
+  const line1 = radio.trySpeak(0, 'engage_dogfight', 1000)
+  assert.ok(typeof line1 === 'string' && line1.length > 0, 'trySpeak deve devolver uma fala pra um par piloto+evento válido')
+
+  const line2 = radio.trySpeak(1, 'ability_guard', 1500)
+  assert.strictEqual(line2, null, 'cooldown global (6s) deve bloquear uma segunda fala logo em seguida, mesmo de outro piloto/evento')
+
+  const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + 6000)
+  assert.ok(typeof line3 === 'string', 'depois do cooldown global (6s) passar, trySpeak deve voltar a falar')
+
+  const missingPilot = radio.trySpeak(99, 'kill', 50000)
+  assert.strictEqual(missingPilot, null, 'pilotId inexistente deve devolver null, não lançar erro')
+
+  const missingEvent = radio.trySpeak(0, 'evento_que_nao_existe', 60000)
+  assert.strictEqual(missingEvent, null, 'eventId sem fala cadastrada pra aquele piloto deve devolver null')
+
+  radio.reset()
+  const afterReset = radio.trySpeak(2, 'kill', 100)
+  assert.ok(typeof afterReset === 'string', 'reset() deve zerar o cooldown global')
+}
+
+{
+  // trySpeakAlone: só pode disparar 1x por instância do dispatcher (§3.3 do doc — "1x por
+  // partida"), mesmo depois do cooldown global passar de novo.
+  const radio = createWingmanRadio()
+  const first = radio.trySpeakAlone(3, 1000)
+  assert.ok(typeof first === 'string', 'primeira chamada de trySpeakAlone deve falar')
+  const second = radio.trySpeakAlone(0, 1000 + 6000)
+  assert.strictEqual(second, null, 'trySpeakAlone não pode disparar uma segunda vez na mesma partida, mesmo com outro piloto e cooldown já livre')
+}
+
+console.log(`OK: todos os testes de selftest.mjs passaram (anki.js + quiz.js + QOL v0.76.0 fixes + Auditoria Completa BUG-01 a BUG-09 + ${totalCueCount} Sound Cues validadas + FSM de Inimigos Fase 1 Blaster/Tank + Rádio dos Aliados).`)
 

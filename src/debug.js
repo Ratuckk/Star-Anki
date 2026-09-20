@@ -81,7 +81,7 @@ export const DEBUG_ACTIONS = [
   { id: 'spawnWingman1', label: '+ Wingman 1 (Falco / Interceptor)', category: 'Esquadrão' },
   { id: 'spawnWingman2', label: '+ Wingman 2 (Peppy / Bomber)', category: 'Esquadrão' },
   { id: 'spawnWingman3', label: '+ Wingman 3 (Slippy / Scout)', category: 'Esquadrão' },
-  { id: 'spawnWingman4', label: '+ Wingman 4 (Krystal / Stealth)', category: 'Esquadrão' },
+  { id: 'spawnWingman4', label: '+ Wingman 4 (Miyu / Stealth)', category: 'Esquadrão' },
   { id: 'clearWingmen', label: 'Dispensar Esquadrão', category: 'Esquadrão' },
   { id: 'dumpWingmanTelemetry', label: 'Imprimir Telemetria no Console (console.table)', category: 'Esquadrão' },
   { id: 'copyWingmanLog', label: 'Copiar Log de Voo dos Aliados', category: 'Esquadrão' },

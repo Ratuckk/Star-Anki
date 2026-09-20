@@ -1973,6 +1973,99 @@ export function injectHudExtraStyles() {
   letter-spacing: 0.03em;
 }
 
+/* ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============ */
+/* Opção 3 dos 3 protótipos HTML (escolhida pelo usuário) — painel quadrado (não pill, pra
+   acomodar melhor o retrato) com cantos técnicos, glitch de entrada por corte em steps e
+   flicker rápido antes de sumir. Ver Docs/Rádio dos Aliados — Opção B v2 (protótipo).html. */
+.hud-wingman-radio {
+  position: absolute;
+  left: 28px;
+  bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 17px 8px 8px;
+  border-radius: 4px;
+  background: rgba(8, 12, 22, 0.92);
+  border: 1px solid var(--pc, #38bdf8);
+  box-shadow: 0 0 18px var(--pg, rgba(56, 189, 248, 0.4)), 0 6px 16px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 140ms ease-out, transform 200ms ease-out, border-color 200ms, box-shadow 200ms;
+  pointer-events: none;
+  z-index: 45;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+.hud-wingman-radio.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+.hud-wingman-radio-corner {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--pc, #38bdf8);
+  opacity: 0.9;
+}
+.hud-wingman-radio-corner.tl { left: -1px; top: -1px; border-left: 2px solid; border-top: 2px solid; }
+.hud-wingman-radio-corner.tr { right: -1px; top: -1px; border-right: 2px solid; border-top: 2px solid; }
+.hud-wingman-radio-corner.bl { left: -1px; bottom: -1px; border-left: 2px solid; border-bottom: 2px solid; }
+.hud-wingman-radio-corner.br { right: -1px; bottom: -1px; border-right: 2px solid; border-bottom: 2px solid; }
+.hud-wingman-radio-avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 2px solid var(--pc, #38bdf8);
+  box-shadow: 0 0 10px var(--pg, rgba(56, 189, 248, 0.5));
+  background: #0a0f1c;
+}
+.hud-wingman-radio-avatar img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+  opacity: 0;
+}
+.hud-wingman-radio-avatar img.visible {
+  opacity: 1;
+}
+.hud-wingman-radio-name {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #e2e8f0;
+  text-transform: uppercase;
+}
+.hud-wingman-radio-line {
+  font-size: 11px;
+  color: #f8fafc;
+  margin-top: 2px;
+}
+@keyframes hud-wingman-radio-glitch-in {
+  0%   { clip-path: inset(0 0 92% 0); transform: translateY(14px) translateX(-6px); }
+  15%  { clip-path: inset(40% 0 20% 0); transform: translateY(14px) translateX(4px); }
+  30%  { clip-path: inset(10% 0 60% 0); transform: translateY(8px) translateX(-3px); }
+  45%  { clip-path: inset(70% 0 5% 0); transform: translateY(4px) translateX(3px); }
+  60%  { clip-path: inset(0 0 30% 0); transform: translateY(0) translateX(-2px); }
+  80%  { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(1px); }
+  100% { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(0); }
+}
+.hud-wingman-radio.entering {
+  animation: hud-wingman-radio-glitch-in 260ms steps(2, end);
+}
+@keyframes hud-wingman-radio-flicker {
+  0%, 100% { opacity: 1; } 20% { opacity: 0.2; } 40% { opacity: 1; } 60% { opacity: 0.15; } 80% { opacity: 1; }
+}
+.hud-wingman-radio.leaving {
+  animation: hud-wingman-radio-flicker 180ms steps(1, end);
+}
+
 /* ============ ALERTA DE EVENTO AMBIENTAL: TEMPESTADE DE DETRITOS ============ */
 .hud-storm-warning {
   position: absolute;

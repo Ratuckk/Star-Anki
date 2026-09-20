@@ -1,7 +1,15 @@
 import * as THREE from 'three'
 import { createWingmanTelemetry } from './wingman-telemetry.js'
+import { createWingmanRadio } from './wingman-radio.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import { HORDA_KIND } from '../enemies/horda.js'
+import { FRAGATA_KIND } from '../enemies/fragata.js'
+import { BOSS_KIND } from '../enemies/boss.js'
+import { GOLDEN_KIND } from '../enemies/golden.js'
+
+function hexToCss(n) {
+  return '#' + n.toString(16).padStart(6, '0')
+}
 
 // ============ ESQUADRÃO STAR FOX (WINGMEN IA DE VOO LIVRE) ============
 // Sistema de companheiros de equipe autônomos, vivos e úteis (v0.54.1).
@@ -82,7 +90,7 @@ export const WINGMAN_PROFILES = [
   },
   {
     id: 3,
-    name: 'Krystal',
+    name: 'Miyu',
     title: 'Vanguarda Fantasma',
     color: 0x7c3aed, // roxo estelar
     accentColor: 0xf43f5e, // rosa neon
@@ -111,8 +119,8 @@ export const WINGMAN_PROFILES = [
 // Slippy tinham `forward` NEGATIVO (-3 e -5, "atrás" do jogador) — como a câmera já fica atrás da
 // própria nave do jogador, isso colocava os dois quase em cima ou atrás da câmera. Medido ao vivo
 // via projeção NDC em 600 frames de voo livre: Slippy ficava visível em tela apenas 0.0% do tempo,
-// Peppy só 9.8% (contra 96.7% do Falco e 88.8% da Krystal). Ambos agora ficam À FRENTE da nave
-// também, só mais perto dela que Falco/Krystal — reconfirmado no mesmo teste: 90%+ pros quatro.
+// Peppy só 9.8% (contra 96.7% do Falco e 88.8% da Miyu). Ambos agora ficam À FRENTE da nave
+// também, só mais perto dela que Falco/Miyu — reconfirmado no mesmo teste: 90%+ pros quatro.
 export const FORMATION_SLOTS = [
   // Falco: Ala Esquerda Avançada (Ás Interceptor)
   { side: -11.0, up: 1.0, forward: 14.0 },
@@ -120,7 +128,7 @@ export const FORMATION_SLOTS = [
   { side: 12.5, up: -0.5, forward: 5.0 },
   // Slippy: Ala Esquerda Próxima (Batedor Solar)
   { side: -12.5, up: -0.5, forward: 4.0 },
-  // Krystal: Ala Direita Alta Avançada (Vanguarda Fantasma)
+  // Miyu: Ala Direita Alta Avançada (Vanguarda Fantasma)
   { side: 11.0, up: 2.2, forward: 16.0 },
 ]
 
@@ -164,7 +172,7 @@ const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 // Uma ação autônoma por piloto (ver PLANO_HABILIDADES_ESQUADRAO.md), cada uma com cooldown
 // próprio (abilityCooldownBase, reduzido por carta até abilityCooldownFloor — ver
 // applyAbilityCooldownCard). Falco investe em aríete, Peppy dá guarda (escudo), Slippy solta
-// orbe de reparo ao acertar um tiro, Krystal acopla pra acelerar o tiro carregado do jogador.
+// orbe de reparo ao acertar um tiro, Miyu acopla pra acelerar o tiro carregado do jogador.
 const RAM_MIN_RANGE = 20
 const RAM_MAX_RANGE = 45
 const RAM_HIT_RADIUS = 2.2
@@ -198,9 +206,9 @@ const PEPPY_NOSE_MAX_RAD = THREE.MathUtils.degToRad(10)
 const PEPPY_NOSE_EASE_RATE = 1.6 // rad/s aproximados em direção ao ângulo-alvo
 const SLIPPY_ROLL_DELAY_S = 0.3
 const SLIPPY_ROLL_HISTORY_MAX_S = 1.0 // poda o buffer além disso — mais que suficiente pro delay
-const KRYSTAL_CLOAK_CYCLE_S = 8.0
-const KRYSTAL_CLOAK_DURATION_S = 1.5
-const KRYSTAL_CLOAK_OPACITY = 0.35
+const MIYU_CLOAK_CYCLE_S = 8.0
+const MIYU_CLOAK_DURATION_S = 1.5
+const MIYU_CLOAK_OPACITY = 0.35
 
 // ============ CONSTRUTORES DE MODELOS 3D ÚNICOS ============
 
@@ -423,10 +431,37 @@ function buildWingmanShip(profile) {
 
 export function createSquadronSystem(scene, rail, effects, enemies) {
   const telemetry = createWingmanTelemetry()
+  const wingmanRadio = createWingmanRadio()
+  // Mensagens de rádio disparadas FORA do laço de update() (dano externo ao jogador vindo de
+  // game-loop.js, ou dismiss de piloto que esvazia o esquadrão) ficam aqui até o próximo update()
+  // pegar e devolver no wingmanResult — 1 frame de atraso, imperceptível pra um popup de texto.
+  let pendingRadioMessage = null
+  function buildRadioPayload(profile, text) {
+    return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text }
+  }
+  // Chama o dispatcher pra um evento de um piloto específico; devolve o payload pro HUD ou null
+  // (cooldown global ainda ativo, ou esse par piloto+evento não tem fala cadastrada).
+  function speak(profile, eventId) {
+    const text = wingmanRadio.trySpeak(profile.id, eventId)
+    return text ? buildRadioPayload(profile, text) : null
+  }
+  // Rádio: qual evento de "engajei" falar depende do tipo de inimigo — chefe/dourado e alguns
+  // inimigos com identidade mais forte (Horda, Fragata) têm fala própria; o resto cai no genérico
+  // engage_dogfight/engage_focus (fallbackEvent, decidido por quem chama).
+  function engageEventFor(kind, fallbackEvent) {
+    if (kind === BOSS_KIND || kind === GOLDEN_KIND) return 'engage_boss'
+    if (kind === HORDA_KIND) return 'engage_horda'
+    if (kind === FRAGATA_KIND) return 'engage_fragata'
+    return fallbackEvent
+  }
   const activeWingmen = []
   const activeLasers = []
   let elapsed = 0
   let chargeHeldTimer = 0
+  let wasPlayerLowHealth = false // edge-detect pro evento player_low_health (só dispara na virada)
+  let wasBoostActive = false // edge-detect pro evento boost_used
+  let wasHomingCharging = false // edge-detect pro evento charged_shot_used (dispara ao SOLTAR)
+  let pendingRadioQueue = null // rajada de "prontidão" do comando de foco — ver toggleCommand()
   // Slippy (Ideia 4): buffer do roll do JOGADOR pra imitar com 0.3s de atraso — um só histórico
   // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
   const playerRollHistory = []
@@ -482,16 +517,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_CHARGE_MULT : 1
   }
 
-  // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada da Krystal concede
+  // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada da Miyu concede
   // enquanto acoplado — empilha com a carta 'more-homing-targets', o teto (HOMING_MAX_TARGETS_CAP)
   // é respeitado do lado de fora (game-loop.js), aqui é só o bônus bruto.
   function getAssistExtraTargets() {
     return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_EXTRA_TARGETS : 0
   }
 
-  // Coleta os materiais únicos de um mesh composto (grupo de partes) — usado pela Krystal pra
+  // Coleta os materiais únicos de um mesh composto (grupo de partes) — usado pela Miyu pra
   // animar opacidade (Ideia 4). buildWingmanShip já cria materiais NOVOS a cada chamada (nunca
-  // compartilhados entre instâncias — só há 1 Krystal viva por vez de qualquer forma), então não
+  // compartilhados entre instâncias — só há 1 Miyu viva por vez de qualquer forma), então não
   // precisa clonar de novo aqui, só coletar as referências.
   function collectMaterials(mesh) {
     const materials = new Set()
@@ -545,11 +580,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       abilityApplied: false,
       escortKind: null, // 'guard' | 'assist' — só usado quando state === 'escort'
       // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
-      krystalCloakTimer: 0, // Krystal: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
-      krystalMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
+      miyuCloakTimer: 0, // Miyu: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
+      miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
     }
-    if (wingman.krystalMaterials) {
-      for (const m of wingman.krystalMaterials) m.transparent = true
+    if (wingman.miyuMaterials) {
+      for (const m of wingman.miyuMaterials) m.transparent = true
     }
 
     activeWingmen.push(wingman)
@@ -587,6 +622,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     disposeWingmanMesh(w.mesh)
     w.laserMaterial.dispose()
     telemetry.recordEvent(w.profile.name, 'flight', `Caça ${w.profile.name} dispensado da formação`, { elapsed })
+    // Rádio (Ideia 3, evento "alone"): o piloto que acabou de sair fala, se o esquadrão ficou
+    // vazio — só 1x por partida (ver wingman-radio.js → trySpeakAlone).
+    if (activeWingmen.length === 0) {
+      const text = wingmanRadio.trySpeakAlone(w.profile.id)
+      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text)
+    }
   }
 
   function setWingmanCount(n) {
@@ -676,6 +717,19 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       triggerSoundCue(WINGMAN_SOUND_CUES.command_focus_toggle, { targetCount: squadronFocusTargets.length, hasLocked: validLocked.length > 0 })
+
+      // Rádio — rajada de "prontidão": TODOS os pilotos ativos confirmam em fila (não é 1 sorteado
+      // como os outros eventos, e não passa pelo cooldown global do dispatcher — usa getLine(),
+      // que é um lookup puro). Só quem realmente recebeu a ordem fala (abilityActive continua de
+      // fora, ver comentário acima).
+      const readyQueue = []
+      for (const w of activeWingmen) {
+        if (w.abilityActive) continue
+        const text = wingmanRadio.getLine(w.profile.id, 'focus_ready')
+        if (text) readyQueue.push(buildRadioPayload(w.profile, text))
+      }
+      if (readyQueue.length > 0) pendingRadioQueue = readyQueue
+
       return {
         mode: 'focus',
         targetCount: squadronFocusTargets.length,
@@ -746,6 +800,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       playerLowHealth: false, playerHighCombo: false, playerJustLostLife: false, playerBoosting: false,
     }
 
+    // Rádio (charged_shot_used): detecta a SOLTA do carregado (true→false) usando o
+    // chargeHeldTimer ANTES do reset abaixo — só conta como "disparo carregado de verdade" se
+    // segurou por pelo menos 0.3s (evita comentar em todo tap acidental do botão).
+    const justReleasedCharge = wasHomingCharging && !homingCharging && chargeHeldTimer > 0.3
+    wasHomingCharging = homingCharging
+    // Rádio (boost_used): dispara só na virada false→true do impulso.
+    const justStartedBoost = boostActive && !wasBoostActive
+    wasBoostActive = boostActive
+
     chargeHeldTimer = homingCharging ? chargeHeldTimer + dt : 0
 
     // Comando de ofensividade do esquadrão — duração de 6s (volta sozinho ao normal) + cooldown
@@ -775,6 +838,32 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     let goldenHitWorldPos = null
     let shieldGrants = 0
     const healOrbSpawns = []
+    // Rádio (Ideia 3): consome qualquer mensagem disparada fora deste laço (dano externo, dismiss
+    // — ver pendingRadioMessage acima) antes de tentar os eventos do próprio frame.
+    let radioMessage = pendingRadioMessage
+    pendingRadioMessage = null
+    // Rajada de "prontidão" do comando de foco (radioQueue) — ver toggleCommand(). Canal
+    // separado do radioMessage único porque aqui são VÁRIAS falas em fila, não uma só.
+    let radioQueue = pendingRadioQueue
+    pendingRadioQueue = null
+    // player_low_health dispara só na VIRADA (false→true), não every frame — um piloto aleatório
+    // comenta.
+    const isPlayerLowHealthNow = !!reactivity.playerLowHealth
+    if (isPlayerLowHealthNow && !wasPlayerLowHealth && !radioMessage && activeWingmen.length > 0) {
+      const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
+      radioMessage = speak(w.profile, 'player_low_health')
+    }
+    wasPlayerLowHealth = isPlayerLowHealthNow
+    // boost_used / charged_shot_used — mesmo padrão: sorteia 1 piloto ativo, respeita o cooldown
+    // global do dispatcher (speak() já checa) e o "só 1 por frame" (!radioMessage).
+    if (justStartedBoost && !radioMessage && activeWingmen.length > 0) {
+      const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
+      radioMessage = speak(w.profile, 'boost_used')
+    }
+    if (justReleasedCharge && !radioMessage && activeWingmen.length > 0) {
+      const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
+      radioMessage = speak(w.profile, 'charged_shot_used')
+    }
 
     for (let idx = 0; idx < activeWingmen.length; idx++) {
       const w = activeWingmen[idx]
@@ -883,10 +972,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.patrolTarget.copy(_wmSlotPos)
         }
 
-        // Habilidades únicas de Peppy (Guarda) e Krystal (Carga Compartilhada)
+        // Habilidades únicas de Peppy (Guarda) e Miyu (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
           if (w.profile.abilityId === 'guard' && shieldNotFull) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
+            if (!radioMessage) radioMessage = speak(w.profile, 'ability_guard')
             w.state = 'escort'
             w.escortKind = 'guard'
             w.stateTimer = 0
@@ -894,7 +984,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.abilityTimer = 0
             w.abilityApplied = false
           } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Krystal sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
+            telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
+            if (!radioMessage) radioMessage = speak(w.profile, 'ability_assist')
             w.state = 'escort'
             w.escortKind = 'assist'
             w.stateTimer = 0
@@ -923,6 +1014,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               if (candidate && candidate.mesh && w.mesh.position.distanceTo(candidate.mesh.position) < 105) {
                 w.targetEnemy = candidate
                 telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
+                if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(w.targetEnemy.kind, 'engage_focus'))
                 w.state = 'dogfight'
                 w.stateTimer = 0
                 w.burstRemaining = 4
@@ -966,7 +1058,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   // qualquer outro alvo elegível, mesmo um mais perto (única prioridade desse tipo
                   // no jogo hoje; todo outro inimigo só entra/sai da lista de alvos, nunca é
                   // priorizado dentro dela)
-                  // Krystal com o jogador em vida baixa: foca no inimigo mais próximo DO
+                  // Miyu com o jogador em vida baixa: foca no inimigo mais próximo DO
                   // JOGADOR (protege), não do mais conveniente pra ela mesma (reatividade,
                   // Ideia 5) — os outros 3 pilotos continuam ordenando pela própria posição.
                   const distanceRef = (w.profile.id === 3 && reactivity.playerLowHealth) ? playerPos : w.mesh.position
@@ -978,6 +1070,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   })
                   w.targetEnemy = candidates[0]
                   telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidates[0].kind} #${candidates[0].id} a ${w.mesh.position.distanceTo(candidates[0].mesh.position).toFixed(1)}u`, { elapsed })
+                  if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(candidates[0].kind, 'engage_dogfight'))
                   w.state = 'dogfight'
                   w.stateTimer = 0
                   w.burstRemaining = 5
@@ -997,13 +1090,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       } else if (w.state === 'dogfight') {
         // ============ PERSEGUIÇÃO E DOGFIGHT DISCIPLINADO ============
         // Agressividade (Ideia 2): teto de segurança por piloto (combatProfile.dogfightDuration)
-        // em vez do 6.0 fixo global — Peppy sai antes (3.5s), Falco/Krystal ficam mais (5.5s).
+        // em vez do 6.0 fixo global — Peppy sai antes (3.5s), Falco/Miyu ficam mais (5.5s).
         const enemyLost = !w.targetEnemy || w.targetEnemy.dying || !w.targetEnemy.mesh ||
           w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 110 ||
           w.stateTimer > w.profile.combatProfile.dogfightDuration
 
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
+          if (!radioMessage) radioMessage = speak(w.profile, 'return_formation')
           w.state = 'patrol'
           w.stateTimer = 0
           w.targetEnemy = null
@@ -1022,6 +1116,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (w.profile.abilityId === 'ram' && !w.abilityActive && w.abilityCooldown <= 0 &&
               dist >= RAM_MIN_RANGE && dist <= RAM_MAX_RANGE) {
             telemetry.recordEvent(w.profile.name, 'ability', `Falco iniciou Investida Aríete contra ${w.targetEnemy.kind} #${w.targetEnemy.id}!`, { elapsed })
+            if (!radioMessage) radioMessage = speak(w.profile, 'ability_ram')
             w.state = 'ram'
             w.stateTimer = 0
             w.abilityActive = true
@@ -1034,10 +1129,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 85) {
               w.burstRemaining -= 1
               w.burstTimer = 0.55
-              // Krystal com combo alto: mira cirúrgica (reatividade, Ideia 5) — os outros 3
+              // Miyu com combo alto: mira cirúrgica (reatividade, Ideia 5) — os outros 3
               // continuam com a dispersão padrão.
               // Agressividade (Ideia 2): dispersão base vem de combatProfile.aimSpreadRad (Falco
-              // "metralhadora" 0.08, Peppy/Krystal certeiros 0.03, Slippy 0.05). Krystal com
+              // "metralhadora" 0.08, Peppy/Miyu certeiros 0.03, Slippy 0.05). Miyu com
               // combo alto (Ideia 5) fica ainda mais cirúrgica por cima disso (0.02).
               const aimSpread = (w.profile.id === 3 && reactivity.playerHighCombo) ? 0.02 : w.profile.combatProfile.aimSpreadRad
               _wmSpreadDir.copy(_wmAimDir)
@@ -1111,7 +1206,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
         }
       } else if (w.state === 'escort') {
-        // ============ ESCOLTA (Peppy: Guarda / Krystal: Carga Compartilhada) ============
+        // ============ ESCOLTA (Peppy: Guarda / Miyu: Carga Compartilhada) ============
         w.abilityTimer += dt
         const side = w.profile.homeSide * ESCORT_SIDE_OFFSET
         w.patrolTarget.copy(playerPos)
@@ -1137,7 +1232,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
         } else if (w.escortKind === 'assist') {
           if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Krystal concluída, retornando à formação', { elapsed })
+            telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Miyu concluída, retornando à formação', { elapsed })
             w.abilityActive = false
             w.abilityCooldown = abilityCooldownFor(w.profile)
             w.state = 'patrol'
@@ -1164,7 +1259,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
       if (boostActive) {
         cruiseSpeed *= 1.45
-        // Krystal "acompanha o boost" com um empurrão extra (reatividade, Ideia 5) — os outros 3
+        // Miyu "acompanha o boost" com um empurrão extra (reatividade, Ideia 5) — os outros 3
         // já acompanham igual antes (o multiplicador acima é global, "sem mudança" pra eles).
         if (w.profile.id === 3) cruiseSpeed *= 1.15
       } else if (w.state === 'ram') cruiseSpeed *= 1.9
@@ -1256,12 +1351,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // Krystal (Ideia 4): fica semi-transparente 1.5s a cada ciclo de 8s — só material, nada de
+      // Miyu (Ideia 4): fica semi-transparente 1.5s a cada ciclo de 8s — só material, nada de
       // hitbox/lógica (mesma hitbox/colisão sempre, ver risco baixo no documento).
-      if (w.profile.id === 3 && w.krystalMaterials) {
-        w.krystalCloakTimer = (w.krystalCloakTimer + dt) % KRYSTAL_CLOAK_CYCLE_S
-        const targetOpacity = w.krystalCloakTimer < KRYSTAL_CLOAK_DURATION_S ? KRYSTAL_CLOAK_OPACITY : 1.0
-        for (const m of w.krystalMaterials) m.opacity = targetOpacity
+      if (w.profile.id === 3 && w.miyuMaterials) {
+        w.miyuCloakTimer = (w.miyuCloakTimer + dt) % MIYU_CLOAK_CYCLE_S
+        const targetOpacity = w.miyuCloakTimer < MIYU_CLOAK_DURATION_S ? MIYU_CLOAK_OPACITY : 1.0
+        for (const m of w.miyuMaterials) m.opacity = targetOpacity
       }
     }
 
@@ -1294,6 +1389,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (hit.killed) {
             enemyKills++
             enemyKillPoints += (hit.enemyKillPoints || 0)
+            if (laser.owner && !radioMessage) {
+              const killEvent = hit.bossDefeated ? 'boss_kill' : hit.goldenSpecialHit ? 'golden_kill' : 'kill'
+              radioMessage = speak(laser.owner.profile, killEvent)
+            }
           }
           if (hit.bossDefeated) {
             bossDefeated = true
@@ -1315,6 +1414,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             owner.abilityCooldown = abilityCooldownFor(owner.profile) * (reactivity.playerLowHealth ? 0.5 : 1)
             triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
             telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
+            if (!radioMessage) radioMessage = speak(owner.profile, 'ability_repair')
           }
           scene.remove(laser.mesh)
           activeLasers.splice(i, 1)
@@ -1334,7 +1434,20 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       goldenHitWorldPos,
       shieldGrants,
       healOrbSpawns,
+      radioMessage,
+      radioQueue,
     }
+  }
+
+  // Rádio (Ideia 3, evento player_take_damage — §3.5 do doc, decisão (b): só reage a dano do
+  // JOGADOR, nunca do próprio wingman, que é invulnerável). Chamado de fora do laço de update()
+  // (game-loop.js, no momento em que player.takeDamage() resolve), por isso guarda em
+  // pendingRadioMessage pro próximo update() devolver.
+  function triggerPlayerTookDamage() {
+    if (activeWingmen.length === 0 || pendingRadioMessage) return
+    const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
+    const msg = speak(w.profile, 'player_take_damage')
+    if (msg) pendingRadioMessage = msg
   }
 
   // Disparo manual sincronizado de suporte: companheiros em formação acompanham o fogo do líder
@@ -1371,6 +1484,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     setWingmanCount,
     spawnMember,
     removeMember,
+    triggerPlayerTookDamage,
     clearSquadron,
     clearLasers,
     toggleCommand,
