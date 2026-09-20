@@ -120,7 +120,12 @@ const HORDA_CHILD_NEIGHBOR_SPACING = 5.2
 // Horda morre perto (ela orbita a só 28-50u). Combinado com DIVE_MAX_S maior (ver abaixo) pra dar
 // tempo de cruzar essa distância sem ser culled por tempo antes de chegar perto do jogador.
 const SPREAD_MIN_TARGET_DEPTH = 200
-export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
+// Fog como mecânica (Overhaul 4, pilar 3) — em fog denso, os filhotes nascem sem condensação
+// visual (ver enemies/index.js → registerSpawn, checa enemy.spawnedInDenseFog) e com fade-in de
+// opacidade nos primeiros instantes do spreadOut, em vez de aparecerem cheios de uma vez —
+// "materializam" em vez de "piscam".
+const DENSE_FOG_FADE_IN_S = 0.5
+export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count, isDenseFog = false) {
   const spreadRadius = count > 1
     ? HORDA_CHILD_NEIGHBOR_SPACING / (2 * Math.sin(Math.PI / count))
     : 0
@@ -141,7 +146,14 @@ export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
   const group = []
   for (let i = 0; i < count; i += 1) {
     const variant = MINI_SWARM_VARIANT_IDS[Math.floor(Math.random() * MINI_SWARM_VARIANT_IDS.length)]
-    const mesh = new THREE.Mesh(enemyGeometry, variantMaterials.get(variant))
+    // Material COMPARTILHADO por variante entre todo mini-swarm vivo — clonar só quando precisa
+    // animar opacidade individualmente (fog denso), pra não afetar outras instâncias da mesma cor.
+    const material = isDenseFog ? variantMaterials.get(variant).clone() : variantMaterials.get(variant)
+    if (isDenseFog) {
+      material.transparent = true
+      material.opacity = 0
+    }
+    const mesh = new THREE.Mesh(enemyGeometry, material)
     mesh.position.copy(originPos)
     mesh.scale.setScalar(MINI_ENEMY_SCALE)
     scene.add(mesh)
@@ -157,6 +169,8 @@ export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count) {
       spreadRadius,
       spreadTimer: HORDA_SPLIT_SPREAD_DURATION_S,
       telegraphTimer: 0,
+      spawnedInDenseFog: isDenseFog,
+      fadeInMaterial: isDenseFog ? material : null,
       diveDir: null,
       diveCorePos: null,
       diveElapsed: 0,
@@ -189,6 +203,23 @@ export function updateMiniSwarm(enemy, dt, ctx) {
       .addScaledVector(frame.up, Math.sin(enemy.spreadAngle) * enemy.spreadRadius)
     enemy.mesh.position.lerpVectors(originNow, target, t)
     enemy.mesh.lookAt(playerPosition)
+
+    // Fog como mecânica (Overhaul 4, pilar 3) — fade-in de opacidade nos primeiros instantes,
+    // depois troca de volta pro material compartilhado da variante e libera o clone (senão
+    // vaza um THREE.Material por filhote nascido em fog denso).
+    if (enemy.spawnedInDenseFog && enemy.fadeInMaterial) {
+      const fadeT = Math.min(1, enemy.spreadTimer >= 0
+        ? (HORDA_SPLIT_SPREAD_DURATION_S - enemy.spreadTimer) / DENSE_FOG_FADE_IN_S
+        : 1)
+      if (fadeT >= 1) {
+        enemy.fadeInMaterial.dispose()
+        enemy.mesh.material = variantMaterials.get(enemy.variant)
+        enemy.fadeInMaterial = null
+      } else {
+        enemy.fadeInMaterial.opacity = fadeT
+      }
+    }
+
     if (enemy.spreadTimer <= 0) {
       enemy.swarmState = 'telegraph'
       enemy.telegraphTimer = MINI_SWARM_TELEGRAPH_S

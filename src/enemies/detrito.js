@@ -37,12 +37,16 @@ function rollDetritoScale(isTitanic = false, allowGiant = true) {
   return base * (1 - DETRITO_TIER_JITTER + Math.random() * DETRITO_TIER_JITTER * 2)
 }
 
+// Fog como mecânica (Overhaul 4, pilar 3) — emissive cai em fog denso (ver updateDetritoSpin).
+const DETRITO_BASE_EMISSIVE = 0.35
+const DETRITO_DENSE_FOG_EMISSIVE = 0.15
+
 const geometry = new THREE.IcosahedronGeometry(1.43, 0) // +10% maior (era 1.3)
 const material = new THREE.MeshPhongMaterial({
   color: DETRITO_COLOR,
   flatShading: true,
   emissive: 0x282c34,
-  emissiveIntensity: 0.35,
+  emissiveIntensity: DETRITO_BASE_EMISSIVE,
 })
 const titanicMaterial = new THREE.MeshPhongMaterial({ color: 0x8d7b72, flatShading: true, shininess: 6 })
 
@@ -109,8 +113,16 @@ export function detritoHitRadius(enemy) {
 
 // giro lento e constante só por vida visual — sem lookAt (não "encara" o jogador, é um objeto
 // inerte flutuando, não uma nave)
-export function updateDetritoSpin(enemy, dt) {
+export function updateDetritoSpin(enemy, dt, isDenseFog = false) {
   enemy.mesh.rotateOnAxis(enemy.spinAxis, enemy.spinRate * dt)
+  // Fog como mecânica (Overhaul 4, pilar 3) — "obstáculo que você não viu a tempo" (Star Fox 64
+  // fazia isso com asteroides): em fog denso, o emissive cai (o detrito só "aparece" de verdade
+  // quando já está perto). `material` é COMPARTILHADO entre toda instância não-titânica — mudar
+  // aqui afeta todas ao mesmo tempo, aceitável porque a densidade de fog é a mesma pra todo mundo
+  // no mesmo momento (não titânico, esse é intocado — sempre visível, grande demais pra esconder).
+  if (enemy.mesh.material !== titanicMaterial) {
+    material.emissiveIntensity = isDenseFog ? DETRITO_DENSE_FOG_EMISSIVE : DETRITO_BASE_EMISSIVE
+  }
 }
 
 export function disposeDetrito() {

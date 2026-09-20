@@ -27,6 +27,13 @@ const PULSE_INVISIBLE_MS = 2200
 const OPACITY_VISIBLE = 0.95
 const OPACITY_HIDDEN = 0.28 // visibilidade sutil mesmo invisível, nunca impossível de ver
 
+// Fog como mecânica (Overhaul 4, pilar 3) — em fog denso o Sussurro fica quase invisível de
+// verdade (0.05 em vez de 0.28) e some por mais tempo entre pulsos. O som continua tocando
+// normal (sussurro_cloak_pulse/summon não mudam) — é o único aviso nesse estado.
+const DENSE_FOG_OPACITY_HIDDEN = 0.05
+const DENSE_FOG_PULSE_VISIBLE_MS = 300
+const DENSE_FOG_PULSE_INVISIBLE_MS = 3000
+
 const geometry = new THREE.OctahedronGeometry(1.21, 0) // +10% maior (era 1.1)
 const baseMaterial = new THREE.MeshBasicMaterial({ color: SUSSURRO_COLOR, transparent: true, opacity: OPACITY_HIDDEN })
 
@@ -73,7 +80,7 @@ export function spawnSussurro(scene, rail, id, level = 1) {
   return enemy
 }
 
-export function updateSussurro(enemy, dt, rail) {
+export function updateSussurro(enemy, dt, rail, isDenseFog = false) {
   enemy.depth -= ADVANCE_SPEED * dt
   projectSussurroToWorld(enemy, rail)
   enemy.aliveMs += dt * 1000
@@ -81,10 +88,13 @@ export function updateSussurro(enemy, dt, rail) {
   enemy.pulseTimer -= dt * 1000
   if (enemy.pulseTimer <= 0) {
     enemy.pulseVisible = !enemy.pulseVisible
-    enemy.pulseTimer = enemy.pulseVisible ? PULSE_VISIBLE_MS : PULSE_INVISIBLE_MS
+    const visibleMs = isDenseFog ? DENSE_FOG_PULSE_VISIBLE_MS : PULSE_VISIBLE_MS
+    const invisibleMs = isDenseFog ? DENSE_FOG_PULSE_INVISIBLE_MS : PULSE_INVISIBLE_MS
+    enemy.pulseTimer = enemy.pulseVisible ? visibleMs : invisibleMs
     triggerSoundCue(ENEMY_SOUND_CUES.sussurro_cloak_pulse, { worldPos: enemy.mesh.position, visible: enemy.pulseVisible })
   }
-  enemy.mesh.material.opacity = enemy.pulseVisible ? OPACITY_VISIBLE : OPACITY_HIDDEN
+  const hiddenOpacity = isDenseFog ? DENSE_FOG_OPACITY_HIDDEN : OPACITY_HIDDEN
+  enemy.mesh.material.opacity = enemy.pulseVisible ? OPACITY_VISIBLE : hiddenOpacity
 }
 
 // true só na borda exata em que cruza o limiar de invocação (chamador dispara o spawn 1x)

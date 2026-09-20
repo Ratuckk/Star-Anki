@@ -35,7 +35,7 @@ import {
   LOW_HEALTH_THRESHOLD_FRAC,
   BOSS_ENEMY_INTERVAL_MULT,
   LEVEL_BACKGROUNDS,
-  DENSE_FOG_THRESHOLD_RATIO,
+  DENSE_FOG_THRESHOLD_RATIO, DENSE_FOG_REFERENCE_DENSITY,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
@@ -426,6 +426,12 @@ export function createGameLoop(deps) {
     const reactivity = wingmanReactivity.update({
       session, player, isNoDeck, killChainCount: state.killChainCount,
     })
+    // Fog tático (Overhaul 4, pilar 3) — "denso" é proporcional à densidade calibrada de
+    // referência (ver DENSE_FOG_REFERENCE_DENSITY em main-constants.js), não um valor fixo, pra
+    // não quebrar com os diferentes contextos de calibração (Horda sozinha vs arena de chefe).
+    const isDenseFog = !!getSettings().fogTacticalEffects
+      && !!environment?.getFogDensity
+      && environment.getFogDensity() >= DENSE_FOG_REFERENCE_DENSITY * DENSE_FOG_THRESHOLD_RATIO
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimDirection: _fireDirection,
@@ -435,6 +441,7 @@ export function createGameLoop(deps) {
       shipHitboxPoints,
       homingCharging: isCharging,
       reactivity,
+      isDenseFog,
     })
 
     // ============ HIT MARKER ============

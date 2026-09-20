@@ -85,6 +85,7 @@ function randomGoldenFireInterval() {
 export function createGoldenSystem(scene, rail, effects, nextId) {
   const goldenTargets = []
   let elapsed = 0
+  let currentIsDenseFog = false
 
   function removeGoldenTarget(g) {
     g.dying = true
@@ -169,6 +170,10 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     // ctx = { fireEnemyProjectile, pushProjectile, pushLaser }
     update(dt, playerPosition, ctx, ramDamage = 0, opts = {}) {
       elapsed += dt
+      // Fog tático (Overhaul 4, pilar 3) — lido aqui (opts só chega no update()) e guardado pra
+      // resolveHit() ler depois (chamado num momento diferente do tick, sem acesso a opts) — a
+      // densidade muda devagar entre frames, então o valor de "um frame atrás" é imperceptível.
+      currentIsDenseFog = !!opts.isDenseFog
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
@@ -335,7 +340,13 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           goldenHit.mesh.position.copy(newPos)
           goldenHit.teleportCooldownTimer = goldenHit.teleportCooldownS
           triggerSoundCue(ENEMY_SOUND_CUES.golden_teleport, { oldPos, newPos })
-          if (effects) {
+          // Fog tático (Overhaul 4, pilar 3) — em fog denso, o teleporte fica disfarçado: sem
+          // shockwave/explosion no ponto de PARTIDA (o jogador não vê ele sumir), só um
+          // bloomSprite sutil no destino ("aparição", não "partida"). O som continua tocando
+          // igual — é o único aviso nesse estado.
+          if (effects && currentIsDenseFog) {
+            if (effects.bloomSprite) effects.bloomSprite(newPos, GOLDEN_COLOR, 0.8)
+          } else if (effects) {
             effects.shockwave(oldPos, GOLDEN_COLOR, 1.2)
             effects.explosion(oldPos, GOLDEN_COLOR, 1.0, { rings: true })
             effects.shockwave(newPos, GOLDEN_COLOR, 1.2)

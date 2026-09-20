@@ -219,6 +219,12 @@ export const FOG_COLOR_LERP_RATE = 1.2
 // 0.042, sempre "denso"; chefe a 150u dá 0.013, nunca "denso" mesmo em arena de verdade densa).
 // Proporcional à densidade-alvo do MOMENTO: sempre os 40% mais densos do range calibrado atual.
 export const DENSE_FOG_THRESHOLD_RATIO = 0.6
+// Densidade de referência = a calibrada pro caso comum de trilho (TRACK_MAX_SPAWN_DISTANCE).
+// "Denso" (mecânicas táticas do pilar 3 ativam) = densidade atual >= essa referência * RATIO.
+// Na prática: quase sempre ativo em trilho (calibrado igual ou mais denso que a referência —
+// Horda sozinha, por exemplo, é ainda mais densa), quase sempre inativo em arena (multiplicador
+// FOG_ARENA_DENSITY_MULT já derruba a densidade abaixo do threshold).
+export const DENSE_FOG_REFERENCE_DENSITY = Math.sqrt(-Math.log(1 - FOG_COVERAGE_TARGET)) / TRACK_MAX_SPAWN_DISTANCE
 
 // ============ ROGUELIKE (fase 4) ============
 export const HOMING_LOCK_INTERVAL_MS = 500

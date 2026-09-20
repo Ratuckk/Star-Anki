@@ -103,6 +103,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   const activeSquadrons = new Map()
   let elapsed = 0
   let enemyAggression = 1
+  // Fog tático (Overhaul 4, pilar 3) — atualizado 1x por frame em update() (só ele recebe
+  // opts), lido por triggerHordaSplitIfNeeded (chamado de resolveProjectileHit/applyAreaDamage/
+  // ram, fora do fluxo normal de update() com acesso a opts).
+  let currentIsDenseFog = false
   let arenaPreviewMesh = null
   // "+1 na velocidade dos disparos dos inimigos por pergunta errada" — soma direto na
   // velocidade base do projétil comum (também usado pela rajada do chefe)
@@ -167,6 +171,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
     if (e.kind === SUSSURRO_KIND && e.mesh && e.mesh.material) {
       e.mesh.material.dispose()
+    }
+    // Fog tático (Overhaul 4, pilar 3) — filhote de Horda morto ANTES do fade-in terminar ainda
+    // está com o material clonado ativo (ver updateMiniSwarm) — libera aqui pra não vazar.
+    if (e.fadeInMaterial) {
+      e.fadeInMaterial.dispose()
+      e.fadeInMaterial = null
     }
     if (e.mesh) scene.remove(e.mesh)
     const idx = enemies.indexOf(e)
@@ -291,7 +301,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function triggerHordaSplitIfNeeded(enemy) {
     if (!enemy || enemy.kind !== HORDA_KIND) return
     const expectedCount = enemy.splitCount || 5
-    const group = spawnMiniSwarmFromHorda(scene, rail, () => nextEnemyId++, enemy.mesh.position, expectedCount)
+    const group = spawnMiniSwarmFromHorda(scene, rail, () => nextEnemyId++, enemy.mesh.position, expectedCount, currentIsDenseFog)
     aiValidator.expect(
       'Horda solta exatamente splitCount mini-swarms ao morrer, todos vivos e no ponto da morte',
       () => group.length === expectedCount && group.every((g) => g.hp === 1 && g.mesh.position.distanceTo(enemy.mesh.position) < 0.01),
@@ -363,6 +373,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function updateEnemies(dt, playerPosition, ramDamage = 0, opts = {}) {
     const inArena = rail.isArena()
     const frame = rail.getFrameAt(0)
+    // Fog como mecânica (Overhaul 4, pilar 3) — computado uma vez por frame em game-loop.js
+    // (único lugar com acesso a environment.getFogDensity()) e repassado por opts. Sussurro/
+    // Detrito/Horda-split reagem quando true.
+    const isDenseFog = !!opts.isDenseFog
     let hits = 0
     let ramKills = 0
     let ramKillPoints = 0
@@ -460,7 +474,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
       // remove sozinha (não usa o pass-behind genérico abaixo)
       if (enemy.kind === MINI_SWARM_KIND) {
-        updateMiniSwarm(enemy, dt, { playerPosition, frame, elapsed, removeEnemy })
+        updateMiniSwarm(enemy, dt, { playerPosition, frame, elapsed, removeEnemy, isDenseFog })
         continue
       }
 
@@ -480,7 +494,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // e some (senão acumularia pra sempre); em arena, persiste até morrer, igual todo outro
         // kind lá. Enxame-ímã reaproveita 100% esse comportamento — só muda o giro visual.
         if (isDetrito) {
-          updateDetritoSpin(enemy, dt)
+          updateDetritoSpin(enemy, dt, isDenseFog)
           if (enemy.driftVel) {
             enemy.mesh.position.addScaledVector(enemy.driftVel, dt)
           }
@@ -525,7 +539,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, rail)
         else if (enemy.kind === HORDA_KIND) updateHordaMovement(enemy, dt, frame, rail, opts.boostActive)
         else if (enemy.kind === SUSSURRO_KIND) {
-          updateSussurro(enemy, dt, rail)
+          updateSussurro(enemy, dt, rail, isDenseFog)
           if (sussurroShouldSummon(enemy)) {
             const count = 2 + Math.floor(Math.random() * 2)
             for (let i = 0; i < count; i += 1) {
@@ -726,7 +740,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.spawnAge = 0
       enemy.spawnDuration = enemy.kind === DETRITO_KIND ? 0.42 : 0.35
       enemy.mesh.scale.setScalar(enemy.targetScale * 0.1)
-      if (effects) {
+      // Fog tático (Overhaul 4, pilar 3) — filhote de Horda nascido em fog denso pula a
+      // condensação visual (nasce "literalmente invisível", ver spawnedInDenseFog/fadeInMaterial
+      // em miniSwarm.js) — a única leitura de que ele existe é o fade-in de opacidade + o som.
+      if (effects && !enemy.spawnedInDenseFog) {
         if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
           effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
         } else if (effects.fogWispCondensation) {
@@ -967,6 +984,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     update(dt, playerPosition, opts = {}) {
       elapsed += dt
+      currentIsDenseFog = !!opts.isDenseFog
       if (arenaPreviewMesh) arenaPreviewMesh.rotation.y += dt * 0.4
       const ramDamage = opts.ramDamage || 0
       const goldenRamResult = golden.update(dt, playerPosition, goldenUpdateCtx, ramDamage, opts)
