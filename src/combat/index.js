@@ -155,6 +155,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     clearGoldenTargets: () => enemies.clearGoldenTargets(),
     showArenaPreview: (kind) => enemies.showArenaPreview(kind),
     clearArenaPreview: () => enemies.clearArenaPreview(),
+    applySpawnWobbles: () => enemies.applySpawnWobbles(),
     clearOtherEnemies: () => enemies.clearOtherEnemies(),
     clearProjectiles: () => projectiles.clearAll(),
 

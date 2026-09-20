@@ -395,6 +395,11 @@ export function createEffectsSystem(scene, opts = {}) {
   const smokeRings = []
   const homingAfterimages = []
   const hitSparks = []
+  // Overhaul de spawn/despawn: arrays próprios (não reaproveitam hitSparks) porque a física é
+  // diferente — partículas convergindo pro centro em vez de se espalhando, e SOFREM fog
+  // (fog: true) de propósito, integrando com o Overhaul 4.
+  const condensationInwards = []
+  const spawnAnticipations = []
   const activeFlashes = []
   const projectileTrails = []
   const shockwaves = []
@@ -1114,6 +1119,59 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities, life: 0 })
   }
 
+  // ============ OVERHAUL DE SPAWN/DESPAWN — MATERIALIZAÇÃO ============
+  // "O espaço sugou névoa pra formar o inimigo" — inverso de fogWispCondensation (partículas
+  // vêm de FORA pra DENTRO, não de dentro pra fora). Tamanho/contagem escalam com hitRadius do
+  // inimigo (grande = mais partículas, maiores) pra não sumir num inimigo grande nem poluir um
+  // pequeno. `fog: true` de propósito — soma em setor denso (Overhaul 4).
+  function fogCondensationInward(position, colorHex = 0x7fe0ff, hitRadius = 2.0) {
+    const count = Math.min(20, Math.max(8, Math.round(hitRadius * 3)))
+    const startRadius = hitRadius * 1.5
+    const duration = 0.4
+    const geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(count * 3)
+    const directions = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      const dx = Math.sin(phi) * Math.cos(theta)
+      const dy = Math.sin(phi) * Math.sin(theta)
+      const dz = Math.cos(phi)
+      positions[i * 3] = position.x + dx * startRadius
+      positions[i * 3 + 1] = position.y + dy * startRadius
+      positions[i * 3 + 2] = position.z + dz * startRadius
+      directions[i * 3] = -dx
+      directions[i * 3 + 1] = -dy
+      directions[i * 3 + 2] = -dz
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      color: colorHex, size: hitRadius * 0.4, sizeAttenuation: true,
+      map: softCircleTexture, transparent: true, opacity: 0.85, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: true,
+    })
+    const points = new THREE.Points(geometry, material)
+    points.frustumCulled = false
+    scene.add(points)
+    condensationInwards.push({ points, directions, startRadius, duration, life: 0 })
+  }
+
+  // ============ OVERHAUL DE SPAWN/DESPAWN — ANTECIPAÇÃO (PEEK) ============
+  // Anel fino no ponto de spawn ANTES do mesh nascer — encolhe (não expande: a leitura é "algo
+  // está sendo puxado pra ali"), na cor de identidade do inimigo (dá uma dica do tipo antes
+  // dele aparecer de verdade). `fog: true` — some em setor denso, igual a condensação acima.
+  function spawnAnticipation(position, colorHex, radius = 1.0, durationSec = 0.1) {
+    const geo = new THREE.RingGeometry(radius * 0.9, radius, 24)
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: true,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.position.copy(position)
+    scene.add(mesh)
+    spawnAnticipations.push({ mesh, geo, mat, life: 0, duration: durationSec, radius })
+  }
+
   // ============ CLARÕES DE BATALHA DISTANTES NO FUNDO ============
   const distantFlashes = []
   let distantFlashTimer = 3.0
@@ -1453,6 +1511,41 @@ export function createEffectsSystem(scene, opts = {}) {
       }
       attr.needsUpdate = true
       s.points.material.opacity = Math.max(0, 1 - t)
+    }
+
+    // CONDENSAÇÃO INVERTIDA (spawn — Overhaul de spawn/despawn)
+    for (let i = condensationInwards.length - 1; i >= 0; i--) {
+      const c = condensationInwards[i]
+      c.life += dt
+      const t = c.life / c.duration
+      if (t >= 1) {
+        scene.remove(c.points); c.points.geometry.dispose(); c.points.material.dispose()
+        condensationInwards.splice(i, 1); continue
+      }
+      const attr = c.points.geometry.attributes.position
+      const arr = attr.array
+      const speed = c.startRadius / c.duration
+      for (let j = 0; j < arr.length; j += 3) {
+        arr[j] += c.directions[j] * speed * dt
+        arr[j + 1] += c.directions[j + 1] * speed * dt
+        arr[j + 2] += c.directions[j + 2] * speed * dt
+      }
+      attr.needsUpdate = true
+      c.points.material.opacity = 0.85 * (1 - t * t)
+    }
+
+    // ANEL DE ANTECIPAÇÃO (peek — Overhaul de spawn/despawn)
+    for (let i = spawnAnticipations.length - 1; i >= 0; i--) {
+      const a = spawnAnticipations[i]
+      a.life += dt
+      const t = a.life / a.duration
+      if (t >= 1) {
+        scene.remove(a.mesh); a.geo.dispose(); a.mat.dispose()
+        spawnAnticipations.splice(i, 1); continue
+      }
+      const scale = 1 + (1 - t) * 0.4
+      a.mesh.scale.setScalar(scale)
+      a.mesh.material.opacity = 0.6 * (1 - t)
     }
 
     // MUZZLE FLASHES
@@ -1874,6 +1967,8 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const b of bursts) { scene.remove(b.points); b.points.geometry.dispose(); b.points.material.dispose() }
     for (const r of grayRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const s of hitSparks) { scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose() }
+    for (const c of condensationInwards) { scene.remove(c.points); c.points.geometry.dispose(); c.points.material.dispose() }
+    for (const a of spawnAnticipations) { scene.remove(a.mesh); a.geo.dispose(); a.mat.dispose() }
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.material.dispose() }
     for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.material.dispose() }
     for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.material.dispose() }
@@ -1917,6 +2012,7 @@ export function createEffectsSystem(scene, opts = {}) {
     distantFlashes.length = 0
     distantSilhouettes.length = 0
     bursts.length = 0; grayRings.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
+    condensationInwards.length = 0; spawnAnticipations.length = 0
     smokeRings.length = 0; homingAfterimages.length = 0
     projectileTrails.length = 0; shockwaves.length = 0; bossImpactRings.length = 0
     telegraphs.length = 0; glassShards.length = 0
@@ -1937,7 +2033,7 @@ export function createEffectsSystem(scene, opts = {}) {
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
     maxChargeReady, maxChargeRings, machSpeedRing,
     ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
-    fogWispCondensation,
+    fogWispCondensation, fogCondensationInward, spawnAnticipation,
     lateralDashVFX, summersaultVFX, emergencyBrakeVFX, extraLifeHeal, wingmanSpawn,
     maxChargeImpact, goldenDashVFX, flankSpawnTrail,
     dispose,

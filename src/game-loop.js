@@ -950,6 +950,9 @@ export function createGameLoop(deps) {
       camera.position.y += (Math.random() * 2 - 1) * CAMERA_SHAKE_MAGNITUDE * t
     }
 
+    // Wobble pós-spawn (Overhaul de spawn/despawn) — aplicado no ÚLTIMO instante antes do
+    // render, nunca antes (hit-test/lock-on/IA do frame já leram a posição "real" sem jitter).
+    combat.applySpawnWobbles?.()
     renderer.render(scene, camera)
   }
 

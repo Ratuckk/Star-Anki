@@ -183,6 +183,36 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (idx !== -1) enemies.splice(idx, 1)
   }
 
+  // ============ DESPAWN COM FADE-OUT (Ideia 8) ============
+  // Despawn NATURAL (saiu de vista, ficou tempo demais em cena, desengajando longe demais) não
+  // some de golpe — encolhe suavemente por DESPAWN_FADE_DURATION_S antes do removeEnemy de
+  // verdade. NÃO se aplica a: morte por HP<=0 (já tem sua própria animação via `dying`/
+  // explosão), nem a limpezas totais (clearAllCombatants/clearEnemies — desmonte precisa ser
+  // instantâneo ali). Só os 2 pontos de culling genérico do trilho/arena em updateEnemies usam
+  // isso por ora — railDespawnCheck do Blaster/Tank (auto-contidos via enemy.fsm) e o timeout de
+  // mergulho do mini-swarm ficam de fora nesta entrega (fora do orquestrador central).
+  const DESPAWN_FADE_DURATION_S = 0.4
+
+  function beginFadeOut(enemy) {
+    if (enemy.fadingOut || enemy.dying) return
+    enemy.fadingOut = true
+    enemy.fadeTimer = 0
+    enemy.fadeTargetScale = enemy.mesh?.scale?.x || enemy.targetScale || 1.0
+    enemy.disengaging = true
+    enemy.fireTimer = Infinity
+    enemy.ramHitActive = true // impede toque/aríete durante o fade
+  }
+
+  function processFadeOuts(dt) {
+    for (const enemy of [...enemies]) {
+      if (!enemy.fadingOut) continue
+      enemy.fadeTimer += dt
+      const t = Math.min(1, enemy.fadeTimer / DESPAWN_FADE_DURATION_S)
+      if (enemy.mesh) enemy.mesh.scale.setScalar(enemy.fadeTargetScale * (1 - t))
+      if (t >= 1) removeEnemy(enemy)
+    }
+  }
+
   function removeEnemyProjectile(p) {
     if (p.mesh) scene.remove(p.mesh)
     const idx = enemyProjectiles.indexOf(p)
@@ -377,6 +407,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     // (único lugar com acesso a environment.getFogDensity()) e repassado por opts. Sussurro/
     // Detrito/Horda-split reagem quando true.
     const isDenseFog = !!opts.isDenseFog
+    processFadeOuts(dt)
     let hits = 0
     let ramKills = 0
     let ramKillPoints = 0
@@ -392,6 +423,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // MINI_SWARM_SPAWN_INVINCIBLE_S em miniSwarm.js) — decai uma vez por frame aqui, checado
       // no toque simples/aríete abaixo e em resolveProjectileHit/applyAreaDamage mais adiante.
       if (enemy.spawnInvincibleTimer > 0) enemy.spawnInvincibleTimer = Math.max(0, enemy.spawnInvincibleTimer - dt)
+      if (enemy.wobbleTimer > 0) enemy.wobbleTimer = Math.max(0, enemy.wobbleTimer - dt)
       if (enemy.dying) {
         enemy.deathT += dt / deathDuration
         const t = Math.max(0, 1 - enemy.deathT)
@@ -399,6 +431,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (enemy.deathT >= 1) removeEnemy(enemy)
         continue
       }
+      // Despawn com fade-out (Ideia 8) — animação de escala e remoção final ficam em
+      // processFadeOuts (chamado 1x por frame, fora deste loop); aqui só pula o resto do
+      // processamento normal (movimento/tiro/colisão), igual já é feito com `dying`.
+      if (enemy.fadingOut) continue
       enemy.deathScale = baseScale
 
       const ramExtra = ramDamage > 0 ? 5.0 : 0
@@ -463,12 +499,90 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.ramHitActive = false
       }
 
-      if (enemy.spawnAge != null && enemy.spawnAge < enemy.spawnDuration) {
-        enemy.spawnAge += dt
-        const t = Math.min(1, enemy.spawnAge / enemy.spawnDuration)
+      // ============ SPAWN EM 3 FASES (peek/materialize/settle) ============
+      if (enemy.spawnPhase) {
+        enemy.spawnPhaseTimer += dt
+        const phaseDuration = enemy.spawnDurations[enemy.spawnPhase] || 0.1
+        const localT = Math.min(1, enemy.spawnPhaseTimer / phaseDuration)
         const targetScale = enemy.targetScale ?? 1.0
-        const scale = THREE.MathUtils.lerp(targetScale * 0.2, targetScale, Math.sin(t * Math.PI * 0.5))
-        enemy.mesh.scale.setScalar(scale)
+
+        if (enemy.spawnPhase === 'peek') {
+          if (localT >= 1) {
+            enemy.spawnPhase = 'materialize'
+            enemy.spawnPhaseTimer = 0
+            const mat = enemy.mesh.material
+            if (mat && !Array.isArray(mat)) {
+              const baseEmissive = mat.emissiveIntensity || 0
+              if (baseEmissive > 0.5) {
+                enemy.spawnOriginalEmissive = baseEmissive
+                enemy.spawnAnimationChannel = 'emissive'
+                mat.emissiveIntensity = 0
+              } else {
+                enemy.spawnAnimationChannel = 'opacity'
+                enemy.spawnOpacityWasTransparent = !!mat.transparent
+                mat.transparent = true
+                mat.opacity = 0
+              }
+            }
+            enemy.mesh.scale.setScalar(targetScale * 0.1)
+            // Materialização começa AGORA (peek já cobriu a antecipação) — condensação inward
+            // dispara na entrada da fase, não no spawn original.
+            const hordaSplitDenseFog = enemy.spawnedInDenseFog
+            if (effects && !hordaSplitDenseFog) {
+              if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+                effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
+              } else if (effects.fogCondensationInward) {
+                effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
+              }
+            }
+          }
+        } else if (enemy.spawnPhase === 'materialize') {
+          const eased = THREE.MathUtils.smoothstep(localT, 0, 1)
+          const scale = THREE.MathUtils.lerp(targetScale * 0.1, targetScale * 1.05, eased)
+          enemy.mesh.scale.setScalar(scale)
+          const mat = enemy.mesh.material
+          if (mat && !Array.isArray(mat)) {
+            if (enemy.spawnAnimationChannel === 'emissive') {
+              mat.emissiveIntensity = (enemy.spawnOriginalEmissive || 0) * eased
+            } else if (enemy.spawnAnimationChannel === 'opacity') {
+              mat.opacity = eased
+            }
+          }
+          if (localT >= 1) {
+            enemy.spawnPhase = 'settle'
+            enemy.spawnPhaseTimer = 0
+            enemy.settleFlashFired = false
+          }
+        } else if (enemy.spawnPhase === 'settle') {
+          const settleEased = 1 - (1 - localT) * (1 - localT)
+          const scale = THREE.MathUtils.lerp(targetScale * 1.05, targetScale, settleEased)
+          enemy.mesh.scale.setScalar(scale)
+          if (!enemy.settleFlashFired) {
+            enemy.settleFlashFired = true
+            if (effects && effects.hitSpark) effects.hitSpark(enemy.mesh.position, colorFor(enemy))
+          }
+          if (localT >= 1) {
+            const mat = enemy.mesh.material
+            if (mat && !Array.isArray(mat)) {
+              if (enemy.spawnAnimationChannel === 'emissive') {
+                mat.emissiveIntensity = enemy.spawnOriginalEmissive || 0
+              } else if (enemy.spawnAnimationChannel === 'opacity') {
+                mat.opacity = 1
+                mat.transparent = enemy.spawnOpacityWasTransparent
+              }
+            }
+            enemy.mesh.scale.setScalar(targetScale)
+            enemy.spawnPhase = null
+            enemy.spawnDurations = null
+            enemy.spawnOriginalEmissive = null
+            enemy.spawnAnimationChannel = null
+            enemy.spawnOpacityWasTransparent = false
+            enemy.settleFlashFired = false
+            // Wobble pós-spawn (aplicado no último instante antes do render — ver applySpawnWobbles)
+            enemy.wobbleTimer = SPAWN_WOBBLE_DURATION_S
+            enemy.wobbleMagnitude = SPAWN_WOBBLE_MAGNITUDE
+          }
+        }
       }
 
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
@@ -572,12 +686,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         const passedDistance = enemy.kind !== HORDA_KIND
           && (enemy.spawnRailDist != null) && (rail.getDistance() - enemy.spawnRailDist > 180)
         const offScreenAbove = enemy.screenY != null && enemy.screenY > 11.0
-        if (relativeForward < passBehind || passedDistance || offScreenAbove) { removeEnemy(enemy); continue }
+        if (relativeForward < passBehind || passedDistance || offScreenAbove) { beginFadeOut(enemy); continue }
       }
 
       if (inArena && enemy.disengaging) {
         const distToPlayer = enemy.mesh.position.distanceTo(playerPosition)
-        if (distToPlayer > 85) { removeEnemy(enemy); continue }
+        if (distToPlayer > 85) { beginFadeOut(enemy); continue }
       }
 
       const relativeForward = inArena ? 0 : _enemyRel.copy(enemy.mesh.position).sub(frame.position).dot(frame.forward)
@@ -732,22 +846,87 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return { hits, damage }
   }
 
+  // ============ OVERHAUL DE SPAWN EM 3 FASES (peek/materialize/settle) ============
+  // Duração TOTAL por tipo — cada arquétipo "conta sua natureza pelo timing": enxame rápido e
+  // nervoso, peso-pesado lento e denso. Chefe/Dourado ficam de FORA por ora (cutscene própria
+  // já cobre a entrada deles; integrar as 3 fases exigiria coreografar em cima da cutscene, que
+  // é uma mudança maior — próxima entrega, não esta).
+  const SPAWN_DURATION_BY_KIND = {
+    [MINI_SWARM_KIND]: 0.20,
+    [IMA_KIND]: 0.20,
+    [SUSSURRO_KIND]: 0.25,
+    [BLASTER_KIND]: 0.35,
+    [REPLICA_KIND]: 0.35,
+    [TIME_KIND]: 0.35,
+    [TANK_KIND]: 0.50,
+    [DETRITO_KIND]: 0.50,
+    [VERME_KIND]: 0.40,
+    [SENTINELA_KIND]: 0.65,
+    [FRAGATA_KIND]: 0.65,
+    [HORDA_KIND]: 0.65,
+  }
+  const SPAWN_PEEK_MIN_HIT_RADIUS = 1.5
+  // Wobble pós-spawn (Ideia 6) — vibração curta de POSIÇÃO aplicada só no último instante antes
+  // do render (applySpawnWobbles, chamada por game-loop.js), nunca dentro do update() normal —
+  // hit-test/lock-on/IA leem enemy.mesh.position o frame inteiro, então jitter aplicado cedo
+  // demais "rebolaria" a hitbox de verdade. Amplitude pequena (0.15u) e simétrica ao redor da
+  // posição real — desvio médio estatisticamente nulo, não precisa desfazer no frame seguinte.
+  const SPAWN_WOBBLE_DURATION_S = 0.2
+  const SPAWN_WOBBLE_MAGNITUDE = 0.15
+  // Ideia 4 do documento (orientação de aproximação — mesh nasce com offset de rotação e
+  // converge pra orientação correta) NÃO implementada nesta entrega: a maioria dos inimigos já
+  // recalcula orientação a cada frame no próprio update de movimento (lookAt ou similar), que
+  // roda DEPOIS do bloco de spawn no mesmo frame — um slerp aqui seria sobrescrito
+  // imediatamente na maior parte dos casos, ou competiria com o lookAt de forma imprevisível
+  // nos outros. Precisaria de auditoria caso a caso por tipo de inimigo — fora de escopo agora.
+  // Mini-swarm/Ima nunca ganham peek mesmo tendo hitRadius acima do limiar — são enxame, o peek
+  // "poluiria" a tela quando vários nascem juntos (tabela §2.2 do documento).
+  const SPAWN_NO_PEEK_KINDS = new Set([MINI_SWARM_KIND, IMA_KIND])
+
+  function getSpawnDurations(enemy) {
+    const hitRadius = hitRadiusFor(enemy)
+    const total = SPAWN_DURATION_BY_KIND[enemy.kind] ?? (hitRadius < 2 ? 0.30 : hitRadius < 4 ? 0.45 : 0.65)
+    const hasPeek = hitRadius >= SPAWN_PEEK_MIN_HIT_RADIUS && !SPAWN_NO_PEEK_KINDS.has(enemy.kind)
+    const peekRatio = hasPeek ? 0.2 : 0
+    const materializeRatio = hasPeek ? 0.6 : 0.7
+    const settleRatio = hasPeek ? 0.2 : 0.3
+    return {
+      peek: hasPeek ? total * peekRatio : 0,
+      materialize: total * materializeRatio,
+      settle: total * settleRatio,
+    }
+  }
+
   function registerSpawn(enemy) {
     if (!enemy) return null
     enemy.spawnRailDist = rail.getDistance()
+    // Chefe fora do sistema de 3 fases de propósito (cutscene própria já cobre a entrada, ver
+    // comentário em SPAWN_DURATION_BY_KIND acima) — mantém o pop-in instantâneo de sempre.
     if (enemy.mesh && enemy.kind !== BOSS_KIND) {
       enemy.targetScale = enemy.scale || enemy.mesh.scale.x || 1.0
-      enemy.spawnAge = 0
-      enemy.spawnDuration = enemy.kind === DETRITO_KIND ? 0.42 : 0.35
-      enemy.mesh.scale.setScalar(enemy.targetScale * 0.1)
-      // Fog tático (Overhaul 4, pilar 3) — filhote de Horda nascido em fog denso pula a
+      const durations = getSpawnDurations(enemy)
+      enemy.spawnDurations = durations
+      const hasPeek = durations.peek > 0
+      enemy.spawnPhase = hasPeek ? 'peek' : 'materialize'
+      enemy.spawnPhaseTimer = 0
+      enemy.settleFlashFired = false
+      // Fase peek: mesh ainda não "existe" de verdade — escala zero, só o anel de antecipação
+      // marca o ponto. Sem peek (inimigo pequeno demais), pula direto pra materialize com a
+      // escala mínima de sempre.
+      enemy.mesh.scale.setScalar(hasPeek ? 0 : enemy.targetScale * 0.1)
+      const hordaSplitDenseFog = enemy.spawnedInDenseFog // ver miniSwarm.js — Horda-split em fog denso
+      if (hasPeek && effects?.spawnAnticipation && !hordaSplitDenseFog) {
+        effects.spawnAnticipation(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy) * 0.6, durations.peek)
+      }
+      // Fog tático (Overhaul 4, pilar 3) — filhote de Horda nascido em fog denso pula toda
       // condensação visual (nasce "literalmente invisível", ver spawnedInDenseFog/fadeInMaterial
       // em miniSwarm.js) — a única leitura de que ele existe é o fade-in de opacidade + o som.
-      if (effects && !enemy.spawnedInDenseFog) {
+      // Materialização dispara já aqui quando NÃO há peek (senão dispara ao entrar na fase).
+      if (effects && !hordaSplitDenseFog && !hasPeek) {
         if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
           effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-        } else if (effects.fogWispCondensation) {
-          effects.fogWispCondensation(enemy.mesh.position, colorFor(enemy))
+        } else if (effects.fogCondensationInward) {
+          effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
         }
       }
     }
@@ -982,6 +1161,19 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     showArenaPreview,
     clearArenaPreview,
 
+    // Wobble pós-spawn (Ideia 6) — chamada por game-loop.js NO ÚLTIMO INSTANTE antes do
+    // renderer.render(), nunca dentro de update() normal. Ver comentário em SPAWN_WOBBLE_*.
+    applySpawnWobbles() {
+      for (const e of enemies) {
+        if (e.wobbleTimer > 0 && e.mesh) {
+          const mag = e.wobbleMagnitude * (e.wobbleTimer / SPAWN_WOBBLE_DURATION_S)
+          e.mesh.position.x += (Math.random() * 2 - 1) * mag
+          e.mesh.position.y += (Math.random() * 2 - 1) * mag
+          e.mesh.position.z += (Math.random() * 2 - 1) * mag
+        }
+      }
+    },
+
     update(dt, playerPosition, opts = {}) {
       elapsed += dt
       currentIsDenseFog = !!opts.isDenseFog
@@ -1031,6 +1223,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const hitsLog = []
       for (const e of enemies) {
         if (e.dying) continue
+        if (e.fadingOut) continue
         if (e.spawnInvincibleTimer > 0) continue
         if (e.mesh.position.distanceTo(center) > radius) continue
         if (e.kind === BOSS_KIND && e.isShieldActive) continue
@@ -1069,7 +1262,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const isHoming = !!projectileMeta.isHoming
       const hitBuffer = projectileMeta.hitBuffer || 0
 
-      const enemyHit = enemies.find((e) => !e.dying && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
+      const enemyHit = enemies.find((e) => !e.dying && !e.fadingOut && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
         // Chefe: escudo refletor azul — a cada 7s ergue escudo por 3s que reflete tiros
         if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {
@@ -1187,7 +1380,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Horda conta como 3 vagas do teto (pedido do usuário — ela é grande/forte o bastante pra
       // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres)
       return enemies.reduce((n, e) => {
-        if (e.dying || e.kind === DETRITO_KIND || e.kind === IMA_KIND) return n
+        if (e.dying || e.fadingOut || e.kind === DETRITO_KIND || e.kind === IMA_KIND) return n
         return n + (e.kind === HORDA_KIND ? 3 : 1)
       }, 0)
     },
@@ -1225,7 +1418,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return list.concat(golden.getHitboxTargets())
     },
 
-    getAlive: () => enemies.filter((e) => !e.dying),
+    getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut),
     getGoldenAlive: () => golden.getAlive(),
 
     removeProjectilesNear(position, radius) {
