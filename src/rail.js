@@ -1025,6 +1025,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     getFullSpinAngle: () => fullSpinAngle,
     // Swirl Blast (§3.1 do doc): true durante a janela visual do giro (fullSpinT < 1)
     isFullSpinActive: () => fullSpinT < 1,
+    // true durante a janela do dash lateral (propulsão + bank em arena) — usado por effects.js
+    // pra tocar afterimage/speedlines só enquanto o deslize dura (ver updateLateralDash acima)
+    isLateralDashActive: () => lateralDashT < 1,
     setShakeIntensity: (m) => { shakeMagnitude = m },
     // Fase 9 (ideia all-range 5): multiplicador configurável em Configurações (0.5-2.0)
     setTurnSensitivity: (m) => { turnSensitivity = m },

@@ -194,6 +194,13 @@ export function createGameHud() {
   let prevAbilitySignature = ''
 
   // ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============
+  // Empilhado numa coluna (`.hud-squad-column`) que ocupa o mesmo slot no `topbarRow` que o
+  // widget sozinho ocupava antes — pedido do usuário pra colocar o contador do Swirl Blast
+  // "embaixo do mesmo local de onde fica o foco de aliados", sem mexer na posição horizontal.
+  const squadColumn = document.createElement('div')
+  squadColumn.className = 'hud-squad-column'
+  topbarRow.appendChild(squadColumn)
+
   const squadCommandWidget = document.createElement('div')
   squadCommandWidget.className = 'hud-squad-command-widget ready'
   squadCommandWidget.innerHTML = `
@@ -206,9 +213,30 @@ export function createGameHud() {
     </div>
     <span class="hud-cmd-timer">PRONTO</span>
   `
-  topbarRow.appendChild(squadCommandWidget)
+  squadColumn.appendChild(squadCommandWidget)
   const squadCmdFill = squadCommandWidget.querySelector('.hud-cmd-meter-fill')
   const squadCmdTimer = squadCommandWidget.querySelector('.hud-cmd-timer')
+
+  // ============ CONTADOR DE COOLDOWN DO SWIRL BLAST (pedido do usuário) ============
+  // Mesma estrutura/estados visuais do widget de FOCO acima (ready/cooling), só que pro
+  // cooldown de 6-12s do Swirl Blast (ver player.js getSwirlCooldownMs/getSwirlCooldownTotalMs).
+  // Sem estado "active" — o Swirl não tem janela de duração como o comando do esquadrão, só
+  // dispara e entra em cooldown.
+  const swirlCooldownWidget = document.createElement('div')
+  swirlCooldownWidget.className = 'hud-squad-command-widget hud-swirl-widget ready'
+  swirlCooldownWidget.innerHTML = `
+    <div class="hud-squad-command-badge">
+      <span class="hud-cmd-key">🌀</span>
+      <span class="hud-cmd-label">SWIRL</span>
+    </div>
+    <div class="hud-cmd-meter">
+      <div class="hud-cmd-meter-fill"></div>
+    </div>
+    <span class="hud-cmd-timer">PRONTO</span>
+  `
+  squadColumn.appendChild(swirlCooldownWidget)
+  const swirlCmdFill = swirlCooldownWidget.querySelector('.hud-cmd-meter-fill')
+  const swirlCmdTimer = swirlCooldownWidget.querySelector('.hud-cmd-timer')
 
   // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
   // Terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — ver
@@ -2186,6 +2214,22 @@ export function createGameHud() {
       } else {
         squadCmdTimer.textContent = 'PRONTO'
         squadCmdFill.style.width = '100%'
+      }
+    },
+
+    // Contador de cooldown do Swirl Blast (pedido do usuário) — mesmo padrão visual do widget
+    // de FOCO acima, ready/cooling só (sem "active": o Swirl dispara instantâneo, não tem janela
+    // de duração pra mostrar).
+    setSwirlCooldown(cooldownMs, totalMs) {
+      const isCooling = cooldownMs > 0
+      swirlCooldownWidget.classList.toggle('cooling', isCooling)
+      swirlCooldownWidget.classList.toggle('ready', !isCooling)
+      if (isCooling) {
+        swirlCmdTimer.textContent = `${(cooldownMs / 1000).toFixed(1)}s`
+        swirlCmdFill.style.width = `${Math.max(0, Math.min(100, ((totalMs - cooldownMs) / totalMs) * 100))}%`
+      } else {
+        swirlCmdTimer.textContent = 'PRONTO'
+        swirlCmdFill.style.width = '100%'
       }
     },
 

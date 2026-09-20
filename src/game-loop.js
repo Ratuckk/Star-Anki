@@ -340,6 +340,9 @@ export function createGameLoop(deps) {
     if (dodgeLeftTapped) {
       if (arenaNow && inputState.propulsionHeld) {
         rail.triggerArenaLateralDash(-1)
+        if (effects && effects.lateralDashVFX) {
+          effects.lateralDashVFX(playerPos, noseFrame.right, -1)
+        }
       } else {
         if (nowMs - state.lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(-1)
@@ -356,6 +359,9 @@ export function createGameLoop(deps) {
     if (dodgeRightTapped) {
       if (arenaNow && inputState.propulsionHeld) {
         rail.triggerArenaLateralDash(1)
+        if (effects && effects.lateralDashVFX) {
+          effects.lateralDashVFX(playerPos, noseFrame.right, 1)
+        }
       } else {
         if (nowMs - state.lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(1)
@@ -419,7 +425,10 @@ export function createGameLoop(deps) {
     // independente do jogador estar boostando; some junto quando a cutscene termina, voltando
     // ao controle normal do boost sem precisar de um restore explícito em outro lugar.
     const swirlMotionActive = state.swirlSlowMoMs > 0
-    hud.setMotionLines(boostOn || swirlMotionActive, swirlMotionActive ? 1.0 : null)
+    // Dash lateral (propulsão + bank em arena, ver rail.js) — pedido do usuário: speedlines
+    // também durante o deslize (ARENA_DASH_DURATION = 0.22s), mesma intensidade máxima do swirl.
+    const dashActive = rail.isLateralDashActive()
+    hud.setMotionLines(boostOn || swirlMotionActive || dashActive, (swirlMotionActive || dashActive) ? 1.0 : null)
     hud.setBoostDistortion(boostOn)
     rail.setBoostActive(boostOn)
 
@@ -641,6 +650,7 @@ export function createGameLoop(deps) {
       skipTrail: player.isRepulsionActive(),
       ramActive,
       rollActive: player.isRollIframeActive(),
+      dashActive,
     })
     // Pedido explícito do usuário (repetido): propulsores/rastros dos aliados devem ser "iguais
     // aos do jogador" (que não tem NENHUM) pra não distrair. Esse era o rastro real por trás da
@@ -921,6 +931,7 @@ export function createGameLoop(deps) {
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
     if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())
+    if (hud.setSwirlCooldown) hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())
 
     hud.setLowHealth(player.getLowHealthIntensity(LOW_HEALTH_THRESHOLD_FRAC))
 

@@ -287,6 +287,15 @@ export function injectHudExtraStyles() {
   box-shadow: inset 0 0 0 2.5px #fff;
 }
 
+/* Coluna que empilha o widget de FOCO do esquadrão + o contador de cooldown do Swirl Blast no
+   mesmo slot horizontal do topbar (pedido do usuário: Swirl "embaixo do mesmo local" do foco). */
+.hud-squad-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============ */
 .hud-squad-command-widget {
   display: flex;
@@ -402,6 +411,25 @@ export function injectHudExtraStyles() {
 .hud-squad-command-widget.cooling .hud-cmd-label { color: #64748b; }
 .hud-squad-command-widget.cooling .hud-cmd-meter-fill { background: #64748b; }
 .hud-squad-command-widget.cooling .hud-cmd-timer { color: #94a3b8; }
+
+/* Variante do Swirl Blast — mesma estrutura do widget de FOCO acima, só troca o azul-ciano
+   (#38bdf8) pelo azul do próprio Swirl Blast (0x2b8fff em combat/projectiles.js) no estado
+   "ready", pra não ler como o mesmo botão. Estado "cooling" fica igual (cinza neutro). */
+.hud-swirl-widget.ready {
+  border-color: rgba(43, 143, 255, 0.5);
+  box-shadow: 0 0 6px rgba(43, 143, 255, 0.2);
+}
+.hud-swirl-widget.ready .hud-cmd-key {
+  color: #5fa8ff;
+  border-color: #2b6fd6;
+  box-shadow: 0 0 4px rgba(43, 143, 255, 0.5);
+}
+.hud-swirl-widget.ready .hud-cmd-label { color: #5fa8ff; }
+.hud-swirl-widget.ready .hud-cmd-meter-fill {
+  background: #2b8fff;
+  box-shadow: 0 0 6px rgba(43, 143, 255, 0.6);
+}
+.hud-swirl-widget.ready .hud-cmd-timer { color: #5fa8ff; }
 
 /* ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============ */
 /* terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — evita

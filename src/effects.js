@@ -120,6 +120,16 @@ const DEFLECT_RING_DURATION = 0.45
 const ROLL_AFTERIMAGE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_DURATION = 0.3
 
+// ============ AFTERIMAGE DO DASH LATERAL (propulsão + bank em arena) ============
+// Pedido do usuário: dash lateral (impulsão + virar) só tinha o burst pontual de
+// `lateralDashVFX` no instante do trigger — sem trilha nem speedlines durante o deslize em si
+// (ARENA_DASH_DURATION = 0.22s, ver rail.js). Intervalo mais curto que o do roll (0.04) porque a
+// janela é bem menor — precisa de mais afterimages por segundo pra não ficar esparso num
+// movimento tão curto.
+const DASH_AFTERIMAGE_INTERVAL = 0.025
+const DASH_AFTERIMAGE_DURATION = 0.3
+const DASH_AFTERIMAGE_COLOR = 0x4db8ff // mesma cor do burst de lateralDashVFX
+
 // ============ RICOCHETE ============
 const RICOCHET_ARC_DURATION = 0.18
 const ROLL_AFTERIMAGE_COLOR = 0xcfe9ff
@@ -376,6 +386,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const ramAfterimages = []
   const boostTrails = []
   const rollAfterimages = []
+  const dashAfterimages = []
   const deflectRings = []
   const maxChargeRingsList = []
   const ricochetArcs = []
@@ -404,6 +415,7 @@ export function createEffectsSystem(scene, opts = {}) {
   let ramAfterimageTimer = 0
   let boostTrailTimer = 0
   let rollAfterimageTimer = 0
+  let dashAfterimageTimer = 0
 
   // ============ GEOMETRIAS COMPARTILHADAS ============
   const sharedSphereGeometry = new THREE.SphereGeometry(1, 8, 8)
@@ -748,6 +760,20 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
     scene.add(mesh)
     rollAfterimages.push({ mesh, life: 0 })
+  }
+
+  function dashAfterimage(position, forward) {
+    const geometry = new THREE.ConeGeometry(0.7, 3.6, 4)
+    geometry.rotateX(Math.PI / 2)
+    const material = new THREE.MeshBasicMaterial({
+      color: DASH_AFTERIMAGE_COLOR, transparent: true, opacity: 0.45,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), forward.clone().normalize())
+    scene.add(mesh)
+    dashAfterimages.push({ mesh, life: 0 })
   }
 
   function deflectBurst(position, forward) {
@@ -1383,7 +1409,7 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false } = opts
+    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false, dashActive = false } = opts
     const now = performance.now()
     const cam = opts.camera
 
@@ -1444,6 +1470,16 @@ export function createEffectsSystem(scene, opts = {}) {
         rollAfterimageTimer = ROLL_AFTERIMAGE_INTERVAL
         rollAfterimage(shipPosition, shipForward)
       }
+    }
+
+    if (dashActive && shipPosition && shipForward) {
+      dashAfterimageTimer -= dt
+      if (dashAfterimageTimer <= 0) {
+        dashAfterimageTimer = DASH_AFTERIMAGE_INTERVAL
+        dashAfterimage(shipPosition, shipForward)
+      }
+    } else {
+      dashAfterimageTimer = 0 // dispara imediato no próximo dash, sem esperar sobra do timer anterior
     }
 
     {
@@ -1666,6 +1702,18 @@ export function createEffectsSystem(scene, opts = {}) {
         rollAfterimages.splice(i, 1); continue
       }
       a.mesh.material.opacity = 0.4 * (1 - t)
+      a.mesh.scale.setScalar(1 - t * 0.3)
+    }
+
+    for (let i = dashAfterimages.length - 1; i >= 0; i--) {
+      const a = dashAfterimages[i]
+      a.life += dt
+      const t = a.life / DASH_AFTERIMAGE_DURATION
+      if (t >= 1) {
+        scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose()
+        dashAfterimages.splice(i, 1); continue
+      }
+      a.mesh.material.opacity = 0.45 * (1 - t)
       a.mesh.scale.setScalar(1 - t * 0.3)
     }
 
@@ -1963,6 +2011,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const r of ramRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const a of ramAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const a of rollAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
+    for (const a of dashAfterimages) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
     for (const r of deflectRings) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const r of maxChargeRingsList) { scene.remove(r.mesh); r.mesh.material.dispose() }
     for (const c of boostTrails) { scene.remove(c.mesh); c.mesh.material.dispose() }
@@ -2030,6 +2079,7 @@ export function createEffectsSystem(scene, opts = {}) {
     bloomSprites.length = 0; contrails.length = 0; activeFlashes.length = 0
     spinWinds.length = 0
     ramRings.length = 0; ramAfterimages.length = 0; boostTrails.length = 0; rollAfterimages.length = 0
+    dashAfterimages.length = 0
     deflectRings.length = 0
     for (const layer of chargeGlowLayers) { scene.remove(layer.mesh); layer.geo.dispose(); layer.mat.dispose() }
   }

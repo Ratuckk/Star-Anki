@@ -648,3 +648,53 @@ sem erro de console novo (os erros de ServiceWorker no console são de infraestr
 de preview, não relacionados a esta mudança). Não consegui chegar a um disparo real de Swirl
 Blast via automação nesta sessão — a expectativa de validação IA fica pronta pra confirmar via
 "Copiar Log de Validação IA" no próximo playtest real.
+
+---
+
+### v0.90.0 — Dash lateral: afterimage + speedlines; contador de cooldown do Swirl Blast na HUD
+
+Dois pedidos do usuário na mesma mensagem.
+
+**1) Afterimage + speedlines no dash lateral** (propulsão segurada + bank/dodge em arena,
+`rail.triggerArenaLateralDash`, `ARENA_DASH_DURATION = 0.22s`). Achado no caminho: o dash tem
+DUAS formas de disparo — segurar `propulsion` + eixo de bank (já chamava o burst pontual
+`effects.lateralDashVFX`) E tocar `dodgeLeft`/`dodgeRight` com `propulsionHeld` (NÃO chamava
+nada, gap pré-existente). Corrigido as duas:
+- `rail.js`: novo getter `isLateralDashActive()` (`lateralDashT < 1`), mesmo padrão de
+  `isFullSpinActive()`.
+- `effects.js`: novo `dashAfterimage()` (cone genérico, igual em espírito a `rollAfterimage`/
+  `ramAfterimage`, cor `0x4db8ff` — a mesma do burst de `lateralDashVFX`) tocando a cada
+  `DASH_AFTERIMAGE_INTERVAL = 0.025s` enquanto `dashActive` (intervalo mais curto que o do roll,
+  0.04s, porque a janela do dash é bem menor — senão a trilha fica esparsa). Registrado no mesmo
+  `update()`/dispose()/reset que os outros afterimages do jogador.
+- `game-loop.js`: `dashActive = rail.isLateralDashActive()` computado uma vez, usado em três
+  lugares — `effects.update()` (afterimage), `hud.setMotionLines()` (speedlines, mesma
+  intensidade máxima 1.0 que o Swirl Blast usa), e passado como estava faltando o burst
+  `lateralDashVFX` no branch de `dodgeLeft`/`dodgeRight` + propulsão.
+
+**2) Contador de cooldown do Swirl Blast na HUD.** O jogo já tinha o cooldown funcionando
+(`player.getSwirlCooldownMs`/`getSwirlCooldownTotalMs`, ver etapas anteriores do Swirl Blast) mas
+NENHUM indicador visual — pedido explícito pra colocar "embaixo do mesmo local de onde fica o
+foco de aliados" (o widget `[D] FOCO` do comando de esquadrão, `hud-squad-command-widget`).
+- `hud-game.js`: `squadCommandWidget` (antes filho direto de `topbarRow`) agora mora dentro de um
+  novo wrapper `.hud-squad-column` (flex column) que ocupa o mesmo slot horizontal no topbar —
+  não muda a posição de nada que já existia. Novo `swirlCooldownWidget` empilhado por baixo,
+  MESMA estrutura/classes do widget de FOCO (badge + meter + timer), só com ícone 🌀/label
+  "SWIRL" e sem o estado "active" (Swirl não tem janela de duração, só dispara e entra em
+  cooldown — só `ready`/`cooling`). Novo `hud.setSwirlCooldown(cooldownMs, totalMs)` segue
+  exatamente o padrão de `setSquadronCommandState` (fill cresce conforme o cooldown esvazia,
+  texto em segundos, "PRONTO" quando liberado).
+- `hud-styles.js`: `.hud-squad-column` (a coluna) + `.hud-swirl-widget.ready` (variante de cor —
+  azul do Swirl, `0x2b8fff`, em vez do ciano `#38bdf8` do FOCO, pra não ler como o mesmo botão;
+  estado `cooling` reaproveita o cinza neutro já existente sem modificação).
+- `game-loop.js`: `hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())`
+  chamado todo frame, ao lado do `setSquadronCommandState` existente.
+
+Verificação: `node --check` em todos os arquivos alterados, `node src/selftest.mjs` passando. Não
+consegui verificar visualmente no browser desta vez — o servidor de preview carregou mas a página
+ficou em branco (o import map do jogo carrega `three` de `cdn.jsdelivr.net`; a rede da sessão não
+completou esse fetch a tempo, mesmo problema já visto no timeout de 300s de uma tentativa de
+`navigate`). Não é causado por este código (nenhum arquivo dependente do import de `three` sequer
+chegou a ser requisitado no log do servidor — o import map trava antes disso). Ambas as mudanças
+seguem 1:1 padrões já existentes e testados (`rollAfterimage`/`isFullSpinActive` e
+`setSquadronCommandState`), mas ainda vale o usuário confirmar visualmente no próximo playtest.
