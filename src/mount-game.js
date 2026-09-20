@@ -42,6 +42,7 @@ import {
   ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR,
   DIFFICULTY_BIAS_INTERVAL_RANGE_MS,
   GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX, DEFLECT_RADIUS,
+  ARENA_MAX_SPAWN_DISTANCE, TRACK_MAX_SPAWN_DISTANCE,
 } from './main-constants.js'
 
 // Fluxo de menu/baralho/painel de revisão mora em game-menu.js — mountGame recebe `deck` e o
@@ -251,7 +252,7 @@ export function mountGame(session, deck, menu) {
   // flow-boss.js.
   const bossFlow = createBossFlow({
     state, session, deck, menu,
-    camera, hud, combat, rail, effects,
+    camera, hud, combat, rail, effects, environment,
     applyDifficulty: progression.applyDifficulty,
     applyBossDifficulty: progression.applyBossDifficulty,
     applySpeedProgression: progression.applySpeedProgression,
@@ -294,6 +295,13 @@ export function mountGame(session, deck, menu) {
     const bg = LEVEL_BACKGROUNDS[session.pointer % LEVEL_BACKGROUNDS.length]
     scene.background.set(bg)
     scene.fog.color.set(bg)
+
+    // Fog calibrado (Overhaul 4, pilar 1) — recalcula a distância máxima de spawn do contexto
+    // que este ciclo vai usar (arena de chefe/dourado tem alcance bem maior que o trilho comum).
+    if (environment?.setSpawnDistanceExpectation) {
+      const maxSpawnDistance = state.isBossCycle ? ARENA_MAX_SPAWN_DISTANCE : TRACK_MAX_SPAWN_DISTANCE
+      environment.setSpawnDistanceExpectation(maxSpawnDistance)
+    }
   }
 
   // ============ WRAPPERS FINOS (usados pelos flows e pelo tick) ============

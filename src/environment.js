@@ -1,5 +1,20 @@
 import * as THREE from 'three'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
+import { getSettings } from './settings.js'
+import { FOG_COVERAGE_TARGET, FOG_ARENA_DENSITY_MULT, FOG_DENSITY_LERP_RATE, FOG_COLOR_LERP_RATE } from './main-constants.js'
+
+// ============ PERFIS DE FOG POR EVENTO (Overhaul 4, pilar 4) ============
+// Cor só se aplica de verdade quando getSettings().fogTacticalColors está ligado (default
+// false, preserva o "preto clássico") — ver uso em update(). colorMult sempre se aplica (a
+// densidade engrossando antes de um chefe/dourado/tempestade não depende de cor nenhuma).
+const FOG_PROFILES = {
+  bossWarn: { colorMult: 1.8, color: 0x1a0508 },
+  bossDeath: { colorMult: 1.2, color: 0x1a0508 },
+  goldenWarn: { colorMult: 1.6, color: 0x1a1008 },
+  goldenDeath: { colorMult: 1.0, color: 0x1a1008 },
+  debrisStorm: { colorMult: 1.3, color: 0x0a0805 },
+}
+const DEFAULT_FOG_COLOR_HEX = 0x000000
 
 // ============ MÓDULO DE AMBIENTE CÓSMICO VIVO (v0.56.0) ============
 // Gerencia a atmosfera do jogo:
@@ -88,7 +103,30 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   let ionFlashTimer = 0
   let ionFlashDuration = 0
   let nextIonStormTime = 16 + Math.random() * 15
-  let baseFogDensity = scene.fog ? scene.fog.density : 0.004
+  // Densidade calibrada (Overhaul 4, pilar 1) — targetFogDensity muda instantaneamente quando
+  // setSpawnDistanceExpectation() é chamado (novo setor/ciclo), currentFogDensity persegue ele
+  // suavemente (FOG_DENSITY_LERP_RATE) e É o valor de "repouso" que os bolsões de névoa (já
+  // existentes) somam por cima — substituiu o antigo `baseFogDensity` fixo capturado uma vez.
+  let targetFogDensity = scene.fog ? scene.fog.density : 0.0075
+  let currentFogDensity = targetFogDensity
+  let activeFogProfile = null // null | 'bossWarn' | 'bossDeath' | 'goldenWarn' | 'goldenDeath' | 'debrisStorm'
+  const _tmpFogColorTarget = new THREE.Color()
+
+  function setSpawnDistanceExpectation(maxSpawnDistance) {
+    if (!maxSpawnDistance || maxSpawnDistance <= 0) return
+    targetFogDensity = Math.sqrt(-Math.log(1 - FOG_COVERAGE_TARGET)) / maxSpawnDistance
+  }
+
+  function setFogProfile(name) {
+    activeFogProfile = name && FOG_PROFILES[name] ? name : null
+  }
+
+  // Densidade "final" já com multiplicador de arena/profile aplicado — é o que scene.fog.density
+  // de fato reflete no frame anterior. Usado pelo radar (pilar 2) e pelas mecânicas táticas
+  // (pilar 3), que precisam saber "quão denso está" sem recalcular a fórmula toda.
+  function getFogDensity() {
+    return scene.fog ? scene.fog.density : currentFogDensity
+  }
 
   // Temporários reutilizáveis para eliminar alocações por frame no loop de renderização
   const _tmpScaleOne = new THREE.Vector3(1, 1, 1)
@@ -355,18 +393,46 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
       }
     }
 
-    // 4. Bolsões de Névoa Atmosférica & Relâmpagos Iônicos
+    // 4. Densidade calibrada (Overhaul 4, pilar 1) + Bolsões de Névoa + Relâmpagos Iônicos
+    // currentFogDensity persegue targetFogDensity (setado por setSpawnDistanceExpectation) —
+    // sempre roda, arena ou não, porque a calibração por distância de spawn vale nos dois modos.
+    currentFogDensity += (targetFogDensity - currentFogDensity) * (1 - Math.exp(-FOG_DENSITY_LERP_RATE * dt))
+    const profile = activeFogProfile ? FOG_PROFILES[activeFogProfile] : null
+    const profileMult = profile ? profile.colorMult : 1.0
+    const arenaMult = inArena ? FOG_ARENA_DENSITY_MULT : 1.0
+    const calibratedDensity = currentFogDensity * arenaMult * profileMult
+
     if (scene.fog && !inArena) {
       if (ENVIRONMENT_CONFIG.enableNebulaPockets) {
         const dist = rail.getDistance()
-        // Bolsões periódicos de gás cósmico a cada 320u
+        // Bolsões periódicos de gás cósmico a cada 320u — mesma proporção relativa (~1.13x) que
+        // o valor fixo original (0.0085 sobre um baseFogDensity de 0.0075), agora escalada pela
+        // densidade calibrada em vez de um valor absoluto fixo.
         const inPocket = (dist % 340) < 95
-        const targetDensity = inPocket ? 0.0085 : baseFogDensity
+        const targetDensity = inPocket ? calibratedDensity * 1.13 : calibratedDensity
         scene.fog.density += (targetDensity - scene.fog.density) * (1 - Math.exp(-2.0 * dt))
       } else {
-        scene.fog.density = baseFogDensity
+        scene.fog.density = calibratedDensity
       }
+    } else if (scene.fog && inArena) {
+      scene.fog.density = calibratedDensity
+    }
 
+    // Cor do fog — preto clássico por padrão; só troca de verdade se a setting estiver ligada
+    // E houver um perfil de ameaça ativo (ver setFogProfile, chamado por flow-boss.js/
+    // game-loop.js). game-loop.js também para de forçar 0x000000 todo frame quando a setting
+    // está ligada (ver bloco "FUNDO PRETO CLÁSSICO"), senão isso aqui seria sobrescrito.
+    if (scene.fog) {
+      const useTacticalColors = getSettings().fogTacticalColors
+      const targetColorHex = (useTacticalColors && profile) ? profile.color : DEFAULT_FOG_COLOR_HEX
+      _tmpFogColorTarget.setHex(targetColorHex)
+      scene.fog.color.lerp(_tmpFogColorTarget, 1 - Math.exp(-FOG_COLOR_LERP_RATE * dt))
+      if (scene.background && scene.background.isColor) {
+        scene.background.lerp(_tmpFogColorTarget, 1 - Math.exp(-FOG_COLOR_LERP_RATE * dt))
+      }
+    }
+
+    if (scene.fog && !inArena) {
       if (ENVIRONMENT_CONFIG.enableIonStorms) {
         nextIonStormTime -= dt
         if (nextIonStormTime <= 0) {
@@ -423,6 +489,9 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   return {
     update,
     dispose,
+    setSpawnDistanceExpectation,
+    setFogProfile,
+    getFogDensity,
     toggleFeature: (name) => {
       if (name in ENVIRONMENT_CONFIG) {
         ENVIRONMENT_CONFIG[name] = !ENVIRONMENT_CONFIG[name]

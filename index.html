@@ -1350,6 +1350,15 @@
     transform: translate(-50%, -50%) rotate(45deg);
     box-shadow: 0 0 5px rgba(255, 209, 102, 0.9);
   }
+  /* Radar como contra-jogo (Overhaul 4, pilar 2): inimigo fora do alcance de visibilidade
+     direta do fog atual vira um blip difuso — dá direção, não tipo nem posição exata. Mantém
+     a forma/clip-path original (menos trabalho, ainda lê como "tem algo ali") só borrada e
+     translúcida, sem sombra/brilho (que denunciaria o tipo à distância). */
+  .hud-minimap-blip-ghost {
+    opacity: 0.4 !important;
+    filter: blur(1.5px) !important;
+    box-shadow: none !important;
+  }
 
   [hidden] { display: none !important; }
 

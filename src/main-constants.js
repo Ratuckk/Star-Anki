@@ -190,6 +190,36 @@ export const BOSS_DEATH_CUTSCENE_MS = 3000
 export const DEATH_CUTSCENE_TIME_SCALE = 0.22
 export const DEATH_CUTSCENE_ZOOM_FOV = 55
 
+// ============ FOG COMO MECÂNICA DE GAMEPLAY (Overhaul 4) ============
+// Densidade do FogExp2 (scene.fog) deixa de ser fixa e passa a ser calibrada pela distância
+// máxima de spawn do contexto atual (trilho comum vs arena) — ver environment.js,
+// setSpawnDistanceExpectation(). Fórmula: coverage(d) = 1 - exp(-(density*d)²), invertida pra
+// achar a densidade que dá FOG_COVERAGE_TARGET de cobertura na distância D.
+export const FOG_COVERAGE_TARGET = 0.85
+// Maior SPAWN_DISTANCE_MAX entre os inimigos comuns de trilho hoje (Detrito, 96 — ver
+// detrito.js). Hardcoded aqui em vez de importado de cada arquivo de inimigo (a maioria dessas
+// constantes é `const` privada por arquivo, não exportada) — se algum SPAWN_DISTANCE_MAX mudar
+// e passar a ultrapassar este valor, atualizar aqui também.
+export const TRACK_MAX_SPAWN_DISTANCE = 96
+// Arena: maior valor entre os alcances de spawn de Chefe (ENEMY_ARENA_SPAWN_MAX=96, mas escala
+// até BOSS_SPREAD_MAX_CAP=150 via bossDifficulty) e Dourado (GOLDEN_SPREAD_MAX=108) — usa o
+// teto do Chefe por cobrir os dois casos com folga, evitando recalibrar a cada leve variação de
+// bossDifficulty dentro da própria luta.
+export const ARENA_MAX_SPAWN_DISTANCE = BOSS_SPREAD_MAX_CAP
+// Arena precisa de MENOS fog (chefe/dourado precisam ficar visíveis) — multiplicador aplicado
+// por cima da densidade calibrada.
+export const FOG_ARENA_DENSITY_MULT = 0.6
+// Taxa de transição suave (rad/s efetivo de um lerp exponencial) quando a densidade-alvo muda
+// (setor novo, entrar/sair de arena) — ~1.5s pra convergir na prática.
+export const FOG_DENSITY_LERP_RATE = 1.6
+export const FOG_COLOR_LERP_RATE = 1.2
+// Threshold PROPORCIONAL (não fixo) pra ativar as mecânicas táticas do pilar 3 (Sussurro/
+// Dourado/Horda/Detrito reagindo a "fog denso") — fixo em valor absoluto (ex. 0.015) quebrava
+// com densidades calibradas muito diferentes por contexto (Horda sozinha a 45u dá density
+// 0.042, sempre "denso"; chefe a 150u dá 0.013, nunca "denso" mesmo em arena de verdade densa).
+// Proporcional à densidade-alvo do MOMENTO: sempre os 40% mais densos do range calibrado atual.
+export const DENSE_FOG_THRESHOLD_RATIO = 0.6
+
 // ============ ROGUELIKE (fase 4) ============
 export const HOMING_LOCK_INTERVAL_MS = 500
 

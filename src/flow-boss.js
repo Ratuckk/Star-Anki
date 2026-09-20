@@ -12,6 +12,7 @@ import {
   GOLDEN_SPREAD_MIN, GOLDEN_SPREAD_MAX,
   DEATH_CUTSCENE_MS, BOSS_DEATH_CUTSCENE_MS,
   BOSS_EVERY_QUESTIONS, BOSS_NO_DECK_SCORE_INTERVAL,
+  ARENA_MAX_SPAWN_DISTANCE, TRACK_MAX_SPAWN_DISTANCE,
 } from './main-constants.js'
 import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
@@ -20,7 +21,7 @@ import { getDifficultyLevel } from './enemies/shared.js'
 export function createBossFlow(deps) {
   const {
     state, session, deck, menu,
-    camera, hud, combat, rail, effects,
+    camera, hud, combat, rail, effects, environment,
     applyDifficulty, applyBossDifficulty, applySpeedProgression,
     currentBossSpread, currentBossExtraEnemies,
     randomGoldenInterval,
@@ -39,6 +40,17 @@ export function createBossFlow(deps) {
     hud.setArenaWarning(null)
     hud.setCountdown(null)
     combat.clearArenaPreview()
+
+    // Fog como indicador de ameaça (Overhaul 4, pilar 4) — engrossa e ganha cor de aviso (se a
+    // setting estiver ligada, ver environment.js) já no aviso de 5s, antes da arena começar de
+    // verdade, pra a transição visual já estar rolando quando a luta entra em cena.
+    if (environment?.setSpawnDistanceExpectation && (kind === 'boss' || kind === 'bossSummon' || kind === 'golden')) {
+      environment.setSpawnDistanceExpectation(ARENA_MAX_SPAWN_DISTANCE)
+    }
+    if (environment?.setFogProfile) {
+      if (kind === 'boss' || kind === 'bossSummon') environment.setFogProfile('bossWarn')
+      else if (kind === 'golden') environment.setFogProfile('goldenWarn')
+    }
   }
 
   function enterBossBuildup() {
@@ -205,6 +217,8 @@ export function createBossFlow(deps) {
     rail.exitArena()
     combat.clearGoldenTargets()
     hud.setGoldenActive(false)
+    environment?.setFogProfile?.(null)
+    environment?.setSpawnDistanceExpectation?.(TRACK_MAX_SPAWN_DISTANCE)
   }
 
   function resumeCombatFromGolden() {
@@ -280,11 +294,14 @@ export function createBossFlow(deps) {
     hud.setBossFight(false)
     hud.setBossTint(false)
     combat.clearOtherEnemies()
+    environment?.setFogProfile?.('bossDeath')
     state.deathCutsceneKind = 'boss'
     state.deathCutscenePos = hitWorldPos.clone()
     state.deathCutsceneOnDone = () => {
       session.score += BOSS_DEFEAT_BONUS
       rail.exitArena()
+      environment?.setFogProfile?.(null)
+      environment?.setSpawnDistanceExpectation?.(TRACK_MAX_SPAWN_DISTANCE)
       hud.setFeedback({
         correct: true,
         correctAnswer: '',
@@ -303,6 +320,7 @@ export function createBossFlow(deps) {
 
   function handleGoldenDefeated(hitWorldPos) {
     combat.clearOtherEnemies()
+    environment?.setFogProfile?.('goldenDeath')
     state.deathCutsceneKind = 'golden'
     state.deathCutscenePos = hitWorldPos.clone()
     state.deathCutsceneOnDone = () => {

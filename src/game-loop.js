@@ -35,9 +35,11 @@ import {
   LOW_HEALTH_THRESHOLD_FRAC,
   BOSS_ENEMY_INTERVAL_MULT,
   LEVEL_BACKGROUNDS,
+  DENSE_FOG_THRESHOLD_RATIO,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
+import { getSettings } from './settings.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -75,6 +77,7 @@ export function createGameLoop(deps) {
     state.debrisStormActive = true
     state.debrisStormTimer = durationMs
     state.debrisStormSpawnTimer = 300 // primeiro spawn rápido
+    environment?.setFogProfile?.('debrisStorm')
     if (hud?.showDebrisStormNotice) {
       hud.showDebrisStormNotice({
         active: true,
@@ -397,6 +400,7 @@ export function createGameLoop(deps) {
 
           if (state.debrisStormTimer <= 0) {
             state.debrisStormActive = false
+            environment?.setFogProfile?.(null)
             // pedido do usuário: +15% de chance/frequência — intervalo até a próxima reduzido em
             // 15% (55-90s → ~46.75-76.5s)
             state.nextDebrisStormTimer = 46750 + Math.random() * 29750
@@ -557,7 +561,12 @@ export function createGameLoop(deps) {
     }
 
     // ============ FUNDO PRETO CLÁSSICO E NEBLINA CÓSMICA ============
-    if (scene.fog && state.phase === 'combat' && !rail.isArena()) {
+    // Overhaul 4 (fog tático, pilar 4): com a setting fogTacticalColors ligada, o
+    // environment.js controla a cor do fog (perfis de aviso/morte de chefe/dourado/tempestade —
+    // ver setFogProfile) e ESTE force fica desligado, senão sobrescreveria a cor a cada frame
+    // (environment.update() já rodou antes deste ponto no mesmo tick). Com a setting desligada
+    // (default), comportamento idêntico a sempre — preto clássico incondicional.
+    if (scene.fog && state.phase === 'combat' && !rail.isArena() && !getSettings().fogTacticalColors) {
       scene.fog.color.set(0x000000)
       scene.background.set(0x000000)
     }
@@ -833,12 +842,23 @@ export function createGameLoop(deps) {
       const alertRadius = 32
       let alert = false
       const rawBlips = combat.getMinimapBlips ? combat.getMinimapBlips() : []
+      // Radar como contra-jogo (Overhaul 4, pilar 2) — se o fog está denso, o radar também não
+      // vê tudo com clareza: inimigo além do alcance de visibilidade direta (fog cobrindo mais
+      // que 15% da cor dele) vira um blip "fantasma" (difuso, sem tipo/posição exata) em vez de
+      // sólido. Boss/golden/detrito nunca viram fantasma — são grandes demais pra se esconder.
+      const ghostBlipsEnabled = getSettings().minimapGhostBlips
+      const fogDensity = environment?.getFogDensity ? environment.getFogDensity() : 0.0075
+      const visibilityThreshold = fogDensity > 0 ? Math.sqrt(-Math.log(0.15)) / fogDensity : Infinity
       const blips = rawBlips.map((b) => {
         _minimapRel.copy(b.worldPos).sub(playerPos)
-        if (b.type !== 'golden' && _minimapRel.length() < alertRadius) alert = true
+        const dist = _minimapRel.length()
+        if (b.type !== 'golden' && dist < alertRadius) alert = true
+        const alwaysVisible = b.type === 'boss' || b.type === 'golden' || b.kind === 'detrito'
+        const visState = (!ghostBlipsEnabled || alwaysVisible || dist < visibilityThreshold) ? 'visible' : 'ghost'
         return {
           type: b.type,
           kind: b.kind,
+          visState,
           xFrac: THREE.MathUtils.clamp(_minimapRel.dot(noseFrame.right) / mapRadius, -1, 1),
           yFrac: THREE.MathUtils.clamp(-_minimapRel.dot(noseFrame.forward) / mapRadius, -1, 1),
         }

@@ -1858,7 +1858,8 @@ export function createGameHud() {
           minimapBlipPool.set(i, el)
         }
         const shape = b.type === 'boss' ? 'boss' : b.type === 'golden' ? 'golden' : (MINIMAP_SHAPE_BY_KIND[b.kind] || 'tri')
-        el.className = `hud-minimap-blip hud-minimap-blip-${shape}`
+        const ghostCls = b.visState === 'ghost' ? ' hud-minimap-blip-ghost' : ''
+        el.className = `hud-minimap-blip hud-minimap-blip-${shape}${ghostCls}`
         el.style.left = `${(b.xFrac * 0.5 + 0.5) * 100}%`
         el.style.top = `${(b.yFrac * 0.5 + 0.5) * 100}%`
       })
