@@ -1121,4 +1121,14 @@ cada partida. Pedido do usuário: virar `true` por padrão. O intervalo entre te
 perfil de fog do Overhaul 4 (`setFogProfile('debrisStorm')`) não precisaram de nenhuma mudança —
 só liam a flag errada.
 
+**Fix: opções de fog do Overhaul 4 sem UI em Configurações** — `fogTacticalColors`/
+`minimapGhostBlips`/`fogTacticalEffects` existiam em `settings.js` desde a entrega do Overhaul 4
+mas nunca ganharam controle na tela (os dois docs do overhaul pediam isso explicitamente —
+§2.6/§3.6, "jogador precisa poder desligar"). Nova seção "Névoa (Fog)" em `hud-settings.js`
+(`buildFogSection`, mesmo padrão de builder exportado das outras seções — `buildVisualSection`/
+`buildSensitivitySection`), com 1 checkbox por flag. Adicionada tanto na tela de Configurações
+completa (pré-jogo) quanto no painel "OPÇÕES BÁSICAS" da pausa (`hud-pause.js`), entre Visual e
+Modo All-Range. Verificado ao vivo: os 3 checkboxes aparecem, e marcar/desmarcar persiste em
+`localStorage` (`star-anki-settings`) corretamente.
+
 

@@ -102,6 +102,39 @@ export function buildVisualSection() {
   return visualSection
 }
 
+// Overhaul 4 (fog como mecânica) — as 3 flags viviam em settings.js com valor padrão fixo mas
+// sem controle nenhum na UI (pedido pelo próprio doc do overhaul, §2.6/§3.6: "jogador precisa
+// poder desligar isso"). Mesmo padrão de reaproveitamento das outras seções (builder exportado,
+// usado pela tela de Configurações completa e pelo painel de pausa).
+export function buildFogSection() {
+  const fogSection = document.createElement('div')
+  fogSection.className = 'settings-section'
+  const fogTitle = document.createElement('h3')
+  fogTitle.textContent = 'Névoa (Fog)'
+  fogSection.appendChild(fogTitle)
+
+  const FOG_TOGGLES = [
+    { key: 'minimapGhostBlips', label: 'Radar: blips fantasma pra inimigos escondidos na névoa' },
+    { key: 'fogTacticalEffects', label: 'Inimigos reagem à névoa densa (mais escondidos/discretos)' },
+    { key: 'fogTacticalColors', label: 'Névoa colorida nos avisos de chefe/dourado/tempestade' },
+  ]
+  for (const { key, label } of FOG_TOGGLES) {
+    const row = document.createElement('div')
+    row.className = 'settings-row'
+    const rowLabel = document.createElement('label')
+    rowLabel.textContent = label
+    row.appendChild(rowLabel)
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = getSettings()[key]
+    checkbox.addEventListener('change', () => setSetting(key, checkbox.checked))
+    row.appendChild(checkbox)
+    fogSection.appendChild(row)
+  }
+
+  return fogSection
+}
+
 // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
 export function buildSensitivitySection() {
   const allRangeSection = document.createElement('div')
@@ -285,6 +318,7 @@ export function showSettingsScreen({ onBack }) {
   root.appendChild(lifeSection)
 
   root.appendChild(buildVisualSection())
+  root.appendChild(buildFogSection())
   root.appendChild(buildSensitivitySection())
 
   const { el: controlsSection, cleanup: cleanupKeybindSection } = buildKeybindSection()

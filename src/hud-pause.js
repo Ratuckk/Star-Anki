@@ -1,4 +1,4 @@
-import { buildVisualSection, buildSensitivitySection, buildKeybindSection } from './hud-settings.js'
+import { buildVisualSection, buildFogSection, buildSensitivitySection, buildKeybindSection } from './hud-settings.js'
 
 // Overhaul do menu de pausa (v0.80.0, pedido do usuário) — antes disso, pausar só mostrava um
 // "Pausado" sem nenhum botão (ver .hud-pause em index.html, agora substituído). Não é uma tela
@@ -97,6 +97,7 @@ export function buildPauseOverlay(root) {
     const scroll = document.createElement('div')
     scroll.className = 'pause-options-scroll'
     scroll.appendChild(buildVisualSection())
+    scroll.appendChild(buildFogSection())
     scroll.appendChild(buildSensitivitySection())
     const { el: keybindEl, cleanup } = buildKeybindSection()
     keybindCleanup = cleanup
