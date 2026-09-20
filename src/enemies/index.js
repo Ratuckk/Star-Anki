@@ -1395,15 +1395,19 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return null
     },
 
-    // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md, etapa 2) — colisão MULTI-HIT:
-    // ao contrário de resolveProjectileHit (para no primeiro achado), aqui o projétil atravessa,
+    // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md) — colisão MULTI-HIT: ao
+    // contrário de resolveProjectileHit (para no primeiro achado), aqui o projétil atravessa,
     // então iteramos TODOS os inimigos vivos e devolvemos um hit por alvo ainda não perfurado
     // (piercedTargets, mantido pelo chamador em projectiles.js, 1 Set por projétil).
     //
-    // Etapa 2 = só o caso genérico (dano fixo, sem parar). As regras especiais do doc — detrito
-    // sempre morre (§3.2.1), chefe/dourado/fragata param o projétil e o escudo do chefe é
-    // destruído em vez de bloquear (§3.2.3/§3.2.4) — entram na etapa 3, como branches ANTES do
-    // `enemyHit.hp -= damage` abaixo (sem mudar o resto da função).
+    // Etapa 3 (regras especiais, §3.2.1/§3.2.3/§3.2.4):
+    //   - Detrito: kill DIRETO, ignora HP e o dano numérico de `damage` (uma broca de energia
+    //     atravessa pedra) — e o Swirl CONTINUA (detrito não é "sólido" pro Swirl).
+    //   - Chefe/Fragata: sempre marcam `stopProjectile:true` (o chamador remove o projétil).
+    //     Chefe com escudo ativo: o escudo é DESTRUÍDO em vez de bloquear (`destroyedShield`),
+    //     não existe o conceito de escudo pra Fragata aqui — a "placa" dela nem é checada
+    //     (diferente de resolveProjectileHit, que respeita `isFragataShielded`).
+    //   - Demais inimigos: dano fixo, sem parar (comportamento genérico da etapa 2, inalterado).
     //
     // Lógica de morte (telemetria, som, kill points, split da Horda, corte do Verme, wipe de
     // esquadrão) é a MESMA de resolveProjectileHit — mantida idêntica de propósito.
@@ -1418,6 +1422,36 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (piercedTargets.has(enemyHit.id)) continue
         if (distanceToSegment(enemyHit.mesh.position, prevPos, currPos) > hitRadiusFor(enemyHit) + hitBuffer) continue
         piercedTargets.add(enemyHit.id)
+
+        // §3.2.1 — detrito sempre morre, o dano numérico não se aplica; o Swirl continua voando.
+        if (enemyHit.kind === DETRITO_KIND) {
+          enemyHit.dying = true
+          enemyHit.deathT = 0
+          const enemyKillPoints = killPointsFor(enemyHit.kind)
+          telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'death', `Inimigo ${enemyHit.kind} #${enemyHit.id} atravessado e destruído (Swirl Blast)!`, { hp: 0 })
+          triggerSoundCue(enemyHit.isGiant ? ENEMY_SOUND_CUES.debris_titanic_shatter : ENEMY_SOUND_CUES.debris_shatter, { worldPos: enemyHit.mesh.position.clone() })
+          if (effects) effects.explosion(enemyHit.mesh.position, colorFor(enemyHit), 1.6, { rings: true })
+          hits.push({
+            kind: enemyHit.kind, killed: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+            enemyKillPoints, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
+          })
+          continue
+        }
+
+        // §3.2.3/§3.2.4 — chefe e fragata sempre param o Swirl. Escudo do chefe é destruído em
+        // vez de refletir (a fragata não tem esse conceito de escudo destrutível — a placa dela
+        // simplesmente não é checada, o Swirl a ignora por completo).
+        const stopsProjectile = enemyHit.kind === BOSS_KIND || enemyHit.kind === FRAGATA_KIND
+        let destroyedShield = false
+        if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {
+          destroyedShield = true
+          enemyHit.isShieldActive = false
+          if (enemyHit.shieldMesh) enemyHit.shieldMesh.visible = false
+          if (effects) {
+            effects.hitSpark(enemyHit.mesh.position, BOSS_SHIELD_COLOR)
+            effects.shockwave(enemyHit.mesh.position, BOSS_SHIELD_COLOR, 0.8)
+          }
+        }
 
         enemyHit.hp -= damage
         telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${damage} de dano perfurante (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage, hp: enemyHit.hp })
@@ -1475,8 +1509,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         hits.push({
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
           enemyKillPoints, timeReductionMs, bossDefeated, squadWipe, squadWipeBonus,
+          stopProjectile: stopsProjectile, destroyedShield,
         })
       }
+
+      // Dourado vive em golden.js (array/estado próprio) — mesmo pipeline multi-hit, Set
+      // separado do de cima por encapsulamento (golden.js não precisa saber do Set genérico).
+      const goldenPierced = meta.goldenPiercedTargets || new Set()
+      hits.push(...golden.resolvePiercingHit(prevPos, currPos, damage, goldenPierced))
+
       return hits
     },
 

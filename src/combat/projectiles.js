@@ -282,19 +282,31 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         const pierceHits = enemies.resolvePiercingProjectileHits(_projPrevPos, projectile.mesh.position, {
           damage: projectile.damage,
           piercedTargets: projectile.piercedTargets,
+          goldenPiercedTargets: projectile.goldenPiercedTargets,
         })
+        let stopped = false
         for (const h of pierceHits) {
-          hitsLog.push({
-            worldPos: h.worldPos, damage: projectile.damage, killed: h.killed,
-            isHoming: false, meshRef: h.meshRef, points: h.enemyKillPoints || 0,
-          })
-          if (h.killed) {
-            if (h.bossDefeated) {
-              bossDefeated = true
-              bossDefeatedIsHoming = false
-              bossHitWorldPos = h.worldPos
-            } else {
-              enemyKills += 1
+          // dourado nunca entra no hitsLog (mesma exclusão de propósito do path não-perfurante
+          // logo abaixo) — vira os campos goldenSpecialHit/goldenHitWorldPos em vez disso
+          if (h.kind === 'golden') {
+            if (h.goldenSpecialHit) {
+              goldenSpecialHit = true
+              goldenSpecialHitIsHoming = false
+              goldenHitWorldPos = h.worldPos
+            }
+          } else {
+            hitsLog.push({
+              worldPos: h.worldPos, damage: projectile.damage, killed: h.killed,
+              isHoming: false, meshRef: h.meshRef, points: h.enemyKillPoints || 0,
+            })
+            if (h.killed) {
+              if (h.bossDefeated) {
+                bossDefeated = true
+                bossDefeatedIsHoming = false
+                bossHitWorldPos = h.worldPos
+              } else {
+                enemyKills += 1
+              }
             }
           }
           if (h.enemyKillPoints) enemyKillPoints += h.enemyKillPoints
@@ -302,8 +314,15 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             squadWipe = true
             squadWipeBonus += (h.squadWipeBonus || 150)
           }
+          // §3.2.3/§3.2.4 — chefe/dourado/fragata param o Swirl (com ou sem destruir escudo no
+          // caminho). effects.swirlBlastExplosion ainda não existe (etapa 5) — chamada opcional,
+          // vira efeito de verdade sem precisar tocar aqui de novo quando existir.
+          if (h.stopProjectile) {
+            stopped = true
+            if (effects && effects.swirlBlastExplosion) effects.swirlBlastExplosion(h.worldPos, _projDir)
+          }
         }
-        if (projectile.traveled > SWIRL_BLAST_MAX_RANGE) removeProjectile(projectile)
+        if (stopped || projectile.traveled > SWIRL_BLAST_MAX_RANGE) removeProjectile(projectile)
         continue
       }
 
@@ -511,7 +530,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       projectiles.push({
         mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
         damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME,
-        isPiercing: true, piercedTargets: new Set(),
+        isPiercing: true, piercedTargets: new Set(), goldenPiercedTargets: new Set(),
       })
       return true
     },

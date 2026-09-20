@@ -302,3 +302,37 @@ teste determinístico, ou (a) usar um obstáculo estático (detrito) em vez de b
 etc. (que têm FSM própria recalculando posição a cada frame), ou (b) manter tudo dentro do
 alcance de viagem de UM frame só, ou (c) chamar a função de resolução de colisão diretamente
 (sem `step()`) pra isolar a mecânica da IA de movimento.
+
+---
+
+### Swirl Blast — Etapa 3 (regras especiais: detrito, chefe/escudo, dourado, fragata)
+
+- `enemies/index.js` (`resolvePiercingProjectileHits`): 3 branches novos ANTES do dano genérico
+  da etapa 2 — (1) **detrito**: kill direto ignorando HP e o `damage` numérico (§3.2.1), Swirl
+  continua voando (`stopProjectile` nem existe pra esse branch); (2) **chefe com escudo ativo**:
+  destrói o escudo (`isShieldActive=false`, esconde `shieldMesh`) em vez de refletir, aplica os 6
+  de dano por cima, e marca `stopProjectile:true`; (3) **chefe/fragata em geral**: sempre param o
+  Swirl — a "placa" da fragata nem é checada (`isFragataShielded` não é chamado aqui de propósito,
+  diferente de `resolveProjectileHit`), o Swirl ignora blindagem de ângulo por completo.
+- `enemies/golden.js`: nova `resolvePiercingHit(prevPos, currPos, damage, piercedTargets)` —
+  mesma lógica de `resolveHit` (dano, som/explosão de morte, dash evasivo reativo em hit não-
+  letal), mas com Set de perfuração PRÓPRIO (não compartilha o dos inimigos comuns) e sempre
+  `stopProjectile:true` (dourado não tem conceito de escudo destrutível). Chamada de dentro de
+  `resolvePiercingProjectileHits` (dourado vive em array separado, não em `enemies`).
+- `combat/projectiles.js`: `fireSwirlBlast` ganhou `goldenPiercedTargets` (Set separado, passado
+  junto no `meta` de cada chamada); o branch `isPiercing` do `update()` agora separa hits de
+  dourado (não entram no `hitsLog` — mesma exclusão de propósito do path não-perfurante, viram os
+  campos `goldenSpecialHit`/`goldenHitWorldPos`) e remove o projétil quando QUALQUER hit do frame
+  trouxer `stopProjectile:true`. Chamada opcional a `effects.swirlBlastExplosion` (ainda não
+  existe — etapa 5) já no lugar certo, sem precisar mexer aqui de novo quando a função existir.
+
+**Validação** (stepper determinístico, `rail.setAdvancing(false)` + `rail.enterArena()` pro
+fragata/dourado): detrito titânico (65 HP) morre num hit e o Swirl **continua vivo** depois;
+chefe com escudo ativo perde o escudo (`isShieldActive`/`shieldMesh.visible` → false) E leva os 6
+de dano, projétil some; chefe sem escudo leva 6 de dano, projétil some; dourado leva 6 de dano,
+projétil some; fragata (6 HP) morre com 6 de dano ignorando a placa, projétil some. Regressão da
+etapa 2 (4 blasters alinhados, nenhum para o Swirl) continua passando. Sem erros de console (só
+o service worker do harness de preview, já visto em entregas anteriores, sem relação com o jogo).
+
+Faltam etapas 4 (visual do vórtice), 5 (flash/afterimage/explosão de verdade), 6 (slow-mo/FOV/
+speedlines) e 7 (carta "Vínculo: Swirl Blast" + Sound Cue).

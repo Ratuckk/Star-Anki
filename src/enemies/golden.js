@@ -362,6 +362,50 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       }
     },
 
+    // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md, §3.2.3 e §6.4) — mesma lógica de
+    // resolveHit acima, mas MULTI-HIT (o chamador em enemies/index.js acumula os hits de todo
+    // mundo perfurado no mesmo frame) e com Set de perfuração PRÓPRIO (piercedTargets aqui é do
+    // dourado, separado do Set genérico de inimigos — golden.js não precisa saber dele). O
+    // dourado sempre PÁRA o Swirl (não tem conceito de escudo destrutível como o chefe).
+    resolvePiercingHit(prevPos, currPos, damage, piercedTargets) {
+      const hits = []
+      for (const goldenHit of goldenTargets) {
+        if (goldenHit.dying) continue
+        if (piercedTargets.has(goldenHit.id)) continue
+        if (distanceToSegment(goldenHit.mesh.position, prevPos, currPos) > GOLDEN_HIT_RADIUS) continue
+        piercedTargets.add(goldenHit.id)
+
+        goldenHit.hp -= damage
+        if (effects) effects.flashMesh(goldenHit.mesh)
+        const killed = goldenHit.hp <= 0
+        if (killed) {
+          goldenHit.dying = true
+          goldenHit.deathT = 0
+          triggerSoundCue(ENEMY_SOUND_CUES.golden_cataclysm_death, { worldPos: goldenHit.mesh.position })
+          if (effects) {
+            effects.explosion(goldenHit.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
+            effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 1.1)
+          }
+        } else if (goldenHit.dashCooldownTimer <= 0.6) {
+          // mesmo dash evasivo reativo do resolveHit — mantido pra não perder a reação a hits
+          // não-letais só porque este veio de um projétil perfurante
+          goldenHit.dashCooldownTimer = goldenHit.dashCooldownS
+          goldenHit.dashTimer = GOLDEN_DASH_DURATION_S
+          const lateral = new THREE.Vector3(Math.random() < 0.5 ? -1 : 1, (Math.random() - 0.5) * 0.4, 0).normalize()
+          goldenHit.dashDir.copy(lateral)
+          if (effects) effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 0.6)
+        }
+
+        hits.push({
+          kind: GOLDEN_KIND, killed, worldPos: goldenHit.mesh.position.clone(), meshRef: goldenHit.mesh,
+          enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: killed,
+          stopProjectile: true,
+        })
+        break // o dourado sempre para o Swirl — não há por que seguir perfurando depois dele
+      }
+      return hits
+    },
+
     getAlive: () => goldenTargets.filter((g) => !g.dying),
 
     getMinimapBlips: () => goldenTargets.filter((g) => !g.dying).map((g) => ({ type: 'golden', worldPos: g.mesh.position })),
