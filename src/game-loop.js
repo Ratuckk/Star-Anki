@@ -182,7 +182,7 @@ export function createGameLoop(deps) {
     state.hitShakeTimer = Math.max(0, state.hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(state.hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (state.hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
-    player.update(dt)
+    player.update(dt, inputState.repulsionHeld)
 
     // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9)
     rail.update(dt, inputState)
@@ -356,21 +356,15 @@ export function createGameLoop(deps) {
       }
     }
     if (isActionPressed(bindings, inputState.pressed, 'repulsion')) {
+      // QoL item 4c: duplo-toque de freio de emergência removido — a repulsão progressiva
+      // (segurar o botão, ver player.js update()) já cobre trilho e arena igual.
       if (arenaNow && inputState.moveY === -1) {
         rail.triggerArenaSummersault()
         if (effects && effects.summersaultVFX) {
           effects.summersaultVFX(playerPos, noseFrame.forward)
         }
-      } else if (arenaNow && nowMs - state.lastRepulsionTapAt <= DODGE_TAP_WINDOW_MS) {
-        // 2º toque rápido (sem Baixo) — freio de emergência em vez de outra repulsão normal
-        rail.triggerEmergencyBrake()
-        if (effects && effects.emergencyBrakeVFX) {
-          effects.emergencyBrakeVFX(playerPos, noseFrame.forward, noseFrame.right)
-        }
-        state.lastRepulsionTapAt = -Infinity
       } else {
         player.activateRepulsion()
-        state.lastRepulsionTapAt = nowMs
       }
     }
 
@@ -518,6 +512,14 @@ export function createGameLoop(deps) {
       for (const h of events.hitsLog) {
         effects.hitSpark(h.worldPos, h.isHoming ? 0x2bff88 : 0xffb066)
         if (h.meshRef) effects.flashMesh(h.meshRef)
+        // QoL item 5: hit de tiro NORMAL "não-letal" (acertou, alvo sobreviveu) ganha um leque de
+        // faíscas extra além do flash/hitSpark padrão — o teleguiado (isHoming) já tem sua própria
+        // explosão de impacto incondicional (ver enemies/index.js), não precisa disso em cima.
+        // normal = direção contrária à mira atual (hitsLog não carrega a velocidade exata do
+        // projétil que causou cada hit, então usamos a mira do frame como aproximação razoável).
+        if (!h.killed && !h.isHoming && effects.ricochetSparks) {
+          effects.ricochetSparks(h.worldPos, _fireDirection.clone().negate())
+        }
       }
     }
     if (events.enemyKills > 0) {
@@ -611,8 +613,6 @@ export function createGameLoop(deps) {
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),
-      repulsionActive: player.isRepulsionActive(),
-      shipRight: noseFrame.right,
       skipTrail: player.isRepulsionActive(),
       ramActive,
       rollActive: player.isRollIframeActive(),

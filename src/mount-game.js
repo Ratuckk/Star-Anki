@@ -180,9 +180,6 @@ export function mountGame(session, deck, menu) {
     reticleOffsetY: 0,
     lastDodgeLeftTapAt: -Infinity,
     lastDodgeRightTapAt: -Infinity,
-    // Fase 9 (ideia all-range, item 4): duplo toque em repulsão (sem Baixo, que já é a
-    // cambalhota) dispara o freio de emergência — mesma janela de detecção do giro completo
-    lastRepulsionTapAt: -Infinity,
     hitShakeTimer: 0,
     // Cadeia de abates — "Arcade Neon" (v0.73.0), ver KILL_CHAIN_DECAY_S em game-loop.js
     killChainCount: 0,

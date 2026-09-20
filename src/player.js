@@ -49,6 +49,11 @@ const BOOST_DURATION_MS = 950
 const BOOST_RECHARGE_MS = 3000
 const PROPULSION_SPEED_MULT = 1.9 // multiplicador de velocidade de avanço durante o impulso
 const REPULSION_SPEED_MULT = 0.35 // multiplicador de velocidade de avanço durante a repulsão
+// QoL (item 4b — Docs/# QoL — Documento de Melhorias.md): repulsão parou de zerar a barra de
+// boost de uma vez (era instantânea, igual ao propulsor) — agora dreno progressivo enquanto o
+// botão fica SEGURADO, parando imediatamente ao soltar. Tempo pra drenar a barra CHEIA do zero;
+// 2x o tempo de recarga normal, sugestão do próprio doc.
+const BOOST_BRAKE_DRAIN_MS = BOOST_RECHARGE_MS * 2
 
 // ============ BUFFS MÁXIMOS (debug) ============
 // quantas aplicações de cartas SEM CAP definido são tratadas como "máximo" pelo debug
@@ -89,7 +94,9 @@ export function createPlayerSystem(session) {
 
   let boostCharge = 1
   let propulsionActiveTimer = 0
-  let repulsionActiveTimer = 0
+  // QoL item 4b: não é mais um timer de duração fixa — fica true enquanto o freio está de fato
+  // drenando a barra (ver update()), e cai pra false na hora (soltou o botão OU zerou a carga).
+  let repulsionActive = false
   let ramCardActive = false
 
   // Swirl Blast (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md)
@@ -109,7 +116,7 @@ export function createPlayerSystem(session) {
   // pública mas era código morto (nunca chamado). Agora os três pontos (público + os dois
   // activate*) leem daqui.
   function boostReady() {
-    return boostCharge >= 1 && propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0
+    return boostCharge >= 1 && propulsionActiveTimer <= 0 && !repulsionActive
   }
 
   // saúde zerada consome 1 vida e reabastece a saúde (e o escudo); zerar as vidas é que
@@ -178,9 +185,11 @@ export function createPlayerSystem(session) {
 
     getBoostCharge: () => boostCharge,
     isPropulsionActive: () => propulsionActiveTimer > 0,
-    isRepulsionActive: () => repulsionActiveTimer > 0,
+    isRepulsionActive: () => repulsionActive,
     getPropulsionActiveTimer: () => propulsionActiveTimer,
-    getRepulsionActiveTimer: () => repulsionActiveTimer,
+    // não é mais um timer de verdade (item 4b) — reporta quanto tempo de freio "restaria" no
+    // ritmo de dreno atual, só pra telemetria continuar tendo um número útil pra exibir.
+    getRepulsionActiveTimer: () => (repulsionActive ? boostCharge * BOOST_BRAKE_DRAIN_MS : 0),
 
     // Swirl Blast — cooldown da habilidade base (ver §3.1/§6.1 do doc)
     getSwirlCooldownMs: () => swirlCooldownMs,
@@ -416,12 +425,13 @@ export function createPlayerSystem(session) {
       telemetry?.recordEvent('boost', `Propulsor ativado (velocidade ${PROPULSION_SPEED_MULT}x)`, { factor: PROPULSION_SPEED_MULT })
       return true
     },
+    // QoL item 4b: não zera mais a barra de uma vez — só ARMA o estado; o dreno de verdade
+    // acontece em update(dt, repulsionHeld) frame a frame, enquanto o botão continuar segurado.
     activateRepulsion() {
       if (!boostReady()) return false
-      repulsionActiveTimer = BOOST_DURATION_MS
-      boostCharge = 0
-      triggerSoundCue(PLAYER_SOUND_CUES.brake_ignite, { durationMs: BOOST_DURATION_MS })
-      telemetry?.recordEvent('boost', `Repulsor/Freio ativado (velocidade ${REPULSION_SPEED_MULT}x)`, { factor: REPULSION_SPEED_MULT })
+      repulsionActive = true
+      triggerSoundCue(PLAYER_SOUND_CUES.brake_ignite, { durationMs: BOOST_BRAKE_DRAIN_MS })
+      telemetry?.recordEvent('boost', `Repulsor/Freio ativado (velocidade ${REPULSION_SPEED_MULT}x, dreno progressivo)`, { factor: REPULSION_SPEED_MULT })
       return true
     },
 
@@ -429,7 +439,7 @@ export function createPlayerSystem(session) {
     getBoostSpeedFactor() {
       let factor = 1
       if (propulsionActiveTimer > 0) factor *= PROPULSION_SPEED_MULT
-      if (repulsionActiveTimer > 0) factor *= REPULSION_SPEED_MULT
+      if (repulsionActive) factor *= REPULSION_SPEED_MULT
       return factor
     },
 
@@ -522,14 +532,23 @@ export function createPlayerSystem(session) {
     // tick (1x por frame, chamado pelo main.js antes de rail.update): decai todos os timers e
     // regenera escudo/boost. Cartas só mudam os alvos (shieldMax, boostRecharge etc.), não essa
     // lógica de decaimento em si.
-    update(dt) {
+    // `repulsionHeld` (item 4b): true enquanto o jogador segura o botão de repulsão AGORA — vem
+    // de inputState.repulsionHeld (input.js), não de uma flag "acabou de apertar".
+    update(dt, repulsionHeld = false) {
       invincibleTimer = Math.max(0, invincibleTimer - dt * 1000)
       rollIframeTimer = Math.max(0, rollIframeTimer - dt * 1000)
       fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
       if (propulsionActiveTimer > 0) propulsionActiveTimer = Math.max(0, propulsionActiveTimer - dt * 1000)
-      if (repulsionActiveTimer > 0) repulsionActiveTimer = Math.max(0, repulsionActiveTimer - dt * 1000)
+      // dreno progressivo enquanto segurado; solta o botão OU zera a carga = para na hora, sem
+      // "resíduo" — a recarga (linha abaixo) só começa depois disso, no frame seguinte.
+      if (repulsionActive) {
+        if (repulsionHeld && boostCharge > 0) {
+          boostCharge = Math.max(0, boostCharge - (dt * 1000) / BOOST_BRAKE_DRAIN_MS)
+        }
+        if (!repulsionHeld || boostCharge <= 0) repulsionActive = false
+      }
       if (swirlCooldownMs > 0) swirlCooldownMs = Math.max(0, swirlCooldownMs - dt * 1000)
-      if (propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0 && boostCharge < 1) {
+      if (propulsionActiveTimer <= 0 && !repulsionActive && boostCharge < 1) {
         boostCharge = Math.min(1, boostCharge + (dt * 1000) / BOOST_RECHARGE_MS)
       }
       if (shieldRegenDelayTimer > 0) {

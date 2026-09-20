@@ -9,11 +9,11 @@
 
 ## Índice
 
-1. [Cutscene do chefe vermelho duplicada no modo Arcade](#1)
-2. [Mira do carregado: tamanho por inimigo + multi-miras sob alvos grandes](#2)
-3. [Carregado perseguindo alvo aleatório sem mira válida](#3)
-4. [Repulsão: remover círculos + virar freio progressivo](#4)
-5. [Feedback visual de hit "não-letal" em alvo resistente](#5)
+1. [Cutscene do chefe vermelho duplicada no modo Arcade](#1) — ✅ já estava corrigido (v0.85.x)
+2. [Mira do carregado: tamanho por inimigo + multi-miras sob alvos grandes](#2) — ✅ implementado
+3. [Carregado perseguindo alvo aleatório sem mira válida](#3) — ✅ implementado
+4. [Repulsão: remover círculos + virar freio progressivo](#4) — ✅ implementado (v0.87.0)
+5. [Feedback visual de hit "não-letal" em alvo resistente](#5) — ✅ implementado (v0.87.0)
 6. [Knockback por tier de ameaça + Danger triangle + vignette vermelha](#6)
 7. [Knockback com duração maior e cancelável](#7)
 8. [Variedade de comportamento dos Blasters por cor](#8)

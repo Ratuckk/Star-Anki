@@ -149,11 +149,22 @@ const DEFLECT_RING_DURATION = 0.45
 const ROLL_AFTERIMAGE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_DURATION = 0.3
 
-// ============ RICOCHETE E FREIO REVERSO ============
+// ============ RICOCHETE ============
 const RICOCHET_ARC_DURATION = 0.18
-const REVERSE_BRAKE_LIFETIME = 0.18
-const REVERSE_BRAKE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_COLOR = 0xcfe9ff
+
+// ============ FAÍSCAS DE HIT NÃO-LETAL (item 5 — Docs/# QoL — Documento de Melhorias.md) ============
+// Leque cônico de faíscas quando um tiro NORMAL acerta um alvo com HP restante (killed: false) —
+// o flashMesh/hitSpark padrão é sutil demais pra ler como "acertou, mas não matou" em alvos
+// grandes (chefe). Soma-se ao hitSpark existente, não substitui.
+const RICOCHET_SPARK_COUNT_MIN = 10
+const RICOCHET_SPARK_COUNT_MAX = 14
+const RICOCHET_SPARK_ANGLE = THREE.MathUtils.degToRad(35) // abertura do leque (±35°)
+const RICOCHET_SPARK_SPEED_MIN = 25
+const RICOCHET_SPARK_SPEED_MAX = 40
+const RICOCHET_SPARK_COLOR = 0xffd166 // branca-amarelada — contrasta com o tiro normal (azul)
+const RICOCHET_SPARK_DURATION = 0.35
+const RICOCHET_SPARK_DECAY_RATE = 6 // decaimento exponencial da velocidade — "rápido" por pedido do doc
 
 // ============ TRAIL DE PROPULSÃO (item 12, restaurado) ============
 // pedido do usuário: de volta o rastro tipo cometa que existia antes da Fase 7 (removido junto
@@ -426,7 +437,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const deflectRings = []
   const maxChargeRingsList = []
   const ricochetArcs = []
-  const reverseBrakeJetsList = []
+  const ricochetSparkBursts = []
   const enemyTrails = []
   const microOrbes = []
   let microOrbesCollectedThisFrame = 0
@@ -469,7 +480,6 @@ export function createEffectsSystem(scene, opts = {}) {
   let ramAfterimageTimer = 0
   let boostTrailTimer = 0
   let rollAfterimageTimer = 0
-  let reverseBrakeTimer = 0
 
   // ============ GEOMETRIAS COMPARTILHADAS (VBO POOLING & ZERO-ALLOC) ============
   // Em vez de instanciar e destruir geometrias na VRAM a cada tiro/shockwave/bloom,
@@ -1069,34 +1079,31 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(to, 0x55ffff)
   }
 
-  function spawnReverseBrakeJetParticle(pos, vel) {
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x7fe0ff,
-      transparent: true,
-      opacity: 0.85,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    })
-    const mesh = new THREE.Mesh(sharedSphereGeometry, mat)
-    mesh.scale.setScalar(0.22)
-    mesh.position.copy(pos)
-    scene.add(mesh)
-    reverseBrakeJetsList.push({ mesh, velocity: vel, life: 0 })
-  }
+  // Item 5 (QoL): faíscas em leque quando um tiro acerta mas NÃO mata — `normal` é a direção
+  // contrária à do tiro (ver chamador em game-loop.js). Cada faísca é uma esfera compartilhada
+  // ESTICADA ao longo da própria velocidade (scale não-uniforme + quaternion alinhado à direção
+  // de voo dela), pra ler como um traço fino em vez de um pontinho.
+  function ricochetSparks(position, normal) {
+    const norm = normal && normal.lengthSq() > 1e-6 ? normal.clone().normalize() : new THREE.Vector3(0, 0, 1)
+    const count = RICOCHET_SPARK_COUNT_MIN + Math.floor(Math.random() * (RICOCHET_SPARK_COUNT_MAX - RICOCHET_SPARK_COUNT_MIN + 1))
+    for (let i = 0; i < count; i += 1) {
+      const axis = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+      if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0)
+      axis.normalize()
+      const dir = norm.clone().applyAxisAngle(axis, Math.random() * RICOCHET_SPARK_ANGLE).normalize()
+      const speed = RICOCHET_SPARK_SPEED_MIN + Math.random() * (RICOCHET_SPARK_SPEED_MAX - RICOCHET_SPARK_SPEED_MIN)
 
-  function reverseBrakeJets(position, forward, right) {
-    const fwd = forward ? forward.clone().normalize() : new THREE.Vector3(0, 0, -1)
-    const rgt = right ? right.clone().normalize() : new THREE.Vector3(1, 0, 0)
-
-    const leftJetOrigin = position.clone().addScaledVector(rgt, -1.1).addScaledVector(fwd, 0.4)
-    const rightJetOrigin = position.clone().addScaledVector(rgt, 1.1).addScaledVector(fwd, 0.4)
-
-    const leftDir = fwd.clone().multiplyScalar(18).addScaledVector(rgt, -4)
-    const rightDir = fwd.clone().multiplyScalar(18).addScaledVector(rgt, 4)
-
-    spawnReverseBrakeJetParticle(leftJetOrigin, leftDir)
-    spawnReverseBrakeJetParticle(rightJetOrigin, rightDir)
+      const material = new THREE.MeshBasicMaterial({
+        color: RICOCHET_SPARK_COLOR, transparent: true, opacity: 0.95,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      })
+      const mesh = new THREE.Mesh(sharedSphereGeometry, material)
+      mesh.position.copy(position)
+      mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, dir)
+      mesh.scale.set(0.08, 0.08, 0.5)
+      scene.add(mesh)
+      ricochetSparkBursts.push({ mesh, velocity: dir.multiplyScalar(speed), life: 0 })
+    }
   }
 
   function enemyThrusterTrail(position, colorHex = 0xff5a3d) {
@@ -1333,13 +1340,6 @@ export function createEffectsSystem(scene, opts = {}) {
     bloomSprite(position, 0x3ea6ff, 2.0)
   }
 
-  function emergencyBrakeVFX(position, forward, right) {
-    reverseBrakeJets(position, forward, right)
-    shockwave(position, 0xffffff, 1.0)
-    shockwave(position, 0x7fe0ff, 1.6)
-    hitSpark(position, 0xffffff)
-  }
-
   // ============ CURA / VIDA EXTRA E WINGMAN SPAWN ============
   function extraLifeHeal(position) {
     shockwave(position, 0xffd700, 2.0)
@@ -1418,7 +1418,7 @@ export function createEffectsSystem(scene, opts = {}) {
 
   // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
-    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false, repulsionActive = false, shipRight = null } = opts
+    const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false } = opts
     const now = performance.now()
     const cam = opts.camera
 
@@ -1483,15 +1483,6 @@ export function createEffectsSystem(scene, opts = {}) {
       if (rollAfterimageTimer <= 0) {
         rollAfterimageTimer = ROLL_AFTERIMAGE_INTERVAL
         rollAfterimage(shipPosition, shipForward)
-      }
-    }
-
-    // JATOS DE FREIO REVERSO (repulsor ativo)
-    if (repulsionActive && shipPosition && shipForward) {
-      reverseBrakeTimer -= dt
-      if (reverseBrakeTimer <= 0) {
-        reverseBrakeTimer = REVERSE_BRAKE_INTERVAL
-        reverseBrakeJets(shipPosition, shipForward, shipRight)
       }
     }
 
@@ -1953,20 +1944,20 @@ export function createEffectsSystem(scene, opts = {}) {
       arc.mesh.material.opacity = (1 - t) * 0.95
     }
 
-    // REVERSE BRAKE JETS
-    for (let i = reverseBrakeJetsList.length - 1; i >= 0; i--) {
-      const p = reverseBrakeJetsList[i]
+    // FAÍSCAS DE HIT NÃO-LETAL (item 5)
+    for (let i = ricochetSparkBursts.length - 1; i >= 0; i--) {
+      const p = ricochetSparkBursts[i]
       p.life += dt
-      const t = p.life / REVERSE_BRAKE_LIFETIME
+      const t = p.life / RICOCHET_SPARK_DURATION
       if (t >= 1) {
         scene.remove(p.mesh)
         p.mesh.material.dispose()
-        reverseBrakeJetsList.splice(i, 1)
+        ricochetSparkBursts.splice(i, 1)
         continue
       }
       p.mesh.position.addScaledVector(p.velocity, dt)
-      p.mesh.material.opacity = (1 - t) * 0.85
-      p.mesh.scale.setScalar(1 + t * 1.5)
+      p.velocity.multiplyScalar(Math.max(0, 1 - dt * RICOCHET_SPARK_DECAY_RATE))
+      p.mesh.material.opacity = 0.95 * (1 - t)
     }
 
     // CLARÕES DISTANTES NO FUNDO CÓSMICO
@@ -2090,7 +2081,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const c of contrails) { scene.remove(c.mesh); c.mesh.material.dispose() }
     for (const w of spinWinds) { scene.remove(w.mesh); w.mesh.material.dispose() }
     for (const a of ricochetArcs) { scene.remove(a.mesh); a.mesh.geometry.dispose(); a.mesh.material.dispose() }
-    for (const j of reverseBrakeJetsList) { scene.remove(j.mesh); j.mesh.material.dispose() }
+    for (const p of ricochetSparkBursts) { scene.remove(p.mesh); p.mesh.material.dispose() }
     for (const et of enemyTrails) { scene.remove(et.mesh); et.mesh.material.dispose() }
     for (const o of microOrbes) { scene.remove(o.group) }
     for (const f of distantFlashes) { scene.remove(f.mesh); f.mesh.material.dispose() }
@@ -2112,7 +2103,7 @@ export function createEffectsSystem(scene, opts = {}) {
     enemyTrails.length = 0
     microOrbes.length = 0
     ricochetArcs.length = 0
-    reverseBrakeJetsList.length = 0
+    ricochetSparkBursts.length = 0
     distantFlashes.length = 0
     distantSilhouettes.length = 0
     bursts.length = 0; grayRings.length = 0; hitSparks.length = 0; muzzleFlashes.length = 0
@@ -2137,9 +2128,9 @@ export function createEffectsSystem(scene, opts = {}) {
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,
     maxChargeReady, maxChargeRings, machSpeedRing,
-    ricochetArc, reverseBrakeJets, cardAcquiredPulse, respawnBurst, hullDamageBurst,
+    ricochetArc, ricochetSparks, cardAcquiredPulse, respawnBurst, hullDamageBurst,
     fogWispCondensation, fogCondensationInward, spawnAnticipation,
-    lateralDashVFX, summersaultVFX, emergencyBrakeVFX, extraLifeHeal, wingmanSpawn,
+    lateralDashVFX, summersaultVFX, extraLifeHeal, wingmanSpawn,
     maxChargeImpact, goldenDashVFX, flankSpawnTrail,
     dispose,
   }

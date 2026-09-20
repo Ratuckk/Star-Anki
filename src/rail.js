@@ -199,14 +199,6 @@ const ARENA_AUTOLEVEL_RATE = 1.2
 // nave ficava sendo puxada pra ele o tempo todo em vez de responder só ao controle manual.
 // Voltou a ser controle 100% manual em all-range, como era antes da Fase 9 introduzir isso.
 
-// item 4 — "freio de emergência": duplo toque em repulsão (sem Baixo, que já é a cambalhota)
-// trava a velocidade de avanço quase a zero por um instante curto, pra reposicionamento fino
-// perto do chefe/dourado. Cooldown PRÓPRIO — não usa a barra compartilhada de propulsor/
-// repulsor de player.js, pra não mexer na economia de boost já existente.
-const EMERGENCY_BRAKE_DURATION = 0.35
-const EMERGENCY_BRAKE_SPEED_MULT = 0.05
-const EMERGENCY_BRAKE_COOLDOWN = 1.5
-
 // item 6 — cambalhota (Baixo + repulsor): pedido do usuário pra ficar mais fiel à cutscene de
 // U-turn do Star Fox 64 original (conferido no código decompilado, HarbourMasters/Starship,
 // src/engine/fox_play.c: Player_PerformLoop + Camera_UpdateArwing360). O jogo original NÃO faz
@@ -327,8 +319,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
 
   // Fase 9 (ideias all-range)
   let arenaIdleTimer = 0 // item 1: segundos desde o último input de direção real no all-range
-  let emergencyBrakeTimer = 0 // item 4
-  let emergencyBrakeCooldownTimer = 0 // item 4
   let summersaultT = 1 // item 6: >=1 = inativo, 0..1 = animação em andamento
   let summersaultStartYaw = 0 // item 6
   // deslize lateral (combo propulsor+Z/C) — progress 0..1 percorrido em ARENA_DASH_DURATION,
@@ -553,15 +543,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     return eased * Math.PI * 2
   }
 
-  // Fase 9 (ideia all-range 4): freio de emergência — cooldown próprio, independente da barra
-  // compartilhada de propulsor/repulsor. Devolve false se ainda em cooldown (chamador ignora).
-  function triggerEmergencyBrake() {
-    if (mode !== 'arena' || emergencyBrakeCooldownTimer > 0) return false
-    emergencyBrakeTimer = EMERGENCY_BRAKE_DURATION
-    emergencyBrakeCooldownTimer = EMERGENCY_BRAKE_COOLDOWN
-    return true
-  }
-
   // recuo do tiro (pedido do usuário) — chamado por main.js a cada disparo bem-sucedido
   function triggerRecoil() {
     recoilOffset += shipPhysics.recoilKick
@@ -644,9 +625,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     const inSummersault = summersaultT < 1
     updateLateralDash(dt)
 
-    if (emergencyBrakeTimer > 0) emergencyBrakeTimer = Math.max(0, emergencyBrakeTimer - dt)
-    if (emergencyBrakeCooldownTimer > 0) emergencyBrakeCooldownTimer = Math.max(0, emergencyBrakeCooldownTimer - dt)
-
     if (!inSummersault) {
       // segurar Z/C sozinho (sem o combo de propulsor) já ajuda a guinar pro lado, "facilitando
       // o movimento" além da inclinação cosmética — mais fraco que o giro normal (input.moveX)
@@ -675,10 +653,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     }
 
     const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
-    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho;
-    // o freio de emergência (Fase 9, ideia 4) trava isso quase a zero por um instante curto
-    const brakeFactor = emergencyBrakeTimer > 0 ? EMERGENCY_BRAKE_SPEED_MULT : 1
-    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * brakeFactor * dt)
+    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho
+    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * dt)
 
     // pequena subida na primeira metade da cambalhota, igual ao `pos.y += 2`/frame do jogo
     // original (Player_PerformLoop) — só um empurrão de altitude, não muda o forward/heading
@@ -1007,7 +983,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerFullSpin,
     triggerArenaLateralDash,
     triggerArenaSummersault,
-    triggerEmergencyBrake,
     triggerBossCollisionTumble,
     triggerHighImpactTumble,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos

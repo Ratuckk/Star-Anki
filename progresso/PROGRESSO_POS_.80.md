@@ -509,3 +509,67 @@ de tecla no stepper (edge-detection de "tecla pressionada" não pegou o evento s
 peculiaridade do `input.js` com KeyboardEvent disparado via JS em vez de reação real do SO), mas
 não há razão pra achar que quebra — é a mesma chamada de função já provada funcionando na tela de
 Configurações. Sem erros de console em nenhum teste.
+
+---
+
+### v0.87.0 — QoL itens 4 e 5 (repulsão progressiva sem VFX + faíscas de hit não-letal)
+
+Achado antes de começar: os últimos 5 commits (QoL 1-3, fix do escudo, Swirl Blast completo,
+Bullet-time) foram mesclados sem subir `GAME_VERSION` — falha de processo minha. Corrigido num
+commit de catch-up pra v0.86.0 antes de iniciar este item; a partir daqui, todo commit relevante
+volta a bumpar a versão (pedido explícito do usuário: sempre falar o número da versão).
+
+**Item 4 — Repulsão: remove círculos + vira freio progressivo.** Pergunta feita antes de codar:
+o que fazer com o freio de emergência de duplo-toque (`triggerEmergencyBrake`), já que ele também
+some junto com os círculos? Usuário escolheu remover de vez (recomendação do próprio doc) — só a
+repulsão progressiva cuida de trilho e arena.
+
+- `effects.js`: removidos por completo `reverseBrakeJets`/`spawnReverseBrakeJetParticle`/
+  `emergencyBrakeVFX`, o array `reverseBrakeJetsList`, os timers/constantes só usados por eles, e
+  a entrada `repulsionActive`/`shipRight` do `update()` — `skipTrail` (efeito NÃO-relacionado,
+  só esconde o rastro do motor durante o freio) foi mantido de propósito.
+- `player.js`: `repulsionActiveTimer` (contagem regressiva de duração FIXA) virou `repulsionActive`
+  (booleano). `activateRepulsion()` só ARMA o estado, não zera mais `boostCharge` na hora.
+  `update(dt, repulsionHeld)` ganhou o parâmetro `repulsionHeld` (de `inputState.repulsionHeld`,
+  já existia em `input.js` — nunca tinha sido consumido) — dreno de `BOOST_BRAKE_DRAIN_MS` (6s,
+  2x a recarga normal) só enquanto `repulsionActive && repulsionHeld`; solta o botão OU zera a
+  carga = para na hora, sem resíduo, recarga começa no frame seguinte.
+- `game-loop.js`: `player.update(dt)` → `player.update(dt, inputState.repulsionHeld)`; removido o
+  branch de duplo-toque (`state.lastRepulsionTapAt`, `triggerEmergencyBrake`, `emergencyBrakeVFX`).
+- `rail.js`: removido `triggerEmergencyBrake` e todo o mecanismo de freio de emergência
+  (`emergencyBrakeTimer`/`emergencyBrakeCooldownTimer`/`brakeFactor` em `updateArena`) —
+  confirmei que o freio progressivo JÁ funciona em arena de graça, via o mesmo `speedMultiplier`
+  compartilhado que `ARENA_SPEED * speedMultiplier * ...` já multiplicava (não precisou de nenhum
+  código novo pra arena, só remover o que sobrava do freio de emergência).
+- `mount-game.js`: removido `state.lastRepulsionTapAt` (dead state depois da remoção acima).
+
+**Validação item 4** via stepper: segurar repulsão por 1s drena `boostCharge` de 1.0 → 0.833
+(exatamente `1 - 1000/6000`); soltar para o dreno imediatamente e a barra já começa a subir no
+frame seguinte; em arena, segurar repulsão reduz a distância percorrida numa janela fixa de
+frames pra ~0.38x da velocidade normal (esperado `REPULSION_SPEED_MULT=0.35`, bate dentro da
+margem de um frame de atraso na ativação). Sem nenhum círculo/partícula — as funções nem existem
+mais.
+
+**Item 5 — Feedback visual de hit não-letal.** Nova `effects.ricochetSparks(position, normal)`:
+leque de 10-14 faíscas (cor `0xffd166`, branca-amarelada), cada uma uma esfera compartilhada
+ESTICADA via `scale` não-uniforme + quaternion alinhado à própria velocidade (em vez de partícula
+redonda) — decaimento de velocidade exponencial, 0.35s de vida. Chamada em `game-loop.js` no
+mesmo loop que já processa `hitsLog` pra flash/hitSpark, só quando `!h.killed && !h.isHoming` —
+exclui teleguiado de propósito porque ele já tem explosão de impacto incondicional (mataria ou
+não) em `enemies/index.js`, ver comentário no código.
+
+**Bug pego em teste, corrigido antes de commitar**: o primeiro `Edit` que inseriu `ricochetSparks`
+logo depois de `ricochetArc` cortou a função errada no meio — as duas últimas linhas de
+`ricochetArc` (`hitSpark(from,...)`/`hitSpark(to,...)`) acabaram dentro de `ricochetSparks`,
+referenciando variáveis `from`/`to` que não existem nesse escopo. Só apareceu ao rodar de verdade
+(`ReferenceError: from is not defined` disparado pelo primeiro tiro não-letal no teste) —
+`node --check`/selftest não pegam esse tipo de erro porque a função só quebra quando CHAMADA, não
+ao só parsear o arquivo. Reforça o valor de testar no browser antes de dar como pronto.
+
+**Validação item 5**: tanque com 20 HP toma um tiro normal (dano 2), sobrevive, e gera as faíscas
+(11 novas, dentro do range 10-14 esperado); o mesmo tanque com 2 HP morre no mesmo tiro e NÃO gera
+faísca nova nenhuma — os dois critérios de aceitação do doc bateram exatamente. Descoberta lateral
+reaproveitada do trabalho do Swirl Blast: blaster comum não é bom alvo de teste porque a FSM dele
+recalcula posição toda hora (teleporta), por isso usei Tank (estacionário) pros dois cenários.
+
+Sem erros de console em nenhum teste (item 4 ou 5).
