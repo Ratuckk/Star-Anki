@@ -30,3 +30,45 @@ sem prioridade definida — ficam só de referência:
 ---
 
 ## Histórico de Entregas pós-v0.84.0
+
+### Cambalhota em arco de verdade (all-range) + fim do teleporte no deslize lateral — v0.84.1
+
+Pedido do usuário: a cambalhota (Baixo+Repulsor no all-range) devia ficar mais fiel ao U-turn do
+Star Fox 64 — "a nave faz uma volta pra trás em arco". Além disso, reportou um "bug de
+reposicionamento" ao usar "os mesmos comandos só que pros lados" — depois de eu confirmar por
+pergunta que o combo era Repulsor+seta lateral (vs. o Repulsor+Baixo da cambalhota) e simular os
+dois cenários frame-a-frame via `window.__starAnki` (stepper determinístico, `rail.js` exposto),
+não achei nenhum caminho de código que ligasse Repulsor+lateral a qualquer reposicionamento — o
+único lugar do arquivo que de fato fazia um "teleporte" (salto instantâneo de posição, sem
+interpolação nenhuma) era `triggerArenaLateralDash` (combo Propulsor+Z/C, o análogo lateral real
+da cambalhota). O usuário confirmou depois: "na verdade a nave não devia teleportar" — ou seja, o
+próprio salto instantâneo do dash lateral era o problema, não uma combinação de teclas específica.
+
+**Cambalhota** (`rail.js`, `SUMMERSAULT_ARC_PITCH`/`updateSummersault`): antes, o yaw girava 180°
+suavemente e um `rotateX` cosmético por cima fazia o MESH parecer girar, mas a trajetória
+continuava reta/plana (spiral achatada, não um arco de verdade). Agora `updateSummersault` também
+devolve um offset de pitch que segue `sin(π·eased)` — sobe até um pico de 55° na metade da manobra
+e volta a 0 no fim — somado ao `arenaPitch` só no cálculo do `forward` usado pra mover a nave e
+pra orientar a câmera (o `arenaPitch` de verdade fica congelado e intacto, retomado depois). Isso
+faz a nave literalmente subir, fazer a volta por cima e descer de novo já de bico invertido — o
+`ship.lookAt(forward)` que já existia acompanha o arco sozinho, então o `rotateX` cosmético foi
+removido (senão duplicava a rotação). Verificado via stepper: `forward` termina com yaw exatamente
+invertido (fx/fz trocam de sinal) e pitch de volta ao valor original, com ganho real de altitude
+no meio do caminho.
+
+**Deslize lateral** (`rail.js`, `ARENA_DASH_DURATION`/`updateLateralDash`): `triggerArenaLateralDash`
+não move mais a nave com um `addScaledVector` instantâneo — só trava o eixo (`lastFrame.right` do
+instante do trigger, pra guinada em andamento não desviar o dash no meio) e arma um progresso
+0→1. `updateLateralDash` aplica por frame só a FATIA de distância correspondente ao delta de um
+ease-out quadrático, então a soma ao longo de `ARENA_DASH_DURATION` (0.22s) fecha exatamente em
+`ARENA_DASH_DISTANCE` (16u) — sem brigar com o avanço pra frente que também mexe em `arenaPos` no
+mesmo `updateArena`. Verificado via stepper: posição desliza suave ao longo de ~13 frames em vez
+de saltar num frame só.
+
+**Nota pra próxima vez**: o ambiente de browser automatizado (Claude Browser) throttla o rAF real
+de forma muito agressiva (chegou a ficar preso em ~1 FPS entre chamadas), o que torna testes por
+tempo real (`wait` + screenshot) não-confiáveis pra validar timing de animação. `window.__starAnki`
+expõe `rail`/`state`/`step(frames, dtMs)` — usar o stepper determinístico (`setManualStepping(true)`
++ `step(n, dtMs)`) junto de `KeyboardEvent` sintético via `window.dispatchEvent` pra simular
+hold/tap de tecla é MUITO mais confiável pra reproduzir combos de input frame-exato do que
+`computer` (screenshot/key) do browser tool.

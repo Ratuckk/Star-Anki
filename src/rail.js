@@ -176,11 +176,15 @@ const DODGE_ROLL_MAX_ANGLE = THREE.MathUtils.degToRad(90)
 // invencibilidade, aqui só a animação em si (ângulo evoluindo de 0 a 360° em FULL_SPIN_DURATION)
 const FULL_SPIN_DURATION = 0.45
 
-// all-range: distância do deslocamento instantâneo do combo "segurar propulsor + Z/C" e taxa
+// all-range: distância total do deslize lateral do combo "segurar propulsor + Z/C" e taxa
 // de guinada extra que segurar Z/C sozinho (sem o combo) já dá de graça, "facilitando o
 // movimento pro lado" enquanto inclina — pedido explícito do usuário, mais fraca que o giro
-// normal (ARENA_TURN_RATE) pra não duplicar o controle de vôo já existente, só complementar
+// normal (ARENA_TURN_RATE) pra não duplicar o controle de vôo já existente, só complementar.
+// A distância é percorrida em ARENA_DASH_DURATION (ver updateLateralDash) — era um snap
+// instantâneo de posição (addScaledVector direto), o que lia como teleporte/bug de
+// reposicionamento; agora desliza suave pro lado, igual em espírito à cambalhota abaixo.
 const ARENA_DASH_DISTANCE = 16
+const ARENA_DASH_DURATION = 0.22
 const ARENA_BANK_ASSIST_RATE = 1.1
 
 // Fase 9 (ideias all-range):
@@ -203,10 +207,16 @@ const EMERGENCY_BRAKE_DURATION = 0.35
 const EMERGENCY_BRAKE_SPEED_MULT = 0.05
 const EMERGENCY_BRAKE_COOLDOWN = 1.5
 
-// item 6 — cambalhota (Baixo + repulsor) virou uma animação de verdade (flip completo no eixo
-// de pitch enquanto o yaw gira suavemente) em vez do snap instantâneo de 180° de antes, igual
-// ao U-turn do Star Fox 64. Congela o controle manual de yaw/pitch/roll por essa duração.
+// item 6 — cambalhota (Baixo + repulsor): pedido do usuário pra ficar mais fiel ao U-turn do
+// Star Fox 64 — em vez de só girar o yaw 180° com um flip cosmético de pitch por cima (mesh
+// gira, mas a TRAJETÓRIA continuava reta/plana), agora o pitch usado no cálculo do vetor
+// forward da própria arena arqueia pra cima e desce de novo (seno, pico na metade da manobra)
+// AO MESMO TEMPO que o yaw gira 180° — a nave literalmente sobe, faz a volta por cima e desce
+// de novo já de bico pro lado oposto, então o `ship.lookAt(forward)` que já existia acompanha
+// o arco sozinho, sem precisar de rotateX cosmético extra. Congela o controle manual de
+// yaw/pitch/roll por essa duração (arenaPitch em si não muda, só o offset do voo durante o arco).
 const SUMMERSAULT_DURATION = 0.6
+const SUMMERSAULT_ARC_PITCH = THREE.MathUtils.degToRad(55)
 
 function buildCurve() {
   const points = [
@@ -318,6 +328,14 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let emergencyBrakeCooldownTimer = 0 // item 4
   let summersaultT = 1 // item 6: >=1 = inativo, 0..1 = animação em andamento
   let summersaultStartYaw = 0 // item 6
+  // deslize lateral (combo propulsor+Z/C) — progress 0..1 percorrido em ARENA_DASH_DURATION,
+  // aplicado como DELTA por frame (não posição absoluta) pra compor certo com o avanço normal
+  // pra frente que também mexe em arenaPos no mesmo update; eixo fica travado no valor de
+  // lastFrame.right do instante do trigger, senão a guinada em andamento mudaria a direção
+  // do deslize no meio do caminho
+  let lateralDashT = 1 // >=1 = inativo, 0..1 = animação em andamento
+  let lateralDashDir = 0
+  const lateralDashAxis = new THREE.Vector3()
   let turnSensitivity = 1 // item 5: multiplicador configurável em Configurações
   let lastFrame = frameAtArcLength(0)
   let lastPlayerPos = lastFrame.position.clone()
@@ -481,27 +499,47 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     fullSpinT = 0
   }
 
-  // all-range: desloca a posição da nave instantaneamente pro lado (combo "segurar propulsor +
-  // Z/C") — reaproveita o clamp de raio da arena que já existe pro movimento normal
+  // all-range: desliza a nave pro lado (combo "segurar propulsor + Z/C") — pedido do usuário:
+  // antes era um snap instantâneo de posição (addScaledVector direto), que lia como bug de
+  // teleporte; agora é animado por updateLateralDash (abaixo), igual em espírito à cambalhota.
+  // O raio final já é resolvido aqui na largada (não frame a frame), reaproveitando o clamp de
+  // raio da arena que já existe pro movimento normal.
   function triggerArenaLateralDash(direction) {
-    if (mode !== 'arena' || direction === 0) return
-    arenaPos.addScaledVector(lastFrame.right, Math.sign(direction) * ARENA_DASH_DISTANCE)
-    const offset = arenaPos.clone().sub(arenaCenter)
-    if (offset.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(offset.normalize(), ARENA_RADIUS)
+    if (mode !== 'arena' || direction === 0 || lateralDashT < 1) return
+    lateralDashAxis.copy(lastFrame.right)
+    lateralDashDir = Math.sign(direction)
+    lateralDashT = 0
+  }
+
+  // avança o deslize lateral: em vez de mover pra uma posição absoluta (o que brigaria com o
+  // avanço pra frente que também mexe em arenaPos no mesmo update), aplica só a FATIA de
+  // distância que corresponde ao progresso deste frame (delta do ease-out) — a soma de todas as
+  // fatias ao longo de ARENA_DASH_DURATION fecha em ARENA_DASH_DISTANCE exatos.
+  function updateLateralDash(dt) {
+    if (lateralDashT >= 1) return
+    const easeOutQuad = (t) => 1 - (1 - t) * (1 - t)
+    const prevEased = easeOutQuad(lateralDashT)
+    lateralDashT = Math.min(1, lateralDashT + dt / ARENA_DASH_DURATION)
+    const deltaEased = easeOutQuad(lateralDashT) - prevEased
+    arenaPos.addScaledVector(lateralDashAxis, lateralDashDir * ARENA_DASH_DISTANCE * deltaEased)
+    if (lateralDashT >= 1) wobbleVel += WOBBLE_KICK * lateralDashDir
   }
 
   // all-range: cambalhota (combo "Baixo + repulsor") — meia-volta de reposicionamento, igual
-  // ao U-turn do Star Fox 64. Fase 9 (ideia 6): agora é uma animação de verdade (updateSummersault
-  // abaixo cuida do yaw progressivo + flip visual) em vez de um snap instantâneo de 180°.
+  // ao U-turn do Star Fox 64. Fase 9 (ideia 6) trocou o snap instantâneo de 180° por uma
+  // animação; pedido do usuário deixou essa animação mais fiel ao original (ver updateSummersault).
   function triggerArenaSummersault() {
     if (mode !== 'arena' || summersaultT < 1) return
     summersaultStartYaw = arenaYaw
     summersaultT = 0
   }
 
-  // avança a animação da cambalhota e devolve o ângulo de flip visual (0→2π, aplicado como
-  // rotateX extra no mesh) — o yaw de verdade (arenaYaw) já é atualizado aqui dentro também,
-  // com ease-out (rápido no início, suave no fim), pra sensação de impulso natural.
+  // avança a animação da cambalhota e devolve o OFFSET de pitch (em radianos, positivo = sobe)
+  // a somar em cima do arenaPitch só pro cálculo do forward deste frame — não no arenaPitch de
+  // verdade, que fica congelado e retoma sozinho quando a manobra termina. O offset segue um
+  // seno com pico na METADE do progresso (mesmo `eased` do yaw, pra o topo do arco coincidir com
+  // a nave já de perfil, ~90° guinada) — nave sobe, vira por cima e desce já de bico invertido,
+  // e o ship.lookAt(forward) que já existia acompanha o arco sozinho (sem rotateX cosmético).
   function updateSummersault(dt) {
     if (summersaultT >= 1) return 0
     summersaultT = Math.min(1, summersaultT + dt / SUMMERSAULT_DURATION)
@@ -509,7 +547,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     arenaYaw = summersaultStartYaw + Math.PI * eased
     // mesmo amortecimento pós-manobra do giro completo, ao terminar a cambalhota
     if (summersaultT >= 1) wobbleVel += WOBBLE_KICK * (Math.random() < 0.5 ? -1 : 1)
-    return summersaultT * Math.PI * 2
+    return Math.sin(Math.PI * eased) * SUMMERSAULT_ARC_PITCH
   }
 
   // Fase 9 (ideia all-range 4): freio de emergência — cooldown próprio, independente da barra
@@ -599,8 +637,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   }
 
   function updateArena(dt, input, fullSpinAngle = 0, tumbleState = null) {
-    const summersaultFlip = updateSummersault(dt)
+    const summersaultArcPitch = updateSummersault(dt)
     const inSummersault = summersaultT < 1
+    updateLateralDash(dt)
 
     if (emergencyBrakeTimer > 0) emergencyBrakeTimer = Math.max(0, emergencyBrakeTimer - dt)
     if (emergencyBrakeCooldownTimer > 0) emergencyBrakeCooldownTimer = Math.max(0, emergencyBrakeCooldownTimer - dt)
@@ -632,7 +671,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       // usuário — controle 100% manual em all-range de novo, ver comentário da constante acima.
     }
 
-    const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
+    const forward = forwardFromYawPitch(arenaYaw, arenaPitch + summersaultArcPitch)
     // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho;
     // o freio de emergência (Fase 9, ideia 4) trava isso quase a zero por um instante curto
     const brakeFactor = emergencyBrakeTimer > 0 ? EMERGENCY_BRAKE_SPEED_MULT : 1
@@ -661,7 +700,6 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       if (tumbleState.pitch) ship.rotateX(tumbleState.pitch)
       if (tumbleState.yaw) ship.rotateY(tumbleState.yaw)
     }
-    if (summersaultFlip) ship.rotateX(summersaultFlip)
     applyWeightScale()
     applyImpulseOffsets(forward, up)
     applyShakeJitter()
