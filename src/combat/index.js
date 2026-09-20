@@ -57,8 +57,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       return true
     },
 
-    fireHomingShot: (origin, maxTargets, isMaxCharge) => {
-      const fired = projectiles.fireHomingShot(origin, maxTargets, isMaxCharge)
+    fireHomingShot: (origin, direction, maxTargets, isMaxCharge) => {
+      const fired = projectiles.fireHomingShot(origin, direction, maxTargets, isMaxCharge)
       if (fired) {
         player.getTelemetry?.()?.recordEvent('homing', `Tiro teleguiado disparado! Carga máx: ${isMaxCharge}, Alvos: ${maxTargets}`, { isMaxCharge, maxTargets })
       }

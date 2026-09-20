@@ -11,7 +11,7 @@ import { PLAYER_SOUND_CUES, ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-c
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
-const PROJECTILE_SPEED = 360
+const PROJECTILE_SPEED = 260
 // pedido do usuário: tiro normal (não-carregado) some sozinho depois de 8s de voo — o teto de
 // ALCANCE abaixo sobe junto com PROJECTILE_SPEED (velocidade * 8s + folga) só pra não cortar o
 // tiro ANTES do tempo em voo reto; o timer (ver PLAYER_PROJECTILE_LIFETIME) é o que efetivamente
@@ -19,7 +19,7 @@ const PROJECTILE_SPEED = 360
 const PROJECTILE_MAX_RANGE = 700
 const PLAYER_PROJECTILE_LIFETIME = 8
 const PROJECTILE_LATERAL_SPACING = 1.6
-const HOMING_PROJECTILE_SPEED = 69 // 46 * 1.5 (pedido: +50% de velocidade)
+const HOMING_PROJECTILE_SPEED = 70 // 46 * 1.5 (pedido: +50% de velocidade)
 const HOMING_PROJECTILE_DAMAGE = 3 // pedido do usuário: era 3
 // pedido do usuário: segurar o tiro carregado até o limite (carga máxima) aumenta o dano de 4
 // pra 6 — recompensa esperar o círculo de carga encher de verdade, não só passar do mínimo.
@@ -47,22 +47,29 @@ const PROJECTILE_HIT_BUFFER = 0.3
 
 // mesmo valor de MAX_LOCK_RANGE em lockon.js — distância máxima pra um alvo poder receber
 // teleguiado, seja via trava prévia ou via "N mais próximos" de fallback
-const MAX_HOMING_RANGE = 90
+const MAX_HOMING_RANGE = 140
 
 // Overhaul visual do tiro básico (pedido do usuário — "núcleo + halo", reaproveitando a técnica
-// outer/inner additive-blending já usada no laser do Chefe/Dourado, ver fireBossLaser em boss.js)
-// + tamanho geral +20% ("deixe 20% maior também", pedido explícito). Cada tiro vira um Group com
-// 2 camadas (halo translúcido por fora, núcleo quase-branco por dentro) em vez de 1 cone sólido
-// — todo código que já tratava a instância como objeto único (`.position`, `.quaternion`,
-// `.scale.setScalar()`, `scene.remove()`) continua funcionando sem mudança, Group herda tudo isso
-// de Object3D igual Mesh.
-const PLAYER_SHOT_SIZE_MULT = 1.2 // "deixe 20% maior"
+// outer/inner additive-blending já usada no laser do Chefe/Dourado, ver fireBossLaser em boss.js).
+// Cada tiro é um Group com 2 camadas (halo translúcido por fora, núcleo quase-branco por dentro)
+// em vez de 1 cone sólido — todo código que já tratava a instância como objeto único
+// (`.position`, `.quaternion`, `.scale.setScalar()`, `scene.remove()`) continua funcionando sem
+// mudança, Group herda tudo isso de Object3D igual Mesh.
+//
+// v0.85.x — RECALIBRADO. `PLAYER_SHOT_SIZE_MULT` subiu de 1.4 pra 2.2 (tiro bem maior — o valor
+// anterior lia como pontinho a 260 u/s), e as proporções do core foram normalizadas:
+//   - CORE_RADIUS = HALO_RADIUS * 0.5  (núcleo com metade do raio do halo — leitura clássica de
+//     "núcleo brilhante dentro de um envelope translúcido")
+//   - CORE_LENGTH = HALO_LENGTH * 1.0  (núcleo do MESMO comprimento que o halo — o valor anterior
+//     de *5 fazia o core virar uma agulha de 5× o halo, o que lia como um feixe comprido em vez
+//     de um tiro)
+const PLAYER_SHOT_SIZE_MULT = 2.2
 const PLAYER_SHOT_HALO_RADIUS = 0.21 * PLAYER_SHOT_SIZE_MULT
 const PLAYER_SHOT_HALO_LENGTH = 1.5 * PLAYER_SHOT_SIZE_MULT
 const PLAYER_SHOT_HALO_COLOR = 0x3ea6ff // cor de identidade original do tiro básico
 const PLAYER_SHOT_HALO_OPACITY = 0.45
 const PLAYER_SHOT_CORE_RADIUS = PLAYER_SHOT_HALO_RADIUS * 0.5
-const PLAYER_SHOT_CORE_LENGTH = PLAYER_SHOT_HALO_LENGTH * 0.85
+const PLAYER_SHOT_CORE_LENGTH = PLAYER_SHOT_HALO_LENGTH * 1.0
 const PLAYER_SHOT_CORE_COLOR = 0xeaffff // quase-branco — núcleo brilhante
 const PLAYER_SHOT_CORE_OPACITY = 0.95
 
@@ -391,35 +398,51 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
 
     fireSingle,
 
-    // filtro de distância nos dois caminhos (locked e "N mais próximos")
+    // filtro de distância nos dois caminhos (locked e cone de mira)
     // isMaxCharge: true quando o jogador segurou até a carga máxima (não só passou do mínimo pra
     // poder atirar) — nesse caso cada tiro sai com dano maior (ver HOMING_PROJECTILE_DAMAGE_MAX_CHARGE)
-    fireHomingShot(origin, maxTargets, isMaxCharge = false) {
+    //
+    // QoL #3: sem nenhum alvo travado, o fallback antigo pegava os N inimigos mais próximos no
+    // range, mesmo fora da mira — o tiro perseguia coisa que o jogador nem estava mirando. Agora
+    // só persegue se houver inimigo dentro do CONE da mira (getEnemiesInAimCone); sem nada no
+    // cone, dispara reto na direção mirada (mesmo visual, sem homingTarget).
+    fireHomingShot(origin, direction, maxTargets, isMaxCharge = false) {
       const inRange = (e) => origin.distanceTo(e.mesh.position) <= MAX_HOMING_RANGE
       const locked = lockon.takeLockedTargets(inRange)
       let targetList
+      let straightShot = false
       if (locked.length > 0) {
         targetList = locked.slice(0, Math.max(0, maxTargets))
       } else {
-        const alive = enemies.getAlive().filter(inRange)
-        alive.sort((a, b) => origin.distanceTo(a.mesh.position) - origin.distanceTo(b.mesh.position))
-        targetList = alive.slice(0, Math.max(0, maxTargets))
+        targetList = lockon.getEnemiesInAimCone(origin, direction, maxTargets).filter(inRange)
+        if (targetList.length === 0) straightShot = true
       }
       const damage = isMaxCharge ? HOMING_PROJECTILE_DAMAGE_MAX_CHARGE : HOMING_PROJECTILE_DAMAGE
+      const homingSpeed = isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
       for (const target of targetList) {
-        const direction = target.mesh.position.clone().sub(origin).normalize()
+        const targetDir = target.mesh.position.clone().sub(origin).normalize()
         const mesh = new THREE.Mesh(homingProjectileGeometry, isMaxCharge ? homingMaxChargeMaterial : homingProjectileMaterial)
         mesh.position.copy(origin)
         if (isMaxCharge) mesh.scale.setScalar(MAX_CHARGE_VISUAL_SCALE)
         scene.add(mesh)
-        const homingSpeed = isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
         projectiles.push({
-          mesh, velocity: direction.multiplyScalar(homingSpeed), traveled: 0,
+          mesh, velocity: targetDir.multiplyScalar(homingSpeed), traveled: 0,
           homingTarget: target, damage, isHoming: true, afterimageTimer: 0, isMaxCharge,
           bouncesLeft: player.config.ricochetCount ?? 0,
         })
       }
-      const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : new THREE.Vector3(0, 0, -1)
+      if (straightShot) {
+        const mesh = new THREE.Mesh(homingProjectileGeometry, isMaxCharge ? homingMaxChargeMaterial : homingProjectileMaterial)
+        mesh.position.copy(origin)
+        if (isMaxCharge) mesh.scale.setScalar(MAX_CHARGE_VISUAL_SCALE)
+        scene.add(mesh)
+        projectiles.push({
+          mesh, velocity: direction.clone().multiplyScalar(homingSpeed), traveled: 0,
+          damage, isHoming: true, afterimageTimer: 0, isMaxCharge,
+          bouncesLeft: player.config.ricochetCount ?? 0,
+        })
+      }
+      const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : direction.clone()
       if (effects) {
         effects.muzzleFlash(origin, firstDir)
         if (isMaxCharge && effects.maxChargeRings) {
@@ -428,10 +451,11 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           effects.smokeRing(origin, firstDir)
         }
       }
-      if (targetList.length > 0) {
-        triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: targetList.length, isMaxCharge, origin })
+      const shotsFired = targetList.length + (straightShot ? 1 : 0)
+      if (shotsFired > 0) {
+        triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: shotsFired, isMaxCharge, origin })
       }
-      return targetList.length
+      return shotsFired
     },
 
     // carta utilitária "giro rebatedor": projéteis inimigos dentro do raio, perto do jogador,

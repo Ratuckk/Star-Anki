@@ -151,3 +151,48 @@ a ~6.3 e estabiliza, batendo com a janela de subida da primeira metade) e
 `camera.position.distanceTo(pos)` (sobe de ~10.4 pra ~24.3 no pico da manobra e já começa a
 descer no frame seguinte ao fim — zoom-out e retorno confirmados). `forward.y` ficou fixo (~0.03)
 o tempo todo, confirmando que a direção de vôo real não arqueia mais — só o corpo da nave.
+
+---
+
+### QoL — mira do carregado por tamanho de alvo + fim do homing "fantasma" sem mira
+
+Início da implementação do `Docs/# QoL — Documento de Melhorias.md` (12 itens, proposta aguardando
+aprovação item a item — usuário aprovou começar pelos itens 1–3, ver pergunta feita antes de mexer
+em código). Descobri que o **item 1** (cutscene do chefe vermelho duplicada no Arcade) **já estava
+corrigido** de uma entrega anterior — `bossNoDeckScoreCheckpoint` já é setado no topo de
+`enterBossBuildup()` (`flow-boss.js:63`), antes de `finishBossHunt()`; confirmado também em
+`PROGRESSO_POS_.70.md` linha ~866. Nenhuma mudança necessária ali.
+
+**Item 2 — mira do tiro carregado escala com o tamanho do alvo.** `enemies/index.js` ganhou
+`getLockableRadius(entity)` (= `entity.radius ?? hitRadiusFor(entity)`) na API pública — cobre o
+caso do chefe, que não tinha `.radius` próprio e caía num fallback hardcoded de `5` em
+`lockon.js` (removido `BIG_TARGET_FALLBACK_RADIUS`). `getLockedEnemySnapshots()` agora devolve
+`sizeHint` (o raio real do alvo) em cada snapshot, usado tanto pro raio do anel de multi-lock
+quanto — via `game-loop.js` → `hud.setLockedEnemyMarkers` — pra escalar o marcador em si:
+`hud-game.js` mapeia `sizeHint` (1.3u a 7.7u, ímã→chefe) pra um tamanho em px (22–62px, clamp) via
+`--marker-size`, custom property lida pelo CSS do `.enemy-lock-marker`. **Achado**: o CSS desse
+marcador não mora em `hud-styles.js` (que o documento apontava) — vive em `index.html` (bloco de
+`<style>` inline perto da linha 930), então foi lá que a var `--marker-size` entrou.
+
+**Item 3 — tiro carregado não persegue mais alvo aleatório fora da mira.** `fireHomingShot` agora
+recebe `direction` (a mira atual) além de origin/maxTargets/isMaxCharge — todos os 3 call sites
+atualizados (`game-loop.js`, `debug-actions.js` no botão "Testar tiro teleguiado", `combat/index.js`
+como pass-through). Sem alvo travado, o fallback antigo ("N inimigos mais próximos no range",
+mesmo fora da mira) foi trocado por `lockon.getEnemiesInAimCone(origin, direction, maxCount)` (nova
+função, reaproveita o cone de `isAimingAtEnemy`) — só persegue quem está DENTRO do cone da mira.
+Se ninguém estiver no cone, dispara um tiro reto (mesmo visual do teleguiado — cone verde/azul —
+mas sem `homingTarget`, `velocity` fixa na direção mirada); esse projétil já se autodestrói pelo
+teto de `PROJECTILE_MAX_RANGE` como qualquer outro, sem precisar de lógica nova de limpeza.
+
+**Validação**: sem servidor de preview visível (pane escondida ⇒ `requestAnimationFrame` sofre
+throttle do browser, `fireHeldMs` não avançava em tempo real), troquei pra `window.__starAnki.step()`
+(stepper determinístico) + eventos de teclado sintéticos, e pra testar o pipeline de lock-on em si
+chamei `combat.sweepLockOn`/`getLockedEnemySnapshots`/`getLockableRadius`/`fireHomingShot`
+diretamente via `javascript_tool` (mais confiável que tentar mirar de verdade no inimigo certo às
+cegas). Confirmado: `getLockableRadius` devolve o raio certo por `kind` (ímã 1.43, blaster 2.28,
+horda 6.5, chefe 7.7, dourado usa o `.radius` próprio de 2.42 sem cair no fallback); `fireHomingShot`
+com trava ativa continua consumindo a trava normalmente (regressão limpa); sem trava e mirando reto
+num inimigo, persegue-o (path do cone); sem trava e mirando pro nada (longe de qualquer inimigo),
+dispara reto (`fired: 1`, sem `homingTarget`). `node --check` limpo em todos os arquivos tocados,
+`node src/selftest.mjs` OK. Itens 4–11 do documento ainda não implementados (ficam pro próximo
+pedido do usuário).

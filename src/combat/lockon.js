@@ -36,12 +36,6 @@ const PASS_BEHIND = -4
 // é o raio VISUAL onde os quadradinhos ficam distribuídos. Escolhido pra ficar perceptivelmente
 // dentro do corpo do chefe (raio de colisão 7) sem colar uns nos outros.
 const BIG_TARGET_RING_RADIUS = 4
-// raio de fallback quando a entidade não expõe um `radius` — chefe/dourado hoje não expõem,
-// então usamos os hit radius deles como referência (BOSS_HIT_RADIUS=7, GOLDEN_HIT_RADIUS=2.2).
-// Hardcoded aqui pra não criar dependência de lockon.js → enemies/*.js (uma seta que não
-// existiria em nenhum outro lugar do projeto). Se algum dia a entidade passar a expor
-// `radius`, o `?? ` já cobre.
-const BIG_TARGET_FALLBACK_RADIUS = 5
 
 function isBigLockTarget(e) {
   return e.kind === 'boss' || e.kind === 'golden'
@@ -129,6 +123,27 @@ export function createLockOnSystem(rail, enemies) {
       return false
     },
 
+    // QoL #3: usado pelo tiro carregado quando SOLTA sem nenhum alvo travado — decide se
+    // persegue algo (tem inimigo dentro do cone da mira, mesmo cone de isAimingAtEnemy acima)
+    // ou dispara reto (nenhum inimigo na direção mirada). Substitui o antigo fallback de
+    // "N inimigos mais próximos", que perseguia qualquer coisa no range mesmo fora da mira.
+    getEnemiesInAimCone(origin, direction, maxCount) {
+      const frame = rail.getFrameAt(0)
+      const targets = [...enemies.getAlive(), ...(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])]
+      const inCone = []
+      for (const e of targets) {
+        if (!e || e.dying || !e.mesh) continue
+        const rel = e.mesh.position.clone().sub(origin)
+        const dist = rel.length()
+        if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
+        const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(rel.normalize()), -1, 1))
+        if (angle >= AIM_HINT_ANGLE) continue
+        inCone.push({ entity: e, dist })
+      }
+      inCone.sort((a, b) => a.dist - b.dist)
+      return inCone.slice(0, Math.max(0, maxCount)).map((r) => r.entity)
+    },
+
     // consumido pelo tiro carregado ao soltar: devolve os alvos travados vivos e dentro de
     // `inRange`, e sempre limpa as travas em seguida (mesmo se vazio) — o "carregamento"
     // sempre reseta ao disparar. Importante: se o alvo grande recebeu N travas, devolve a
@@ -174,11 +189,15 @@ export function createLockOnSystem(rail, enemies) {
       for (const [entity, group] of byEntity) {
         group.sort((a, b) => a.seq - b.seq)
         entity.mesh.getWorldPosition(_tmpWorldPos)
+        // QoL #2: raio real do alvo (hit radius) — alimenta tanto o tamanho do marcador no HUD
+        // quanto o raio do anel de multi-lock abaixo, em vez de um fallback hardcoded que não
+        // sabia o tamanho de cada `kind`.
+        const sizeHint = enemies.getLockableRadius(entity)
 
         // trava única (o caso 99% das vezes — inimigo comum): marcador exatamente na âncora.
         // Sem offset, sem espalhamento, sem ruído.
         if (group.length === 1) {
-          result.push({ id: group[0].seq, worldPos: _tmpWorldPos.clone() })
+          result.push({ id: group[0].seq, worldPos: _tmpWorldPos.clone(), sizeHint })
           continue
         }
 
@@ -187,14 +206,11 @@ export function createLockOnSystem(rail, enemies) {
         // que o HUD tem mas o lockon não) — o plano XZ lê bem porque os alvos grandes são
         // vistos quase sempre de frente/longe, e um anel "deitado" ao redor deles parece
         // natural.
-        const radius = Math.min(
-          BIG_TARGET_RING_RADIUS,
-          entity.radius ?? BIG_TARGET_FALLBACK_RADIUS,
-        )
+        const radius = Math.min(BIG_TARGET_RING_RADIUS, sizeHint)
         for (let i = 0; i < group.length; i += 1) {
           const angle = (i / group.length) * Math.PI * 2
           _tmpOffset.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
-          result.push({ id: group[i].seq, worldPos: _tmpWorldPos.clone().add(_tmpOffset) })
+          result.push({ id: group[i].seq, worldPos: _tmpWorldPos.clone().add(_tmpOffset), sizeHint })
         }
       }
       return result

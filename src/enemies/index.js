@@ -444,7 +444,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         && shipPoints.some((pt) => pt.worldPos.distanceTo(enemy.mesh.position) <= hitRadius + pt.radius + ramExtra)
       if (isColliding) {
         hits += 1
-        if (enemy.kind === BOSS_KIND) {
+        // Arremesso por colisão física (Chefe/Dourado/Detrito): registra o ponto de impacto UMA
+        // VEZ por contato (thrownActive) pra que a nave seja arremessada pelo impulso — sem isso,
+        // contato prolongado reenviaria o evento a cada frame e reiniciaria o tumble antes do
+        // impulso fazer efeito (mesmo bug do teleporte, versão "tremelique no lugar"). O reset
+        // acontece no else (não-colidindo), então encostar de novo depois conta como novo arremesso.
+        if ((enemy.kind === BOSS_KIND || enemy.kind === DETRITO_KIND) && !enemy.thrownActive) {
+          enemy.thrownActive = true
           bossCollisionWorldPos = enemy.mesh.position.clone()
         }
         if (ramDamage > 0) {
@@ -499,6 +505,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       } else {
         enemy.ramHitActive = false
+        enemy.thrownActive = false
       }
 
       // ============ SPAWN EM 3 FASES (peek/materialize/settle) ============
@@ -1432,6 +1439,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut),
     getGoldenAlive: () => golden.getAlive(),
+    // raio "de trava" pro lock-on/HUD (QoL #2) — golden já expõe `.radius` próprio, o resto usa
+    // o mesmo hitRadius da colisão (hitRadiusFor), incluindo o chefe (que não tinha radius
+    // próprio e caía no fallback hardcoded de lockon.js antes desta função existir)
+    getLockableRadius: (entity) => entity.radius ?? hitRadiusFor(entity),
 
     removeProjectilesNear(position, radius) {
       const removed = []

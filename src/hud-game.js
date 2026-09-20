@@ -9,6 +9,19 @@ import { getSettings } from './settings.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
+// QoL #2: tamanho do marcador de lock-on escala com o hit radius (mundo) do alvo travado —
+// menor inimigo do jogo (ímã, ~1.3u) até o chefe (~7.7u). Clamp em px pra nunca ficar
+// minúsculo (mini-swarm) nem gigantesco a ponto de cobrir o HUD (chefe).
+const LOCK_MARKER_RADIUS_MIN = 1.3
+const LOCK_MARKER_RADIUS_MAX = 7.7
+const LOCK_MARKER_PX_MIN = 22
+const LOCK_MARKER_PX_MAX = 62
+function lockMarkerSizePx(sizeHint) {
+  if (sizeHint == null) return LOCK_MARKER_PX_MIN
+  const t = Math.max(0, Math.min(1, (sizeHint - LOCK_MARKER_RADIUS_MIN) / (LOCK_MARKER_RADIUS_MAX - LOCK_MARKER_RADIUS_MIN)))
+  return LOCK_MARKER_PX_MIN + t * (LOCK_MARKER_PX_MAX - LOCK_MARKER_PX_MIN)
+}
+
 // Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
 // de comportamento. `createGameHud` continua sendo uma closure única — todos os métodos abaixo
 // compartilham o mesmo `root`/pools de elementos, então não faz sentido dividir mais que isso
@@ -1824,6 +1837,7 @@ export function createGameHud() {
         }
         el.style.left = `${item.xFrac * 100}%`
         el.style.top = `${item.yFrac * 100}%`
+        el.style.setProperty('--marker-size', `${lockMarkerSizePx(item.sizeHint)}px`)
       }
       for (const [id, el] of lockMarkerPool) {
         if (!seen.has(id)) { el.remove(); lockMarkerPool.delete(id) }

@@ -221,7 +221,7 @@ export function createDebugActions(deps) {
       }
       rail.debugForceBank(1, 1000)
     },
-    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), player.config.homingMaxTargets),
+    fireHomingTest: () => combat.fireHomingShot(rail.getShipNosePosition(), rail.getFrameAt(0).forward, player.config.homingMaxTargets),
     toggleManualStep: () => {
       if (gameLoop) {
         const next = !gameLoop.isManualStepping()

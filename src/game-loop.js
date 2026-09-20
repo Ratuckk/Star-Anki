@@ -229,6 +229,7 @@ export function createGameLoop(deps) {
             id: s.id,
             xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
             yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
+            sizeHint: s.sizeHint,
           }
         })
         hud.setLockedEnemyMarkers(lockedBars)
@@ -242,7 +243,7 @@ export function createGameLoop(deps) {
       state.chargeLoopSignaled = false
       if (isCharging) {
         const isMaxCharge = state.fireHeldMs >= player.config.homingChargeMaxMs
-        combat.fireHomingShot(nosePos, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
+        combat.fireHomingShot(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
       }
       state.fireHeldMs = 0
       effects.setChargeGlow(false)
