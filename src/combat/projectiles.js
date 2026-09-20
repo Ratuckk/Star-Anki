@@ -107,15 +107,63 @@ const MAX_CHARGE_VISUAL_SCALE = 1.2
 const RICOCHET_NUDGE_DISTANCE = 3
 
 // ============ SWIRL BLAST — projétil perfurante (Docs/# Swirl Blast — Design & Plano de I.md) ============
-// Etapa 2 do plano (§8): só a mecânica de perfuração, com placeholder visual (cubo azul sólido).
-// O vórtice giratório de verdade (§4.1 do doc) entra na etapa 4 — não vale desenhar geometria
-// bonita antes da mecânica em si estar validada.
 const SWIRL_BLAST_SPEED = 520     // velocidade em u/s (~2x o tiro normal de 260) — requisito R5
 const SWIRL_BLAST_DAMAGE = 6      // dano por alvo atingido, sem falloff — requisito R4
 const SWIRL_BLAST_LIFETIME = 8    // segundos de vida (mesmo do tiro normal)
 const SWIRL_BLAST_MAX_RANGE = 700 // alcance máximo em u (mesmo do tiro normal)
-const swirlPlaceholderGeometry = new THREE.BoxGeometry(1.4, 1.4, 1.4)
-const swirlPlaceholderMaterial = new THREE.MeshBasicMaterial({ color: 0x2b8fff })
+const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado pra trás (§4.4)
+
+// --- Visual (§4.1 do doc) — Group de 4 camadas: core (silhueta do homing) + 3 anéis de vórtice
+// espalhados ao longo do comprimento + aura luminosa + glow na ponta. Gira em torno do próprio
+// eixo de voo (SWIRL_SPIN_RATE) — ver aplicação em update(), que reconstrói a orientação
+// (direção + spin acumulado) a cada frame, já que o quaternion genérico do projétil é
+// recalculado every frame só com a direção pura.
+const SWIRL_COLOR = 0x2b8fff          // azul — mesma família do tiro carregado máximo
+const SWIRL_SPIN_RATE = 18            // rad/s de giro em torno do próprio eixo de voo
+const SWIRL_CORE_RADIUS = 0.6
+const SWIRL_CORE_LENGTH = 3.6
+const SWIRL_RING_RADIUS = 0.75
+const SWIRL_RING_TUBE = 0.12
+const SWIRL_RING_OFFSETS = [-1.1, 0.0, 1.1] // posições Z dos 3 anéis ao longo do comprimento
+const SWIRL_AURA_RADIUS = 1.1
+const SWIRL_TIP_GLOW_RADIUS = 0.35
+
+const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 8)
+swirlCoreGeometry.rotateX(Math.PI / 2)
+const swirlCoreMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_COLOR, transparent: true, opacity: 0.95,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlRingGeometry = new THREE.TorusGeometry(SWIRL_RING_RADIUS, SWIRL_RING_TUBE, 8, 24)
+const swirlRingMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_COLOR, transparent: true, opacity: 0.85,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlAuraGeometry = new THREE.SphereGeometry(SWIRL_AURA_RADIUS, 14, 12)
+const swirlAuraMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_COLOR, transparent: true, opacity: 0.22,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlTipGlowGeometry = new THREE.SphereGeometry(SWIRL_TIP_GLOW_RADIUS, 10, 8)
+const swirlTipGlowMaterial = new THREE.MeshBasicMaterial({
+  color: 0xeaffff, transparent: true, opacity: 0.95,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+
+function buildSwirlBlastMesh() {
+  const group = new THREE.Group()
+  group.add(new THREE.Mesh(swirlCoreGeometry, swirlCoreMaterial))
+  for (const offsetZ of SWIRL_RING_OFFSETS) {
+    const ring = new THREE.Mesh(swirlRingGeometry, swirlRingMaterial)
+    ring.position.z = offsetZ
+    group.add(ring)
+  }
+  group.add(new THREE.Mesh(swirlAuraGeometry, swirlAuraMaterial))
+  const tip = new THREE.Mesh(swirlTipGlowGeometry, swirlTipGlowMaterial)
+  tip.position.z = SWIRL_CORE_LENGTH / 2
+  group.add(tip)
+  return group
+}
 
 const FRENZY_OFFSET_L = new THREE.Vector3(-0.8, 0, 0)
 const FRENZY_OFFSET_R = new THREE.Vector3(0.8, 0, 0)
@@ -259,6 +307,22 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _projDir)
       }
 
+      // Swirl Blast: giro em torno do próprio eixo de voo (§4.1). O quaternion acima é
+      // recalculado do zero TODO frame só com a direção — por isso o spin não pode ser um
+      // `rotation.z +=` direto (seria sobrescrito no frame seguinte); acumula o ÂNGULO num
+      // campo próprio do projétil e reaplica por cima da direção a cada frame.
+      if (projectile.isPiercing) {
+        projectile.spinAngle += SWIRL_SPIN_RATE * dt
+        projectile.mesh.rotateZ(projectile.spinAngle)
+        if (effects && effects.swirlAfterimage) {
+          projectile.afterimageTimer -= dt
+          if (projectile.afterimageTimer <= 0) {
+            projectile.afterimageTimer = SWIRL_AFTERIMAGE_INTERVAL
+            effects.swirlAfterimage(projectile.mesh.position, projectile.mesh.quaternion)
+          }
+        }
+      }
+
       if (projectile.isHoming && effects) {
         projectile.afterimageTimer -= dt
         if (projectile.afterimageTimer <= 0) {
@@ -315,8 +379,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             squadWipeBonus += (h.squadWipeBonus || 150)
           }
           // §3.2.3/§3.2.4 — chefe/dourado/fragata param o Swirl (com ou sem destruir escudo no
-          // caminho). effects.swirlBlastExplosion ainda não existe (etapa 5) — chamada opcional,
-          // vira efeito de verdade sem precisar tocar aqui de novo quando existir.
+          // caminho); explosão de impacto no ponto de parada.
           if (h.stopProjectile) {
             stopped = true
             if (effects && effects.swirlBlastExplosion) effects.swirlBlastExplosion(h.worldPos, _projDir)
@@ -520,16 +583,17 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       return shotsFired
     },
 
-    // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 2: mesh placeholder (cubo azul);
-    // sem flash/som próprio ainda (etapa 5/7) nem giro do mesh (etapa 4).
+    // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 5: flash de disparo próprio +
+    // trilha de afterimages (som/carta ficam pra etapa 7).
     fireSwirlBlast(origin, direction) {
-      const mesh = new THREE.Mesh(swirlPlaceholderGeometry, swirlPlaceholderMaterial)
+      const mesh = buildSwirlBlastMesh()
       mesh.position.copy(origin)
       mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
       scene.add(mesh)
+      if (effects && effects.swirlBlastFlash) effects.swirlBlastFlash(origin, direction)
       projectiles.push({
         mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
-        damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME,
+        damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME, spinAngle: 0, afterimageTimer: 0,
         isPiercing: true, piercedTargets: new Set(), goldenPiercedTargets: new Set(),
       })
       return true
@@ -572,8 +636,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       homingProjectileGeometry.dispose()
       homingProjectileMaterial.dispose()
       homingMaxChargeMaterial.dispose()
-      swirlPlaceholderGeometry.dispose()
-      swirlPlaceholderMaterial.dispose()
+      swirlCoreGeometry.dispose()
+      swirlCoreMaterial.dispose()
+      swirlRingGeometry.dispose()
+      swirlRingMaterial.dispose()
+      swirlAuraGeometry.dispose()
+      swirlAuraMaterial.dispose()
+      swirlTipGlowGeometry.dispose()
+      swirlTipGlowMaterial.dispose()
     },
   }
 }

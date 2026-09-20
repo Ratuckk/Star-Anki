@@ -185,6 +185,14 @@ const HOMING_EFFECT_COLOR = 0x2bff88
 const SMOKE_RING_DURATION = 0.5
 const HOMING_AFTERIMAGE_DURATION = 0.25
 
+// ============ SWIRL BLAST — flash, afterimage, explosão (Docs/# Swirl Blast) ============
+const SWIRL_COLOR = 0x2b8fff          // mesma cor de projectiles.js (SWIRL_COLOR) — duplicado de
+                                       // propósito, effects.js não importa cores de combat/
+const SWIRL_FLASH_DURATION = 0.28     // duração total do flash de disparo (dobro do muzzle flash normal)
+const SWIRL_FLASH_RING_SCALE = 3.0    // fator de crescimento do anel de choque (3x o muzzle flash normal)
+const SWIRL_AFTERIMAGE_DURATION = 0.5 // duração de cada fantasma na trilha
+const SWIRL_EXPLOSION_RADIUS = 2.5    // raio visual da explosão contra boss/escudo (dano é sempre 6 fixo)
+
 // ============ HIT SPARK ============
 const HIT_SPARK_PARTICLES = 6
 const HIT_SPARK_DURATION = 0.22
@@ -394,6 +402,7 @@ export function createEffectsSystem(scene, opts = {}) {
   const muzzleFlashes = []
   const smokeRings = []
   const homingAfterimages = []
+  const swirlAfterimages = []
   const hitSparks = []
   // Overhaul de spawn/despawn: arrays próprios (não reaproveitam hitSparks) porque a física é
   // diferente — partículas convergindo pro centro em vez de se espalhando, e SOFREM fog
@@ -763,6 +772,87 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.quaternion.copy(quaternion)
     scene.add(mesh)
     homingAfterimages.push({ mesh, life: 0 })
+  }
+
+  // ============ SWIRL BLAST — habilidade base (Docs/# Swirl Blast — Design & Plano de I.md) ============
+  // Etapa 5 (§4.3/§4.4/§3.2.3): flash de disparo distinto, trilha de afterimages, explosão de
+  // impacto contra chefe/dourado/fragata/escudo.
+
+  // Flash de disparo (§4.3) — reaproveita as MESMAS geometrias do muzzle flash do player (core +
+  // ring), só que com cor do Swirl e parâmetros próprios, empilhado no array `muzzleFlashes`
+  // (seu loop de update já é genérico: duração/growth/opacidade por instância, sem depender do
+  // player). `growth` negativo = encolhe em vez de crescer — é isso que dá o efeito de "sucção".
+  function swirlBlastFlash(position, direction) {
+    const normDir = direction.clone().normalize()
+
+    // 1 cone azul grande (silhueta do muzzle flash, escala 1.5x)
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: SWIRL_COLOR, transparent: true, opacity: 0.9,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const coreMesh = new THREE.Mesh(playerMuzzleCoreGeo, coreMat)
+    coreMesh.position.copy(position).addScaledVector(normDir, 0.35)
+    coreMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
+    scene.add(coreMesh)
+    muzzleFlashes.push({
+      mesh: coreMesh, life: 0, duration: SWIRL_FLASH_DURATION,
+      initialScale: 1.5, growth: 0.3, startOpacity: 0.9,
+    })
+
+    // 1 anel de choque expandindo perpendicular ao tiro, 3x maior e mais devagar que o normal
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: SWIRL_COLOR, transparent: true, opacity: 0.75,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const ringMesh = new THREE.Mesh(playerMuzzleRingGeo, ringMat)
+    ringMesh.position.copy(position).addScaledVector(normDir, 0.5)
+    ringMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
+    scene.add(ringMesh)
+    muzzleFlashes.push({
+      mesh: ringMesh, life: 0, duration: SWIRL_FLASH_DURATION,
+      initialScale: 1.0, growth: SWIRL_FLASH_RING_SCALE, startOpacity: 0.75,
+    })
+
+    // 2 anéis de sucção encolhendo pra dentro ("sugou o ar antes de disparar")
+    for (let i = 0; i < 2; i += 1) {
+      const suckMat = new THREE.MeshBasicMaterial({
+        color: SWIRL_COLOR, transparent: true, opacity: 0.6,
+        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      })
+      const suckMesh = new THREE.Mesh(playerMuzzleRingGeo, suckMat)
+      suckMesh.position.copy(position).addScaledVector(normDir, 0.5 + i * 0.4)
+      suckMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
+      const startScale = 1.6 + i * 0.5
+      suckMesh.scale.setScalar(startScale)
+      scene.add(suckMesh)
+      muzzleFlashes.push({
+        mesh: suckMesh, life: 0, duration: SWIRL_FLASH_DURATION,
+        initialScale: startScale, growth: -0.85, startOpacity: 0.6,
+      })
+    }
+  }
+
+  // Afterimage da trilha (§4.4) — cópia SÓ do core do projétil (sem os anéis de vórtice, senão
+  // vira sopa visual em alta frequência), reaproveitando o mesmo cone genérico do homing.
+  function swirlAfterimage(position, quaternion) {
+    const material = new THREE.MeshBasicMaterial({
+      color: SWIRL_COLOR, transparent: true, opacity: 0.5,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(sharedConeGeometry, material)
+    mesh.position.copy(position)
+    mesh.quaternion.copy(quaternion)
+    scene.add(mesh)
+    swirlAfterimages.push({ mesh, life: 0 })
+  }
+
+  // Explosão de impacto (§3.2.3) — só acontece contra chefe/dourado/fragata/escudo (regra de
+  // negócio mora em combat/projectiles.js, essa função só desenha). Composta a partir dos
+  // primitivos já existentes (mesmo princípio de `maxChargeReady`) em vez de um sistema visual
+  // novo do zero: burst com anéis + um shockwave extra maior, cor do Swirl.
+  function swirlBlastExplosion(position) {
+    explosion(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS, { rings: true })
+    shockwave(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS * 1.3)
   }
 
   // ============ NOVOS EFEITOS ============
@@ -1688,6 +1778,19 @@ export function createEffectsSystem(scene, opts = {}) {
       a.mesh.scale.setScalar(1 - t * 0.4)
     }
 
+    // Swirl Blast — mesma ideia do loop de cima, timing/escala próprios (§4.4: 1.0 → 0.85)
+    for (let i = swirlAfterimages.length - 1; i >= 0; i--) {
+      const a = swirlAfterimages[i]
+      a.life += dt
+      const t = a.life / SWIRL_AFTERIMAGE_DURATION
+      if (t >= 1) {
+        scene.remove(a.mesh); a.mesh.material.dispose()
+        swirlAfterimages.splice(i, 1); continue
+      }
+      a.mesh.material.opacity = 0.5 * (1 - t)
+      a.mesh.scale.setScalar(1 - t * 0.15)
+    }
+
     // PROJECTILE TRAILS (tiros normais)
     for (let i = projectileTrails.length - 1; i >= 0; i--) {
       const p = projectileTrails[i]
@@ -1972,6 +2075,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (const m of muzzleFlashes) { scene.remove(m.mesh); m.mesh.material.dispose() }
     for (const s of smokeRings) { scene.remove(s.mesh); s.mesh.material.dispose() }
     for (const a of homingAfterimages) { scene.remove(a.mesh); a.mesh.material.dispose() }
+    for (const a of swirlAfterimages) { scene.remove(a.mesh); a.mesh.material.dispose() }
     for (const p of projectileTrails) { scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose() }
     for (const s of shockwaves) { scene.remove(s.mesh); s.mesh.material.dispose() }
     for (const s of bossImpactRings) { scene.remove(s.mesh); s.mesh.material.dispose() }
@@ -2028,6 +2132,7 @@ export function createEffectsSystem(scene, opts = {}) {
     getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
     getHealOrbesCollected: () => healOrbesCollectedThisFrame,
     setChargeGlow, smokeRing, homingAfterimage,
+    swirlBlastFlash, swirlAfterimage, swirlBlastExplosion,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,

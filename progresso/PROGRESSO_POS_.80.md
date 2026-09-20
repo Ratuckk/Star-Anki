@@ -336,3 +336,54 @@ o service worker do harness de preview, já visto em entregas anteriores, sem re
 
 Faltam etapas 4 (visual do vórtice), 5 (flash/afterimage/explosão de verdade), 6 (slow-mo/FOV/
 speedlines) e 7 (carta "Vínculo: Swirl Blast" + Sound Cue).
+
+---
+
+### Swirl Blast — Etapa 4 (visual do vórtice de verdade)
+
+Usuário pediu pra fechar todas as etapas restantes antes de ir pro próximo documento — sem
+checkpoint de aprovação entre elas a partir daqui, só validação técnica normal.
+
+- `combat/projectiles.js`: placeholder do cubo saiu, entrou o Group de 4 camadas do §4.1 —
+  `buildSwirlBlastMesh()` monta core (`ConeGeometry` 0.6×3.6, mesma silhueta do homing) + 3 anéis
+  de vórtice (`TorusGeometry`, posições Z `[-1.1, 0, 1.1]`) + aura (`SphereGeometry` 1.1,
+  opacidade baixa) + glow na ponta dianteira (esfera pequena e brilhante em Z = metade do
+  comprimento do core). Todas as constantes visuais do §7 (`SWIRL_SPIN_RATE`, `SWIRL_CORE_*`,
+  `SWIRL_RING_*`, `SWIRL_AURA_RADIUS`, `SWIRL_TIP_GLOW_RADIUS`) adicionadas no topo do arquivo.
+- **Achado técnico sobre o giro**: `mesh.rotation.z += SWIRL_SPIN_RATE * dt` direto NÃO funciona
+  aqui — o `quaternion` do projétil é recalculado do ZERO todo frame só com a direção de voo
+  (`setFromUnitVectors`), então um incremento direto de rotação seria sobrescrito no frame
+  seguinte. Solução: acumular o ângulo total num campo próprio (`projectile.spinAngle`) e
+  reaplicar via `mesh.rotateZ(spinAngle)` (rotação LOCAL relativa, não sobrescreve o quaternion)
+  depois que a direção já foi setada — assim o giro cumulativo fica visível corretamente a cada
+  frame em cima da direção sempre correta.
+- Validado visualmente: reposicionando o mesh manualmente perto da câmera via
+  `window.__starAnki`, dá pra ver claramente os anéis concêntricos brilhantes se espalhando com
+  um núcleo branco na ponta — leitura de "vórtice"/"portal" batendo com a intenção do design.
+  Regressão da mecânica de perfuração (4 blasters alinhados) continua passando com o novo mesh.
+
+---
+
+### Swirl Blast — Etapa 5 (flash de disparo, trilha de afterimages, explosão de impacto)
+
+- `effects.js`: 3 funções novas — `swirlBlastFlash(position, direction)` reaproveita as MESMAS
+  geometrias do muzzle flash do player (core + ring), empilhadas no array genérico
+  `muzzleFlashes` (cujo loop de update já interpola duração/escala/opacidade por instância) —
+  `growth` negativo nos 2 "anéis de sucção" faz eles ENCOLHEREM em vez de crescer, dando o efeito
+  de "sugou o ar antes de disparar" sem precisar de um sistema de animação novo.
+  `swirlAfterimage(position, quaternion)` segue o mesmo molde de `homingAfterimage` (array
+  `swirlAfterimages` novo, só pra não misturar timing/escala com o homing). `swirlBlastExplosion`
+  é só composição dos primitivos que já existem (`explosion` + `shockwave`, mesmo princípio de
+  `maxChargeReady`) — não precisou de sistema visual dedicado.
+- `combat/projectiles.js`: `fireSwirlBlast` chama `effects.swirlBlastFlash` no disparo; o branch
+  `isPiercing` do `update()` spawna um afterimage a cada `SWIRL_AFTERIMAGE_INTERVAL` (0.03s); a
+  chamada a `effects.swirlBlastExplosion` no `stopProjectile` (já cabeada na etapa 3) agora
+  produz efeito de verdade em vez de ser um no-op.
+- Todas as chamadas de effects usam `effects && effects.xxx` como guarda — nenhuma trava se um
+  dia `effects` vier `null` (mesmo padrão do resto do arquivo).
+
+**Validação**: disparo contra um chefe posicionado manualmente — chefe leva 6 de dano, projétil
+some (explosão disparou sem erro). Disparo isolado perto da câmera confirmou visualmente o flash
+(anel azul grande expandindo + núcleo brilhante) e a trilha de afterimages atrás do projétil em
+voo. Regressão da perfuração (4 blasters) continua passando. Sem erros de console (só o service
+worker do harness).
