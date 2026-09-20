@@ -113,20 +113,33 @@ const SWIRL_BLAST_LIFETIME = 8    // segundos de vida (mesmo do tiro normal)
 const SWIRL_BLAST_MAX_RANGE = 700 // alcance máximo em u (mesmo do tiro normal)
 const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado pra trás (§4.4)
 
-// --- Visual (§4.1 do doc) — Group de 4 camadas: core (silhueta do homing) + 3 anéis de vórtice
+// --- Visual (§4.1 do doc) — Group de 4 camadas: core (silhueta do homing) + anéis de vórtice
 // espalhados ao longo do comprimento + aura luminosa + glow na ponta. Gira em torno do próprio
 // eixo de voo (SWIRL_SPIN_RATE) — ver aplicação em update(), que reconstrói a orientação
 // (direção + spin acumulado) a cada frame, já que o quaternion genérico do projétil é
 // recalculado every frame só com a direção pura.
+// RECALIBRADO — bug reportado pelo usuário: "o disparo é basicamente invisível". Causa raiz: as
+// geometrias originais eram do MESMO tamanho do tiro normal (core 0.6×3.6 vs. halo do tiro
+// normal 0.46×3.3), então o Swirl lia como "um tiro azul normal" em vez de super ataque.
+// Referências de escala do jogo: nave do jogador = 3.4 de comprimento; tiro carregado = 0.53×3.36.
+// O assembly abaixo tem comprimento ~7.5 (2.2× a nave) e aura com diâmetro ~5.2 (maior que a
+// envergadura da nave) — leitura inconfundível de "super ataque" mesmo a 520 u/s.
 const SWIRL_COLOR = 0x2b8fff          // azul — mesma família do tiro carregado máximo
 const SWIRL_SPIN_RATE = 18            // rad/s de giro em torno do próprio eixo de voo
-const SWIRL_CORE_RADIUS = 0.6
-const SWIRL_CORE_LENGTH = 3.6
-const SWIRL_RING_RADIUS = 0.75
-const SWIRL_RING_TUBE = 0.12
-const SWIRL_RING_OFFSETS = [-1.1, 0.0, 1.1] // posições Z dos 3 anéis ao longo do comprimento
-const SWIRL_AURA_RADIUS = 1.1
-const SWIRL_TIP_GLOW_RADIUS = 0.35
+const SWIRL_CORE_RADIUS = 0.9         // era 0.6 — ~2× o tiro normal
+const SWIRL_CORE_LENGTH = 7.5         // era 3.6 — ~2.2× o comprimento da nave do jogador
+const SWIRL_RING_RADIUS = 1.6         // era 0.75 — anéis de vórtice bem mais gordos
+const SWIRL_RING_TUBE = 0.3           // era 0.12 — tubo do toro mais espesso, visível a distância
+// 4 anéis (era 3) com escala crescente da frente pra trás — desenha um funil/parafuso que vende
+// a leitura de vórtice, não uma fileira de anéis idênticos.
+const SWIRL_RING_SPECS = [
+  { z: -2.8, scale: 0.75 },
+  { z: -0.9, scale: 1.00 },
+  { z: 1.0, scale: 1.15 },
+  { z: 2.9, scale: 1.30 },
+]
+const SWIRL_AURA_RADIUS = 2.6         // era 1.1 — diâmetro ~5.2, maior que a envergadura da nave
+const SWIRL_TIP_GLOW_RADIUS = 1.0     // era 0.35 — punch de luz no bico 3× maior
 
 const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 8)
 swirlCoreGeometry.rotateX(Math.PI / 2)
@@ -153,9 +166,10 @@ const swirlTipGlowMaterial = new THREE.MeshBasicMaterial({
 function buildSwirlBlastMesh() {
   const group = new THREE.Group()
   group.add(new THREE.Mesh(swirlCoreGeometry, swirlCoreMaterial))
-  for (const offsetZ of SWIRL_RING_OFFSETS) {
+  for (const spec of SWIRL_RING_SPECS) {
     const ring = new THREE.Mesh(swirlRingGeometry, swirlRingMaterial)
-    ring.position.z = offsetZ
+    ring.position.z = spec.z
+    ring.scale.setScalar(spec.scale)
     group.add(ring)
   }
   group.add(new THREE.Mesh(swirlAuraGeometry, swirlAuraMaterial))

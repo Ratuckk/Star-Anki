@@ -20,7 +20,7 @@ export const HORDA_KIND = 'horda'
 export const HORDA_HIT_RADIUS = 6.5
 // Maior que o padrão (~0.2-0.3s) por ela ser bem maior — valor não especificado explicitamente,
 // escolhido por analogia (Fragata usa 0.3, ela é a segunda maior depois do Chefe).
-export const HORDA_DEATH_DURATION = 0.35
+export const HORDA_DEATH_DURATION = 0.95
 export const HORDA_KILL_BONUS = 200
 // Cor de identidade (cinza) — usada no telegraph E no tingimento da explosão de morte, mesmo
 // dispatch genérico de colorFor() que todo outro inimigo usa. NÃO é a cor do projétil (vermelho,
@@ -37,8 +37,8 @@ const HORDA_PROJECTILE_COLOR = 0xff3b30
 // Um pouco mais lenta que o projétil real mais rápido do jogo hoje (Ampulheta-mega, 50u/s) —
 // lasers telegrafados do Chefe/Dourado (500-600u/s) não contam, são hitscan/quase-instantâneos,
 // não "projéteis que dá pra esquivar".
-const HORDA_PROJECTILE_SPEED = 46
-const HORDA_PROJECTILE_HIT_RADIUS = 2.6
+const HORDA_PROJECTILE_SPEED =60
+const HORDA_PROJECTILE_HIT_RADIUS = 4
 const HORDA_PROJECTILE_MAX_RANGE = 160
 
 const HORDA_HP_BASE = 15
@@ -55,10 +55,10 @@ const HORDA_SPLIT_COUNT_PER_LEVEL = 1
 // mais rápido"). Telegraph visual antes de cada tiro já é genérico (ver "referência visual na
 // preparação do disparo" em enemies/index.js, bloco de telegraph a 0.3s do fireTimer zerar —
 // já cobre qualquer enemy.kind, Horda incluída, nenhuma mudança nova precisou ali).
-export const HORDA_FIRE_INTERVAL_MS = 2100 // fixo, mas ainda dividido por enemyAggression (ver index.js)
+export const HORDA_FIRE_INTERVAL_MS = 1200 // fixo, mas ainda dividido por enemyAggression (ver index.js)
 export const HORDA_SHOTS_BEFORE_LEAVE = 6
 
-const HORDA_ORBIT_RADIUS = 12
+const HORDA_ORBIT_RADIUS = 8
 const HORDA_ORBIT_ANGULAR_SPEED = 0.35
 // CORRIGIDO — 80/45 deixava ela um ponto quase invisível na tela o tempo todo (some da
 // percepção do jogador mesmo depois de aumentar o tamanho). Ainda "relativamente longe" (mais
@@ -74,8 +74,8 @@ export const HORDA_TURBULENCE_DURATION = 0.6 // "chacoalha" ao levar tiro sem mo
 const HORDA_TURBULENCE_MAGNITUDE = 1.2 // CORRIGIDO — proporcional ao novo tamanho (era 0.35, imperceptível num corpo de raio 6.5)
 
 // CORRIGIDO — alinhado ao novo HORDA_STANDOFF_FAR (era 75-85, herdado do standoff antigo de 80).
-const HORDA_SPAWN_DISTANCE_MIN = 45
-const HORDA_SPAWN_DISTANCE_MAX = 55
+const HORDA_SPAWN_DISTANCE_MIN = 85
+const HORDA_SPAWN_DISTANCE_MAX = 135
 const HORDA_BOX_X = 6
 const HORDA_BOX_Y = 4
 

@@ -573,3 +573,43 @@ reaproveitada do trabalho do Swirl Blast: blaster comum não é bom alvo de test
 recalcula posição toda hora (teleporta), por isso usei Tank (estacionário) pros dois cenários.
 
 Sem erros de console em nenhum teste (item 4 ou 5).
+
+---
+
+### v0.88.0 — Swirl Blast: escala visual recalibrada (super ataque "invisível")
+
+Bug reportado pelo usuário: o disparo do Swirl Blast era basicamente invisível — as geometrias
+originais (etapa 1-7, ver acima) tinham o MESMO tamanho do tiro normal (core 0.6×3.6 vs. halo do
+tiro normal 0.46×3.3), o flash reusava `playerMuzzleCoreGeo`/`playerMuzzleRingGeo` (as geometrias
+TINY do muzzle flash comum) e o afterimage reusava `sharedConeGeometry` (0.5×2.5, a mesma do
+rastro do homing). Nenhum dos três lia como "super ataque".
+
+- `combat/projectiles.js`: core 0.6×3.6 → **0.9×7.5** (~2.2× o comprimento da nave do jogador);
+  aura 1.1 → **2.6** (diâmetro maior que a envergadura da nave); anéis 0.75 → **1.6** de raio, 3
+  anéis idênticos viraram `SWIRL_RING_SPECS` (4 anéis com escala crescente 0.75→1.30, desenha um
+  funil que vende a leitura de vórtice de verdade); glow da ponta 0.35 → **1.0**.
+- `effects.js`: flash de disparo ganhou geometrias PRÓPRIAS (`swirlFlashConeGeo` 1.3×5.0,
+  `swirlFlashRingGeo` raio 0.9-1.9) em vez de reusar as do muzzle flash comum — cone maior que o
+  tiro normal inteiro, mais um 2º anel branco e bloom de "instante zero"; afterimage ganhou
+  `swirlAfterimageCoreGeo` (0.75×6.5) em vez do cone compartilhado minúsculo; explosão de impacto
+  (contra chefe/dourado/fragata/escudo) 2.5 → **4.5** de raio + shockwave branco extra.
+- Não mexi em velocidade/dano/cooldown/hitbox — só escala visual. Ajustes finos de tuning que o
+  doc original já deixava pra depois do playtest (FOV/slow-mo, "aura gorda perto de alvo pequeno")
+  continuam pendentes, não fazem parte deste fix.
+
+Verificação: `node --check` nos dois arquivos + carregamento do jogo sem erro de console (não deu
+pra chegar num disparo real de Swirl Blast via automação nesta sessão — precisa de progressão de
+gameplay real; validação visual em playtest fica pendente pro usuário confirmar).
+
+**Balanceamento adicional neste commit** (Horda, Sentinela, cambalhota do trilho) — tuning feito
+mais cedo nesta sessão, cada mudança já documentada inline no próprio código:
+- `enemies/horda.js`: `HORDA_DEATH_DURATION` 0.35→0.95, projétil mais rápido/maior (46→60 u/s,
+  raio 2.6→4), `HORDA_FIRE_INTERVAL_MS` 2100→1200, órbita 12→8, spawn 45-55→85-135.
+- `enemies/sentinela.js`: HP 10→14, `LATERAL_TRACK_RATE` 7→0.2, 4→6 tiros, moldura mais fina e
+  mais lenta (`GATE_BORDER_MIN`/`GATE_SPEED`), dano da moldura 1→2 (escudo 1→4), spawn/leave mais
+  distantes.
+- `rail.js`: cambalhota (`summersault`) ganhou arco vertical real (`SUMMERSAULT_ARC_HEIGHT`) em
+  vez de só girar o yaw no lugar — bug reportado como "in-game ela só troca de lado"; arremesso por
+  colisão (`startTumble`) parou de teleportar a nave (removido `arenaPos.addScaledVector(...,16)`/
+  `playerX + pushX` instantâneo) e passou a só setar velocidade (`tumbleKnockbackVel`/novo
+  `railThrowVel`), integrada frame a frame com decaimento exponencial lento.

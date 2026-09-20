@@ -29,21 +29,12 @@ const STAR_FLATTEN = 0.55
 const STAR_SIZE = 1.0
 
 // ============ EXPLOSION ============
-// pedido do usuário: "volte atrás" pras partículas pequenas (a v0.32.1 tinha trocado isso por
-// anéis colados na câmera, "círculos feios estranhos" — não era o pedido) — de volta ao burst
-// de partículas pequenas voando pra fora, só que agora com textura circular de verdade
-// (softCircleTexture, já usada nos wisps de neblina) no lugar de PointsMaterial sem `map`, que
-// é o que fazia cada partícula renderizar como quadrado sólido antes.
 const EXPLOSION_PARTICLES = 26
 const EXPLOSION_DURATION = 0.75
 const EXPLOSION_SPEED_MIN = 14
 const EXPLOSION_SPEED_MAX = 28
 const EXPLOSION_PARTICLE_SIZE = 0.9
 
-// pedido do usuário: além das partículas, explosão de INIMIGO morrendo (não dano na nave, não
-// burst de propulsão) ganha 1-2 argolas grandes CINZAS, tamanho aleatório, em ângulo 3D
-// aleatório fixo (não coladas na câmera — de propósito, pra lerem como destroço de verdade
-// visto de lado, não um círculo plano sempre de frente).
 const EXPLOSION_GRAY_RING_COUNT_MIN = 1
 const EXPLOSION_GRAY_RING_COUNT_MAX = 3
 const EXPLOSION_GRAY_RING_COLOR = 0x999999
@@ -51,25 +42,34 @@ const EXPLOSION_GRAY_RING_DURATION = 0.75
 const EXPLOSION_GRAY_RING_SCALE_MIN = 2.8
 const EXPLOSION_GRAY_RING_SCALE_MAX = 5.8
 const EXPLOSION_GRAY_RING_START_SCALE = 0.3
-// pedido do usuário: nem toda morte solta as argolas — chance de 45% (chefe: 80%, opts.isBoss)
-// em vez de sempre; e a argola em si passa a ser visível só de um lado (FrontSide) em vez dos
-// 2 lados do plano (DoubleSide, o padrão de makeRingMesh — só as cinzas mudam, os outros usos
-// de makeRingMesh continuam DoubleSide)
 const EXPLOSION_GRAY_RING_CHANCE_NORMAL = 0.45
 const EXPLOSION_GRAY_RING_CHANCE_BOSS = 0.85
 
-// ============ MUZZLE FLASH ============
-const MUZZLE_DURATION = 0.07
+// ============ MUZZLE FLASH (overhaul v0.85.x) ============
+// Efeito em 4 camadas brancas pra ler como "descarga de energia": núcleo rápido (estalo),
+// halo (brilho residual), anel de choque perpendicular ao tiro (empurrou o ar) e fagulhas
+// (cinético). A soma aditiva no centro satura em branco puro — a leitura de "potência máxima"
+// que faltava no cone único azul de antes.
+//
+// Durações escalonadas (núcleo some antes do halo, fagulhas duram mais que tudo) porque é o
+// ESCALONAMENTO que faz parecer flash de verdade — se todas as camadas durassem o mesmo tempo,
+// o efeito lia como uma bolha crescendo e sumindo, não como um disparo.
+const MUZZLE_CORE_DURATION = 0.05
+const MUZZLE_HALO_DURATION = 0.13
+const MUZZLE_RING_DURATION = 0.10
+const MUZZLE_SPARK_DURATION = 0.16
+// Quantas fagulhas por disparo, leque angular (rad) e velocidade de voo — 4 com ±20° é o ponto
+// onde o efeito lê como "cuspida" sem virar chuva de partículas.
+const MUZZLE_SPARK_COUNT = 4
+const MUZZLE_SPARK_SPREAD = 0.35
+const MUZZLE_SPARK_SPEED = 22
+// Mantido só pro flare dos inimigos (enemyMuzzleFlare) — o muzzle do jogador não usa mais este
+// valor, cada camada tem sua própria duração acima.
+const MUZZLE_DURATION = 0.11
 
 // ============ CHARGE GLOW ============
 const CHARGE_GLOW_AHEAD = 2.2
-// v0.29.6: verde-lima em 4 camadas concêntricas em vez de 1 esfera azul — cada camada tem seu
-// próprio tamanho/opacidade min-max, interpolados pela fração de carga. SÃO a referência visual
-// de quanto falta carregar agora (a barra de carga no HUD foi removida).
 const CHARGE_GLOW_COLOR = 0xaaff33
-// pedido do usuário: o brilho de carga fica AZUL ao atingir 100% — mesmo azul do tiro disparado
-// nessa condição (ver homingMaxChargeMaterial em combat/projectiles.js), pra virar um aviso
-// visual único e consistente de "esse tiro vai causar dano em área".
 const CHARGE_GLOW_MAX_COLOR = 0x2b8fff
 const CHARGE_GLOW_LAYERS = [
   { scaleMin: 0.30, scaleMax: 0.85, opacityMin: 0.85, opacityMax: 0.40 },
@@ -77,24 +77,11 @@ const CHARGE_GLOW_LAYERS = [
   { scaleMin: 0.85, scaleMax: 1.80, opacityMin: 0.32, opacityMax: 0.18 },
   { scaleMin: 1.20, scaleMax: 2.40, opacityMin: 0.18, opacityMax: 0.10 },
 ]
-// pedido do usuário (correção de um item já entregue antes): cada camada deve SURGIR em
-// intervalos ao longo da carga em vez de todas aparecerem juntas desde o início — com 4
-// camadas, o threshold de revelação é `i / n` (0, 0.25, 0.5, 0.75), ou seja, ~0s, ~0.75s,
-// ~1.5s e ~2.25s de carga (a janela total de carga é de 3s, ver homingChargeMaxMs −
-// homingChargeMinMs em player.js). Cada camada cresce daí até o tamanho máximo, todas
-// convergindo junto em f=1. Também pedido: pulso "vivo" e -30% de opacidade.
-//
-// (comentário anterior dizia "0s, 1s, 2s, 3s" — mentia em relação ao código: `threshold = i / n`
-// divide a janela em partes IGUAIS entre as camadas, não em passos de 1s.)
-const CHARGE_GLOW_PULSE_RATE = 6 // rad/s
+const CHARGE_GLOW_PULSE_RATE = 6
 const CHARGE_GLOW_PULSE_AMOUNT = 0.12
-const CHARGE_GLOW_OPACITY_MULT = 0.7 // -30%
+const CHARGE_GLOW_OPACITY_MULT = 0.7
 
 // ============ ENGINE FLAME (Fase 7) ============
-// pedido: "o efeito visual de propulsar de movimento normal deve ser apenas uma animação única
-// de fogo azul constante ao invés de vários círculos" — substitui o antigo spawn de esferas
-// por intervalo (ENGINE_TRAIL_*/cauda-cometa) por UM único mesh persistente (chama), que só
-// muda de tamanho/cor/intensidade conforme o boost, em vez de multiplicar cópias.
 const ENGINE_FLAME_COLOR = 0x4db8ff
 const ENGINE_FLAME_BOOST_COLOR = 0x1f6bff
 const ENGINE_FLAME_LENGTH = 1.5
@@ -103,22 +90,14 @@ const ENGINE_FLAME_RADIUS = 0.34
 const ENGINE_FLAME_BOOST_RADIUS = 0.55
 const ENGINE_FLAME_OPACITY = 0.55
 const ENGINE_FLAME_BOOST_OPACITY = 0.85
-const ENGINE_FLAME_FLICKER_RATE = 16 // rad/s da oscilação de tamanho ("fogo vivo", sem ser vários círculos)
+const ENGINE_FLAME_FLICKER_RATE = 16
 const ENGINE_FLAME_FLICKER_AMOUNT = 0.12
 
 // ============ PROPULSION BURST (Fase 7) ============
-// "explosão azul em formato de fogo" no instante em que a propulsão é ativada — some com o
-// mesmo padrão de bloomSprite/explosion já usados no resto do jogo, só com cor/forma de chama.
 const PROPULSION_BURST_COLOR = 0x2f8bff
 const PROPULSION_BURST_DURATION = 0.35
 
 // ============ IMPULSO ARÍETE (item 12) ============
-// pedido do usuário: o impulso ariete (carta "propulsion-ram") não tinha NENHUM efeito visual
-// pra indicar que está ativo — verifiquei o código, o dano de verdade acontece (ramDamage
-// repassado até enemies.js), só faltava feedback. "Aquele efeito antigo de escudo circular
-// azul" é a bolha de escudo (shieldBubble) que existiu em fases antigas e foi removida —
-// reconstruída aqui só pro ram (não mais ligada ao escudo normal), e "mais angular" vira um
-// icosaedro wireframe (facetado) em vez da esfera-grade original.
 const RAM_SHIELD_COLOR = 0x4da6ff
 const RAM_SHIELD_RADIUS = 2.0
 const RAM_SHIELD_SPIN_X = 0.8
@@ -131,21 +110,13 @@ const RAM_AFTERIMAGE_INTERVAL = 0.05
 const RAM_AFTERIMAGE_DURATION = 0.35
 const RAM_AFTERIMAGE_COLOR = 0x4da6ff
 
-// ============ GIRO REBATEDOR (carta roguelike "deflect", item 6) ============
-// pedido do usuário: "invoque argolas azuis quando realiza o movimento junto de um afterimage
-// azul pra indicar o efeito" — burst único (não contínuo, o giro em si é instantâneo) disparado
-// só quando a carta deflect está ativa E o giro completo acontece de verdade.
+// ============ GIRO REBATEDOR ============
 const DEFLECT_RING_COLOR = 0x4da6ff
 const DEFLECT_RING_COUNT = 3
 const DEFLECT_RING_STAGGER = 0.06
 const DEFLECT_RING_DURATION = 0.45
 
-// ============ AFTERIMAGE DO ROLAMENTO (item 3) ============
-// pedido do usuário: "não faça mais a nave piscar quando realiza o rolamento e dê a ela um
-// efeito de afterimage" — o flicker de invencibilidade é compartilhado com dano/ram (mesmo
-// invincibleTimer em player.js), então main.js usa um timer PARALELO (rollIframeTimer) só pra
-// saber que a invencibilidade atual é do giro completo, suprime o flicker nessa janela e passa
-// rollActive=true aqui em vez disso.
+// ============ AFTERIMAGE DO ROLAMENTO ============
 const ROLL_AFTERIMAGE_INTERVAL = 0.04
 const ROLL_AFTERIMAGE_DURATION = 0.3
 
@@ -166,20 +137,14 @@ const RICOCHET_SPARK_COLOR = 0xffd166 // branca-amarelada — contrasta com o ti
 const RICOCHET_SPARK_DURATION = 0.35
 const RICOCHET_SPARK_DECAY_RATE = 6 // decaimento exponencial da velocidade — "rápido" por pedido do doc
 
-// ============ TRAIL DE PROPULSÃO (item 12, restaurado) ============
-// pedido do usuário: de volta o rastro tipo cometa que existia antes da Fase 7 (removido junto
-// com o sistema antigo de partículas do motor), mas agora só aparece durante o IMPULSO em si —
-// a chama única (engineFlame, sempre visível) continua cobrindo o voo normal.
+// ============ TRAIL DE PROPULSÃO ============
 const BOOST_TRAIL_INTERVAL = 0.05
 const BOOST_TRAIL_DURATION = 0.9
 const BOOST_TRAIL_SPEED = 14
 const BOOST_TRAIL_COLOR = 0xffa64d
 const BOOST_TRAIL_OPACITY = 0.5
 
-// ============ FOG WISPS (Fase 7 / item antigo do Fase C) ============
-// "asset/efeito que deixe a neblina reconhecível como neblina" — antes só o FogExp2 (sem
-// nenhuma pista visual direta). Nuvens grandes, suaves e esparsas, no mesmo padrão de volume
-// fixo em espaço-mundo da poeira ambiente (o jogador atravessa, não persegue a câmera).
+// ============ FOG WISPS ============
 const FOG_WISP_COUNT = 85
 const FOG_WISP_SIZE_MIN = 5.0
 const FOG_WISP_SIZE_MAX = 12.0
@@ -197,12 +162,18 @@ const SMOKE_RING_DURATION = 0.5
 const HOMING_AFTERIMAGE_DURATION = 0.25
 
 // ============ SWIRL BLAST — flash, afterimage, explosão (Docs/# Swirl Blast) ============
+// RECALIBRADO — bug reportado pelo usuário: "o disparo é basicamente invisível". Causa raiz: o
+// flash reaproveitava `playerMuzzleCoreGeo`/`playerMuzzleRingGeo` (as geometrias TINY do muzzle
+// flash normal) e o afterimage reaproveitava `sharedConeGeometry` (0.5×2.5, mesma do rastro do
+// homing) — então o Swirl lia como um tiro azul comum. Agora tem geometrias PRÓPRIAS, grandes
+// (ver bloco abaixo), anexadas ao mesmo array `muzzleFlashes` (já genérico o bastante pra
+// suportar duração/growth/opacidade por instância — nenhum código de update precisou mudar).
 const SWIRL_COLOR = 0x2b8fff          // mesma cor de projectiles.js (SWIRL_COLOR) — duplicado de
                                        // propósito, effects.js não importa cores de combat/
-const SWIRL_FLASH_DURATION = 0.28     // duração total do flash de disparo (dobro do muzzle flash normal)
-const SWIRL_FLASH_RING_SCALE = 3.0    // fator de crescimento do anel de choque (3x o muzzle flash normal)
-const SWIRL_AFTERIMAGE_DURATION = 0.5 // duração de cada fantasma na trilha
-const SWIRL_EXPLOSION_RADIUS = 2.5    // raio visual da explosão contra boss/escudo (dano é sempre 6 fixo)
+const SWIRL_FLASH_DURATION = 0.45     // era 0.28 — mais tempo visível, é super ataque
+const SWIRL_FLASH_RING_SCALE = 4.5    // era 3.0 — fator de crescimento do anel de choque principal
+const SWIRL_AFTERIMAGE_DURATION = 0.55 // era 0.5
+const SWIRL_EXPLOSION_RADIUS = 4.5    // era 2.5 — impacto contra boss/escudo agora é uma explosão ÉPICA (dano é sempre 6 fixo)
 
 // ============ HIT SPARK ============
 const HIT_SPARK_PARTICLES = 6
@@ -212,7 +183,7 @@ const HIT_SPARK_SPEED_MAX = 14
 const HIT_SPARK_SIZE = 0.35
 
 // ============ FLASH MESH ============
-const FLASH_DURATION = 0.12 // era 0.06 — rápido demais pra perceber a 60fps
+const FLASH_DURATION = 0.12
 const FLASH_COLOR = 0xffffff
 
 // ============ PROJECTILE TRAIL ============
@@ -240,9 +211,6 @@ const BLOOM_START_SCALE = 0.3
 const BLOOM_END_SCALE = 2.5
 
 // ============ AMBIENT DUST ============
-// Poeira FIXA em espaço-mundo (não segue o jogador) — o jogador voa ATRAVÉS dela, como
-// acontece com o grid. As partículas ficam num volume grande que cobre o trilho e o
-// alcance da arena; cada uma tem drift lento e wrap-around por eixo no volume.
 const DUST_COUNT = 300
 const DUST_SIZE = 0.28
 const DUST_COLOR = 0xaaccee
@@ -264,25 +232,19 @@ const BOSS_IMPACT_MAX_SCALE = 5
 // ============ GRID PULSE ============
 const GRID_PULSE_DURATION = 0.4
 
-// ============ SPIN WIND (giro completo) ============
-// anel que "varre o ar" no plano do roll, acompanhando o giro de 360° — não é uma explosão,
-// é mais um sopro circular. Perpendicular ao forward da nave (mesma técnica do smokeRing).
+// ============ SPIN WIND ============
 const SPIN_WIND_DURATION = 0.5
 const SPIN_WIND_START_SCALE = 0.5
 const SPIN_WIND_MAX_SCALE = 4.5
 const SPIN_WIND_COLOR = 0xb4e4ff
-const SPIN_WIND_SPIN_RATE = 8 // rad/s, sentido igual ao giro (direction)
+const SPIN_WIND_SPIN_RATE = 8
 
-// ============ TIRO CARREGADO MÁXIMO (item 9) ============
-// pedido do usuário: marco visual ao atingir 100% de carga + argolas ovais curtas disparadas junto
+// ============ TIRO CARREGADO MÁXIMO ============
 const MAX_CHARGE_RING_COLOR = 0x2b8fff
 const MAX_CHARGE_RING_DURATION = 0.38
 const MAX_CHARGE_RING_SPEED = 58
 const MAX_CHARGE_RING_COUNT = 3
 
-// sistema de efeitos visuais: starfield + poeira ambiente + efeitos transientes.
-// Todos os transientes são criados sob demanda e descartados quando a vida útil acaba.
-// opts.grid (opcional) = referência ao GridHelper da cena, usada pelo gridPulse.
 export function createEffectsSystem(scene, opts = {}) {
   const gridRef = opts.grid || null
 
@@ -314,19 +276,13 @@ export function createEffectsSystem(scene, opts = {}) {
   scene.add(stars)
 
   // ============ AMBIENT DUST ============
-  // poeira espacial fixa em espaço-mundo — o jogador voa através dela como acontece com o
-  // grid. Cada partícula fica numa caixa grande (cobrindo o trilho e a arena) e faz wrap
-  // por eixo quando sai do volume.
   const dustGeometry = new THREE.BufferGeometry()
   const dustPositions = new Float32Array(DUST_COUNT * 3)
   const dustVelocities = new Float32Array(DUST_COUNT * 3)
   for (let i = 0; i < DUST_COUNT; i++) {
-    // distribuição uniforme dentro de uma caixa grande em espaço-mundo
     dustPositions[i*3]   = DUST_AREA_CENTER.x + (Math.random() * 2 - 1) * DUST_AREA_HALF_X
     dustPositions[i*3+1] = DUST_AREA_CENTER.y + (Math.random() * 2 - 1) * DUST_AREA_HALF_Y
     dustPositions[i*3+2] = DUST_AREA_CENTER.z + (Math.random() * 2 - 1) * DUST_AREA_HALF_Z
-    // drift lento — como o jogador voa a 22+ u/s, isso é quase imperceptível em jogo, mas
-    // dá vida ao fundo quando o jogador está quase parado
     dustVelocities[i*3]   = (Math.random() - 0.5) * 0.4
     dustVelocities[i*3+1] = (Math.random() - 0.5) * 0.4
     dustVelocities[i*3+2] = (Math.random() - 0.5) * 0.4
@@ -341,9 +297,6 @@ export function createEffectsSystem(scene, opts = {}) {
   scene.add(dustPoints)
 
   // ============ FOG WISPS (Fase 7) ============
-  // nuvens grandes e esparsas, mesmo padrão de volume fixo da poeira ambiente (acima) — dá uma
-  // pista visual direta de "neblina" além do FogExp2 puro (que sozinho não tem nenhuma forma
-  // reconhecível, só escurece a distância).
   const fogWispGeometry = new THREE.BufferGeometry()
   const fogWispPositions = new Float32Array(FOG_WISP_COUNT * 3)
   const fogWispVelocities = new Float32Array(FOG_WISP_COUNT * 3)
@@ -356,9 +309,6 @@ export function createEffectsSystem(scene, opts = {}) {
     fogWispVelocities[i*3+2] = (Math.random() - 0.5) * FOG_WISP_DRIFT_SPEED
   }
   fogWispGeometry.setAttribute('position', new THREE.BufferAttribute(fogWispPositions, 3))
-  // PointsMaterial não suporta tamanho por vértice sem shader customizado — todo wisp usa o
-  // mesmo tamanho médio (mantém o mesmo padrão simples do resto do arquivo). `map` com a
-  // textura de círculo suave é o que faz ler como nuvem, não como quadrado cinza sólido.
   const softCircleTexture = makeSoftCircleTexture()
   const fogWispMaterial = new THREE.PointsMaterial({
     color: FOG_WISP_COLOR, size: (FOG_WISP_SIZE_MIN + FOG_WISP_SIZE_MAX) / 2, sizeAttenuation: true,
@@ -368,10 +318,7 @@ export function createEffectsSystem(scene, opts = {}) {
   fogWispPoints.frustumCulled = false
   scene.add(fogWispPoints)
 
-  // (bolha de escudo removida — o escudo continua funcionando mecanicamente, só não é mais
-  // desenhado como esfera ao redor da nave)
-
-  // ============ CHARGE GLOW (v0.29.6: 4 esferas verde-lima) ============
+  // ============ CHARGE GLOW ============
   const chargeGlowLayers = CHARGE_GLOW_LAYERS.map((cfg) => {
     const geo = new THREE.SphereGeometry(1, 20, 14)
     const mat = new THREE.MeshBasicMaterial({
@@ -384,9 +331,9 @@ export function createEffectsSystem(scene, opts = {}) {
     return { mesh, geo, mat, cfg }
   })
 
-  // ============ ENGINE FLAME (Fase 7, persistente — ver comentário da constante) ============
+  // ============ ENGINE FLAME ============
   const engineFlameGeometry = new THREE.ConeGeometry(ENGINE_FLAME_RADIUS, ENGINE_FLAME_LENGTH, 10)
-  engineFlameGeometry.rotateX(-Math.PI / 2) // ponta aponta pra -Z local, alinhada com o eixo (0,0,-1) usado no update()
+  engineFlameGeometry.rotateX(-Math.PI / 2)
   const engineFlameMaterial = new THREE.MeshBasicMaterial({
     color: ENGINE_FLAME_COLOR, transparent: true, opacity: ENGINE_FLAME_OPACITY,
     depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
@@ -395,9 +342,7 @@ export function createEffectsSystem(scene, opts = {}) {
   engineFlameMesh.visible = false
   scene.add(engineFlameMesh)
 
-  // ============ ESCUDO DO IMPULSO ARÍETE (item 12, persistente) ============
-  // icosaedro wireframe (facetado/"anguloso") em vez da esfera-grade original — só visível
-  // enquanto o impulso ariete está de fato ativo (ramActive), ver update().
+  // ============ ESCUDO DO IMPULSO ARÍETE ============
   const ramShieldGeometry = new THREE.IcosahedronGeometry(1, 0)
   const ramShieldMaterial = new THREE.MeshBasicMaterial({
     color: RAM_SHIELD_COLOR, wireframe: true, transparent: true, opacity: 0.55,
@@ -415,9 +360,6 @@ export function createEffectsSystem(scene, opts = {}) {
   const homingAfterimages = []
   const swirlAfterimages = []
   const hitSparks = []
-  // Overhaul de spawn/despawn: arrays próprios (não reaproveitam hitSparks) porque a física é
-  // diferente — partículas convergindo pro centro em vez de se espalhando, e SOFREM fog
-  // (fog: true) de propósito, integrando com o Overhaul 4.
   const condensationInwards = []
   const spawnAnticipations = []
   const activeFlashes = []
@@ -445,34 +387,16 @@ export function createEffectsSystem(scene, opts = {}) {
   const microOrbeCoreGeo = new THREE.OctahedronGeometry(0.4, 0)
   const microOrbeRingGeo = new THREE.TorusGeometry(0.6, 0.05, 4, 12)
   const microOrbeCoreMat = new THREE.MeshBasicMaterial({
-    color: 0x00f2fe,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    fog: false,
+    color: 0x00f2fe, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, fog: false,
   })
   const microOrbeRingMat = new THREE.MeshBasicMaterial({
-    color: 0xffe600,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    fog: false,
+    color: 0xffe600, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, fog: false,
   })
-  // Orbe de reparo do Slippy (habilidade única do esquadrão): mesma geometria da orbe Anki de
-  // Frenesi, cor verde de cura em vez de ciano/amarelo, pra ficar claro que é um pickup diferente.
   const microOrbeHealCoreMat = new THREE.MeshBasicMaterial({
-    color: 0x4ade80,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    fog: false,
+    color: 0x4ade80, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, fog: false,
   })
   const microOrbeHealRingMat = new THREE.MeshBasicMaterial({
-    color: 0xbbf7d0,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    fog: false,
+    color: 0xbbf7d0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, fog: false,
   })
   let healOrbesCollectedThisFrame = 0
   let contrailTimer = 0
@@ -481,9 +405,7 @@ export function createEffectsSystem(scene, opts = {}) {
   let boostTrailTimer = 0
   let rollAfterimageTimer = 0
 
-  // ============ GEOMETRIAS COMPARTILHADAS (VBO POOLING & ZERO-ALLOC) ============
-  // Em vez de instanciar e destruir geometrias na VRAM a cada tiro/shockwave/bloom,
-  // reutilizamos geometrias canônicas unitárias e ajustamos via mesh.scale.
+  // ============ GEOMETRIAS COMPARTILHADAS ============
   const sharedSphereGeometry = new THREE.SphereGeometry(1, 8, 8)
   const sharedRingGeometry = new THREE.RingGeometry(0.85, 1.0, 24)
   const sharedWideRingGeometry = new THREE.RingGeometry(0.55, 1.0, 32)
@@ -491,9 +413,36 @@ export function createEffectsSystem(scene, opts = {}) {
   const sharedConeGeometry = new THREE.ConeGeometry(0.5, 2.5, 6)
   sharedConeGeometry.rotateX(Math.PI / 2)
 
-  // Cone invertido de disparo do jogador: ponta voltada para trás (boca da arma), base aberta para a frente
-  const playerMuzzleConeGeo = new THREE.ConeGeometry(0.24, 0.58, 8)
-  playerMuzzleConeGeo.rotateX(-Math.PI / 2)
+  // ============ MUZZLE FLASH — 4 geometrias compartilhadas ============
+  // Todas apontando pro +Z local (rotateX(-π/2) nos cones, RingGeometry já está no plano XY) —
+  // viram na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction), o mesmo
+  // padrão usado no resto do arquivo pra orientar tiros.
+  //
+  // CORE — cone pequeno e fino. Fica sempre apontado pro lado do tiro, então a silhueta de
+  // "descarga" vem só do alinhamento com o canhão.
+  const playerMuzzleCoreGeo = new THREE.ConeGeometry(0.22, 0.9, 6)
+  playerMuzzleCoreGeo.rotateX(-Math.PI / 2)
+  // HALO — cone maior e mais curto que o antigo, forma "gorda" em vez de alongada (compensa a
+  // silhueta fina do core, dá volume ao flash sem esticar a ponto de virar um raio).
+  const playerMuzzleHaloGeo = new THREE.ConeGeometry(0.4, 1.5, 8)
+  playerMuzzleHaloGeo.rotateX(-Math.PI / 2)
+  // RING — anel achatado. Fica perpendicular ao tiro (setFromUnitVectors no Z do Ring com a
+  // direção) pra ler como "o ar foi empurrado pra fora pelo disparo".
+  const playerMuzzleRingGeo = new THREE.RingGeometry(0.25, 0.45, 20)
+  // SPARK — cone mini e esticado, 4 por disparo, atirados num leque estreito. Velocidade própria
+  // por instância (velocity no entry do muzzleFlashes) — é o único componente do muzzle flash
+  // que se move, e é isso que vende "cinético".
+  const playerMuzzleSparkGeo = new THREE.ConeGeometry(0.06, 0.9, 4)
+  playerMuzzleSparkGeo.rotateX(-Math.PI / 2)
+
+  // ============ SWIRL BLAST — geometrias próprias do flash/afterimage (ver bloco de constantes
+  // SWIRL_* acima) — antes reusavam as geometrias TINY do muzzle flash normal e do rastro do
+  // homing, o que fazia o "super ataque" ler como um tiro comum.
+  const swirlFlashConeGeo = new THREE.ConeGeometry(1.3, 5.0, 8)
+  swirlFlashConeGeo.rotateX(-Math.PI / 2)
+  const swirlFlashRingGeo = new THREE.RingGeometry(0.9, 1.9, 24)
+  const swirlAfterimageCoreGeo = new THREE.ConeGeometry(0.75, 6.5, 8)
+  swirlAfterimageCoreGeo.rotateX(Math.PI / 2)
 
   const _FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
   const _BACKWARD_AXIS = new THREE.Vector3(0, 0, -1)
@@ -501,6 +450,11 @@ export function createEffectsSystem(scene, opts = {}) {
   const _tmpExhaust = new THREE.Vector3()
   const _tmpNorm = new THREE.Vector3()
   const _tmpQuat = new THREE.Quaternion()
+  // temporários do muzzle flash — evitam alocar Vector3/Quaternion a cada tiro (o flash dispara
+  // ~6-7×/s no tiro normal, e cada disparo agora spawna 7 meshes em vez de 1)
+  const _muzzleSparkDir = new THREE.Vector3()
+  const _muzzleSparkAxis = new THREE.Vector3()
+  const _muzzleSparkPos = new THREE.Vector3()
 
   // ============ SHOCKWAVE / RING HELPERS ============
   function makeRingMesh(colorHex, isWide = false) {
@@ -527,10 +481,7 @@ export function createEffectsSystem(scene, opts = {}) {
       if (!revealed) return
       layer.mat.color.setHex(atMaxCharge ? CHARGE_GLOW_MAX_COLOR : CHARGE_GLOW_COLOR)
       const { scaleMin, scaleMax, opacityMin, opacityMax } = layer.cfg
-      // progresso PRÓPRIO da camada — começa em 0 assim que ela é revelada (pequena) e converge
-      // pro tamanho máximo em f=1 junto com as outras, não importa quando cada uma apareceu
       const localT = threshold >= 1 ? 1 : Math.min(1, (f - threshold) / (1 - threshold))
-      // pulso "vivo", com fase diferente por camada pra não pulsarem todas em uníssono
       const pulse = 1 + Math.sin(now * 0.001 * CHARGE_GLOW_PULSE_RATE + i * 1.7) * CHARGE_GLOW_PULSE_AMOUNT
       layer.mesh.scale.setScalar((scaleMin + (scaleMax - scaleMin) * localT) * pulse)
       layer.mat.opacity = (opacityMin + (opacityMax - opacityMin) * localT) * CHARGE_GLOW_OPACITY_MULT
@@ -538,9 +489,6 @@ export function createEffectsSystem(scene, opts = {}) {
     })
   }
 
-  // opts.rings: só as explosões de INIMIGO sendo destruído (chefe/dourado/comum) pedem as
-  // argolas cinzas grandes extras — dano na nave e o burst de propulsão continuam só com as
-  // partículas pequenas (pedido do usuário, escopo explícito: "as explosões de inimigos").
   function explosion(position, colorHex, size = 1, opts = {}) {
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(EXPLOSION_PARTICLES * 3)
@@ -565,17 +513,13 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.add(points)
     bursts.push({ points, velocities, life: 0 })
 
-    // flash central que expande rápido — dá o "punch" que faltava nas explosões menores
     bloomSprite(position, colorHex, size * 0.8)
 
-    // Estilhaços poligonais voando e mini-mach shockwaves em explosões de naves (opts.rings)
     if (opts.rings) {
       shockwave(position, colorHex, size * 0.65)
       glassShatter(position, colorHex)
     }
 
-    // argolas cinzas grandes, tamanho e ângulo 3D aleatórios (fixo — não colam na câmera, pra
-    // lerem como destroço de verdade visto de um ângulo qualquer, não um círculo sempre de frente)
     const ringChance = opts.isBoss ? EXPLOSION_GRAY_RING_CHANCE_BOSS : EXPLOSION_GRAY_RING_CHANCE_NORMAL
     if (opts.rings && Math.random() < ringChance) {
       const count = EXPLOSION_GRAY_RING_COUNT_MIN + Math.floor(Math.random() * (EXPLOSION_GRAY_RING_COUNT_MAX - EXPLOSION_GRAY_RING_COUNT_MIN + 1))
@@ -597,19 +541,106 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
+  // ============ MUZZLE FLASH (overhaul v0.85.x) ============
+  // 4 camadas brancas com timings escalonados — ver comentário das constantes no topo do
+  // arquivo pro raciocínio completo. Todas brancas (0xffffff) com opacidades diferentes: a soma
+  // aditiva satura em branco puro no centro (o "instante zero") e desvanece pra zero na borda,
+  // que é o ponto do branco — comunicar descarga máxima de energia sem virar um sol ilegível.
+  //
+  // O entry do muzzleFlashes agora carrega duração/growth/opacidade INICIAIS POR INSTÂNCIA (o
+  // array é compartilhado com enemyMuzzleFlare, que mantém o comportamento antigo do flare
+  // esférico dos inimigos — mesmo array, formatos de entrada diferentes por campo).
   function muzzleFlash(position, direction) {
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8, transparent: true, opacity: 0.95,
+    // --- CORE: nasce colado ao canhão, aponta pro lado do tiro, mínimo e brilhante ---
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.95,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(playerMuzzleConeGeo, material)
-    mesh.scale.setScalar(0.42)
-    mesh.position.copy(position).addScaledVector(direction, 0.22)
-    mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, direction)
-    scene.add(mesh)
-    muzzleFlashes.push({ mesh, life: 0, initialScale: 0.42 })
+    const coreMesh = new THREE.Mesh(playerMuzzleCoreGeo, coreMat)
+    coreMesh.scale.setScalar(1.0)
+    coreMesh.position.copy(position).addScaledVector(direction, 0.35)
+    coreMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, direction)
+    scene.add(coreMesh)
+    muzzleFlashes.push({
+      mesh: coreMesh, life: 0,
+      duration: MUZZLE_CORE_DURATION,
+      initialScale: 1.0, growth: 0.15, startOpacity: 0.95,
+    })
+
+    // --- HALO: fora do core, mais largo e mais curto, cresce durante a vida ---
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const haloMesh = new THREE.Mesh(playerMuzzleHaloGeo, haloMat)
+    haloMesh.scale.setScalar(1.0)
+    haloMesh.position.copy(position).addScaledVector(direction, 0.45)
+    haloMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, direction)
+    scene.add(haloMesh)
+    muzzleFlashes.push({
+      mesh: haloMesh, life: 0,
+      duration: MUZZLE_HALO_DURATION,
+      initialScale: 1.0, growth: 0.5, startOpacity: 0.55,
+    })
+
+    // --- RING: perpendicular ao tiro, expande bastante durante a vida (é o "empurrou o ar") ---
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.7,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const ringMesh = new THREE.Mesh(playerMuzzleRingGeo, ringMat)
+    ringMesh.scale.setScalar(1.0)
+    ringMesh.position.copy(position).addScaledVector(direction, 0.5)
+    // RingGeometry tem normal +Z — setFromUnitVectors alinha essa normal com a direção do tiro,
+    // deixando o anel perpendicular a ele. É isso que faz o ring "abrir pra fora" na direção
+    // certa em vez de ficar billboard pra câmera.
+    ringMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, direction)
+    scene.add(ringMesh)
+    muzzleFlashes.push({
+      mesh: ringMesh, life: 0,
+      duration: MUZZLE_RING_DURATION,
+      initialScale: 1.0, growth: 1.8, startOpacity: 0.7,
+    })
+
+    // --- SPARKS: mini-cones esticados num leque estreito, ângulos sorteados por disparo ---
+    // A randomização por disparo é o que evita que tiros em sequência pareçam o mesmo frame
+    // congelado — sem isso, o padrão repetitivo fica óbvio em 2s de tiro automático.
+    for (let i = 0; i < MUZZLE_SPARK_COUNT; i++) {
+      // Direção da fagulha = direção do tiro girada por um ângulo aleatório num eixo aleatório
+      // → distribuição uniforme dentro de um cone estreito ao redor do eixo do disparo
+      _muzzleSparkAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize()
+      const angle = (Math.random() - 0.5) * MUZZLE_SPARK_SPREAD * 2
+      _muzzleSparkDir.copy(direction).applyAxisAngle(_muzzleSparkAxis, angle).normalize()
+
+      const sparkMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.9,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      })
+      const sparkMesh = new THREE.Mesh(playerMuzzleSparkGeo, sparkMat)
+      // posição inicial = proa + offset do tiro + pequeno desvio lateral aleatório, senão as 4
+      // fagulhas nascem todas exatamente no mesmo ponto (leitura de "feixe" em vez de "spray")
+      _muzzleSparkPos.copy(position)
+        .addScaledVector(direction, 0.6)
+        .addScaledVector(_muzzleSparkAxis, (Math.random() - 0.5) * 0.15)
+      sparkMesh.position.copy(_muzzleSparkPos)
+      sparkMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, _muzzleSparkDir)
+      // escala inicial por instância (0.7 a 1.3) — fagulhas de tamanhos diferentes, dá pra ver
+      // o "spray" sem cada uma ficar idêntica
+      sparkMesh.scale.setScalar(0.7 + Math.random() * 0.6)
+      scene.add(sparkMesh)
+      muzzleFlashes.push({
+        mesh: sparkMesh, life: 0,
+        duration: MUZZLE_SPARK_DURATION,
+        initialScale: sparkMesh.scale.x, growth: 0.3, startOpacity: 0.9,
+        // velocidade própria — o único componente do flash que se MOVE no espaço, é o que
+        // vende "cinético" (sem isso, tudo aqui fica parado no lugar, só crescendo e sumindo)
+        velocity: _muzzleSparkDir.clone().multiplyScalar(MUZZLE_SPARK_SPEED),
+      })
+    }
   }
 
+  // Flare dos inimigos: comportamento preservado — esfera pequena que cresce um pouco e desvanece.
+  // Formato de entrada no muzzleFlashes por campos explícitos (não usa os defaults do player).
   function enemyMuzzleFlare(position, colorHex = 0xff5a3d) {
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.95,
@@ -619,12 +650,13 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.scale.setScalar(0.35)
     mesh.position.copy(position)
     scene.add(mesh)
-    muzzleFlashes.push({ mesh, life: 0, initialScale: 0.35 })
+    muzzleFlashes.push({
+      mesh, life: 0,
+      duration: MUZZLE_DURATION,
+      initialScale: 0.35, growth: 0.35, startOpacity: 0.95,
+    })
   }
 
-  // "explosão azul em formato de fogo" no instante em que a propulsão é ativada (Fase 7) —
-  // reaproveita o explosion() já existente (partículas + bloomSprite de punch), só na cor de
-  // chama e na saída do motor (atrás da nave) em vez de na ponta.
   function propulsionBurst(position, direction) {
     const exhaust = position.clone().addScaledVector(direction, -1.8)
     explosion(exhaust, PROPULSION_BURST_COLOR, 1.1)
@@ -641,12 +673,9 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
     mesh.scale.setScalar(0.4)
     scene.add(mesh)
-    // v0.29.6: a argola viaja pra frente (mesma direção do disparo) em vez de ficar parada
-    // na origem — combina melhor com o tiro carregado saindo voando
     smokeRings.push({ mesh, life: 0, velocity: _tmpNorm.clone().multiplyScalar(22) })
   }
 
-  // marco visual ao atingir 100% de carga (item 9)
   function maxChargeReady(position, direction) {
     const cuePos = position.clone().addScaledVector(direction, 2.0)
     bloomSprite(cuePos, 0x2b8fff, 2.2)
@@ -654,30 +683,19 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(cuePos, 0xffffff)
   }
 
-  // anéis circulares de velocidade Mach emitidos na frente do tiro carregado em alta velocidade (pedido do usuário)
   function machSpeedRing(position, direction) {
     _tmpNorm.copy(direction).normalize()
     _tmpQuat.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
     const material = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.88,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
+      color: 0x38bdf8, transparent: true, opacity: 0.88,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(sharedTorusGeometry, material)
     mesh.position.copy(position)
     mesh.quaternion.copy(_tmpQuat)
     mesh.scale.setScalar(0.7)
     scene.add(mesh)
-    maxChargeRingsList.push({
-      mesh,
-      life: 0,
-      duration: 0.28,
-      baseScale: 0.7,
-      maxScale: 2.2,
-    })
+    maxChargeRingsList.push({ mesh, life: 0, duration: 0.28, baseScale: 0.7, maxScale: 2.2 })
   }
 
   function maxChargeRings(position, direction) {
@@ -686,9 +704,6 @@ export function createEffectsSystem(scene, opts = {}) {
     machSpeedRing(position.clone().addScaledVector(normDir, 2.6), normDir)
   }
 
-  // giro completo (Z/C, 2 toques): anel de vento no plano do roll (perpendicular ao forward
-  // da nave), expandindo e girando no sentido do giro. `spinDirection` é -1 (esquerda) ou 1
-  // (direita) — só define o sentido do giro visual do anel, sem relação com o dano/deflect.
   function spinWind(position, forward, spinDirection = 1) {
     const mesh = makeRingMesh(SPIN_WIND_COLOR, 0.12)
     mesh.position.copy(position)
@@ -698,8 +713,6 @@ export function createEffectsSystem(scene, opts = {}) {
     spinWinds.push({ mesh, life: 0, spinDirection })
   }
 
-  // argola perpendicular ao forward, ao redor do jogador — pedido do usuário, item 12 ("invoque
-  // argolas ao redor do jogador durante o impulso"), mesma técnica de spinWind/smokeRing
   function ramRing(position, forward) {
     const mesh = makeRingMesh(RAM_RING_COLOR, 0.14)
     mesh.position.copy(position)
@@ -709,8 +722,6 @@ export function createEffectsSystem(scene, opts = {}) {
     ramRings.push({ mesh, life: 0 })
   }
 
-  // afterimage da nave durante o impulso ariete (item 12) — silhueta simplificada (cone), mesmo
-  // padrão de homingAfterimage abaixo, só maior e azul (tema do ram) em vez de verde.
   function ramAfterimage(position, forward) {
     const geometry = new THREE.ConeGeometry(0.7, 3.6, 4)
     geometry.rotateX(Math.PI / 2)
@@ -725,8 +736,6 @@ export function createEffectsSystem(scene, opts = {}) {
     ramAfterimages.push({ mesh, life: 0 })
   }
 
-  // afterimage do giro completo (item 3) — mesma silhueta simplificada, cor neutra (não é tema
-  // de nenhuma carta específica, só marca "a nave passou por aqui girando")
   function rollAfterimage(position, forward) {
     const geometry = new THREE.ConeGeometry(0.7, 3.6, 4)
     geometry.rotateX(Math.PI / 2)
@@ -741,8 +750,6 @@ export function createEffectsSystem(scene, opts = {}) {
     rollAfterimages.push({ mesh, life: 0 })
   }
 
-  // burst único de argolas azuis + 1 afterimage — disparado só quando a carta "giro rebatedor"
-  // de fato deflete projéteis (item 6), pra marcar visualmente que esse giro fez algo a mais
   function deflectBurst(position, forward) {
     _tmpNorm.copy(forward).normalize()
     for (let i = 0; i < DEFLECT_RING_COUNT; i += 1) {
@@ -754,12 +761,9 @@ export function createEffectsSystem(scene, opts = {}) {
       scene.add(mesh)
       deflectRings.push({ mesh, life: -i * DEFLECT_RING_STAGGER, maxScale: 2.4 + i * 1.0 })
     }
-    ramAfterimage(position, forward) // mesmo azul (RAM_AFTERIMAGE_COLOR), reaproveitado de propósito
+    ramAfterimage(position, forward)
   }
 
-  // trail tipo cometa durante o impulso (qualquer propulsão, não só ram) — pedido do usuário,
-  // item 12 último pedido: "traga devolta esse trail de propulsar apenas quando o jogador
-  // realiza um impulso". Mesma técnica do antigo cometTrailParticle (removido na Fase 7).
   function boostTrailParticle(position, forward) {
     const material = new THREE.MeshBasicMaterial({
       color: BOOST_TRAIL_COLOR, transparent: true, opacity: BOOST_TRAIL_OPACITY,
@@ -788,68 +792,82 @@ export function createEffectsSystem(scene, opts = {}) {
   // Etapa 5 (§4.3/§4.4/§3.2.3): flash de disparo distinto, trilha de afterimages, explosão de
   // impacto contra chefe/dourado/fragata/escudo.
 
-  // Flash de disparo (§4.3) — reaproveita as MESMAS geometrias do muzzle flash do player (core +
-  // ring), só que com cor do Swirl e parâmetros próprios, empilhado no array `muzzleFlashes`
-  // (seu loop de update já é genérico: duração/growth/opacidade por instância, sem depender do
-  // player). `growth` negativo = encolhe em vez de crescer — é isso que dá o efeito de "sucção".
+  // Flash de disparo (§4.3) — "disparo de super ataque": geometrias PRÓPRIAS (swirlFlashConeGeo/
+  // swirlFlashRingGeo), grandes, empilhadas em 4 camadas no array `muzzleFlashes` (seu loop de
+  // update já é genérico: duração/growth/opacidade por instância, sem depender do player):
+  //   1) cone azul grande na saída do canhão (silhueta da explosão)
+  //   2) anel de choque expandindo perpendicular ao tiro, SWIRL_FLASH_RING_SCALE×
+  //   3) segundo anel (branco, mais lento) — reforça o peso do disparo
+  //   4) bloom branco saturado no bico — o "instante zero" da descarga
   function swirlBlastFlash(position, direction) {
     const normDir = direction.clone().normalize()
 
-    // 1 cone azul grande (silhueta do muzzle flash, escala 1.5x)
+    // 1) cone azul grande
     const coreMat = new THREE.MeshBasicMaterial({
       color: SWIRL_COLOR, transparent: true, opacity: 0.9,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const coreMesh = new THREE.Mesh(playerMuzzleCoreGeo, coreMat)
-    coreMesh.position.copy(position).addScaledVector(normDir, 0.35)
+    const coreMesh = new THREE.Mesh(swirlFlashConeGeo, coreMat)
+    coreMesh.position.copy(position).addScaledVector(normDir, 1.8)
     coreMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
     scene.add(coreMesh)
     muzzleFlashes.push({
       mesh: coreMesh, life: 0, duration: SWIRL_FLASH_DURATION,
-      initialScale: 1.5, growth: 0.3, startOpacity: 0.9,
+      initialScale: 1.0, growth: 0.6, startOpacity: 0.9,
     })
 
-    // 1 anel de choque expandindo perpendicular ao tiro, 3x maior e mais devagar que o normal
+    // 2) anel de choque principal (azul), expandindo perpendicular ao tiro
     const ringMat = new THREE.MeshBasicMaterial({
-      color: SWIRL_COLOR, transparent: true, opacity: 0.75,
+      color: SWIRL_COLOR, transparent: true, opacity: 0.85,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const ringMesh = new THREE.Mesh(playerMuzzleRingGeo, ringMat)
-    ringMesh.position.copy(position).addScaledVector(normDir, 0.5)
+    const ringMesh = new THREE.Mesh(swirlFlashRingGeo, ringMat)
+    ringMesh.position.copy(position).addScaledVector(normDir, 1.0)
     ringMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
     scene.add(ringMesh)
     muzzleFlashes.push({
       mesh: ringMesh, life: 0, duration: SWIRL_FLASH_DURATION,
-      initialScale: 1.0, growth: SWIRL_FLASH_RING_SCALE, startOpacity: 0.75,
+      initialScale: 1.0, growth: SWIRL_FLASH_RING_SCALE, startOpacity: 0.85,
     })
 
-    // 2 anéis de sucção encolhendo pra dentro ("sugou o ar antes de disparar")
-    for (let i = 0; i < 2; i += 1) {
-      const suckMat = new THREE.MeshBasicMaterial({
-        color: SWIRL_COLOR, transparent: true, opacity: 0.6,
-        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-      })
-      const suckMesh = new THREE.Mesh(playerMuzzleRingGeo, suckMat)
-      suckMesh.position.copy(position).addScaledVector(normDir, 0.5 + i * 0.4)
-      suckMesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
-      const startScale = 1.6 + i * 0.5
-      suckMesh.scale.setScalar(startScale)
-      scene.add(suckMesh)
-      muzzleFlashes.push({
-        mesh: suckMesh, life: 0, duration: SWIRL_FLASH_DURATION,
-        initialScale: startScale, growth: -0.85, startOpacity: 0.6,
-      })
-    }
-  }
+    // 3) segundo anel (branco, mais lento) — dá peso extra ao disparo
+    const ring2Mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.7,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const ring2Mesh = new THREE.Mesh(swirlFlashRingGeo, ring2Mat)
+    ring2Mesh.position.copy(position).addScaledVector(normDir, 2.0)
+    ring2Mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, normDir)
+    scene.add(ring2Mesh)
+    muzzleFlashes.push({
+      mesh: ring2Mesh, life: 0, duration: SWIRL_FLASH_DURATION * 0.7,
+      initialScale: 0.7, growth: 3.5, startOpacity: 0.7,
+    })
 
-  // Afterimage da trilha (§4.4) — cópia SÓ do core do projétil (sem os anéis de vórtice, senão
-  // vira sopa visual em alta frequência), reaproveitando o mesmo cone genérico do homing.
-  function swirlAfterimage(position, quaternion) {
-    const material = new THREE.MeshBasicMaterial({
-      color: SWIRL_COLOR, transparent: true, opacity: 0.5,
+    // 4) bloom branco saturado no bico
+    const bloomMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.95,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
-    const mesh = new THREE.Mesh(sharedConeGeometry, material)
+    const bloomMesh = new THREE.Mesh(sharedSphereGeometry, bloomMat)
+    bloomMesh.position.copy(position).addScaledVector(normDir, 1.5)
+    bloomMesh.scale.setScalar(2.2)
+    scene.add(bloomMesh)
+    muzzleFlashes.push({
+      mesh: bloomMesh, life: 0, duration: 0.22,
+      initialScale: 2.2, growth: 1.8, startOpacity: 0.95,
+    })
+  }
+
+  // Afterimage da trilha (§4.4) — geometria própria grande (swirlAfterimageCoreGeo, 0.75×6.5),
+  // antes reusava `sharedConeGeometry` (0.5×2.5, mesma do rastro do homing) e lia como um
+  // pontinho fino.
+  function swirlAfterimage(position, quaternion) {
+    const material = new THREE.MeshBasicMaterial({
+      color: SWIRL_COLOR, transparent: true, opacity: 0.65,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(swirlAfterimageCoreGeo, material)
     mesh.position.copy(position)
     mesh.quaternion.copy(quaternion)
     scene.add(mesh)
@@ -857,15 +875,14 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   // Explosão de impacto (§3.2.3) — só acontece contra chefe/dourado/fragata/escudo (regra de
-  // negócio mora em combat/projectiles.js, essa função só desenha). Composta a partir dos
-  // primitivos já existentes (mesmo princípio de `maxChargeReady`) em vez de um sistema visual
-  // novo do zero: burst com anéis + um shockwave extra maior, cor do Swirl.
+  // negócio mora em combat/projectiles.js, essa função só desenha). SWIRL_EXPLOSION_RADIUS
+  // recalibrado pra 4.5 (era 2.5) + shockwave branco extra — leitura de "acabei de quebrar o
+  // escudo dele".
   function swirlBlastExplosion(position) {
     explosion(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS, { rings: true })
-    shockwave(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS * 1.3)
+    shockwave(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS * 1.1)
+    shockwave(position, 0xffffff, SWIRL_EXPLOSION_RADIUS * 0.7)
   }
-
-  // ============ NOVOS EFEITOS ============
 
   function hitSpark(position, colorHex = 0xffffff) {
     const geometry = new THREE.BufferGeometry()
@@ -891,18 +908,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities, life: 0 })
   }
 
-  // QoL: alguns inimigos (redutor de tempo) são um THREE.Group com vários meshes filhos, sem
-  // `.material` próprio — antes disso, esses eram os ÚNICOS inimigos que nunca piscavam ao
-  // levar dano, porque a função retornava direto no guard. Agora desce recursivamente e pisca
-  // cada filho com material (cada um vira sua própria entrada em activeFlashes).
-  //
-  // v0.51.0 — `materialRef` rastreia QUAL material foi clonado pra essa entrada. Se o mesh
-  // trocar de material por fora (chefe mudando de fase faz `enemy.mesh.material =
-  // bossPhaseMaterials[phase]`), o clone vira órfão: no update, uma entrada com
-  // `materialRef !== mesh.material` é descartada em vez de tentar restaurar cores num material
-  // que já não é o do mesh — restaurar clobberaria o material NOVO (que é COMPARTILHADO entre
-  // instâncias do mesmo tipo). Sem isso, o flash ficava pendurado lendo `__origColor` do
-  // clone antigo, e o mesh novo (recém-trocado) ficava travado em branco até o timeout expirar.
   function flashMesh(mesh, durationSec = FLASH_DURATION) {
     if (!mesh) return
     if (!mesh.material) {
@@ -913,8 +918,6 @@ export function createEffectsSystem(scene, opts = {}) {
     }
     let entry = activeFlashes.find((f) => f.mesh === mesh)
     if (entry && entry.materialRef !== mesh.material) {
-      // material trocado desde que a entrada foi criada — descarta a antiga e cria nova em
-      // cima do material atual
       activeFlashes.splice(activeFlashes.indexOf(entry), 1)
       entry = null
     }
@@ -966,14 +969,6 @@ export function createEffectsSystem(scene, opts = {}) {
     telegraphs.push({ mesh, life: 0 })
   }
 
-  // ============ CHARGE CIRCLE (laser do chefe, v0.29.6) ============
-  // 3 anéis concêntricos que crescem ao longo de `durationSec`, marcando onde um laser vai
-  // chegar — o jogador tem esse tempo todo pra sair de cima. Perto do fim (90%+) ficam sólidos,
-  // sinal de "agora vai".
-  // `positionOrFn`: um THREE.Vector3 fixo (comportamento original) OU uma função `() => Vector3`
-  // chamada a cada frame — pedido do usuário: o telegraph do laser do chefe/dourado precisa
-  // continuar "mirando" a posição atual do jogador durante todo o aviso, não travar num ponto
-  // fixo no instante em que começou a marcar.
   function chargeCircle(positionOrFn, durationSec = 3.0, colorHex = 0xff4d4d) {
     const group = new THREE.Group()
     for (let i = 0; i < 3; i += 1) {
@@ -986,8 +981,6 @@ export function createEffectsSystem(scene, opts = {}) {
     }
     const followFn = typeof positionOrFn === 'function' ? positionOrFn : null
     if (!followFn) group.position.copy(positionOrFn)
-    // billboard pra câmera a cada frame no update() — igual shockwave/bossImpactRing — pra
-    // ficar sempre de frente pro jogador, não importa de onde o laser vem
     scene.add(group)
     chargeCircles.push({ group, life: 0, duration: durationSec, followFn })
   }
@@ -1048,7 +1041,6 @@ export function createEffectsSystem(scene, opts = {}) {
     bossImpactRings.push({ mesh, life: 0, maxScale: BOSS_IMPACT_MAX_SCALE * scale })
   }
 
-  // feixe elétrico entre alvos atingidos pelo tiro Ricochete
   function ricochetArc(fromPos, toPos) {
     const from = fromPos instanceof THREE.Vector3 ? fromPos : new THREE.Vector3(fromPos.x, fromPos.y, fromPos.z)
     const to = toPos instanceof THREE.Vector3 ? toPos : new THREE.Vector3(toPos.x, toPos.y, toPos.z)
@@ -1062,12 +1054,8 @@ export function createEffectsSystem(scene, opts = {}) {
 
     const geo = new THREE.CylinderGeometry(0.12, 0.12, dist, 6)
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x55ffff,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
+      color: 0x55ffff, transparent: true, opacity: 0.95,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     })
     const mesh = new THREE.Mesh(geo, mat)
     mesh.position.copy(mid)
@@ -1109,12 +1097,8 @@ export function createEffectsSystem(scene, opts = {}) {
   function enemyThrusterTrail(position, colorHex = 0xff5a3d) {
     if (enemyTrails.length > 90) return
     const mat = new THREE.MeshBasicMaterial({
-      color: colorHex,
-      transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
+      color: colorHex, transparent: true, opacity: 0.8,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(sharedSphereGeometry, mat)
     mesh.scale.setScalar(0.24)
@@ -1189,7 +1173,6 @@ export function createEffectsSystem(scene, opts = {}) {
     glassShatter(position, 0xff3333)
   }
 
-  // ============ CONDENSAÇÃO DE INIMIGO NA NEBLINA ============
   function fogWispCondensation(position, colorHex = 0x7fe0ff) {
     const geometry = new THREE.BufferGeometry()
     const count = 5
@@ -1216,11 +1199,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities, life: 0 })
   }
 
-  // ============ OVERHAUL DE SPAWN/DESPAWN — MATERIALIZAÇÃO ============
-  // "O espaço sugou névoa pra formar o inimigo" — inverso de fogWispCondensation (partículas
-  // vêm de FORA pra DENTRO, não de dentro pra fora). Tamanho/contagem escalam com hitRadius do
-  // inimigo (grande = mais partículas, maiores) pra não sumir num inimigo grande nem poluir um
-  // pequeno. `fog: true` de propósito — soma em setor denso (Overhaul 4).
   function fogCondensationInward(position, colorHex = 0x7fe0ff, hitRadius = 2.0) {
     const count = Math.min(20, Math.max(8, Math.round(hitRadius * 3)))
     const startRadius = hitRadius * 1.5
@@ -1253,10 +1231,6 @@ export function createEffectsSystem(scene, opts = {}) {
     condensationInwards.push({ points, directions, startRadius, duration, life: 0 })
   }
 
-  // ============ OVERHAUL DE SPAWN/DESPAWN — ANTECIPAÇÃO (PEEK) ============
-  // Anel fino no ponto de spawn ANTES do mesh nascer — encolhe (não expande: a leitura é "algo
-  // está sendo puxado pra ali"), na cor de identidade do inimigo (dá uma dica do tipo antes
-  // dele aparecer de verdade). `fog: true` — some em setor denso, igual a condensação acima.
   function spawnAnticipation(position, colorHex, radius = 1.0, durationSec = 0.1) {
     const geo = new THREE.RingGeometry(radius * 0.9, radius, 24)
     const mat = new THREE.MeshBasicMaterial({
@@ -1269,7 +1243,6 @@ export function createEffectsSystem(scene, opts = {}) {
     spawnAnticipations.push({ mesh, geo, mat, life: 0, duration: durationSec, radius })
   }
 
-  // ============ CLARÕES DE BATALHA DISTANTES NO FUNDO ============
   const distantFlashes = []
   let distantFlashTimer = 3.0
   const DISTANT_FLASH_COLORS = [0x3ea6ff, 0xffaa33, 0xd444ff, 0x55ffff]
@@ -1297,7 +1270,6 @@ export function createEffectsSystem(scene, opts = {}) {
     distantFlashes.push({ mesh, life: 0, maxScale: 14 + Math.random() * 10, maxOpacity: 0.45 + Math.random() * 0.25 })
   }
 
-  // ============ SILHUETAS DE NAVES DISTANTES NO CENÁRIO ============
   const distantSilhouettes = []
   const silhouetteGeometry = new THREE.ConeGeometry(1.2, 5, 4)
   silhouetteGeometry.rotateX(Math.PI / 2)
@@ -1323,7 +1295,6 @@ export function createEffectsSystem(scene, opts = {}) {
   }
   initDistantSilhouettes()
 
-  // ============ MANOBRAS ESPECIAIS DE ARENA (ALL-RANGE) ============
   function lateralDashVFX(position, rightDir, bankDirection) {
     const dir = rightDir.clone().multiplyScalar(Math.sign(bankDirection || 1))
     shockwave(position, 0x4db8ff, 1.2)
@@ -1340,7 +1311,6 @@ export function createEffectsSystem(scene, opts = {}) {
     bloomSprite(position, 0x3ea6ff, 2.0)
   }
 
-  // ============ CURA / VIDA EXTRA E WINGMAN SPAWN ============
   function extraLifeHeal(position) {
     shockwave(position, 0xffd700, 2.0)
     shockwave(position, 0x44ff88, 1.5)
@@ -1355,7 +1325,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(position, 0x3ea6ff)
   }
 
-  // ============ IMPACTO DO TIRO CARREGADO NO MÁXIMO (Seção 7 do backlog) ============
   function maxChargeImpact(position, radius = 6) {
     shockwave(position, 0x3ea6ff, radius * 0.4)
     shockwave(position, 0x7fe0ff, radius * 0.25)
@@ -1367,7 +1336,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(position, 0xffffff)
   }
 
-  // ============ DASH EVASIVO DO INIMIGO DOURADO (Seções 5 e 7 do backlog) ============
   function goldenDashVFX(position, direction) {
     shockwave(position, 0xffe066, 1.3)
     bloomSprite(position, 0xffd700, 1.8)
@@ -1378,7 +1346,6 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
-  // ============ RASTRO DE FLANQUEAMENTO NA ENTRADA (Seção 2.3 do backlog) ============
   function flankSpawnTrail(position, velocity, colorHex = 0x7fe0ff) {
     fogWispCondensation(position, colorHex)
     const geometry = new THREE.BufferGeometry()
@@ -1404,7 +1371,6 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSparks.push({ points, velocities: vels, life: 0 })
   }
 
-  // pulso no grid do chão — emite uma ondulação de cor no GridHelper
   let gridPulseTimer = 0
   function gridPulse() {
     if (!gridRef || !gridRef.material) return
@@ -1416,14 +1382,11 @@ export function createEffectsSystem(scene, opts = {}) {
     gridPulseTimer = GRID_PULSE_DURATION
   }
 
-  // ============ UPDATE ============
   function update(dt, shipPosition, shipForward, opts = {}) {
     const { skipTrail = false, boostActive = false, ramActive = false, rollActive = false } = opts
     const now = performance.now()
     const cam = opts.camera
 
-    // ENGINE FLAME (Fase 7) — chama única e persistente em vez de partículas spawnadas por
-    // intervalo: só muda tamanho/cor/opacidade conforme o boost, nunca multiplica cópias.
     if (!skipTrail && shipPosition && shipForward) {
       engineFlameMesh.visible = true
       _tmpExhaust.copy(shipPosition).addScaledVector(shipForward, -1.8)
@@ -1445,7 +1408,6 @@ export function createEffectsSystem(scene, opts = {}) {
       engineFlameMesh.visible = false
     }
 
-    // IMPULSO ARÍETE (item 12) — escudo angular + argolas + afterimage, só enquanto ramActive
     if (ramActive && shipPosition && shipForward) {
       ramShieldMesh.visible = true
       ramShieldMesh.position.copy(shipPosition)
@@ -1467,7 +1429,6 @@ export function createEffectsSystem(scene, opts = {}) {
       ramShieldMesh.visible = false
     }
 
-    // TRAIL DE PROPULSÃO (item 12) — só durante o impulso de verdade, qualquer propulsão
     if (boostActive && shipPosition && shipForward) {
       boostTrailTimer -= dt
       if (boostTrailTimer <= 0) {
@@ -1477,7 +1438,6 @@ export function createEffectsSystem(scene, opts = {}) {
       }
     }
 
-    // AFTERIMAGE DO ROLAMENTO (item 3) — só durante a janela de i-frames do giro completo
     if (rollActive && shipPosition && shipForward) {
       rollAfterimageTimer -= dt
       if (rollAfterimageTimer <= 0) {
@@ -1486,9 +1446,6 @@ export function createEffectsSystem(scene, opts = {}) {
       }
     }
 
-    // poeira ambiente — drift lento + wrap por eixo dentro do volume em espaço-mundo.
-    // NÃO reposiciona o Points: as partículas ficam fixas onde estão e o jogador voa através
-    // delas, igual acontece com o grid.
     {
       const attr = dustGeometry.attributes.position
       const arr = attr.array
@@ -1498,7 +1455,6 @@ export function createEffectsSystem(scene, opts = {}) {
         arr[i3+1] += dustVelocities[i3+1] * dt
         arr[i3+2] += dustVelocities[i3+2] * dt
 
-        // wrap por eixo — se saiu de um lado da caixa, teleporta pro lado oposto
         if (arr[i3] > DUST_AREA_CENTER.x + DUST_AREA_HALF_X) arr[i3] -= DUST_AREA_HALF_X * 2
         else if (arr[i3] < DUST_AREA_CENTER.x - DUST_AREA_HALF_X) arr[i3] += DUST_AREA_HALF_X * 2
         if (arr[i3+1] > DUST_AREA_CENTER.y + DUST_AREA_HALF_Y) arr[i3+1] -= DUST_AREA_HALF_Y * 2
@@ -1509,8 +1465,6 @@ export function createEffectsSystem(scene, opts = {}) {
       attr.needsUpdate = true
     }
 
-    // FOG WISPS (Fase 7) — mesmo padrão de drift+wrap da poeira ambiente acima, só que num
-    // volume menor/mais próximo e com nuvens bem maiores e mais suaves.
     {
       const attr = fogWispGeometry.attributes.position
       const arr = attr.array
@@ -1530,9 +1484,6 @@ export function createEffectsSystem(scene, opts = {}) {
       attr.needsUpdate = true
     }
 
-    // EXPLOSION BURSTS — partículas pequenas voando pra fora com atrito, revertido ao estilo de
-    // antes da v0.32.1 (pedido do usuário) — agora com textura circular de verdade, não mais
-    // PointsMaterial sem `map` (que renderizava cada partícula como quadrado sólido).
     for (let i = bursts.length - 1; i >= 0; i--) {
       const b = bursts[i]
       b.life += dt
@@ -1554,9 +1505,6 @@ export function createEffectsSystem(scene, opts = {}) {
       b.points.material.opacity = Math.max(0, 1 - t)
     }
 
-    // ARGOLAS CINZAS GRANDES (só explosão de inimigo, ver opts.rings) — ângulo fixo (setado na
-    // criação, NÃO billboard) pra ler como destroço de verdade visto de um ângulo qualquer.
-    // pedido do usuário: maiores, mais largas, alargando-se com o tempo em apenas um dos eixos (escala assimétrica)
     for (let i = grayRings.length - 1; i >= 0; i--) {
       const r = grayRings[i]
       r.life += dt
@@ -1572,7 +1520,6 @@ export function createEffectsSystem(scene, opts = {}) {
       r.mesh.material.opacity = 0.85 * (1 - t)
     }
 
-    // HIT SPARKS
     for (let i = hitSparks.length - 1; i >= 0; i--) {
       const s = hitSparks[i]
       s.life += dt
@@ -1594,7 +1541,6 @@ export function createEffectsSystem(scene, opts = {}) {
       s.points.material.opacity = Math.max(0, 1 - t)
     }
 
-    // CONDENSAÇÃO INVERTIDA (spawn — Overhaul de spawn/despawn)
     for (let i = condensationInwards.length - 1; i >= 0; i--) {
       const c = condensationInwards[i]
       c.life += dt
@@ -1615,7 +1561,6 @@ export function createEffectsSystem(scene, opts = {}) {
       c.points.material.opacity = 0.85 * (1 - t * t)
     }
 
-    // ANEL DE ANTECIPAÇÃO (peek — Overhaul de spawn/despawn)
     for (let i = spawnAnticipations.length - 1; i >= 0; i--) {
       const a = spawnAnticipations[i]
       a.life += dt
@@ -1629,21 +1574,23 @@ export function createEffectsSystem(scene, opts = {}) {
       a.mesh.material.opacity = 0.6 * (1 - t)
     }
 
-    // MUZZLE FLASHES
+    // MUZZLE FLASHES — loop reescrito: cada entry carrega a própria duração/growth/opacidade
+    // inicial (player usa 4 camadas com timings diferentes; enemy flare mantém o comportamento
+    // antigo). Fagulhas têm velocity própria — é o único componente que se move.
     for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
       const m = muzzleFlashes[i]
       m.life += dt
-      const t = m.life / MUZZLE_DURATION
+      const t = m.life / m.duration
       if (t >= 1) {
         scene.remove(m.mesh); m.mesh.material.dispose()
         muzzleFlashes.splice(i, 1); continue
       }
-      m.mesh.material.opacity = Math.max(0, 1 - t)
-      const s = (m.initialScale || 0.42) * (1 + t * 0.35)
+      if (m.velocity) m.mesh.position.addScaledVector(m.velocity, dt)
+      m.mesh.material.opacity = Math.max(0, m.startOpacity * (1 - t))
+      const s = m.initialScale * (1 + t * m.growth)
       m.mesh.scale.setScalar(s)
     }
 
-    // SMOKE RINGS
     for (let i = smokeRings.length - 1; i >= 0; i--) {
       const s = smokeRings[i]
       s.life += dt
@@ -1657,7 +1604,6 @@ export function createEffectsSystem(scene, opts = {}) {
       s.mesh.material.opacity = 0.6 * (1 - t)
     }
 
-    // MAX CHARGE MACH SPEED RINGS (anéis circulares que expandem e desvanecem no trajeto)
     for (let i = maxChargeRingsList.length - 1; i >= 0; i--) {
       const r = maxChargeRingsList[i]
       r.life += dt
@@ -1672,7 +1618,6 @@ export function createEffectsSystem(scene, opts = {}) {
       r.mesh.material.opacity = 0.88 * (1 - t)
     }
 
-    // SPIN WINDS (giro completo)
     for (let i = spinWinds.length - 1; i >= 0; i--) {
       const w = spinWinds[i]
       w.life += dt
@@ -1687,7 +1632,6 @@ export function createEffectsSystem(scene, opts = {}) {
       w.mesh.rotateZ(dt * SPIN_WIND_SPIN_RATE * w.spinDirection)
     }
 
-    // RAM RINGS (item 12)
     for (let i = ramRings.length - 1; i >= 0; i--) {
       const r = ramRings[i]
       r.life += dt
@@ -1701,7 +1645,6 @@ export function createEffectsSystem(scene, opts = {}) {
       r.mesh.material.opacity = 0.8 * (1 - t)
     }
 
-    // RAM AFTERIMAGES (item 12)
     for (let i = ramAfterimages.length - 1; i >= 0; i--) {
       const a = ramAfterimages[i]
       a.life += dt
@@ -1714,7 +1657,6 @@ export function createEffectsSystem(scene, opts = {}) {
       a.mesh.scale.setScalar(1 - t * 0.3)
     }
 
-    // ROLL AFTERIMAGES (item 3)
     for (let i = rollAfterimages.length - 1; i >= 0; i--) {
       const a = rollAfterimages[i]
       a.life += dt
@@ -1727,7 +1669,6 @@ export function createEffectsSystem(scene, opts = {}) {
       a.mesh.scale.setScalar(1 - t * 0.3)
     }
 
-    // DEFLECT RINGS (giro rebatedor, item 6)
     for (let i = deflectRings.length - 1; i >= 0; i--) {
       const r = deflectRings[i]
       r.life += dt
@@ -1742,7 +1683,6 @@ export function createEffectsSystem(scene, opts = {}) {
       r.mesh.material.opacity = 0.8 * (1 - t)
     }
 
-    // BOOST TRAIL (item 12, tipo cometa — só durante o impulso)
     for (let i = boostTrails.length - 1; i >= 0; i--) {
       const c = boostTrails[i]
       c.life += dt
@@ -1756,7 +1696,6 @@ export function createEffectsSystem(scene, opts = {}) {
       c.mesh.scale.setScalar(1 - t * 0.3)
     }
 
-    // HOMING AFTERIMAGES
     for (let i = homingAfterimages.length - 1; i >= 0; i--) {
       const a = homingAfterimages[i]
       a.life += dt
@@ -1782,7 +1721,6 @@ export function createEffectsSystem(scene, opts = {}) {
       a.mesh.scale.setScalar(1 - t * 0.15)
     }
 
-    // PROJECTILE TRAILS (tiros normais)
     for (let i = projectileTrails.length - 1; i >= 0; i--) {
       const p = projectileTrails[i]
       p.life += dt
@@ -1795,7 +1733,6 @@ export function createEffectsSystem(scene, opts = {}) {
       p.mesh.scale.setScalar(1 - t * 0.5)
     }
 
-    // SHOCKWAVES (billboard)
     for (let i = shockwaves.length - 1; i >= 0; i--) {
       const s = shockwaves[i]
       s.life += dt
@@ -1810,7 +1747,6 @@ export function createEffectsSystem(scene, opts = {}) {
       if (cam) s.mesh.quaternion.copy(cam.quaternion)
     }
 
-    // BOSS IMPACT RINGS
     for (let i = bossImpactRings.length - 1; i >= 0; i--) {
       const s = bossImpactRings[i]
       s.life += dt
@@ -1825,9 +1761,6 @@ export function createEffectsSystem(scene, opts = {}) {
       if (cam) s.mesh.quaternion.copy(cam.quaternion)
     }
 
-    // CHARGE CIRCLES (laser do chefe) — 3 anéis, cada um cresce numa velocidade diferente
-    // (o mais interno mais rápido) pra dar sensação de "convergindo por dentro"; nos últimos
-    // 10% ficam quase sólidos, sinalizando "vai disparar"
     for (let i = chargeCircles.length - 1; i >= 0; i--) {
       const c = chargeCircles[i]
       c.life += dt
@@ -1849,7 +1782,6 @@ export function createEffectsSystem(scene, opts = {}) {
       })
     }
 
-    // TELEGRAPHS
     for (let i = telegraphs.length - 1; i >= 0; i--) {
       const tg = telegraphs[i]
       tg.life += dt
@@ -1863,7 +1795,6 @@ export function createEffectsSystem(scene, opts = {}) {
       tg.mesh.material.opacity = 0.5 + 0.5 * Math.sin(t * Math.PI * 4)
     }
 
-    // GLASS SHARDS
     for (let i = glassShards.length - 1; i >= 0; i--) {
       const g = glassShards[i]
       g.life += dt
@@ -1884,7 +1815,6 @@ export function createEffectsSystem(scene, opts = {}) {
       }
     }
 
-    // BLOOM SPRITES
     for (let i = bloomSprites.length - 1; i >= 0; i--) {
       const b = bloomSprites[i]
       b.life += dt
@@ -1898,7 +1828,6 @@ export function createEffectsSystem(scene, opts = {}) {
       b.mesh.material.opacity = 0.6 * (1 - t)
     }
 
-    // CONTRAILS
     for (let i = contrails.length - 1; i >= 0; i--) {
       const c = contrails[i]
       c.life += dt
@@ -1911,7 +1840,6 @@ export function createEffectsSystem(scene, opts = {}) {
       c.mesh.scale.setScalar(1 - t * 0.7)
     }
 
-    // ENEMY THRUSTER TRAILS
     for (let i = enemyTrails.length - 1; i >= 0; i--) {
       const et = enemyTrails[i]
       et.life += dt
@@ -1926,10 +1854,8 @@ export function createEffectsSystem(scene, opts = {}) {
       et.mesh.scale.setScalar(0.24 * (1 - t * 0.6))
     }
 
-    // MICRO-ORBES ANKI
     updateMicroOrbes(dt, shipPosition || opts.playerPosition)
 
-    // RICOCHET ARCS
     for (let i = ricochetArcs.length - 1; i >= 0; i--) {
       const arc = ricochetArcs[i]
       arc.life += dt
@@ -1944,7 +1870,6 @@ export function createEffectsSystem(scene, opts = {}) {
       arc.mesh.material.opacity = (1 - t) * 0.95
     }
 
-    // FAÍSCAS DE HIT NÃO-LETAL (item 5)
     for (let i = ricochetSparkBursts.length - 1; i >= 0; i--) {
       const p = ricochetSparkBursts[i]
       p.life += dt
@@ -1960,7 +1885,6 @@ export function createEffectsSystem(scene, opts = {}) {
       p.mesh.material.opacity = 0.95 * (1 - t)
     }
 
-    // CLARÕES DISTANTES NO FUNDO CÓSMICO
     distantFlashTimer -= dt
     if (distantFlashTimer <= 0) {
       distantFlashTimer = 2.5 + Math.random() * 3.5
@@ -1981,7 +1905,6 @@ export function createEffectsSystem(scene, opts = {}) {
       f.mesh.material.opacity = f.maxOpacity * curve
     }
 
-    // SILHUETAS DISTANTES NAVEGANDO NO HORIZONTE
     for (const s of distantSilhouettes) {
       s.mesh.position.addScaledVector(s.velocity, dt)
       if (shipPosition) {
@@ -1990,13 +1913,6 @@ export function createEffectsSystem(scene, opts = {}) {
       }
     }
 
-    // ACTIVE FLASHES (mesh branco)
-    //
-    // v0.51.0 — checa `materialRef` antes de tudo: se o mesh trocou de material por fora desde
-    // que a entrada foi criada (chefe mudando de fase é o único caso hoje), descarta sem tentar
-    // restaurar cores. Restaurar clobberaria o material NOVO do mesh, que é COMPARTILHADO por
-    // todas as instâncias do mesmo tipo (ex: todos os bosses futuros na fase 2 usam o MESMO
-    // `bossPhaseMaterials[1]`) — um restore errado aqui tingiria todos eles de branco pra sempre.
     for (let i = activeFlashes.length - 1; i >= 0; i--) {
       const f = activeFlashes[i]
       if (f.mesh.material !== f.materialRef) {
@@ -2018,7 +1934,6 @@ export function createEffectsSystem(scene, opts = {}) {
       if (f.mesh.material.emissive) f.mesh.material.emissive.set(FLASH_COLOR)
     }
 
-    // GRID PULSE
     if (gridPulseTimer > 0 && gridRef && gridRef.material) {
       gridPulseTimer = Math.max(0, gridPulseTimer - dt)
       const t = 1 - gridPulseTimer / GRID_PULSE_DURATION
@@ -2031,13 +1946,6 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
-  // permite que o main.js agende um contrail dos wingmen manualmente
-  //
-  // v0.51.0 — recebe `dt` do chamador (main.js) em vez de assumir passo fixo de 1/60. Antes
-  // disso, a 30fps o contrail spawnava METADE das partículas esperadas (contrailTimer
-  // decrementava 2× mais devagar que o dt real), e a 144fps spawnava quase o dobro — a taxa
-  // dependia do FPS do jogador. Todos os outros temporizadores do arquivo já respeitavam dt;
-  // este era o único ponto que tinha assumido 60fps hardcoded.
   function spawnContrailTick(wingmenPositions, dt) {
     contrailTimer -= dt
     if (contrailTimer <= 0) {
@@ -2093,7 +2001,15 @@ export function createEffectsSystem(scene, opts = {}) {
     sharedWideRingGeometry.dispose()
     sharedTorusGeometry.dispose()
     sharedConeGeometry.dispose()
-    playerMuzzleConeGeo.dispose()
+    // Geometrias do muzzle flash (overhaul v0.85.x — 4 no lugar de 1)
+    playerMuzzleCoreGeo.dispose()
+    playerMuzzleHaloGeo.dispose()
+    playerMuzzleRingGeo.dispose()
+    playerMuzzleSparkGeo.dispose()
+    // Geometrias do Swirl Blast (overhaul visual — ver bloco de constantes SWIRL_* no topo do arquivo)
+    swirlFlashConeGeo.dispose()
+    swirlFlashRingGeo.dispose()
+    swirlAfterimageCoreGeo.dispose()
     microOrbeCoreGeo.dispose()
     microOrbeRingGeo.dispose()
     microOrbeCoreMat.dispose()

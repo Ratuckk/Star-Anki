@@ -10,21 +10,21 @@ export const SENTINELA_KIND = 'sentinela'
 export const SENTINELA_COLOR = 0x00d4ff
 export const SENTINELA_HIT_RADIUS = 2.2 // 10% maior (era 2.0)
 export const SENTINELA_DEATH_DURATION = 0.25
-export const SENTINELA_HP = 10
+export const SENTINELA_HP = 14
 
 // Código morto (nunca lido em lugar nenhum deste arquivo — a posição de spawn real usa
 // ENGAGE_STANDOFF abaixo). Não atualizados pelo pedido "20% mais distantes" de propósito: mexer
 // em constante sem uso nenhum não muda o jogo, só ficaria enganoso deixar como se fizesse algo.
-const SPAWN_DISTANCE_MIN = 45
-const SPAWN_DISTANCE_MAX = 70
+const SPAWN_DISTANCE_MIN = 65
+const SPAWN_DISTANCE_MAX = 90
 const BOX_X = 6
 const BOX_Y = 4
 
 const ENGAGE_STANDOFF = 62 // 48 * 1.3 — pedido do usuário (inimigos 20% mais distantes; Sentinela +30% à parte, já que este valor é a distância de combate inteira dela, não só o spawn)
-const LATERAL_TRACK_RATE = 7 // rastreamento lateral suave do jogador
+const LATERAL_TRACK_RATE = .2 // rastreamento lateral suave do jogador
 const LEAVE_SPEED = 32 // velocidade de fuga após o 4º disparo
-export const SENTINELA_SHOTS_TOTAL = 4
-export const SENTINELA_FIRE_INTERVAL = 1.9 // intervalo entre os 4 disparos
+export const SENTINELA_SHOTS_TOTAL = 6
+export const SENTINELA_FIRE_INTERVAL = 2 // intervalo entre os 4 disparos
 
 export const SENTINELA_STATE_ENGAGING = 'engaging'
 export const SENTINELA_STATE_LEAVING = 'leaving'
@@ -40,18 +40,18 @@ export const SENTINELA_STATE_LEAVING = 'leaving'
 // área dela fica perigosa). A borda "cresce pra dentro" conforme o buraco fecha, em vez de a
 // moldura inteira encolher — por isso o tamanho externo nunca muda, só o quanto dela é seguro.
 const GATE_OUTER_HALF = 6.4 // silhueta externa fixa — o "tamanho largo" da moldura
-const GATE_BORDER_MIN = 0.85 // espessura da borda quando TOTALMENTE ABERTA (fina, não um quadrado grosso)
+const GATE_BORDER_MIN = 0.65 // espessura da borda quando TOTALMENTE ABERTA (fina, não um quadrado grosso)
 const GATE_OPEN_APERTURE_HALF = GATE_OUTER_HALF - GATE_BORDER_MIN // buraco bem largo quando aberta
 const GATE_CLOSED_APERTURE_HALF = 0 // fechada: buraco zero, moldura inteira vira sólida
-const GATE_PULSE_PERIOD = 1.0 // segundos por ciclo completo abre → fecha → abre (pulsa o voo todo)
-const GATE_BAR_THICKNESS = 0.4 // espessura no eixo de voo (profundidade visual da barra)
-const GATE_SPEED = 18 // velocidade equilibrada e legível (aproximação total ~40 u/s)
-const GATE_DAMAGE = 1
-const GATE_SHIELD_DAMAGE = 1
+const GATE_PULSE_PERIOD = 1.3 // segundos por ciclo completo abre → fecha → abre (pulsa o voo todo)
+const GATE_BAR_THICKNESS = 0.2 // espessura no eixo de voo (profundidade visual da barra)
+const GATE_SPEED = 12 // velocidade equilibrada e legível (aproximação total ~40 u/s)
+const GATE_DAMAGE = 2
+const GATE_SHIELD_DAMAGE = 4
 const GATE_COLOR = 0x00d4ff
 
 // Sentinela em LEAVING voa para cima e para frente
-const SENTINELA_LEAVE_DESPAWN_AHEAD = 160
+const SENTINELA_LEAVE_DESPAWN_AHEAD = 190
 
 // Modelo 3D 10% maior com emissivo neon vibrante
 const geometry = new THREE.BoxGeometry(2.64, 2.64, 0.44)

@@ -208,10 +208,18 @@ const ARENA_AUTOLEVEL_RATE = 1.2
 // durante a manobra, tipo um zoom-out de mini-cutscene, pra dar tempo/espaço de ver o giro
 // inteiro. A guinada real (yaw, que de fato reposiciona a nave) continua girando 180° suave em
 // paralelo — só a ANIMAÇÃO visual (spin + câmera) é que virou fiel ao original nesta revisão.
-// Congela o controle manual de yaw/pitch/roll por essa duração.
-const SUMMERSAULT_DURATION = 0.6
-const SUMMERSAULT_CLIMB_SPEED = 10 // unidades/s de subida, só na primeira metade (igual ao pos.y += 2/frame do original)
-const SUMMERSAULT_CAM_PULLBACK = 16 // distância extra de câmera durante a manobra (zoom-out de cutscene)
+//
+// CORRIGIDO (bug reportado pelo usuário: "in-game ela só troca de lado"): a trajetória agora
+// desenha um ARCO VERTICAL REAL (sobe SUMMERSAULT_ARC_HEIGHT no meio, volta ao nível original
+// no fim) — sem isso, a nave literalmente só rodava o yaw no mesmo ponto, sem "sentir" o U.
+// Duração subiu pra 1.0s pra dar tempo de ler o arco; desaceleração durante a manobra ajuda a
+// não cruzar o U rápido demais. Ver updateSummersault/updateArena. Congela o controle manual
+// de yaw/pitch/roll por essa duração.
+const SUMMERSAULT_DURATION = 1.0 // era 0.6 — curto demais pra ler o arco inteiro
+const SUMMERSAULT_ARC_HEIGHT = 5.5 // altura máxima do arco vertical (unidades, pico em t=0.5)
+const SUMMERSAULT_SPEED_MULT = 0.65 // desacelera durante a manobra — o arco fica legível
+const SUMMERSAULT_CAM_PULLBACK = 22 // era 16 — mais respiro de câmera pra ver o arco todo
+const SUMMERSAULT_CAM_RISE = 3.5 // câmera sobe um pouco pra acompanhar o topo do arco
 
 function buildCurve() {
   const points = [
@@ -295,6 +303,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let playerY = 0
   let velX = 0
   let velY = 0
+  // Arremesso por colisão no trilho (chefe/dourado/detrito): via separada de velX/velY pra ter
+  // decaimento lento próprio (4.2/s) — a velocidade de input decai rápido (rate 22), o que
+  // mataria o arremesso em poucos frames e não deixaria a nave "viajar". Ver startTumble e update().
+  const railThrowVel = new THREE.Vector2(0, 0)
   // v0.29.6: momentum de direção mantida — reseta assim que o sinal de X ou Y muda (ou pára)
   let lastMoveXSign = 0
   let lastMoveYSign = 0
@@ -321,6 +333,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let arenaIdleTimer = 0 // item 1: segundos desde o último input de direção real no all-range
   let summersaultT = 1 // item 6: >=1 = inativo, 0..1 = animação em andamento
   let summersaultStartYaw = 0 // item 6
+  let summersaultLastArcY = 0 // item 6 (CORRIGIDO): último arcY aplicado — ver updateSummersault/updateArena
   // deslize lateral (combo propulsor+Z/C) — progress 0..1 percorrido em ARENA_DASH_DURATION,
   // aplicado como DELTA por frame (não posição absoluta) pra compor certo com o avanço normal
   // pra frente que também mexe em arenaPos no mesmo update; eixo fica travado no valor de
@@ -358,7 +371,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let fullSpinT = 1
   let fullSpinDir = 0
 
-  // Perda de controle por colisão com boss / dourado (Star Fox tumble spin)
+  // Perda de controle por colisão com boss / dourado / detrito (Star Fox tumble spin)
   const TUMBLE_DURATION = 0.85
   let tumbleTimer = 0
   let tumbleDuration = TUMBLE_DURATION
@@ -525,22 +538,31 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     if (mode !== 'arena' || summersaultT < 1) return
     summersaultStartYaw = arenaYaw
     summersaultT = 0
+    summersaultLastArcY = 0
   }
 
-  // avança a animação da cambalhota: a guinada real (arenaYaw) gira 180° suave, IGUAL a antes
-  // (é o que reposiciona a nave de verdade); o valor devolvido é só o ângulo do LOOP COSMÉTICO de
-  // pitch (0→2π ao longo da manobra, com o mesmo ease-out do yaw) — aplicado como rotateX extra
-  // no mesh em updateArena, sem afetar o vetor forward/direção de vôo. É essa volta completa do
-  // MODELO da nave (dissociada de pra onde ela está de fato voando) que faz a manobra ler como
-  // uma animação de verdade, igual ao Player_PerformLoop do jogo original.
+  // Avança a animação da cambalhota. A TRAJETÓRIA agora traça um arco vertical real (sobe até
+  // SUMMERSAULT_ARC_HEIGHT no meio, volta ao nível original no fim) enquanto o yaw gira 180° —
+  // a nave literalmente "desenha" um U no espaço, em vez de só trocar de lado no mesmo ponto
+  // (bug reportado pelo usuário: "in-game ela só troca de lado, não foi isso que eu pedi").
+  // O mesh ainda dá o loop visual de pitch de 360° (identidade da manobra, fiel ao
+  // Player_PerformLoop do SF64), mas agora é o arco da POSIÇÃO que faz a leitura de movimento.
+  //
+  // Retorna { spinAngle, arcY } — arcY é aplicado como DELTA no arenaPos (ver updateArena), então
+  // a posição ao fim da manobra volta ao valor inicial naturalmente (sin(π·1)·H - sin(π·0)·H = 0).
   function updateSummersault(dt) {
-    if (summersaultT >= 1) return 0
+    if (summersaultT >= 1) return null
     summersaultT = Math.min(1, summersaultT + dt / SUMMERSAULT_DURATION)
-    const eased = 1 - Math.pow(1 - summersaultT, 3)
+    // smootherstep (Perlin) em vez de cubic ease-out — sem "arranque" no início nem no fim,
+    // a rotação entra e sai suave, o que ajuda a ler como movimento controlado e não como giro
+    // brusco seguido de freada.
+    const eased = summersaultT * summersaultT * summersaultT * (summersaultT * (summersaultT * 6 - 15) + 10)
     arenaYaw = summersaultStartYaw + Math.PI * eased
-    // mesmo amortecimento pós-manobra do giro completo, ao terminar a cambalhota
     if (summersaultT >= 1) wobbleVel += WOBBLE_KICK * (Math.random() < 0.5 ? -1 : 1)
-    return eased * Math.PI * 2
+    return {
+      spinAngle: eased * Math.PI * 2,
+      arcY: Math.sin(summersaultT * Math.PI) * SUMMERSAULT_ARC_HEIGHT,
+    }
   }
 
   // recuo do tiro (pedido do usuário) — chamado por main.js a cada disparo bem-sucedido
@@ -554,8 +576,16 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   }
 
   // Motor compartilhado de "perda de controle" — usado tanto pela colisão física direta com o
-  // corpo do chefe/dourado (duração/velocidade curtas, sem flash) quanto pelo hit de projétil de
-  // alto-impacto nível 4 (duração longa + flash vermelho, ver bloco de constantes acima).
+  // corpo do chefe/dourado/detrito (duração/velocidade curtas, sem flash) quanto pelo hit de
+  // projétil de alto-impacto nível 4 (duração longa + flash vermelho, ver bloco de constantes acima).
+  //
+  // CORRIGIDO (bug de teleporte reportado pelo usuário): antes somava uma posição INSTANTÂNEA
+  // (arena: +16u em arenaPos; trilho: ±14u em playerX) antes de aplicar qualquer velocidade —
+  // lia como teleporte seco, não como arremesso. Agora só a VELOCIDADE é setada, e o motor de
+  // integração que já existe por modo (updateArena → tumbleKnockbackVel; update do trilho →
+  // railThrowVel) empurra a nave suavemente ao longo do tempo, com decaimento exponencial lento
+  // (~4.2/s, o mesmo da arena), pra nave viajar uma distância real (≈8u) em vez de só tremelicar
+  // no lugar.
   function startTumble(duration, impactOrigin, { highImpact = false } = {}) {
     tumbleTimer = duration
     tumbleDuration = duration
@@ -574,20 +604,20 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       repelDir.normalize()
       repelDir.y = Math.max(0.2, repelDir.y)
       repelDir.normalize()
-      arenaPos.addScaledVector(repelDir, 16)
-      const off = arenaPos.clone().sub(arenaCenter)
-      if (off.length() > ARENA_RADIUS) arenaPos.copy(arenaCenter).addScaledVector(off.normalize(), ARENA_RADIUS)
-      tumbleKnockbackVel.copy(repelDir).multiplyScalar(35)
+      // Sem teleporte: só a velocidade arremessa (updateArena integra tumbleKnockbackVel frame a
+      // frame com decaimento 4.2). O clamp de raio da arena continua acontecendo no updateArena.
+      tumbleKnockbackVel.copy(repelDir).multiplyScalar(125)
     } else {
+      // Trilho: mesma ideia — sem mexer em playerX direto. railThrowVel é uma via separada da
+      // velocidade de input (velX/velY), com decaimento lento próprio (4.2), pra que o arremesso
+      // sobreviva ao lerp rápido (rate 22) que a velocidade de input usa. Ver integração em update().
       const pushX = Math.sign(playerX || (Math.random() < 0.5 ? -1 : 1)) * 14
-      playerX = THREE.MathUtils.clamp(playerX + pushX, -BOX_X, BOX_X)
-      velX = pushX * 2.4
-      velY = 16
+      railThrowVel.set(pushX * 4, 30)
       recoilOffset += 7.5
     }
   }
 
-  // Colisão violenta com boss / dourado (Star Fox knockback + tumble spin)
+  // Colisão violenta com boss / dourado / detrito (Star Fox knockback + tumble spin)
   function triggerBossCollisionTumble(impactOrigin) {
     startTumble(TUMBLE_DURATION, impactOrigin, { highImpact: false })
   }
@@ -621,8 +651,9 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   }
 
   function updateArena(dt, input, fullSpinAngle = 0, tumbleState = null) {
-    const summersaultSpin = updateSummersault(dt)
-    const inSummersault = summersaultT < 1
+    const summersaultState = updateSummersault(dt)
+    const inSummersault = summersaultState !== null
+    const summersaultSpin = inSummersault ? summersaultState.spinAngle : 0
     updateLateralDash(dt)
 
     if (!inSummersault) {
@@ -653,16 +684,23 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     }
 
     const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
-    // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho
-    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * dt)
+    // speedMultiplier (propulsor/repulsor, item 4b) também vale no all-range, igual ao trilho —
+    // é o mesmo fator que já freia progressivamente enquanto o jogador segura repulsão; a
+    // cambalhota desacelera por cima pra o arco ser legível (senão a nave cruza o U inteiro em
+    // fração de segundo e some do enquadramento).
+    const summersaultSpeedMult = inSummersault ? SUMMERSAULT_SPEED_MULT : 1
+    arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * summersaultSpeedMult * dt)
 
-    // pequena subida na primeira metade da cambalhota, igual ao `pos.y += 2`/frame do jogo
-    // original (Player_PerformLoop) — só um empurrão de altitude, não muda o forward/heading
-    if (inSummersault && summersaultT < 0.5) arenaPos.y += SUMMERSAULT_CLIMB_SPEED * dt
+    // Arco vertical da cambalhota: aplica só o DELTA do arcY deste frame (não a posição absoluta).
+    // arenaPos.y sobe no primeiro meio e desce no segundo, voltando ao valor original ao fim sem
+    // precisar de "reset" manual — sin(π·1)·H - sin(π·0)·H = 0. Ver updateSummersault.
+    const arcY = inSummersault ? summersaultState.arcY : 0
+    arenaPos.y += arcY - summersaultLastArcY
+    summersaultLastArcY = arcY
 
     if (tumbleKnockbackVel.lengthSq() > 0.01) {
       arenaPos.addScaledVector(tumbleKnockbackVel, dt)
-      tumbleKnockbackVel.multiplyScalar(Math.exp(-4.2 * dt))
+      tumbleKnockbackVel.multiplyScalar(Math.exp(-2.2 * dt))
     }
 
     const offset = arenaPos.clone().sub(arenaCenter)
@@ -689,15 +727,20 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     applyShakeJitter()
     applyWeightJitter()
 
-    // câmera puxa pra trás durante a cambalhota (igual ao `sp74.z += 500` do
-    // Camera_UpdateArwing360 original) — dá espaço/tempo pra ver o loop inteiro, tipo um
-    // zoom-out de mini-cutscene; o lerp de câmera logo abaixo já suaviza a ida e a volta sozinho
-    const camPullback = inSummersault ? SUMMERSAULT_CAM_PULLBACK : 0
+    // Câmera: durante a cambalhota, puxa pra trás E sobe um pouco (sin, pico em t=0.5) —
+    // enquadra o arco inteiro, que sobe SUMMERSAULT_ARC_HEIGHT no meio da manobra. A taxa de
+    // follow desacelera pra câmera "assistir" em vez de perseguir rigidamente: vende a manobra
+    // como mini-cutscene, igual em espírito ao Camera_UpdateArwing360 do SF64 (que dá um
+    // zoom-out durante o loop).
+    const camPullbackT = inSummersault ? Math.sin(summersaultT * Math.PI) : 0
+    const camPullback = camPullbackT * SUMMERSAULT_CAM_PULLBACK
+    const camRise = camPullbackT * SUMMERSAULT_CAM_RISE
     const camTarget = arenaPos.clone()
       .addScaledVector(forward, -(CAM_BEHIND + camPullback))
-      .addScaledVector(up, CAM_HEIGHT)
+      .addScaledVector(up, CAM_HEIGHT + camRise)
 
-    camera.position.lerp(camTarget, dt === 0 ? 1 : 1 - Math.exp(-CAM_LAG_RATE * dt))
+    const camLerpRate = inSummersault ? CAM_LAG_RATE * 0.4 : CAM_LAG_RATE
+    camera.position.lerp(camTarget, dt === 0 ? 1 : 1 - Math.exp(-camLerpRate * dt))
     camera.up.copy(up)
     camera.lookAt(camera.position.clone().add(forward))
 
@@ -803,10 +846,21 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     playerX += velX * dt
     playerY += velY * dt
 
-    if (playerX > BOX_X) { playerX = BOX_X; velX = 0 }
-    else if (playerX < -BOX_X) { playerX = -BOX_X; velX = 0 }
-    if (playerY > BOX_Y) { playerY = BOX_Y; velY = 0 }
-    else if (playerY < -BOX_Y) { playerY = -BOX_Y; velY = 0 }
+    // Arremesso por colisão — decai bem mais devagar que a velocidade de input (4.2 vs 22), senão
+    // a nave mal sai do lugar antes do controle voltar. Ver startTumble (trilho).
+    if (railThrowVel.x !== 0 || railThrowVel.y !== 0) {
+      playerX += railThrowVel.x * dt
+      playerY += railThrowVel.y * dt
+      const throwDecay = Math.exp(-4.2 * dt)
+      railThrowVel.x *= throwDecay
+      railThrowVel.y *= throwDecay
+      if (railThrowVel.lengthSq() < 0.01) railThrowVel.set(0, 0)
+    }
+
+    if (playerX > BOX_X) { playerX = BOX_X; velX = 0; railThrowVel.x = 0 }
+    else if (playerX < -BOX_X) { playerX = -BOX_X; velX = 0; railThrowVel.x = 0 }
+    if (playerY > BOX_Y) { playerY = BOX_Y; velY = 0; railThrowVel.y = 0 }
+    else if (playerY < -BOX_Y) { playerY = -BOX_Y; velY = 0; railThrowVel.y = 0 }
 
     if (DEBUG && (input.moveX !== 0 || Math.abs(playerX) > 0.05)) {
       console.log(
