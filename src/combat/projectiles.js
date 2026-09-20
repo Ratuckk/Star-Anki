@@ -124,13 +124,9 @@ const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado
 // apontar o conflito; R1 continua valendo pra todo o resto (inimigos comuns, fragata — que já
 // para o Swirl por conta própria e não precisa de homing pra ser atingida).
 //
-// ESCALA "Rodada 1" — todos os números de tamanho abaixo são 0.6× do valor final da proposta v2
-// (o próprio documento recomenda testar em 2 rodadas por causa de riscos reais: pode invadir o
-// near-clip da câmera, pode trivializar a luta de chefe com o homing, pode ficar grande demais —
-// escolha do usuário depois do susto recente com o tamanho errado da Horda). Se ficar bom em
-// teste, a Rodada 2 é só multiplicar os *_RADIUS/*_LENGTH abaixo por (1/0.6) pra chegar nos
-// valores cheios da proposta.
-const SWIRL_SCALE = 0.6
+// ESCALA — Rodada 1 (0.6×) testada e aprovada ao vivo pelo usuário; Rodada 2 abaixo é a escala
+// CHEIA da proposta v2 (1.0×). Pra voltar pra Rodada 1 se precisar, é só trocar de volta pra 0.6.
+const SWIRL_SCALE = 1.0
 
 const SWIRL_CORE_COLOR = 0x2b8fff  // azul principal — mesma família do tiro carregado máximo
 const SWIRL_DEEP_COLOR = 0x1a5fb4  // azul escuro da "plumagem" traseira
@@ -186,9 +182,18 @@ const SWIRL_EXHAUST_RADIUS = 0.6 * SWIRL_SCALE // 0.36
 const SWIRL_EXHAUST_DISTANCE = SWIRL_TAIL_RADIUS * 0.85
 
 // Punch visual quando o alvo travado é chefe/dourado (§2 da proposta v2) — turn rate limitado
-// (lerp de DIREÇÃO, não retargeting instantâneo como o teleguiado comum): é um torpedo que
-// corrige aos poucos, não um míssil telepático perfeito.
-const SWIRL_HOMING_TURN_RATE = 4.0 // rad/s do lerp direção→alvo
+// (rotação de DIREÇÃO por eixo-ângulo, não retargeting instantâneo como o teleguiado comum): é
+// um torpedo que corrige aos poucos, não um míssil telepático perfeito.
+const SWIRL_HOMING_TURN_RATE = 18.0 // rad/s de correção angular enquanto FORA do raio de alcance final
+
+// Perseguição pura com taxa de giro limitada tem um problema geométrico conhecido: perto do
+// alvo, a taxa angular NECESSÁRIA pra continuar apontando pra ele cresce sem limite (é o ângulo
+// que muda mais rápido que a distância encolhe) — mesmo com SWIRL_HOMING_TURN_RATE bem alto, o
+// projétil pode ficar preso numa órbita ao redor do alvo sem nunca fechar a distância até o
+// raio de colisão (visto ao vivo: distância oscilando 18u↔40u ao redor de um chefe parado,
+// nunca cruzando o hitRadius de ~7.7u, até expirar). Dentro deste raio, aponta DIRETO pro alvo
+// (sem limite de giro) — é a "guiagem terminal" padrão de mísseis em jogos, só pro trecho final.
+const SWIRL_HOMING_SNAP_RANGE = 26 // unidades — maior que a órbita típica observada em teste
 
 const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 3)
 swirlCoreGeometry.rotateX(Math.PI / 2)
@@ -319,6 +324,7 @@ const _projToSource = new THREE.Vector3()
 const _projDir = new THREE.Vector3()
 const _projDesired = new THREE.Vector3()
 const _projSteered = new THREE.Vector3()
+const _projAxis = new THREE.Vector3()
 const _projRingPos = new THREE.Vector3()
 
 export function createProjectileSystem(scene, effects, player, enemies, targets, lockon) {
@@ -448,10 +454,16 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // ============================================================
 
       // Swirl Blast v2 — homing contra chefe/dourado travado no release (desvio deliberado do
-      // R1 "sempre reto" original, só pra esse caso — pedido explícito do usuário). Lerp de
-      // DIREÇÃO com taxa limitada (SWIRL_HOMING_TURN_RATE), não retargeting instantâneo como o
-      // `projectile.homingTarget` genérico acima (que também sobrescreveria a VELOCIDADE pro
-      // valor do teleguiado comum — errado aqui, o Swirl mantém sua própria velocidade sempre).
+      // R1 "sempre reto" original, só pra esse caso — pedido explícito do usuário). Rotação de
+      // DIREÇÃO com taxa angular limitada (SWIRL_HOMING_TURN_RATE), não retargeting instantâneo
+      // como o `projectile.homingTarget` genérico acima (que também sobrescreveria a VELOCIDADE
+      // pro valor do teleguiado comum — errado aqui, o Swirl mantém sua própria velocidade
+      // sempre). Usa rotação por eixo-ângulo (não Vector3.lerp) — lerp entre dois vetores
+      // unitários degenera em ângulos largos/alvo próximo (a magnitude do vetor interpolado
+      // encolhe perto de 90°-180°, distorcendo a taxa de giro real), o que fazia o projétil
+      // ULTRAPASSAR o alvo e entrar num loop orbital sem nunca conectar — bug real, visto ao
+      // vivo via window.__starAnki (posição do projétil oscilando 36u↔147u em torno de um chefe
+      // parado, nunca fechando a distância).
       if (projectile.isPiercing && projectile.swirlHomingTarget) {
         if (projectile.swirlHomingTarget.dying) {
           const speedBeforeFreeze = projectile.velocity.length()
@@ -464,10 +476,25 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         } else {
           const speed = projectile.velocity.length()
           _projDir.copy(projectile.velocity).normalize()
-          _projDesired.copy(projectile.swirlHomingTarget.mesh.position).sub(projectile.mesh.position).normalize()
-          const turnT = Math.min(1, SWIRL_HOMING_TURN_RATE * dt)
-          _projSteered.copy(_projDir).lerp(_projDesired, turnT)
-          if (_projSteered.lengthSq() > 1e-6) projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
+          _projDesired.copy(projectile.swirlHomingTarget.mesh.position).sub(projectile.mesh.position)
+          const distToTarget = _projDesired.length()
+          _projDesired.normalize()
+          if (distToTarget <= SWIRL_HOMING_SNAP_RANGE) {
+            projectile.velocity.copy(_projDesired).multiplyScalar(speed)
+          } else {
+            const angle = Math.acos(THREE.MathUtils.clamp(_projDir.dot(_projDesired), -1, 1))
+            const maxTurn = SWIRL_HOMING_TURN_RATE * dt
+            if (angle <= maxTurn || angle < 1e-4) {
+              projectile.velocity.copy(_projDesired).multiplyScalar(speed)
+            } else {
+              _projAxis.crossVectors(_projDir, _projDesired)
+              if (_projAxis.lengthSq() > 1e-8) {
+                _projAxis.normalize()
+                _projSteered.copy(_projDir).applyAxisAngle(_projAxis, maxTurn)
+                projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
+              }
+            }
+          }
         }
       }
 

@@ -184,9 +184,9 @@ const SWIRL_HOT_COLOR = 0xeaffff      // idem SWIRL_HOT_COLOR em projectiles.js
 // Overhaul v2 (pedido do usuário) — valores da proposta em escala "Rodada 1" (0.6×, mesma lógica
 // de projectiles.js: SWIRL_SCALE ali). Durações não são "tamanho", ficam no valor cheio proposto.
 const SWIRL_FLASH_DURATION = 0.55     // era 0.45 — duração total do flash de disparo
-const SWIRL_FLASH_RING_SCALE = 8.0 * 0.6 // 4.8 — era 4.5, crescimento do anel de choque principal
+const SWIRL_FLASH_RING_SCALE = 8.0 // Rodada 2 (escala cheia) — crescimento do anel de choque principal
 const SWIRL_AFTERIMAGE_DURATION = 0.8 // era 0.55 — cada fantasma da trilha vive mais
-const SWIRL_EXPLOSION_RADIUS = 7.0 * 0.6 // 4.2 — impacto contra boss/escudo/dourado (dano é sempre 6 fixo)
+const SWIRL_EXPLOSION_RADIUS = 7.0 // Rodada 2 (escala cheia) — impacto contra boss/escudo/dourado (dano é sempre 6 fixo)
 // Anel de bloqueio (novo, §2 da proposta v2) — aparece brevemente sobre o chefe/dourado no
 // instante do disparo, quando o Swirl sai em modo homing. Confirma pro jogador "vai nele".
 const SWIRL_LOCK_RETICLE_DURATION = 0.4
@@ -464,13 +464,13 @@ export function createEffectsSystem(scene, opts = {}) {
   // SWIRL_CORE_LENGTH=6.0 em projectiles.js — duplicado aqui de propósito, mesmo padrão de
   // SWIRL_COLOR acima). O afterimage precisa da MESMA silhueta triangular, senão a trilha lê
   // como um formato diferente do projétil de verdade.
-  const swirlAfterimageCoreGeo = new THREE.ConeGeometry(1.8, 6.0, 3)
+  const swirlAfterimageCoreGeo = new THREE.ConeGeometry(3.0, 10.0, 3) // Rodada 2 (escala cheia)
   swirlAfterimageCoreGeo.rotateX(Math.PI / 2)
   // Anel de lock (novo, homing contra chefe/dourado) — aro fino, some rápido.
   const swirlLockReticleGeo = new THREE.RingGeometry(SWIRL_LOCK_RETICLE_RADIUS * 0.85, SWIRL_LOCK_RETICLE_RADIUS, 32)
   // Fragmentos triangulares da explosão de impacto (novo, §6 da proposta v2) — tetraedros
   // pequenos que voam em leque hemisférico, reforça a leitura "triangular" também no impacto.
-  const swirlFragmentGeo = new THREE.TetrahedronGeometry(0.5 * 0.6, 0)
+  const swirlFragmentGeo = new THREE.TetrahedronGeometry(0.5, 0) // Rodada 2 (escala cheia)
 
   const _FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
   const _BACKWARD_AXIS = new THREE.Vector3(0, 0, -1)
@@ -924,7 +924,7 @@ export function createEffectsSystem(scene, opts = {}) {
     })
   }
 
-  // Afterimage da trilha (§4.4) — geometria própria grande (swirlAfterimageCoreGeo, 0.75×6.5),
+  // Afterimage da trilha (§4.4) — geometria própria grande (swirlAfterimageCoreGeo, 3.0×10.0),
   // antes reusava `sharedConeGeometry` (0.5×2.5, mesma do rastro do homing) e lia como um
   // pontinho fino.
   function swirlAfterimage(position, quaternion) {

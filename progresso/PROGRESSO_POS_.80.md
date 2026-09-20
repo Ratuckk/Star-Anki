@@ -759,3 +759,140 @@ chefe com incremento CRESCENTE a cada frame (correção proporcional visível, n
 sem nenhum lock → X e Y decrescem em incremento CONSTANTE (reta perfeita, R1 preservado). Zero
 erros no console em toda a sessão de teste; `getScene().children` confirmou o Group de 15 filhos
 (1+1+1+1+5+1+1+1+3) batendo exato com as 9 camadas descritas.
+
+## Rádio dos Aliados (Overhaul de Personalidade, Ideia 3) — implementado
+
+Ideia 3 do `Docs/# Overhaul de Personalidade e Vida.md` (bloqueada até um protótipo HTML com 3
+opções visuais ser decidido). Processo: prototipei as 3 opções como um canvas de Design (claude.ai
+artifact), usuário gostou da Opção B (notificação de HUD no canto) mas pediu sprites reais de
+personagens em vez de ícone colorido + quotes em inglês alinhadas ao Star Fox 64 original — nesse
+ponto o usuário pediu pra **não** ser mais em artefato hospedado, e sim arquivo HTML local mesmo
+(protótipos ficaram em `Docs/Rádio dos Aliados — Opção B (protótipo).html` e a v2 com os sprites/
+estática reais). Depois de decidido, pediu refinamento: painel quadrado (não pill, acomoda melhor
+o ícone) + efeito de "rádio riscado" (a estática de sintonia real do jogo, não um glitch genérico)
++ 3 novas opções de ANIMAÇÃO com isso em mente. Escolhida a **Opção 3**: painel corta pra dentro
+em fatias (glitch de steps, tipo troca de canal) na entrada, retrato passa pelos frames de
+estática, flicker rápido antes de sumir.
+
+**Assets — de onde vieram (importante pra nunca esquecer a fonte)**: sprites reais recortados do
+jogo **Star Fox 2 (SNES)**, via spriters-resource.com (asset `snes/starfox2/asset/1451/`
+"Mugshots" pros retratos de Falco/Peppy/Slippy/Miyu — grade de 65×65px por personagem, confirmada
+por pixel-sampling; asset `1452/` "Portraits" pra sequência de "estática de sintonia" — 2 ícones de
+bracket + 4 blocos de ruído colorido + 1 ruído escuro, EXATAMENTE a animação de "sinal chegando"
+que o jogo original usa antes de mostrar o retrato de um personagem no rádio). Baixados via
+ImageMagick (`magick -crop` no grid certo, filter point + resize pra manter pixel art nítida) —
+NÃO por base64 colado manualmente (primeira tentativa disso corrompeu silenciosamente as imagens,
+gerando strings curtas inválidas; lição: para blobs >1KB, baixar/decodificar via arquivo, nunca
+copiar base64 gigante à mão). Assets finais em `assets/wingman-radio/` (`falco.png`, `peppy.png`,
+`slippy.png`, `miyu.png`, `static1.png`..`static7.png`) — commitados no repo público. **Risco de
+direito autoral aceito conscientemente pelo usuário** (sprites da Nintendo/Argonaut, projeto
+pessoal não-comercial) — se o projeto algum dia for distribuído/monetizado, trocar por arte
+própria.
+
+**Renomeação Krystal → Miyu**: o 4º piloto (roxo, `WINGMAN_PROFILES[3]`) se chamava "Krystal" mas
+esse nome não existe no elenco clássico de Star Fox (ela só estreia em Star Fox Adventures/GameCube,
+anos depois de SF64) — não tem sprite correspondente na folha de SF2. Como não dava pra ter um
+retrato "Krystal" com a cara da Miyu Lynx, o usuário decidiu renomear o piloto inteiro pra Miyu em
+todo o jogo (rename global via sed, case-preservado: `Krystal`→`Miyu`, `krystal`→`miyu`,
+`KRYSTAL`→`MIYU`, 7 arquivos: `combat/wingmen.js`, `game-loop.js`, `hud-game.js`, `audio-cues.js`,
+`roguelike.js`, `debug.js`, `flow-question.js`). Título ("Vanguarda Fantasma") e tema (stealth/
+cloak) continuam batendo bem com a Miyu, não precisou mudar.
+
+**Idioma das falas**: inglês, catchphrases curtas no espírito de Star Fox 64 (pedido explícito do
+usuário — "Do a barrel roll!" pra Peppy, "Help me, Fox!" reaproveitado pro evento `alone` do
+Slippy, etc) — o resto do jogo é todo em português, isso é homenagem direta à série, decisão
+consciente, não inconsistência.
+
+**Arquitetura**: `src/combat/wingman-radio.js` (novo) — dispatcher puramente lógico, sem DOM,
+igual ao spec original do doc (`trySpeak(pilotId, eventId, now)`, cooldown global de 6s,
+`trySpeakAlone` com estado próprio pra só falar 1x por partida). 10 pontos de disparo em
+`combat/wingmen.js` (8 do doc + `player_low_health` edge-triggered + `alone`): `engage_dogfight`,
+`engage_focus`, `ability_ram/guard/repair/assist`, `kill`, `return_formation`,
+`player_low_health`, `alone`; mais `player_take_damage` disparado de FORA do laço de update
+(`triggerPlayerTookDamage()`, chamado por `game-loop.js` no momento em que `player.takeDamage()`
+resolve — decisão (b) do §3.5 do doc: só reage a dano do JOGADOR, nunca do wingman, que é
+invulnerável). Mensagens que nascem fora do laço de `update()` ficam em `pendingRadioMessage`
+(closure) até o próximo frame devolver — 1 frame de atraso, imperceptível. `combat/index.js`
+repassa `radioMessage` no retorno de `update()` e expõe `notifyPlayerDamaged()` (patch cirúrgico —
+arquivo tem WIP concorrente de outra sessão no Swirl Blast homing, mesma técnica de sempre:
+extrai HEAD, replica só as 2 linhas novas, diff, `git apply --cached`). `hud-game.js` →
+`showWingmanRadio({ pilotId, name, color, text })` monta o painel + toca o flipbook de 7 frames de
+estática (55ms cada, pré-carregados no mount do HUD pra primeira fala da partida não perder frame
+por cache frio) antes de resolver no retrato de verdade. CSS em `hud-styles.js`
+(`.hud-wingman-radio*`) — `@keyframes hud-wingman-radio-glitch-in` (clip-path em steps) e
+`-flicker` (opacity em steps) fazem as duas animações da Opção 3. Setting novo
+`wingmanRadioEnabled` (default `true`, toggle em Configurações → "Rádio do Esquadrão").
+
+**Testado ao vivo** via `window.__starAnki.combat.notifyPlayerDamaged()` + eventos orgânicos de IA
+durante partida real com Esquadrão completo (4 pilotos) — painel apareceu corretamente pros 4
+pilotos (cores/retratos certos), zero erros de console. `selftest.mjs` ganhou seção nova
+(cooldown global bloqueia 2ª fala, libera depois de 6s, `pilotId`/`eventId` inexistentes devolvem
+`null` sem lançar, `reset()` zera cooldown, `trySpeakAlone` só fala 1x mesmo com outro piloto e
+cooldown livre).
+
+### Swirl Blast Rodada 2 (escala cheia) + bug real do homing corrigido
+
+(sem número de versão nesta entrada — havia um bump pra v0.92.0 pendente/staged de outra sessão
+concorrente no momento desta entrega, ver nota sobre `game-loop.js` mais abaixo; não dava pra
+commitar `version.js` sem entrelaçar as duas entregas)
+
+Usuário aprovou a Rodada 1 (0.6×) em teste real e pediu pra seguir pra Rodada 2, mas reportou dois
+problemas: (1) "o projétil precisa ser maior" — pedido de Rodada 2 mesmo; (2) "ele ainda não é
+teleguiado corretamente até os chefes" — bug real, não percepção.
+
+**Escala**: `SWIRL_SCALE` em `combat/projectiles.js` foi de `0.6` pra `1.0` (valores cheios da
+proposta v2). As constantes duplicadas de propósito em `effects.js` (não importa de
+`combat/projectiles.js` — mesma regra de sempre, evita import circular) também foram reescaladas
+pra bater: `SWIRL_FLASH_RING_SCALE` (4.8→8.0), `SWIRL_EXPLOSION_RADIUS` (4.2→7.0),
+`swirlFragmentGeo` (0.3→0.5), `swirlAfterimageCoreGeo` (1.8×6.0→3.0×10.0).
+
+**Bug do homing — causa raiz encontrada via teste ao vivo, não suposição**: o homing da Rodada 1
+usava `Vector3.lerp` entre a direção atual e a direção desejada (ambas normalizadas) pra simular
+uma taxa de giro limitada. Isso tem um defeito geométrico conhecido: lerp entre dois vetores
+UNITÁRIOS encolhe de magnitude perto de ângulos largos (~90°-180°) antes de normalizar de volta —
+distorce a taxa de giro real e, em alvo próximo/ângulo largo, o projétil ULTRAPASSAVA o alvo e
+entrava numa órbita instável ao redor dele sem nunca fechar a distância até o `hitRadius`. Provado
+via `window.__starAnki`: disparo contra chefe reposicionado a 60u de distância / 15u lateral
+(mira reta, sem apontar pro alvo — simula o jogador não conseguindo manter a mira exata após o
+giro completo) — posição do projétil oscilando 36u↔147u em torno de um chefe PARADO, nunca
+conectando, expirando por alcance máximo.
+
+**Correção em 2 partes** (ambas em `combat/projectiles.js`, bloco do homing dentro de
+`update(dt, ...)`):
+1. Trocada a rotação de `Vector3.lerp` (degenera) por rotação de eixo-ângulo de verdade
+   (`Vector3.applyAxisAngle` em torno do eixo `cross(direçãoAtual, direçãoDesejada)`, ângulo
+   limitado por `SWIRL_HOMING_TURN_RATE * dt`) — taxa de giro genuinamente constante, sem a
+   distorção do lerp. `SWIRL_HOMING_TURN_RATE` subiu de `4.0` pra `18.0` rad/s (o valor de 4.0
+   nunca convergia a tempo mesmo com a rotação corrigida).
+2. Mesmo com eixo-ângulo correto, perseguição pura (mirar sempre na posição ATUAL do alvo) tem um
+   problema geométrico separado e conhecido: perto do alvo, a taxa angular NECESSÁRIA pra
+   continuar apontando pra ele cresce sem limite — o projétil pode ficar preso numa órbita estável
+   ao redor do alvo (visto ao vivo: mínimo de distância baixando de 68u→38u→18u conforme
+   `SWIRL_HOMING_TURN_RATE` subia, mas nunca cruzando o `hitRadius` de ~7.7u — um ciclo-limite, não
+   uma espiral convergente). Adicionado `SWIRL_HOMING_SNAP_RANGE = 26` — dentro desse raio, o
+   projétil aponta DIRETO pro alvo (sem limite de giro), a "guiagem terminal" padrão de mísseis em
+   jogos, só pro trecho final. É maior que a órbita observada em teste, então garante que a órbita
+   sempre entra no raio de snap e converge de vez.
+
+**Validado ao vivo** (`window.__starAnki`, chefe E dourado, caso fácil/moderado/extremo):
+- 60u frente / 15u lateral, mira reta: hit em 6 frames.
+- 40u frente / 25u lateral (~32°), mira reta: hit em 4 frames.
+- 40u frente / 25u lateral, disparo PERPENDICULAR (mira "pra cima", pior caso de desalinhamento
+  giro→soltura): hit em 7 frames — esse caso especificamente falhava 100% das vezes antes da
+  correção (expirava sem conectar).
+- Dourado, mesmo caso moderado: hit em 8 frames.
+- R1 (sem alvo travado): 15 frames consecutivos com delta de posição EXATAMENTE idêntico
+  (8.684u/frame) — zero curvatura, trajetória reta preservada intacta.
+- `stopProjectile` (chefe/dourado sempre param o Swirl) continua funcionando — grupo do projétil
+  removido da cena no mesmo frame do hit em todos os casos acima.
+
+**Câmera lenta (slow-mo do Swirl)** — usuário pediu pra ajustar ele mesmo, só perguntou se as
+variáveis já estavam isoladas/comentadas pra edição fácil. Confirmado que sim, sem precisar mexer:
+`SWIRL_SLOW_MO_MS`/`SWIRL_SLOW_MO_FACTOR`/`SWIRL_FOV_BUMP_MS`/`SWIRL_FOV_TARGET` em
+`main-constants.js` (bloco "SWIRL BLAST", cada uma já com comentário explicando o efeito). O punch
+de câmera (`camera.translateZ(1.5)`) e o roll (`degToRad(3)`) em `game-loop.js` também têm
+comentário no local explicando o que fazem, mas ficaram como número mágico inline (não extraídos
+pra constante nomeada) — havia uma sessão concorrente com mudanças não commitadas nesse mesmo
+arquivo (`game-loop.js`) no momento desta entrega; extrair essas duas constantes teria misturado
+esta entrega com o trabalho pendente da outra sessão, então foi revertido de propósito. Se quiser
+essa extração depois, é seguro fazer numa entrega isolada.
