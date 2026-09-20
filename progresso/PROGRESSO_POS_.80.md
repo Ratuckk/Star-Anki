@@ -196,3 +196,37 @@ num inimigo, persegue-o (path do cone); sem trava e mirando pro nada (longe de q
 dispara reto (`fired: 1`, sem `homingTarget`). `node --check` limpo em todos os arquivos tocados,
 `node src/selftest.mjs` OK. Itens 4–11 do documento ainda não implementados (ficam pro próximo
 pedido do usuário).
+
+---
+
+### Investigação e fix do bug do escudo do chefe (pré-requisito do Swirl Blast, `Docs/# Swirl Blast — Design & Plano de I.md` §3.2.5)
+
+Antes de começar o Swirl Blast, o usuário pediu pra investigar primeiro por que o escudo
+refletor azul do chefe (`boss.js`, `updateBossMovement`) parecia "não ativar de forma
+consistente" — o próprio doc do Swirl já registrava 4 hipóteses sem confirmar nenhuma.
+
+**Método**: em vez de inspeção visual, simulei a máquina de estados do escudo via
+`window.__starAnki.step()` (stepper determinístico, sem depender de `requestAnimationFrame` —
+que sofre throttle forte com a pane do browser escondida) chamando `combat.spawnBossEnemy`
+direto e cravando `enemy.hp` em instantes conhecidos pra forçar transições de fase em momentos
+controlados. Cobri: (1) ciclo completo isolado sem dano (ativa aos 7s, desativa aos 10s, reinicia
+certinho); (2) duas transições de fase forçadas em pontos diferentes do cooldown — o timer
+congela durante a transição (1.2s) e retoma exatamente de onde parou, sem perder sincronia.
+
+**Resultado**: nenhuma das 4 hipóteses do doc é um bug de código — a máquina de estados em si
+está correta. **Causa real**: `BOSS_BASE_HP = 33` (`main-constants.js`) é baixo o bastante pra
+o chefe frequentemente morrer em **menos de 7s** de combate — antes do primeiro cooldown do
+escudo sequer terminar. Não é RNG nem timer quebrado: é matematicamente esperado que o escudo
+não apareça sempre que a luta durar menos que ~7s de tempo "vivo" (descontando transições).
+
+**Fix aplicado** (`boss.js`): nova constante `BOSS_SHIELD_FIRST_COOLDOWN_S = 3.0`, usada **só**
+no valor inicial de `shieldCooldown` em `spawnBossEnemy` — a partir da primeira desativação, o
+reset volta a usar `BOSS_SHIELD_COOLDOWN_S` (7s) normalmente, sem tocar no resto da lógica.
+Garante que o jogador veja o escudo pelo menos uma vez mesmo em kills rápidos, sem acelerar o
+ritmo da luta inteira. Validado com o mesmo stepper: `shieldCooldown` nasce em `3.00`, ativa
+perto dos 3s, e o cooldown seguinte volta a ~7s.
+
+**Nota de metodologia**: pane do browser escondida throttla `requestAnimationFrame` o bastante
+pra `fireHeldMs`/timers de gameplay não avançarem em tempo real entre chamadas de ferramenta —
+qualquer teste que dependa de tempo decorrido precisa passar por `window.__starAnki.step(n, dtMs)`
+(stepper manual já exposto em `mount-game.js`) em vez de segurar tecla e esperar.

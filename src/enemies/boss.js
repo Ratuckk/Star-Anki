@@ -126,6 +126,11 @@ const bossPhaseMaterials = BOSS_PHASES.map((phase) => new THREE.MeshPhongMateria
 // recomeça depois dos 3s terminarem.
 const BOSS_SHIELD_DURATION_S = 3.0
 const BOSS_SHIELD_COOLDOWN_S = 7.0
+// investigação (Docs/Swirl Blast §3.2.5): com BOSS_BASE_HP baixo (33), muitas lutas matam o
+// chefe em menos de 7s de combate — o cooldown normal nunca chega a zerar e o jogador nunca vê
+// o escudo. Só a PRIMEIRA ativação usa esse cooldown reduzido (setado em spawnBossEnemy); depois
+// de desativar uma vez, volta a usar BOSS_SHIELD_COOLDOWN_S normalmente (ver reset abaixo).
+const BOSS_SHIELD_FIRST_COOLDOWN_S = 3.0
 export const BOSS_SHIELD_COLOR = 0x3ea6ff
 const BOSS_SHIELD_EMISSIVE = 0x0055aa
 
@@ -186,7 +191,7 @@ export function spawnBossEnemy(scene, rail, id, hp, level = 1) {
     shieldMesh,
     isShieldActive: false,
     shieldTimer: 0,
-    shieldCooldown: BOSS_SHIELD_COOLDOWN_S,
+    shieldCooldown: BOSS_SHIELD_FIRST_COOLDOWN_S,
     shieldActivationFxPending: false,
     // ============ estado de fase ============
     phase: 0,                        // 0-indexed; 0 = fase 1
