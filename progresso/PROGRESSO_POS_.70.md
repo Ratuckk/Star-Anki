@@ -952,4 +952,94 @@ sintoma da entrega anterior). Prioridade #1 da próxima sessão: playtest manual
 inteiro (`window.__starAnki`, painel de debug — spawnar os 4 wingmen, observar voo/dogfight/
 formação/habilidades por alguns minutos) antes de confiar cegamente no código destas 5 entregas.
 
+### v0.83.0 — Overhaul 4 (Fog como mecânica) + Overhaul de spawn/despawn — ambos completos
+
+Os outros 2 documentos grandes de `Docs/` que ainda faltavam da checklist. Commits:
+`1a2bc27` (fog pilares 1/2/4), `ab2680b` (fog pilar 3), `feb0355` (spawn/despawn). **Validado
+ao vivo pela primeira vez em várias entregas** — o Browser pane finalmente carregou depois de
+forçar `await import('/src/main.js?t=...')` manualmente no console (a carga normal via `<script
+type="module">` ficava presa em `readyState: 'interactive'` sem nenhum erro — parece ser uma
+condição de corrida específica do Browser pane desta sessão, não um bug do código; sessões
+futuras devem tentar o carregamento normal primeiro e só recorrer a esse workaround se travar
+do mesmo jeito). Com 4 wingmen recrutados e combate ativo por ~15s: zero erros no console,
+`window.__starAnki.getWingmanTelemetry()` confirmou os 4 nomes certos (Krystal incluída),
+`scene.fog.density` em 0.0143 (não o valor fixo antigo 0.0075 — confirma a calibração
+dinâmica do pilar 1 rodando de verdade), `fog.color` preto (setting `fogTacticalColors`
+desligada por padrão, como esperado).
+
+**Overhaul 4 (Fog)** — decisão do usuário antes de começar: cor do fog por evento (âmbar no
+aviso do Dourado, vermelho no do Chefe, bege na tempestade) vira **setting opcional**
+(`fogTacticalColors`, default `false`) em vez de mudança incondicional — preserva o "preto
+clássico" do jogo por padrão. Os 4 pilares:
+- **Pilar 1 (densidade calibrada)**: `environment.js` ganha `setSpawnDistanceExpectation(maxDist)`
+  — a densidade do `FogExp2` deixa de ser fixa (0.0075) e passa a ser calculada por
+  `coverage(d) = 1 - exp(-(density*d)²)` invertida, alvo de 85% de cobertura na distância
+  máxima de spawn do contexto atual (`TRACK_MAX_SPAWN_DISTANCE=96` no trilho,
+  `ARENA_MAX_SPAWN_DISTANCE=150` em arena de chefe/dourado — usa o teto do Chefe, que cobre o
+  Dourado também, em vez de recalibrar a cada variação pequena de `bossDifficulty`). Lerp suave
+  (~1.5s) + multiplicador de 0.6x em arena (chefe/dourado precisam ficar visíveis). Os
+  "bolsões de névoa" que já existiam (`enableNebulaPockets`) continuam somando por cima, só
+  que agora relativos à densidade calibrada em vez de um valor absoluto fixo.
+- **Pilar 2 (radar como contra-jogo)**: blips do minimapa ganham `visState: 'visible' | 'ghost'`
+  calculado pela mesma fórmula de cobertura — inimigo fora do alcance de visibilidade direta
+  vira um blip difuso (opacidade 0.4 + blur, CSS `.hud-minimap-blip-ghost` em `index.html` —
+  **não** em `hud-styles.js`, o CSS do minimapa mora no HTML mesmo). Boss/golden/detrito nunca
+  viram fantasma. Setting `minimapGhostBlips` (default `true`).
+- **Pilar 3 (mecânicas táticas)**: Sussurro (opacidade invisível cai pra 0.05 e fica escondido
+  por mais tempo em fog denso), Dourado (teleporte sem efeito visual no ponto de partida, só um
+  `bloomSprite` sutil no destino), Detrito (emissive cai de 0.35 pra 0.15 — "obstáculo que você
+  não viu a tempo", igual Star Fox 64 fazia com asteroides), filhotes da Horda (nascem sem
+  condensação visual + fade-in de opacidade nos primeiros 0.5s do `spreadOut`, precisou clonar
+  o material da variante por instância — normalmente compartilhado — com dispose no fim do
+  fade E na morte prematura, senão vaza `THREE.Material`). "Denso" é **proporcional** a uma
+  densidade de referência (`DENSE_FOG_REFERENCE_DENSITY`, calibrada pro trilho comum), não um
+  valor fixo — o próprio documento avisava que um valor fixo (0.015) quebrava porque a
+  densidade calibrada varia muito por contexto (Horda sozinha a 45u dá 0.042, sempre "densa";
+  chefe a 150u dá 0.013, nunca "densa" mesmo em arena de verdade). Setting `fogTacticalEffects`
+  (default `true`). Redução de 60% na explosão de morte da Horda em fog denso (mencionada no
+  documento) **não implementada** — exigiria checagem em 3+ pontos de código
+  (resolveProjectileHit/applyAreaDamage/ram) pra um ganho visual pequeno.
+- **Pilar 4 (indicador de ameaça)**: `environment.setFogProfile(name)` — perfis
+  `bossWarn`/`bossDeath`/`goldenWarn`/`goldenDeath`/`debrisStorm`, cada um com `colorMult`
+  (sempre aplica, engrossa a densidade) e `color` (só aplica com a setting ligada). Acionado em
+  `flow-boss.js` (`startArenaCutscene`, `handleBossDefeated`, `handleGoldenDefeated`,
+  `exitGoldenArenaVisuals`) e `game-loop.js` (`triggerDebrisStorm` e seu término).
+  `game-loop.js` para de forçar `scene.fog.color.set(0x000000)` todo frame quando a setting
+  está ligada (senão sobrescreveria a cor do perfil no mesmo tick — `environment.update()` já
+  rodou antes desse bloco).
+
+**Overhaul de spawn/despawn** — Ideias 1/2/3/6/8 implementadas, Ideia 4 (orientação de
+aproximação) **não implementada**: a maioria dos inimigos já recalcula orientação a cada frame
+no próprio update de movimento (`lookAt` ou similar), que roda DEPOIS do bloco de spawn no
+mesmo frame — um `slerp` de aproximação seria sobrescrito imediatamente na maior parte dos
+casos, ou competiria com o `lookAt` de forma imprevisível nos outros. Precisaria de auditoria
+caso a caso por tipo de inimigo antes de valer a pena.
+- `effects.js` ganha `fogCondensationInward()` (partículas de FORA pra DENTRO, oposto de
+  `fogWispCondensation`, `fog: true` de propósito — integra com o Overhaul 4) e
+  `spawnAnticipation()` (anel fino que encolhe no ponto de spawn antes do mesh "existir").
+- `enemies/index.js`: `registerSpawn`/`updateEnemies` reescritos pra 3 fases (peek 20% /
+  materialize 60% / settle 20%, proporção pulada quando o inimigo é pequeno demais pra peek —
+  mini-swarm/ima sempre sem peek independente do `hitRadius`, tabela `SPAWN_DURATION_BY_KIND`
+  vai de 0.20s pra enxame a 0.65s pra miniboss). Canal de material (emissive vs opacidade)
+  escolhido automaticamente pelo `emissiveIntensity` base — nunca anima os dois ao mesmo tempo.
+  **Chefe fica fora do sistema** (cutscene própria já cobre a entrada; integrar exigiria
+  coreografar em cima dela). Dourado nunca passou por `registerSpawn` (sistema separado), sem
+  mudança.
+- Wobble pós-spawn aplicado no ÚLTIMO instante antes do `renderer.render` (não dentro do
+  `update()` normal, onde hit-test/lock-on/IA leem a posição "real" do inimigo o frame
+  inteiro) — `applySpawnWobbles()` encadeado `enemies → combat → game-loop.js`.
+- Despawn com fade-out: `beginFadeOut()`/`processFadeOuts()` substituem os 2 pontos de culling
+  GENÉRICO (saiu de vista no trilho, desengajando longe demais em arena) por um encolhimento de
+  0.4s em vez de sumir de golpe. Não mexe em morte por HP≤0 (já tem a própria animação) nem em
+  `clearAllCombatants`/`clearEnemies` (desmonte precisa ser instantâneo). `railDespawnCheck` do
+  Blaster/Tank (auto-contidos via `enemy.fsm`, fora do orquestrador central) e o timeout de
+  mergulho do mini-swarm ficam de fora desta entrega. `fadingOut` excluído de hit-test/
+  `applyAreaDamage`/`getAlive`/`getEnemyCount`, igual `dying` já era.
+
+**Pendências reais pra próxima sessão**: playtest mais longo focado especificamente nos dois
+overhauls novos (spawn/despawn de vários tipos de inimigo em sequência, um setor inteiro com
+chefe/dourado pra ver os perfis de fog do pilar 4 de verdade, ligar a setting
+`fogTacticalColors` manualmente pra ver as cores) — a validação desta entrega foi um combate
+comum de ~15s, não cobriu chefe/dourado/boss-no-deck nem um ciclo completo de setor.
+
 
