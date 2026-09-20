@@ -13,7 +13,7 @@ export const ENVIRONMENT_CONFIG = {
   enableIonStorms: false,       // Desativado: preserva fundo preto limpo
   enableShootingStars: false,   // Desativado
   enableEnergizedGrid: false,   // Desativado: grid clássico
-  enableDebrisStormEvent: false, // Desativado para evitar excesso de detritos na pista
+  enableDebrisStormEvent: true,  // Evento periódico de tempestade de detritos
 }
 
 export function setEnvironmentFeature(feature, enabled) {

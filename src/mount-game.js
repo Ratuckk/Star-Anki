@@ -212,9 +212,8 @@ export function mountGame(session, deck, menu) {
     debrisStormTimer: 0,
     debrisStormSpawnTimer: 0,
     // pedido do usuário: +15% de chance/frequência do evento — intervalo até o próximo storm
-    // reduzido em 15% (32-60s → ~27.2-51s). OBS: o evento em si continua desligado por padrão
-    // (ENVIRONMENT_CONFIG.enableDebrisStormEvent = false, ver environment-config.js) — esse
-    // intervalo só passa a valer quando alguém liga o evento (debug panel ou flag).
+    // reduzido em 15% (32-60s → ~27.2-51s). Evento ligado por padrão
+    // (ENVIRONMENT_CONFIG.enableDebrisStormEvent = true, ver environment-config.js).
     nextDebrisStormTimer: 27200 + Math.random() * 23800,
   }
 

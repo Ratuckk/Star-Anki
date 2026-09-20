@@ -1112,4 +1112,13 @@ shared.js pra próxima sessão saber que "existe mas não faz nada sozinho").
   ~2s). Chefe spawnado e disparando 90 frames sem erro com o `projectileOpts` novo. Sem erros de
   console em nenhum dos testes.
 
+**Fix: chuva de detritos desligada por padrão** — `ENVIRONMENT_CONFIG.enableDebrisStormEvent`
+estava `false` em `environment-config.js` desde a v0.57.0 ("evitar excesso de detritos na
+pista"), então o evento nunca disparava sozinho — só via botão de debug ("Evento: Iniciar
+Tempestade de Detritos") ou ligando o toggle "Evento: Chuva de Detritos (Auto)" manualmente a
+cada partida. Pedido do usuário: virar `true` por padrão. O intervalo entre tempestades
+(`nextDebrisStormTimer`, ~27–51s, já com o +15% de frequência de uma entrega anterior) e o
+perfil de fog do Overhaul 4 (`setFogProfile('debrisStorm')`) não precisaram de nenhuma mudança —
+só liam a flag errada.
+
 
