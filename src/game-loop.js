@@ -43,6 +43,7 @@ import {
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
+import { aiValidator } from './ai-validator.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -199,8 +200,31 @@ export function createGameLoop(deps) {
         : 1 - Math.pow((elapsedMs - halfMs) / halfMs, 2)
       camera.fov = 70 + bumpFrac * (SWIRL_FOV_TARGET - 70)
       camera.updateProjectionMatrix()
-      camera.translateZ(1.5 * bumpFrac)
       camera.rotateZ(THREE.MathUtils.degToRad(3) * bumpFrac)
+      // Punch de câmera "afastando" (§4.5: "offset de +1.5 no eixo Z NO INSTANTE do disparo") —
+      // BUG CORRIGIDO: `camera.translateZ()` é incremento relativo ao eixo local, não um offset
+      // absoluto. Chamar isso a cada frame do bump (era `translateZ(1.5 * bumpFrac)` sem guarda)
+      // empilhava ~18 frames de +1.5*bumpFrac em 300ms — o lerp de `rail.update()` só corrige uma
+      // fração da posição por frame, não o suficiente pra compensar, então a câmera fugia dezenas
+      // de unidades pra trás da nave em vez do impulso pontual de 1.5u descrito no doc. Agora
+      // dispara só UMA VEZ (no primeiro frame em que o bump fica ativo, guardado por
+      // `state.swirlPunchFired`) — o lerp do rail traz a câmera de volta sozinho depois, mesma
+      // dinâmica do shake de dano.
+      if (!state.swirlPunchFired) {
+        state.swirlPunchFired = true
+        const _prePunchPos = camera.position.clone()
+        camera.translateZ(1.5)
+        // Regressão exata do bug corrigido acima: translateZ(1.5) tem que mover a câmera 1.5u
+        // NESTE frame e só neste frame — se voltar a empilhar (ex: alguém remove a guarda de
+        // `swirlPunchFired` de novo), a distância medida aqui vai estourar bem além de 1.5.
+        aiValidator.expect(
+          'Swirl Blast: punch de câmera desloca exatamente 1.5u, uma vez por disparo (não acumula frame a frame)',
+          () => Math.abs(camera.position.distanceTo(_prePunchPos) - 1.5) < 0.01,
+          { distanceMoved: camera.position.distanceTo(_prePunchPos), bumpFrac }
+        )
+      }
+    } else if (state.swirlPunchFired) {
+      state.swirlPunchFired = false
     }
     // CRÍTICO: camera.updateMatrixWorld() — ver comentário no arquivo original
     camera.updateMatrixWorld()
@@ -297,6 +321,7 @@ export function createGameLoop(deps) {
           // de uma chamada explícita aqui.
           state.swirlSlowMoMs = SWIRL_SLOW_MO_MS
           state.swirlFovBumpMs = SWIRL_FOV_BUMP_MS
+          state.swirlPunchFired = false
         } else {
           combat.fireHomingShot(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
         }

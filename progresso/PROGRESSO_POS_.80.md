@@ -613,3 +613,38 @@ mais cedo nesta sessão, cada mudança já documentada inline no próprio códig
   colisão (`startTumble`) parou de teleportar a nave (removido `arenaPos.addScaledVector(...,16)`/
   `playerX + pushX` instantâneo) e passou a só setar velocidade (`tumbleKnockbackVel`/novo
   `railThrowVel`), integrada frame a frame com decaimento exponencial lento.
+
+---
+
+### v0.89.0 — Swirl Blast: bug real no punch de câmera (`camera.translateZ` acumulando)
+
+Usuário revisou o código do Swirl Blast contra o doc e achou o bug de verdade (eu não tinha
+pego): em `game-loop.js`, o bloco do FOV bump (§4.5) chamava `camera.translateZ(1.5 * bumpFrac)`
+**a cada frame** enquanto `state.swirlFovBumpMs > 0` (~18 frames em 300ms a 60fps).
+`camera.translateZ()` é incremento relativo ao eixo local da câmera, não um offset absoluto — e
+`rail.update()` (que roda antes, por frame) só corrige a posição via `camera.position.lerp(...)`,
+uma fração por frame, não o suficiente pra compensar o que acabou de ser somado. Resultado: a
+câmera empilhava o deslocamento e fugia bem além dos "+1.5 no eixo Z **no instante do disparo**"
+que o doc pede (é um impulso pontual, não contínuo). O `rotateZ` não sofria disso porque
+`rail.update()` reescreve o quaternion via `lookAt()` todo frame — só a posição não era reescrita.
+
+**Correção**: `state.swirlPunchFired` (novo, em `mount-game.js`) guarda se o punch já disparou
+nesta ativação do bump — `camera.translateZ(1.5)` agora roda só no primeiro frame em que o bump
+fica ativo (resetado pra `false` no momento do disparo, junto com `swirlFovBumpMs`/`swirlSlowMoMs`
+em `game-loop.js`); o `rotateZ`/FOV continuam por cima a cada frame, sem mudança (não tinham o bug).
+
+**Instrumentado** (`FLUXO_VALIDACAO_IA.md`) — `aiValidator.expect()` no próprio ponto do
+`translateZ`, medindo a distância real percorrida pela câmera nesse frame contra o 1.5 esperado
+(tolerância 0.01): é uma regressão exata do bug corrigido, dispara só uma vez por Swirl (evento
+discreto, não por frame de update).
+
+**Ponto em aberto, não mexido**: o doc §4.5 sugere debug slowMo e Swirl slowMo se multiplicarem
+(`dt * 0.25 * 0.15`); o código trata como mutuamente exclusivos (debug vence) — decisão consciente
+já comentada no código, o próprio doc admite que a multiplicação dá "efeito bizarro". Fica como
+está até o usuário pedir o contrário.
+
+Verificação: `node --check` nos arquivos alterados, `node src/selftest.mjs` passando, jogo carrega
+sem erro de console novo (os erros de ServiceWorker no console são de infraestrutura do servidor
+de preview, não relacionados a esta mudança). Não consegui chegar a um disparo real de Swirl
+Blast via automação nesta sessão — a expectativa de validação IA fica pronta pra confirmar via
+"Copiar Log de Validação IA" no próximo playtest real.
