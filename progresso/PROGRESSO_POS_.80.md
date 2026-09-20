@@ -387,3 +387,74 @@ some (explosão disparou sem erro). Disparo isolado perto da câmera confirmou v
 (anel azul grande expandindo + núcleo brilhante) e a trilha de afterimages atrás do projétil em
 voo. Regressão da perfuração (4 blasters) continua passando. Sem erros de console (só o service
 worker do harness).
+
+---
+
+### Swirl Blast — Etapa 6 (câmera lenta, FOV bump, speedlines) — todas as etapas concluídas
+
+Usuário confirmou seguir sem pausa até fechar o documento inteiro (chegou a pedir isso
+explicitamente: "vamos finalizar todas etapas primeiro antes de ir para o próximo documento").
+
+- `main-constants.js`: `SWIRL_SLOW_MO_MS=450`, `SWIRL_SLOW_MO_FACTOR=0.15`,
+  `SWIRL_FOV_BUMP_MS=300`, `SWIRL_FOV_TARGET=95`.
+- `mount-game.js`: `state.swirlSlowMoMs`/`state.swirlFovBumpMs` inicializados em 0.
+- `game-loop.js`:
+  - Topo do `runFrame`: `dt` passa a levar em conta o slow-mo do Swirl por cima do `baseDt` (que
+    já considerava o slowMo de debug) — os dois se multiplicam se ativos ao mesmo tempo, aceitável
+    (caso de teste raro). Os timers (`swirlSlowMoMs`/`swirlFovBumpMs`) decrementam com `rawDt`
+    (tempo REAL, não o escalado) — senão a cutscene de 450ms levaria 3s de relógio de parede pra
+    terminar, já que o próprio `dt` que ela escala é o que a decrementaria.
+  - Logo depois de `rail.update()`: enquanto `swirlFovBumpMs > 0`, sobrescreve `camera.fov` com
+    uma curva própria (sobe linear na primeira metade da janela, ease-out quadrático na segunda) e
+    aplica um "punch" de câmera (`translateZ`/`rotateZ` pequenos, proporcionais à mesma fração da
+    curva). O lerp de FOV do boost em `rail.js` continua rodando por baixo o tempo todo — quando o
+    timer do Swirl zera, simplesmente paro de sobrescrever e o boost retoma o controle sozinho,
+    sem precisar de um "handoff" explícito (confirmado: FOV converge suave de volta a 70, sem pop).
+  - Speedlines: em vez de uma chamada avulsa no disparo + outra pra "desligar depois" (como o
+    doc sugeria), incorporei `swirlSlowMoMs > 0` na MESMA linha que já liga/desliga as speedlines
+    pelo boost (`hud.setMotionLines(boostOn || swirlMotionActive, swirlMotionActive ? 1.0 : null)`)
+    — assim ela reage sozinha a cada frame, sem risco do call de boost (que roda sempre, todo
+    frame) sobrescrever o `active:true` do Swirl no mesmo frame em que ele foi setado (bug pego
+    justamente testando: a primeira versão com a chamada avulsa ficava "true" por 1 frame e
+    "false" no seguinte, porque a linha do boost já rodava depois e não sabia do Swirl).
+- `hud-game.js`/`hud-styles.js`: `setMotionLines(active, intensity=null)` — quando passado, seta
+  `--intensity` via custom property; CSS mudou de `opacity: 1` fixo pra `opacity: var(--intensity, 1)`
+  (default preserva o comportamento antigo pra quem chama sem intensidade).
+
+**Validação** via stepper determinístico: disparo real (giro+carga-máx+pronto) seta
+`swirlSlowMoMs=450`/`swirlFovBumpMs=300` e ativa as speedlines; aos ~167ms o FOV está perto do
+pico (94.7 de 95); aos ~333ms o bump já zerou e o FOV está convergindo suave de volta (75.0,
+controlado pelo lerp do boost); aos ~500ms tudo zerou e as speedlines desligaram (jogador não
+estava boostando). Regressão da perfuração continua passando.
+
+---
+
+### Swirl Blast — Etapa 7 (carta "Vínculo: Swirl Blast" + Sound Cue) — documento fechado
+
+- `roguelike.js`: carta `swirl-blast-cooldown` (categoria ofensivo, ícone 🌀) — texto e efeito
+  exatamente como no §5 do doc.
+- `player.js`: novo `swirlCooldownMult` (começa em 1); `applyCard` multiplica por 0.85 com piso em
+  0.5 (cooldown mínimo de 6s); `getSwirlCooldownTotalMs`/`startSwirlCooldown` agora usam
+  `SWIRL_COOLDOWN_MS * swirlCooldownMult` em vez do valor fixo; `resetCards` zera o multiplicador
+  de volta pra 1; `debugMaxBuffs` põe no piso (0.5) e registra na bandeja de cartas do debug, igual
+  o resto das cartas "sem cap real". **Sem exclusão** em `buildCardExcludeSet` — confirmado que a
+  carta nunca fica indisponível, é stackável à vontade (pedido explícito do doc).
+- `audio-cues.js`: novo `PLAYER_SOUND_CUES.swirl_blast_fire` (1.4s, cooldown 500ms) — parâmetros
+  exatos do §4.7. `combat/projectiles.js`: `fireSwirlBlast` dispara o cue junto com o flash visual.
+
+**Validação**: `getSwirlCooldownTotalMs()` bate exatamente com a tabela de testes do próprio doc
+(§10.4) — 12000 → 10200 (1 aplicação) → 6000 (piso, 10 aplicações). `startSwirlCooldown()` usa o
+valor multiplicado de verdade. Disparo real sem erro (som incluído). Regressão da perfuração
+continua passando. `node src/selftest.mjs` reporta 79 Sound Cues (era 78), sem quebrar nada — o
+teste valida só um piso mínimo (`>= 40`), não uma contagem exata.
+
+**Resumo — Swirl Blast 100% implementado** (etapas 1-7 do `Docs/# Swirl Blast — Design & Plano de
+I.md`): habilidade base disponível desde o início da partida, cooldown de 12s (reduzível até 6s
+pela carta), dispara ao soltar carga máxima durante o giro de invencibilidade, perfura inimigos
+comuns aplicando 6 de dano fixo, mata detritos instantaneamente sem parar, para e explode contra
+chefe (destruindo o escudo se ativo)/dourado/fragata, com vórtice giratório de verdade, flash de
+disparo próprio, trilha de afterimages, cutscene de câmera lenta com FOV bump e speedlines, e som
+dedicado. Pontos de ajuste fino deixados para playtest real (não códigos pendentes, só tuning de
+valores): força do FOV/slow-mo (§11.3/§11.4), se a aura do projétil fica "gorda" perto de alvos
+pequenos (§11.5), e se perfurar o escudo do chefe é forte demais sem nenhum balanceamento (§11.1)
+— usuário já orientou usar os padrões do doc e ajustar depois com playtest real.

@@ -760,7 +760,7 @@ export function injectHudExtraStyles() {
   z-index: 3;
   overflow: hidden;
 }
-.hud-motion-lines.active { opacity: 1; }
+.hud-motion-lines.active { opacity: var(--intensity, 1); }
 .hud-motion-lines::before,
 .hud-motion-lines::after {
   content: '';

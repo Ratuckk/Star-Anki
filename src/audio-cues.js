@@ -93,6 +93,18 @@ export const PLAYER_SOUND_CUES = {
     loop: false,
     triggerLogic: 'Disparado no momento exato em que um tiro teleguiado colide contra o mesh de um inimigo/chefe.'
   },
+  swirl_blast_fire: {
+    id: 'player_swirl_blast_fire',
+    file: null,
+    durationMs: 1400,
+    delayMs: 0,
+    cooldownMs: 500,
+    volume: 1.0,
+    category: 'sfx',
+    spatial: false,
+    loop: false,
+    triggerLogic: 'Disparo do Swirl Blast — whoosh agudo + zumbido crescente de perfuração, sustentado por ~1.4s enquanto o projétil viaja'
+  },
   max_charge_splash: {
     id: 'player_max_charge_splash',
     file: null,

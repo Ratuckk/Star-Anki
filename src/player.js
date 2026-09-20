@@ -92,9 +92,11 @@ export function createPlayerSystem(session) {
   let repulsionActiveTimer = 0
   let ramCardActive = false
 
-  // Swirl Blast (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md, etapa 1: só o
-  // cooldown por enquanto, sem o projétil de verdade ainda)
+  // Swirl Blast (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md)
   let swirlCooldownMs = 0
+  // carta "Vínculo: Swirl Blast" (§5): cada aplicação multiplica por 0.85, piso em 0.5 (metade
+  // do cooldown base = 6s)
+  let swirlCooldownMult = 1
 
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
   let projectileCount = PROJECTILE_COUNT_START
@@ -182,9 +184,9 @@ export function createPlayerSystem(session) {
 
     // Swirl Blast — cooldown da habilidade base (ver §3.1/§6.1 do doc)
     getSwirlCooldownMs: () => swirlCooldownMs,
-    getSwirlCooldownTotalMs: () => SWIRL_COOLDOWN_MS,
+    getSwirlCooldownTotalMs: () => SWIRL_COOLDOWN_MS * swirlCooldownMult,
     isSwirlReady: () => swirlCooldownMs <= 0,
-    startSwirlCooldown() { swirlCooldownMs = SWIRL_COOLDOWN_MS },
+    startSwirlCooldown() { swirlCooldownMs = SWIRL_COOLDOWN_MS * swirlCooldownMult },
 
     getLowHealthIntensity(thresholdFrac) {
       // QoL (v0.29.4): clamp de thresholdFrac em (0, 1] — antes, passar 0 desligava a vignette
@@ -249,6 +251,9 @@ export function createPlayerSystem(session) {
         case 'ricochet':
           ricochetCount = Math.min(RICOCHET_CAP, ricochetCount + 1)
           break
+        case 'swirl-blast-cooldown':
+          swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
+          break
         case 'longer-dodge-iframe':
           fullSpinIframeMs = Math.min(FULL_SPIN_IFRAME_MS_CAP, fullSpinIframeMs + 150)
           break
@@ -294,6 +299,7 @@ export function createPlayerSystem(session) {
       fireCooldown = DEFAULT_FIRE_COOLDOWN
       projectileCount = PROJECTILE_COUNT_START
       swirlCooldownMs = 0
+      swirlCooldownMult = 1
     },
 
     buildCardExcludeSet() {
@@ -496,6 +502,7 @@ export function createPlayerSystem(session) {
       session.lives = LIVES_CAP
       maxLives = Math.max(maxLives, session.lives)
       swirlCooldownMs = 0
+      swirlCooldownMult = 0.5
 
       collectedCards.set('extra-projectile', PROJECTILE_COUNT_CAP - 1)
       collectedCards.set('more-homing-targets', HOMING_MAX_TARGETS_CAP - HOMING_MAX_TARGETS_BASE)
@@ -509,6 +516,7 @@ export function createPlayerSystem(session) {
       collectedCards.set('deflect-on-spin', 1)
       collectedCards.set('propulsion-ram', 1)
       collectedCards.set('extra-life', 2)
+      collectedCards.set('swirl-blast-cooldown', DEBUG_MAX_UNCAPPED_STACKS)
     },
 
     // tick (1x por frame, chamado pelo main.js antes de rail.update): decai todos os timers e

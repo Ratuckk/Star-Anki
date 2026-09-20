@@ -1621,9 +1621,13 @@ export function createGameHud() {
       lowHealthVignette.style.opacity = String(v)
     },
 
-    // ============ MOTION LINES (boost) ============
-    setMotionLines(active) {
+    // ============ MOTION LINES (boost / Swirl Blast) ============
+    // `intensity` (0..1) modula a opacidade via CSS custom property — usado pelo Swirl Blast
+    // (§4.6) pra forçar intensidade máxima independente do boost estar ativo ou não; omitido,
+    // o CSS cai no default de 1 (comportamento antigo, inalterado).
+    setMotionLines(active, intensity = null) {
       motionLines.classList.toggle('active', !!active)
+      if (intensity != null) motionLines.style.setProperty('--intensity', Math.max(0, Math.min(1, intensity)))
     },
 
     // ============ SCREEN DISTORTION (boost) ============

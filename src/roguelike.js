@@ -19,6 +19,7 @@ export const ROGUELIKE_CARDS = [
   { id: 'wingman', category: 'ofensivo', label: 'Companheiro de Esquadrão', icon: '🛸', description: 'Convoca um companheiro de equipe permanente (até 4). Voam em formação, combatem ativamente e perseguem inimigos com tiros próprios.' },
   { id: 'more-homing-targets', category: 'ofensivo', label: 'Enxame teleguiado', icon: '🎯', description: 'O tiro carregado atinge mais alvos de uma vez.' },
   { id: 'ricochet', category: 'ofensivo', label: 'Ricochete', icon: '🔀', description: 'Seus tiros carregados pulam para outro inimigo (o mais próximo) após atingir o alvo mirado. Pode ser pego múltiplas vezes para mais pulos.' },
+  { id: 'swirl-blast-cooldown', category: 'ofensivo', label: 'Vínculo: Swirl Blast', icon: '🌀', description: 'Reduz o cooldown do Swirl Blast em 15%. Pode ser pega múltiplas vezes (piso de 6s).' },
 
   { id: 'extra-shield-charge', category: 'defensivo', label: 'Escudo reforçado', icon: '🛡️', description: '+1 carga máxima de escudo.' },
   { id: 'faster-shield-recharge', category: 'defensivo', label: 'Recarga do escudo', icon: '⏱️', description: 'O escudo recarrega mais rápido após esgotar.' },

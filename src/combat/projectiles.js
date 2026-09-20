@@ -583,14 +583,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       return shotsFired
     },
 
-    // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 5: flash de disparo próprio +
-    // trilha de afterimages (som/carta ficam pra etapa 7).
+    // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 7: Sound Cue próprio (§4.7).
     fireSwirlBlast(origin, direction) {
       const mesh = buildSwirlBlastMesh()
       mesh.position.copy(origin)
       mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
       scene.add(mesh)
       if (effects && effects.swirlBlastFlash) effects.swirlBlastFlash(origin, direction)
+      triggerSoundCue(PLAYER_SOUND_CUES.swirl_blast_fire, { origin })
       projectiles.push({
         mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
         damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME, spinAngle: 0, afterimageTimer: 0,

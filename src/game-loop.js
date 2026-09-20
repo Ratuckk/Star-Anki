@@ -37,6 +37,7 @@ import {
   BOSS_ENEMY_INTERVAL_MULT,
   LEVEL_BACKGROUNDS,
   DENSE_FOG_THRESHOLD_RATIO, DENSE_FOG_REFERENCE_DENSITY,
+  SWIRL_SLOW_MO_MS, SWIRL_SLOW_MO_FACTOR, SWIRL_FOV_BUMP_MS, SWIRL_FOV_TARGET,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
@@ -109,7 +110,12 @@ export function createGameLoop(deps) {
   function runFrame(now, forcedRawDt) {
     if (state.stopped) return
     const rawDt = forcedRawDt != null ? forcedRawDt : Math.min((now - state.lastTime) / 1000, 0.1)
-    const dt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
+    const baseDt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
+    // Swirl Blast (§4.5) — cutscene de câmera lenta no disparo. Multiplica em cima do slowMo de
+    // debug se os dois estiverem ativos ao mesmo tempo (aceitável, é só um caso de teste raro).
+    const dt = state.swirlSlowMoMs > 0 ? baseDt * SWIRL_SLOW_MO_FACTOR : baseDt
+    state.swirlSlowMoMs = Math.max(0, state.swirlSlowMoMs - rawDt * 1000)
+    state.swirlFovBumpMs = Math.max(0, state.swirlFovBumpMs - rawDt * 1000)
     state.lastTime = now
 
     const inputState = input.update()
@@ -157,6 +163,22 @@ export function createGameLoop(deps) {
 
     // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9)
     rail.update(dt, inputState)
+
+    // Swirl Blast (§4.5) — FOV bump + "punch" de câmera por cima do que rail.update() acabou de
+    // calcular (o lerp de FOV do boost continua rodando por baixo; isso só SOBRESCREVE o valor
+    // final do frame enquanto durar, e some sozinho quando o timer zera — sem precisar "devolver
+    // o controle" de propósito). Sobe linear nos primeiros 50% da janela, ease-out nos últimos 50%.
+    if (state.swirlFovBumpMs > 0) {
+      const elapsedMs = SWIRL_FOV_BUMP_MS - state.swirlFovBumpMs
+      const halfMs = SWIRL_FOV_BUMP_MS / 2
+      const bumpFrac = elapsedMs <= halfMs
+        ? elapsedMs / halfMs
+        : 1 - Math.pow((elapsedMs - halfMs) / halfMs, 2)
+      camera.fov = 70 + bumpFrac * (SWIRL_FOV_TARGET - 70)
+      camera.updateProjectionMatrix()
+      camera.translateZ(1.5 * bumpFrac)
+      camera.rotateZ(THREE.MathUtils.degToRad(3) * bumpFrac)
+    }
     // CRÍTICO: camera.updateMatrixWorld() — ver comentário no arquivo original
     camera.updateMatrixWorld()
     player.getTelemetry?.()?.update({ player, rail, session, camera, elapsed: performance.now() / 1000, dt })
@@ -243,12 +265,15 @@ export function createGameLoop(deps) {
       state.chargeLoopSignaled = false
       if (isCharging) {
         const isMaxCharge = state.fireHeldMs >= player.config.homingChargeMaxMs
-        // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md, etapa 2: disparo de verdade,
-        // ainda com placeholder visual — cutscene de slow-mo/FOV/speedlines entram na etapa 6)
         const canSwirl = isMaxCharge && rail.isFullSpinActive() && player.isSwirlReady()
         if (canSwirl) {
           combat.fireSwirlBlast(nosePos, _fireDirection)
           player.startSwirlCooldown()
+          // Swirl Blast (§4.5/§4.6) — cutscene de super ataque: câmera lenta + FOV bump. As
+          // speedlines reagem sozinhas a `swirlSlowMoMs > 0` mais abaixo no frame, sem precisar
+          // de uma chamada explícita aqui.
+          state.swirlSlowMoMs = SWIRL_SLOW_MO_MS
+          state.swirlFovBumpMs = SWIRL_FOV_BUMP_MS
         } else {
           combat.fireHomingShot(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
         }
@@ -348,7 +373,11 @@ export function createGameLoop(deps) {
     hud.setBoost(player.getBoostCharge(), player.isPropulsionActive() || player.isRepulsionActive())
 
     const boostOn = player.isPropulsionActive()
-    hud.setMotionLines(boostOn)
+    // Swirl Blast (§4.6) — speedlines na intensidade máxima durante o slow-mo do disparo,
+    // independente do jogador estar boostando; some junto quando a cutscene termina, voltando
+    // ao controle normal do boost sem precisar de um restore explícito em outro lugar.
+    const swirlMotionActive = state.swirlSlowMoMs > 0
+    hud.setMotionLines(boostOn || swirlMotionActive, swirlMotionActive ? 1.0 : null)
     hud.setBoostDistortion(boostOn)
     rail.setBoostActive(boostOn)
 

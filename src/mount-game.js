@@ -115,6 +115,9 @@ export function mountGame(session, deck, menu) {
     // ============ loop / debug ============
     debugVisible: false,
     debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false, manualStepActive: false, disableAutoSpawn: false },
+    // Swirl Blast (§4.5) — cutscene de câmera lenta/FOV no disparo, ver game-loop.js runFrame()
+    swirlSlowMoMs: 0,
+    swirlFovBumpMs: 0,
     lastTime: performance.now(),
     rafId: null,
     stopped: false,
