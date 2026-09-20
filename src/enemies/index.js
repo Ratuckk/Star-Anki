@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import {
   PASS_BEHIND, FORWARD_AXIS, distanceToSegment, HOMING_EXPLOSION_COLOR,
   ENEMY_FIRE_RANGE, ENEMY_FIRE_MIN_DISTANCE, ENEMY_ARENA_FIRE_MAX_DISTANCE,
+  POWER_LEVEL_BASIC,
 } from './shared.js'
 import { createEnemyTelemetry } from './enemy-telemetry.js'
 import { aiValidator } from '../ai-validator.js'
@@ -252,7 +253,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case BLASTER_KIND: return BLASTER_HIT_RADIUS
       case BOSS_KIND: return BOSS_HIT_RADIUS
       case TIME_KIND: return TIME_HIT_RADIUS
-      case MINI_SWARM_KIND: return miniSwarmHitRadius()
+      case MINI_SWARM_KIND: return miniSwarmHitRadius(enemy)
       case TANK_KIND: return TANK_HIT_RADIUS
       case DETRITO_KIND: return detritoHitRadius(enemy)
       case SENTINELA_KIND: return SENTINELA_HIT_RADIUS
@@ -370,6 +371,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       hitRadius: po?.hitRadius,
       maxRange: po?.maxRange,
       shieldDamage: po?.damage,
+      powerLevel: po?.powerLevel ?? POWER_LEVEL_BASIC,
     })
     triggerSoundCue(ENEMY_SOUND_CUES.blaster_fire, { enemyId: enemy?.id, kind: enemy?.kind, worldPos: enemy?.mesh?.position })
 
@@ -742,6 +744,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function updateEnemyProjectiles(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
+    let powerLevel = POWER_LEVEL_BASIC
     for (const projectile of [...enemyProjectiles]) {
       if (projectile.homing) {
         _epToPlayer.copy(playerPosition).sub(projectile.mesh.position)
@@ -778,17 +781,19 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (projHit) {
         hits += 1
         damage = Math.max(damage, projectile.shieldDamage ?? 1)
+        powerLevel = Math.max(powerLevel, projectile.powerLevel ?? POWER_LEVEL_BASIC)
         removeEnemyProjectile(projectile)
         continue
       }
       if (projectile.traveled > maxRange) removeEnemyProjectile(projectile)
     }
-    return { hits, damage }
+    return { hits, damage, powerLevel }
   }
 
   function updateEnemyLasers(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
+    let powerLevel = POWER_LEVEL_BASIC
     const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
     for (const laser of [...enemyLasers]) {
       _elStep.copy(laser.velocity).multiplyScalar(dt)
@@ -809,12 +814,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (laserHit) {
         hits += 1
         damage = Math.max(damage, laser.shieldDamage ?? 1)
+        powerLevel = Math.max(powerLevel, laser.powerLevel ?? POWER_LEVEL_BASIC)
         removeEnemyLaser(laser)
         continue
       }
       if (laser.traveled > maxR) removeEnemyLaser(laser)
     }
-    return { hits, damage }
+    return { hits, damage, powerLevel }
   }
 
   // ao cruzar o plano do jogador resolve o dano uma única vez, mas deixa a moldura continuar voando
@@ -822,6 +828,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function updateEnemyGates(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
+    let powerLevel = POWER_LEVEL_BASIC
     for (const gate of [...enemyGates]) {
       updateGateFlight(gate, dt, rail)
       updateGateAnimation(gate)
@@ -835,6 +842,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (hit) {
           hits += 1
           damage = Math.max(damage, gate.shieldDamage ?? 1)
+          powerLevel = Math.max(powerLevel, gate.powerLevel ?? POWER_LEVEL_BASIC)
         }
       }
 
@@ -843,7 +851,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         removeEnemyGate(gate)
       }
     }
-    return { hits, damage }
+    return { hits, damage, powerLevel }
   }
 
   // ============ OVERHAUL DE SPAWN EM 3 FASES (peek/materialize/settle) ============
@@ -1207,7 +1215,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const p = updateEnemyProjectiles(dt, playerPosition, opts)
       const l = updateEnemyLasers(dt, playerPosition, opts)
       const g = updateEnemyGates(dt, playerPosition, opts)
-      return { hits: p.hits + l.hits + g.hits, damage: Math.max(p.damage, l.damage, g.damage) }
+      return {
+        hits: p.hits + l.hits + g.hits,
+        damage: Math.max(p.damage, l.damage, g.damage),
+        powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
+      }
     },
 
     // Explosão em área do tiro carregado no MÁXIMO (pedido do usuário): dano circular (raio

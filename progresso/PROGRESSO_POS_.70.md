@@ -1050,4 +1050,66 @@ timers de alvo bônus, entrada de arena dourada/chefe, ou tempestade de detritos
 seu próprio controle). Os botões de spawn manual do painel de debug chamam `combat.spawnX()`
 direto, fora desse gate — continuam funcionando normalmente com o toggle ligado, como pedido.
 
+---
+
+## v0.84.0 — Ajustes na Horda + hierarquia de poder de projétil (perda de controle nível 4)
+
+Pedido do usuário: 2 ajustes na Horda/mini-swarm e um sistema novo (hierarquia de poder de
+projétil, 4 níveis) cuja única mecânica concreta hoje é a reação do jogador a hits nível 4.
+
+**Horda — tempo de preparo, espalhamento e visual dos filhotes** (`enemies/miniSwarm.js`):
+- `HORDA_SPLIT_SPREAD_DURATION_S`: 4 → 3.
+- `HORDA_CHILD_SPREAD_MULT = 1.5` multiplicando o `spreadRadius` calculado a partir de
+  `HORDA_CHILD_NEIGHBOR_SPACING` (mesma fórmula de antes, só escalada).
+- Filhotes da Horda (`spawnMiniSwarmFromHorda`) ganharam visual PRÓPRIO, diferente do mini-swarm
+  de fila normal: `hordaChildGeometry` (TorusGeometry, "roda" como a Horda) +
+  `hordaChildMaterial` (cinza, mesma família de cor da Horda — 0x9ca3af/0x4b5563, hardcoded em
+  miniSwarm.js pra não criar import cruzado com horda.js) + `HORDA_CHILD_SCALE = MINI_ENEMY_SCALE
+  * 1.15` (+15%). `variant` continua sorteado normalmente, mas agora só decide o PADRÃO DE
+  MERGULHO (reto/zigue-zague/hélice) — não afeta mais a cor/geometria dos filhotes da Horda.
+  Flag `enemy.fromHorda: true` marca a origem; `miniSwarmHitRadius(enemy)` agora recebe o inimigo
+  e devolve `HORDA_CHILD_HIT_RADIUS` (escalado junto, 2.42 * 1.15) quando `fromHorda`, senão o
+  raio padrão — `hitRadiusFor()` em `enemies/index.js` repassa o enemy. Pulso de escala no
+  telegraph e fade-in de opacidade em fog denso também respeitam `fromHorda` (antes hardcoded em
+  `MINI_ENEMY_SCALE`/`variantMaterials`, quebraria o tamanho/cor certos dos filhotes).
+- `HORDA_FIRE_INTERVAL_MS` (`enemies/horda.js`): 3000 → 2100 (-30%, "dispare mais vezes em menor
+  intervalo"). Telegraph visual antes de cada tiro já era genérico (bloco em `enemies/index.js`
+  que dispara `effects.telegraph()` a 0.3s do fireTimer zerar, vale pra qualquer `enemy.kind`) —
+  nenhuma mudança nova precisou ali, só documentado que a Horda já tinha esse aviso.
+
+**Hierarquia de poder de projétil (4 níveis)** — `POWER_LEVEL_BASIC/GUIDED_OR_LARGE/AREA_DAMAGE/
+HIGH_IMPACT` em `enemies/shared.js`. Só o nível 4 (Chefe/Dourado/Horda) tem reação própria hoje;
+2 e 3 existem como classificação pronta, sem uso concreto ainda (documentado no comentário de
+shared.js pra próxima sessão saber que "existe mas não faz nada sozinho").
+- Todo projétil/laser/moldura inimigo carrega `powerLevel` (default `POWER_LEVEL_BASIC`) — tag
+  em `enemyProjectiles`/`enemyLasers`/`enemyGates` (`enemies/index.js`), lido do `projectileOpts`
+  de quem dispara (`po?.powerLevel`) ou hardcoded 4 nos `pushLaser`/`pushProjectile` diretos de
+  Chefe (`boss.js`) e Dourado (`golden.js`). `updateEnemyProjectiles/Lasers/Gates` retornam o
+  MAIOR powerLevel entre os hits do frame; `updateProjectiles()` agrega os 3 com `Math.max`;
+  `combat/index.js` propaga como `enemyHitPowerLevel` no objeto de eventos do frame (só conta
+  hit de PROJÉTIL — toque físico direto/aríete não passa por aqui, já tem seu próprio tumble via
+  `bossCollisionWorldPos`).
+- Reação nível 4 — **perda de controle** (`rail.js`): motor de tumble existente
+  (`triggerBossCollisionTumble`, giro + knockback ao encostar fisicamente no chefe/dourado) virou
+  `startTumble(duration, impactOrigin, {highImpact})` compartilhado; `triggerHighImpactTumble()`
+  é a nova entrada, chamada de `game-loop.js` quando `events.enemyHitPowerLevel >=
+  POWER_LEVEL_HIGH_IMPACT` no bloco de dano ao jogador (dispara mesmo se o escudo absorveu o
+  dano — é reação a TOMAR o hit, não ao dano de vida). Constantes
+  `HIGH_IMPACT_TUMBLE_DURATION_S=2.0`/`HIGH_IMPACT_TUMBLE_SPIN_SPEED`/
+  `HIGH_IMPACT_RED_FLASH_INTERVAL_S`/`_COLOR`/`_INTENSITY` ficam bem acima do código (pedido
+  explícito do usuário, fácil de ajustar), duração/velocidade de giro PRÓPRIAS (2s/mais lento que
+  a colisão física, que é 0.85s/mais rápida) pra não virar "liquidificador" por 2s inteiros. Pisca
+  vermelho: alterna `emissive`/`emissiveIntensity` do `bodyMaterial`/`accentMaterial` da nave
+  (únicos por instância, `buildShip()` passou a devolver `{ group, bodyMaterial, accentMaterial
+  }` em vez de só o group) — reseta pra preto ao fim do tumble. Bloco de update do tumble reposicionado
+  ANTES do `if (mode === 'arena') { updateArena(...); return }` (early return existente) — senão o
+  flash nunca rodaria em arena (onde Chefe/Dourado vivem).
+- Verificado ao vivo (debug harness, `window.__starAnki`): Horda spawnada com `fireTimer=2.1`/
+  `projectileOpts.powerLevel=4`; morta via `applyAreaDamage` gerou 5 filhotes `fromHorda:true`
+  (TorusGeometry, cor cinza, `spreadTimer=3`, `spreadRadius≈6.64` = fórmula×1.5), escala
+  convergindo pra `0.8855` (=0.77×1.15) após o spawn de 3 fases. `rail.triggerHighImpactTumble()`
+  confirmado visualmente (nave girando fora de eixo + vermelho vivo, resetando ao normal após
+  ~2s). Chefe spawnado e disparando 90 frames sem erro com o `projectileOpts` novo. Sem erros de
+  console em nenhum dos testes.
+
 

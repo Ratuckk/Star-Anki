@@ -275,7 +275,7 @@ function buildShip(variant = SHIP_VISUAL_DEFAULT) {
     group.add(fin)
   }
 
-  return group
+  return { group, bodyMaterial, accentMaterial }
 }
 
 export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEFAULT) {
@@ -350,11 +350,28 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   // Perda de controle por colisão com boss / dourado (Star Fox tumble spin)
   const TUMBLE_DURATION = 0.85
   let tumbleTimer = 0
+  let tumbleDuration = TUMBLE_DURATION
   let tumbleAngle = 0
   let tumbleDir = 1
   let tumbleKnockbackVel = new THREE.Vector3()
 
-  const ship = buildShip(shipVisual)
+  // ============ PERDA DE CONTROLE POR HIT DE PROJÉTIL DE ALTO-IMPACTO (nível 4 — ver ============
+  // ============ PROJECTILE_POWER_LEVEL em enemies/shared.js: Chefe/Dourado/Horda) ============
+  // Pedido explícito do usuário — números bem acima do código de propósito, pra ser fácil de
+  // ajustar. Reaproveita o MESMO motor de giro/wobble do tumble de colisão física acima (ver
+  // startTumble), só com duração/velocidade de giro PRÓPRIAS (mais longa e mais lenta — é uma
+  // "punição" de ser atingido por um tiro grande, não o baque seco de esbarrar no corpo do
+  // chefe) e um flash vermelho piscando na nave enquanto dura.
+  const HIGH_IMPACT_TUMBLE_DURATION_S = 2.0 // duração total "perdendo o controle", em segundos
+  const HIGH_IMPACT_TUMBLE_SPIN_SPEED = Math.PI * 3.2 // rad/s no pico — bem mais lento que o giro de colisão física (9.5), pra não virar liquidificador por 2s inteiros
+  const HIGH_IMPACT_RED_FLASH_INTERVAL_S = 0.12 // segundos entre cada alternância liga/desliga do pisca vermelho
+  const HIGH_IMPACT_RED_FLASH_COLOR = 0xff0000
+  const HIGH_IMPACT_RED_FLASH_INTENSITY = 1.4
+  let tumbleIsHighImpact = false
+  let redFlashTimer = 0
+  let redFlashOn = false
+
+  const { group: ship, bodyMaterial: shipBodyMaterial, accentMaterial: shipAccentMaterial } = buildShip(shipVisual)
   ship.position.copy(lastFrame.position)
   ship.up.copy(lastFrame.up)
   ship.lookAt(lastFrame.position.clone().add(lastFrame.forward))
@@ -514,11 +531,17 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     impactSquashT = 1
   }
 
-  // Colisão violenta com boss / dourado (Star Fox knockback + tumble spin)
-  function triggerBossCollisionTumble(impactOrigin) {
-    tumbleTimer = TUMBLE_DURATION
+  // Motor compartilhado de "perda de controle" — usado tanto pela colisão física direta com o
+  // corpo do chefe/dourado (duração/velocidade curtas, sem flash) quanto pelo hit de projétil de
+  // alto-impacto nível 4 (duração longa + flash vermelho, ver bloco de constantes acima).
+  function startTumble(duration, impactOrigin, { highImpact = false } = {}) {
+    tumbleTimer = duration
+    tumbleDuration = duration
     tumbleAngle = 0
     tumbleDir = Math.random() < 0.5 ? -1 : 1
+    tumbleIsHighImpact = highImpact
+    redFlashTimer = 0
+    redFlashOn = false
     triggerImpactSquash()
 
     if (mode === 'arena') {
@@ -540,6 +563,16 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       velY = 16
       recoilOffset += 7.5
     }
+  }
+
+  // Colisão violenta com boss / dourado (Star Fox knockback + tumble spin)
+  function triggerBossCollisionTumble(impactOrigin) {
+    startTumble(TUMBLE_DURATION, impactOrigin, { highImpact: false })
+  }
+
+  // Hit de projétil nível 4 (Chefe/Dourado/Horda) — ver bloco de constantes HIGH_IMPACT_* acima.
+  function triggerHighImpactTumble(impactOrigin) {
+    startTumble(HIGH_IMPACT_TUMBLE_DURATION_S, impactOrigin, { highImpact: true })
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -674,15 +707,44 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     let tumblePitchWobble = 0
     let tumbleYawWobble = 0
     if (tumbleTimer > 0) {
-      const tNorm = tumbleTimer / TUMBLE_DURATION
-      const spinSpeed = Math.PI * 9.5 * tNorm * tumbleDir
+      const tNorm = tumbleTimer / tumbleDuration
+      const spinSpeedPeak = tumbleIsHighImpact ? HIGH_IMPACT_TUMBLE_SPIN_SPEED : Math.PI * 9.5
+      const spinSpeed = spinSpeedPeak * tNorm * tumbleDir
       tumbleAngle += spinSpeed * dt
       tumbleSpin = tumbleAngle
       tumblePitchWobble = Math.sin((1 - tNorm) * Math.PI * 4) * 0.35
       tumbleYawWobble = Math.cos((1 - tNorm) * Math.PI * 3) * 0.25
+
+      // Pisca vermelho na nave (nível 4 só) — alterna o emissive do material do corpo/acento
+      // num intervalo fixo, sem precisar de material clonado por instância (a nave é única).
+      if (tumbleIsHighImpact) {
+        redFlashTimer += dt
+        if (redFlashTimer >= HIGH_IMPACT_RED_FLASH_INTERVAL_S) {
+          redFlashTimer = 0
+          redFlashOn = !redFlashOn
+          const hex = redFlashOn ? HIGH_IMPACT_RED_FLASH_COLOR : 0x000000
+          const intensity = redFlashOn ? HIGH_IMPACT_RED_FLASH_INTENSITY : 0
+          shipBodyMaterial.emissive.setHex(hex)
+          shipBodyMaterial.emissiveIntensity = intensity
+          if (shipAccentMaterial !== shipBodyMaterial) {
+            shipAccentMaterial.emissive.setHex(hex)
+            shipAccentMaterial.emissiveIntensity = intensity
+          }
+        }
+      }
+
       tumbleTimer -= dt
       if (tumbleTimer <= 0) {
         wobbleVel += WOBBLE_KICK * 2.2 * tumbleDir
+        if (tumbleIsHighImpact) {
+          tumbleIsHighImpact = false
+          shipBodyMaterial.emissive.setHex(0x000000)
+          shipBodyMaterial.emissiveIntensity = 0
+          if (shipAccentMaterial !== shipBodyMaterial) {
+            shipAccentMaterial.emissive.setHex(0x000000)
+            shipAccentMaterial.emissiveIntensity = 0
+          }
+        }
       }
     }
     const tumbleState = { spin: tumbleSpin, pitch: tumblePitchWobble, yaw: tumbleYawWobble }
@@ -895,6 +957,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerArenaSummersault,
     triggerEmergencyBrake,
     triggerBossCollisionTumble,
+    triggerHighImpactTumble,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
     triggerRecoil,
     triggerImpactSquash,

@@ -18,6 +18,7 @@ import { isActionPressed } from './keybindings.js'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import { HOMING_MAX_TARGETS_CAP } from './player.js'
 import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
+import { POWER_LEVEL_HIGH_IMPACT } from './enemies/shared.js'
 import {
   ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
   INVINCIBILITY_FLICKER_MS,
@@ -621,6 +622,14 @@ export function createGameLoop(deps) {
 
       const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
       rail.triggerImpactSquash()
+
+      // Perda de controle por projétil de alto-impacto (nível 4 — Chefe/Dourado/Horda, ver
+      // PROJECTILE_POWER_LEVEL em enemies/shared.js) — giro + pisca vermelho por 2s, pedido
+      // explícito do usuário. Dispara mesmo se o escudo absorveu o dano (é reação a TOMAR o
+      // hit, não ao dano de vida em si).
+      if ((events.enemyHitPowerLevel || 1) >= POWER_LEVEL_HIGH_IMPACT) {
+        rail.triggerHighImpactTumble(null)
+      }
 
       if (result.absorbedByShield) {
         hud.showShieldBlock()

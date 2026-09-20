@@ -222,6 +222,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
 
       let enemyHits = 0
       let enemyDamage = 1
+      // Nível de poder do maior hit de PROJÉTIL/laser/moldura no frame (ver PROJECTILE_POWER_LEVEL
+      // em enemies/shared.js) — toque físico direto (kamikaze/aríete) não conta aqui, tem seu
+      // próprio tumble via bossCollisionWorldPos (rail.triggerBossCollisionTumble).
+      let enemyHitPowerLevel = 1
       let ramKills = 0
       let ramKillPoints = 0
       let ramBossDefeated = false
@@ -243,7 +247,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bossCollisionWorldPos = enemyResult.bossCollisionWorldPos || null
         const projResult = enemies.updateProjectiles(dt, playerPosition, opts)
         enemyHits += projResult.hits
-        if (projResult.hits > 0) enemyDamage = Math.max(enemyDamage, projResult.damage)
+        if (projResult.hits > 0) {
+          enemyDamage = Math.max(enemyDamage, projResult.damage)
+          enemyHitPowerLevel = Math.max(enemyHitPowerLevel, projResult.powerLevel)
+        }
       }
 
       const wingmanResult = squadron.update(dt, playerPosition, rail.getFrameAt(0), {
@@ -274,6 +281,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bonusKillPoints,
         enemyHits,
         enemyDamage,
+        enemyHitPowerLevel,
         goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated || Boolean(wingmanResult.goldenSpecialHit),
         goldenSpecialHitIsHoming,
         goldenHitWorldPos: goldenHitWorldPos || ramGoldenWorldPos || wingmanResult.goldenHitWorldPos || null,

@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { FORWARD_AXIS, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, ENEMY_ARENA_SPAWN_MAX } from './shared.js'
+import { FORWARD_AXIS, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, ENEMY_ARENA_SPAWN_MAX, POWER_LEVEL_HIGH_IMPACT } from './shared.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ CHEFE — dodecaedro móvel + laser telegrafado, com 3 FASES por HP ============
@@ -176,6 +176,10 @@ export function spawnBossEnemy(scene, rail, id, hp, level = 1) {
   return {
     id, mesh, kind: BOSS_KIND, dying: false, deathT: 0, hp, maxHp: hp, fireTimer: 1,
     difficultyLevel: level,
+    // Nível 4 (alto-impacto) da hierarquia de poder de projétil — ver PROJECTILE_POWER_LEVEL em
+    // shared.js. Só o powerLevel muda; geometria/velocidade/dano do projétil do Chefe continuam
+    // os defaults genéricos de fireEnemyProjectile (nunca teve projectileOpts próprio antes).
+    projectileOpts: { powerLevel: POWER_LEVEL_HIGH_IMPACT },
     laserCooldown: randomLaserInterval(BOSS_PHASES[0], level),
     laserTelegraphTimer: 0,
     laserTargetPos: null,
@@ -370,6 +374,7 @@ function fireBossLaser(scene, ctx, enemy, targetPos) {
     maxRange: LASER_MAX_RANGE,
     hitRadius: BOSS_LASER_HIT_RADIUS,
     shieldDamage: 1,
+    powerLevel: POWER_LEVEL_HIGH_IMPACT,
   })
 }
 

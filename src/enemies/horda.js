@@ -51,7 +51,11 @@ const HORDA_DAMAGE_PER_LEVEL = 1
 const HORDA_SPLIT_COUNT_BASE = 5
 const HORDA_SPLIT_COUNT_PER_LEVEL = 1
 
-export const HORDA_FIRE_INTERVAL_MS = 3000 // fixo, mas ainda dividido por enemyAggression (ver index.js)
+// 3000 → 2100 (-30%, pedido explícito do usuário: "dispare mais vezes em menor intervalo, 30%
+// mais rápido"). Telegraph visual antes de cada tiro já é genérico (ver "referência visual na
+// preparação do disparo" em enemies/index.js, bloco de telegraph a 0.3s do fireTimer zerar —
+// já cobre qualquer enemy.kind, Horda incluída, nenhuma mudança nova precisou ali).
+export const HORDA_FIRE_INTERVAL_MS = 2100 // fixo, mas ainda dividido por enemyAggression (ver index.js)
 export const HORDA_SHOTS_BEFORE_LEAVE = 6
 
 const HORDA_ORBIT_RADIUS = 12
@@ -154,6 +158,10 @@ export function spawnHorda(scene, rail, id, level = 1) {
       maxRange: HORDA_PROJECTILE_MAX_RANGE,
       damage: stats.damage,
       perfectAim: true, // "precisão perfeita no disparo" — ignora enemyAimErrorDeg
+      // Nível 4 (alto-impacto) da hierarquia de poder de projétil — ver PROJECTILE_POWER_LEVEL em
+      // enemies/shared.js. Hit de projétil nível 4 dispara a perda de controle (giro + piscar
+      // vermelho) em rail.js (triggerHighImpactTumble).
+      powerLevel: 4,
     },
   }
   projectHordaToWorld(enemy, rail)

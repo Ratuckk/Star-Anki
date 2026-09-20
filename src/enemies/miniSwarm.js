@@ -14,7 +14,8 @@ const MINI_SWARM_SPACING = 2
 // de balançar em formação atrás de um líder, cada filhote nasce no ponto exato onde a Horda
 // morreu e se afasta radialmente dos outros por HORDA_SPLIT_SPREAD_DURATION_S antes de entrar no
 // TELEGRAPH/DIVE normal — daí em diante é 100% o mesmo comportamento do mini-swarm comum.
-export const HORDA_SPLIT_SPREAD_DURATION_S = 4
+// 4 → 3 (pedido explícito do usuário: "muda de 4 segundos de preparo para 3")
+export const HORDA_SPLIT_SPREAD_DURATION_S = 3
 // CORRIGIDO — grace period de invencibilidade logo após o split (a Horda morre no meio de um
 // tiro/splash que já tinha acerto "em voo"; sem isso, um projétil ainda vivo no frame do split
 // podia matar um filhote recém-nascido antes mesmo do jogador perceber ele na tela). Só os
@@ -115,6 +116,25 @@ export function spawnMiniSwarm(scene, rail, nextId) {
 // 5.2) — CORRIGIDO, media contra o raio do ponto de colisão (0.55) igual ao erro de escala que a
 // própria Horda teve (ver histórico em progresso/), ficava um aglomerado colado e ilegível.
 const HORDA_CHILD_NEIGHBOR_SPACING = 5.2
+// Espalham mais que o normal (pedido do usuário: "faça os mini-swarms da horda se espalharem
+// mais") — multiplicador em cima do raio calculado a partir de HORDA_CHILD_NEIGHBOR_SPACING acima.
+const HORDA_CHILD_SPREAD_MULT = 1.5
+// Filhotes da Horda têm visual PRÓPRIO — pedido explícito do usuário: "deixe-os 15% maiores,
+// todos cinzas e faça eles terem visual de roda assim como a horda". Mesma família de cor
+// cinza da Horda (ver HORDA_COLOR/HORDA_EMISSIVE em horda.js — hardcoded aqui, não importado,
+// pra não criar dependência cruzada entre os dois arquivos de classe) e uma miniatura do torus
+// dela, em vez do cone colorido por variante que o mini-swarm de fila normal usa.
+const HORDA_CHILD_COLOR = 0x9ca3af
+const HORDA_CHILD_EMISSIVE = 0x4b5563
+const HORDA_CHILD_SCALE = MINI_ENEMY_SCALE * 1.15 // +15%, pedido do usuário
+const HORDA_CHILD_HIT_RADIUS = MINI_ENEMY_HIT_RADIUS * 1.15 // hitbox acompanha o visual maior
+const hordaChildGeometry = new THREE.TorusGeometry(1.0, 0.45, 10, 20)
+const hordaChildMaterial = new THREE.MeshPhongMaterial({
+  color: HORDA_CHILD_COLOR,
+  emissive: HORDA_CHILD_EMISSIVE,
+  emissiveIntensity: 0.75,
+  flatShading: true,
+})
 // Profundidade mínima (à frente do frame VIVO do jogador) que o ponto de espalhamento deve
 // alcançar até o fim da fase spreadOut — dá um "corredor" de mergulho decente mesmo quando a
 // Horda morre perto (ela orbita a só 28-50u). Combinado com DIVE_MAX_S maior (ver abaixo) pra dar
@@ -127,7 +147,7 @@ const SPREAD_MIN_TARGET_DEPTH = 200
 const DENSE_FOG_FADE_IN_S = 0.5
 export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count, isDenseFog = false) {
   const spreadRadius = count > 1
-    ? HORDA_CHILD_NEIGHBOR_SPACING / (2 * Math.sin(Math.PI / count))
+    ? (HORDA_CHILD_NEIGHBOR_SPACING / (2 * Math.sin(Math.PI / count))) * HORDA_CHILD_SPREAD_MULT
     : 0
   // Decompõe o ponto de morte da Horda (mundo absoluto) em coordenadas RELATIVAS ao frame vivo
   // atual (rail.getFrameAt(0) — o mesmo "agora" usado pelo loop principal, não um frame travado
@@ -145,21 +165,25 @@ export function spawnMiniSwarmFromHorda(scene, rail, nextId, originPos, count, i
   const spreadOriginDepthTarget = Math.max(originDepth, SPREAD_MIN_TARGET_DEPTH)
   const group = []
   for (let i = 0; i < count; i += 1) {
+    // variant só decide o padrão de MOVIMENTO no mergulho (reto/zigue-zague/hélice) — visual dos
+    // filhotes da Horda é sempre o mesmo (roda cinza), não muda por variante como o mini-swarm
+    // de fila normal.
     const variant = MINI_SWARM_VARIANT_IDS[Math.floor(Math.random() * MINI_SWARM_VARIANT_IDS.length)]
-    // Material COMPARTILHADO por variante entre todo mini-swarm vivo — clonar só quando precisa
-    // animar opacidade individualmente (fog denso), pra não afetar outras instâncias da mesma cor.
-    const material = isDenseFog ? variantMaterials.get(variant).clone() : variantMaterials.get(variant)
+    // Material COMPARTILHADO entre todo filhote de Horda vivo — clonar só quando precisa animar
+    // opacidade individualmente (fog denso), pra não afetar outras instâncias.
+    const material = isDenseFog ? hordaChildMaterial.clone() : hordaChildMaterial
     if (isDenseFog) {
       material.transparent = true
       material.opacity = 0
     }
-    const mesh = new THREE.Mesh(enemyGeometry, material)
+    const mesh = new THREE.Mesh(hordaChildGeometry, material)
     mesh.position.copy(originPos)
-    mesh.scale.setScalar(MINI_ENEMY_SCALE)
+    mesh.scale.setScalar(HORDA_CHILD_SCALE)
     scene.add(mesh)
     group.push({
       id: nextId(), mesh, kind: MINI_SWARM_KIND, dying: false, deathT: 0, hp: 1, maxHp: 1, fireTimer: Infinity,
       variant,
+      fromHorda: true,
       swarmState: 'spreadOut',
       spreadOriginDepthStart: originDepth,
       spreadOriginDepthTarget,
@@ -213,7 +237,7 @@ export function updateMiniSwarm(enemy, dt, ctx) {
         : 1)
       if (fadeT >= 1) {
         enemy.fadeInMaterial.dispose()
-        enemy.mesh.material = variantMaterials.get(enemy.variant)
+        enemy.mesh.material = enemy.fromHorda ? hordaChildMaterial : variantMaterials.get(enemy.variant)
         enemy.fadeInMaterial = null
       } else {
         enemy.fadeInMaterial.opacity = fadeT
@@ -248,10 +272,11 @@ export function updateMiniSwarm(enemy, dt, ctx) {
   if (enemy.swarmState === 'telegraph') {
     enemy.telegraphTimer -= dt
     enemy.mesh.lookAt(playerPosition)
+    const baseScale = enemy.fromHorda ? HORDA_CHILD_SCALE : MINI_ENEMY_SCALE
     const pulse = 1 + Math.sin(elapsed * 18) * 0.18
-    enemy.mesh.scale.setScalar(MINI_ENEMY_SCALE * pulse)
+    enemy.mesh.scale.setScalar(baseScale * pulse)
     if (enemy.telegraphTimer <= 0) {
-      enemy.mesh.scale.setScalar(MINI_ENEMY_SCALE)
+      enemy.mesh.scale.setScalar(baseScale)
       enemy.swarmState = 'dive'
       const spread = (Math.random() * 2 - 1) * MINI_SWARM_DIVE_SPREAD
       const diveTarget = playerPosition.clone().addScaledVector(frame.right, spread)
@@ -330,11 +355,13 @@ const _swarmRel = new THREE.Vector3()
   }
 }
 
-export function miniSwarmHitRadius() {
-  return MINI_ENEMY_HIT_RADIUS
+export function miniSwarmHitRadius(enemy) {
+  return enemy?.fromHorda ? HORDA_CHILD_HIT_RADIUS : MINI_ENEMY_HIT_RADIUS
 }
 
 export function disposeMiniSwarm() {
   enemyGeometry.dispose()
   for (const m of variantMaterials.values()) m.dispose()
+  hordaChildGeometry.dispose()
+  hordaChildMaterial.dispose()
 }

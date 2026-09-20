@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR } from './shared.js'
+import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, POWER_LEVEL_HIGH_IMPACT } from './shared.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ ESPECIAL DOURADO + mini-naves + laser ============
@@ -103,6 +103,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     pushProjectile({
       mesh, velocity: dir.clone().multiplyScalar(MINION_SPEED), traveled: 0,
       homing: true, maxRange: MINION_MAX_RANGE, hitRadius: MINION_HIT_RADIUS,
+      powerLevel: POWER_LEVEL_HIGH_IMPACT,
     })
   }
 
@@ -122,6 +123,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       velocity: direction.multiplyScalar(GOLDEN_LASER_SPEED), traveled: 0,
       maxRange: GOLDEN_LASER_MAX_RANGE, hitRadius: GOLDEN_LASER_HIT_RADIUS,
       shieldDamage: 1,
+      powerLevel: POWER_LEVEL_HIGH_IMPACT,
     })
   }
 
@@ -269,7 +271,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         g.fireTimer -= dt
         if (g.fireTimer <= 0) {
           triggerSoundCue(ENEMY_SOUND_CUES.golden_straight_volley, { worldPos: g.mesh.position })
-          ctx.fireEnemyProjectile({ mesh: g.mesh }, playerPosition)
+          ctx.fireEnemyProjectile({ mesh: g.mesh, projectileOpts: { powerLevel: POWER_LEVEL_HIGH_IMPACT } }, playerPosition)
           g.fireTimer = randomGoldenFireInterval()
         }
 

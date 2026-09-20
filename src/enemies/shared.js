@@ -40,6 +40,21 @@ export function getDifficultyLevel({ wrongAnswerCount = 0, score = 0, isNoDeck =
     : Math.floor(wrongAnswerCount / DIFFICULTY_LEVEL_WRONG_STEP)
   return 1 + Math.min(DIFFICULTY_LEVEL_MAX - 1, Math.max(0, steps))
 }
+// ============ HIERARQUIA DE PODER DE PROJÉTIL (pedido explícito do usuário) ============
+// 4 níveis, usados pra decidir a REAÇÃO do jogador ao ser atingido — hoje só o nível 4 tem
+// comportamento próprio (perda de controle, ver rail.js → triggerHighImpactTumble), os outros
+// 3 níveis existem como classificação pronta pra reações futuras (ex.: shake maior no nível 3).
+// Todo projétil/laser/moldura inimigo nasce nível 1 por padrão (ver enemies/index.js); só marca
+// explicitamente `powerLevel: POWER_LEVEL_HIGH_IMPACT` quem precisa subir.
+// 1 - básico: tiros do jogador, de inimigos genéricos (Blaster/Tank/Time/Sentinela/etc.) e dos aliados
+// 2 - teleguiado ou maior: projéteis com homing ou maiores que o padrão (sem uso concreto ainda)
+// 3 - dano em área: projéteis com splash/AOE (sem uso concreto ainda)
+// 4 - alto-impacto: Chefe, Dourado, Horda — projéteis grandes/de dano alto
+export const POWER_LEVEL_BASIC = 1
+export const POWER_LEVEL_GUIDED_OR_LARGE = 2
+export const POWER_LEVEL_AREA_DAMAGE = 3
+export const POWER_LEVEL_HIGH_IMPACT = 4
+
 // a geometria de todo cone deste projeto nasce apontando pro +Z local — usado pra virar o cone
 // na direção do tiro via quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
 export const FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
