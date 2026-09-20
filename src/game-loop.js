@@ -243,6 +243,10 @@ export function createGameLoop(deps) {
       state.chargeLoopSignaled = false
       if (isCharging) {
         const isMaxCharge = state.fireHeldMs >= player.config.homingChargeMaxMs
+        // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md, etapa 1: só detecção por
+        // enquanto — o disparo de verdade ainda é o homing normal, ver etapa 2)
+        const canSwirl = isMaxCharge && rail.isFullSpinActive() && player.isSwirlReady()
+        if (canSwirl) console.log('SWIRL BLAST!')
         combat.fireHomingShot(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
       }
       state.fireHeldMs = 0

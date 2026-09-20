@@ -993,6 +993,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     getRollAngle: () => roll,
     getDodgeRoll: () => dodgeRoll,
     getFullSpinAngle: () => fullSpinAngle,
+    // Swirl Blast (§3.1 do doc): true durante a janela visual do giro (fullSpinT < 1)
+    isFullSpinActive: () => fullSpinT < 1,
     setShakeIntensity: (m) => { shakeMagnitude = m },
     // Fase 9 (ideia all-range 5): multiplicador configurável em Configurações (0.5-2.0)
     setTurnSensitivity: (m) => { turnSensitivity = m },

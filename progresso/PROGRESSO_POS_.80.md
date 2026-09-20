@@ -230,3 +230,33 @@ perto dos 3s, e o cooldown seguinte volta a ~7s.
 pra `fireHeldMs`/timers de gameplay não avançarem em tempo real entre chamadas de ferramenta —
 qualquer teste que dependa de tempo decorrido precisa passar por `window.__starAnki.step(n, dtMs)`
 (stepper manual já exposto em `mount-game.js`) em vez de segurar tecla e esperar.
+
+---
+
+### Swirl Blast — Etapa 1 (mecânica sem visual, ainda sem projétil de verdade)
+
+Início da implementação de `Docs/# Swirl Blast — Design & Plano de I.md` (habilidade base — tiro
+perfurante liberado ao soltar carga máxima durante o giro de invencibilidade). Usuário escolheu ir
+etapa por etapa (§8 do doc), com checkpoint entre elas.
+
+- `main-constants.js`: nova `SWIRL_COOLDOWN_MS = 12000` (as outras constantes de timing do Swirl —
+  slow-mo/FOV — entram só na etapa 6, quando forem usadas).
+- `player.js`: novo estado `swirlCooldownMs`; `getSwirlCooldownMs`/`getSwirlCooldownTotalMs`/
+  `isSwirlReady`/`startSwirlCooldown`; decrementado em `update(dt)`; zerado em `resetCards` e em
+  `debugMaxBuffs` (habilidade sempre pronta no debug).
+- `rail.js`: `isFullSpinActive: () => fullSpinT < 1` exposta no retorno de `createRailController`.
+- `game-loop.js`: no branch de release do fogo (`else` de `inputState.firing`, onde hoje dispara
+  `combat.fireHomingShot`), detecção `canSwirl = isMaxCharge && rail.isFullSpinActive() &&
+  player.isSwirlReady()` com só um `console.log('SWIRL BLAST!')` — o disparo de verdade continua
+  sendo o homing normal (isso muda na etapa 2). Zero mudança de comportamento pro jogador ainda.
+
+**Validação**: testei as 4 combinações de estado (com/sem giro × com/sem carga máx, mais
+cooldown ativo) via `window.__starAnki.step()`, forçando `state.phase = 'combat'` primeiro —
+achado de metodologia: sem isso, `cutscenes.updateLaunchCutscene()` retorna cedo no topo do
+`runFrame` e a lógica de disparo nem roda (nenhuma combinação "dispara", mas por estar preso na
+cutscene de decolagem, não por bug na condição). Depois de forçar a fase, resultado bateu 100%
+com o esperado: giro+carga-máx+pronto loga `SWIRL BLAST!`; qualquer uma das 3 condições faltando,
+não loga. Único cuidado extra: `triggerFullSpin` deixa `fullSpinT` "ativo" por ~0.45s (27 frames)
+depois de disparado — testar o caso "sem giro" logo em seguida de um teste "com giro" no mesmo
+frame dá falso positivo (giro anterior ainda não tinha terminado a animação); precisa deixar a
+animação assentar (ou usar personagens/steps separados) antes de testar a combinação sem giro.

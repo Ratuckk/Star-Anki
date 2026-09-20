@@ -1,6 +1,7 @@
 import { DEFAULT_FIRE_COOLDOWN } from './combat/index.js'
 import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 import { aiValidator } from './ai-validator.js'
+import { SWIRL_COOLDOWN_MS } from './main-constants.js'
 
 // ============ ESCUDO ============
 // camada de defesa em FRENTE à barra de saúde: uma barra contínua (não binário cheio/vazio).
@@ -91,6 +92,10 @@ export function createPlayerSystem(session) {
   let repulsionActiveTimer = 0
   let ramCardActive = false
 
+  // Swirl Blast (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md, etapa 1: só o
+  // cooldown por enquanto, sem o projétil de verdade ainda)
+  let swirlCooldownMs = 0
+
   let fireCooldown = DEFAULT_FIRE_COOLDOWN
   let projectileCount = PROJECTILE_COUNT_START
   const collectedCards = new Map()
@@ -174,6 +179,12 @@ export function createPlayerSystem(session) {
     isRepulsionActive: () => repulsionActiveTimer > 0,
     getPropulsionActiveTimer: () => propulsionActiveTimer,
     getRepulsionActiveTimer: () => repulsionActiveTimer,
+
+    // Swirl Blast — cooldown da habilidade base (ver §3.1/§6.1 do doc)
+    getSwirlCooldownMs: () => swirlCooldownMs,
+    getSwirlCooldownTotalMs: () => SWIRL_COOLDOWN_MS,
+    isSwirlReady: () => swirlCooldownMs <= 0,
+    startSwirlCooldown() { swirlCooldownMs = SWIRL_COOLDOWN_MS },
 
     getLowHealthIntensity(thresholdFrac) {
       // QoL (v0.29.4): clamp de thresholdFrac em (0, 1] — antes, passar 0 desligava a vignette
@@ -282,6 +293,7 @@ export function createPlayerSystem(session) {
       ramCardActive = false
       fireCooldown = DEFAULT_FIRE_COOLDOWN
       projectileCount = PROJECTILE_COUNT_START
+      swirlCooldownMs = 0
     },
 
     buildCardExcludeSet() {
@@ -483,6 +495,7 @@ export function createPlayerSystem(session) {
       ramCardActive = true
       session.lives = LIVES_CAP
       maxLives = Math.max(maxLives, session.lives)
+      swirlCooldownMs = 0
 
       collectedCards.set('extra-projectile', PROJECTILE_COUNT_CAP - 1)
       collectedCards.set('more-homing-targets', HOMING_MAX_TARGETS_CAP - HOMING_MAX_TARGETS_BASE)
@@ -507,6 +520,7 @@ export function createPlayerSystem(session) {
       fullSpinCooldownTimer = Math.max(0, fullSpinCooldownTimer - dt * 1000)
       if (propulsionActiveTimer > 0) propulsionActiveTimer = Math.max(0, propulsionActiveTimer - dt * 1000)
       if (repulsionActiveTimer > 0) repulsionActiveTimer = Math.max(0, repulsionActiveTimer - dt * 1000)
+      if (swirlCooldownMs > 0) swirlCooldownMs = Math.max(0, swirlCooldownMs - dt * 1000)
       if (propulsionActiveTimer <= 0 && repulsionActiveTimer <= 0 && boostCharge < 1) {
         boostCharge = Math.min(1, boostCharge + (dt * 1000) / BOOST_RECHARGE_MS)
       }

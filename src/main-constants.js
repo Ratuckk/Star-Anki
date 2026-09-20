@@ -237,3 +237,7 @@ export const RAM_DAMAGE = 5
 
 // ============ VIGNETTE DE VIDA BAIXA ============
 export const LOW_HEALTH_THRESHOLD_FRAC = 0.4
+
+// ============ SWIRL BLAST (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md) ============
+// Cooldown base da habilidade, em ms. Ver player.js (isSwirlReady/startSwirlCooldown).
+export const SWIRL_COOLDOWN_MS = 12000
