@@ -1395,6 +1395,91 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return null
     },
 
+    // Swirl Blast (Docs/# Swirl Blast — Design & Plano de I.md, etapa 2) — colisão MULTI-HIT:
+    // ao contrário de resolveProjectileHit (para no primeiro achado), aqui o projétil atravessa,
+    // então iteramos TODOS os inimigos vivos e devolvemos um hit por alvo ainda não perfurado
+    // (piercedTargets, mantido pelo chamador em projectiles.js, 1 Set por projétil).
+    //
+    // Etapa 2 = só o caso genérico (dano fixo, sem parar). As regras especiais do doc — detrito
+    // sempre morre (§3.2.1), chefe/dourado/fragata param o projétil e o escudo do chefe é
+    // destruído em vez de bloquear (§3.2.3/§3.2.4) — entram na etapa 3, como branches ANTES do
+    // `enemyHit.hp -= damage` abaixo (sem mudar o resto da função).
+    //
+    // Lógica de morte (telemetria, som, kill points, split da Horda, corte do Verme, wipe de
+    // esquadrão) é a MESMA de resolveProjectileHit — mantida idêntica de propósito.
+    resolvePiercingProjectileHits(prevPos, currPos, meta = {}) {
+      const damage = meta.damage ?? 1
+      const hitBuffer = meta.hitBuffer || 0
+      const piercedTargets = meta.piercedTargets || new Set()
+      const hits = []
+
+      for (const enemyHit of enemies) {
+        if (enemyHit.dying || enemyHit.fadingOut || enemyHit.spawnInvincibleTimer > 0) continue
+        if (piercedTargets.has(enemyHit.id)) continue
+        if (distanceToSegment(enemyHit.mesh.position, prevPos, currPos) > hitRadiusFor(enemyHit) + hitBuffer) continue
+        piercedTargets.add(enemyHit.id)
+
+        enemyHit.hp -= damage
+        telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${damage} de dano perfurante (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage, hp: enemyHit.hp })
+        const killed = enemyHit.hp <= 0
+        let enemyKillPoints = 0
+        let timeReductionMs = null
+        let bossDefeated = false
+        let squadWipe = false
+        let squadWipeBonus = 0
+
+        if (killed) {
+          enemyHit.dying = true
+          enemyHit.deathT = 0
+          telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'death', `Inimigo ${enemyHit.kind} #${enemyHit.id} abatido (Swirl Blast)!`, { hp: 0 })
+          if (enemyHit.kind === BOSS_KIND) {
+            bossDefeated = true
+            bossDefeatedPending = true
+            bossDefeatedWorldPos = enemyHit.mesh.position.clone()
+            enemyHit.isShieldActive = false
+            if (enemyHit.shieldMesh) enemyHit.shieldMesh.visible = false
+            if (effects) explodeBoss(effects, enemyHit.mesh.position, false)
+          } else {
+            enemyKillPoints = killPointsFor(enemyHit.kind)
+            if (enemyHit.kind === TIME_KIND) {
+              timeReductionMs = TIME_REDUCTION_MIN_MS + Math.random() * (TIME_REDUCTION_MAX_MS - TIME_REDUCTION_MIN_MS)
+              triggerSoundCue(ENEMY_SOUND_CUES.time_enemy_rewind_snap, { worldPos: enemyHit.mesh.position.clone(), timeReductionMs })
+            } else if (enemyHit.kind === DETRITO_KIND) {
+              triggerSoundCue(enemyHit.isGiant ? ENEMY_SOUND_CUES.debris_titanic_shatter : ENEMY_SOUND_CUES.debris_shatter, { worldPos: enemyHit.mesh.position.clone() })
+            } else if (enemyHit.kind !== VERME_KIND) {
+              triggerSoundCue(ENEMY_SOUND_CUES.generic_death, { enemyId: enemyHit.id, kind: enemyHit.kind, worldPos: enemyHit.mesh.position.clone() })
+            }
+            if (enemyHit.kind === VERME_KIND) severChainAt(enemyHit, enemies, rail)
+            triggerHordaSplitIfNeeded(enemyHit)
+            if (effects) effects.explosion(enemyHit.mesh.position, colorFor(enemyHit), 1.6, { rings: true })
+
+            if (enemyHit.squadronId && activeSquadrons.has(enemyHit.squadronId)) {
+              const sq = activeSquadrons.get(enemyHit.squadronId)
+              sq.remaining--
+              if (sq.remaining <= 0 && !sq.wiped) {
+                sq.wiped = true
+                activeSquadrons.delete(enemyHit.squadronId)
+                squadWipe = true
+                squadWipeBonus = 150
+                enemyKillPoints += squadWipeBonus
+                if (effects && effects.spawnMicroOrbe) effects.spawnMicroOrbe(enemyHit.mesh.position.clone())
+              }
+            }
+          }
+        } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
+          breakBlasterWing(enemyHit)
+        } else if (enemyHit.kind === HORDA_KIND) {
+          triggerHordaTurbulence(enemyHit)
+        }
+
+        hits.push({
+          kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+          enemyKillPoints, timeReductionMs, bossDefeated, squadWipe, squadWipeBonus,
+        })
+      }
+      return hits
+    },
+
     getEnemyCount() {
       // Horda conta como 3 vagas do teto (pedido do usuário — ela é grande/forte o bastante pra
       // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres)

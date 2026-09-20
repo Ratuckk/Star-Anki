@@ -106,6 +106,17 @@ const MAX_CHARGE_VISUAL_SCALE = 1.2
 // que qualquer hitRadius do jogo, garante que o próximo frame não recaia no alvo recém-atingido
 const RICOCHET_NUDGE_DISTANCE = 3
 
+// ============ SWIRL BLAST — projétil perfurante (Docs/# Swirl Blast — Design & Plano de I.md) ============
+// Etapa 2 do plano (§8): só a mecânica de perfuração, com placeholder visual (cubo azul sólido).
+// O vórtice giratório de verdade (§4.1 do doc) entra na etapa 4 — não vale desenhar geometria
+// bonita antes da mecânica em si estar validada.
+const SWIRL_BLAST_SPEED = 520     // velocidade em u/s (~2x o tiro normal de 260) — requisito R5
+const SWIRL_BLAST_DAMAGE = 6      // dano por alvo atingido, sem falloff — requisito R4
+const SWIRL_BLAST_LIFETIME = 8    // segundos de vida (mesmo do tiro normal)
+const SWIRL_BLAST_MAX_RANGE = 700 // alcance máximo em u (mesmo do tiro normal)
+const swirlPlaceholderGeometry = new THREE.BoxGeometry(1.4, 1.4, 1.4)
+const swirlPlaceholderMaterial = new THREE.MeshBasicMaterial({ color: 0x2b8fff })
+
 const FRENZY_OFFSET_L = new THREE.Vector3(-0.8, 0, 0)
 const FRENZY_OFFSET_R = new THREE.Vector3(0.8, 0, 0)
 const _projOrigin = new THREE.Vector3()
@@ -201,7 +212,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           const speed = projectile.isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
           projectile.velocity.copy(_projDesired.multiplyScalar(speed))
         }
-      } else if (aimDirection && !projectile.isHoming) {
+      } else if (aimDirection && !projectile.isHoming && !projectile.isPiercing) {
         const speed = projectile.velocity.length()
         _projDir.copy(projectile.velocity).normalize()
         const steerT = Math.min(1, PLAYER_PROJECTILE_STEER_RATE * dt)
@@ -212,7 +223,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // ============================================================
       // >>> BLOCO NOVO — Enxame-Ímã: curva o tiro NORMAL quando passa perto <<<
       // ============================================================
-      if (!projectile.isHoming && magnetSources && magnetSources.length > 0) {
+      // Swirl Blast (R1 — perfurante em linha reta pura) nunca é deflectido pelo campo do ímã.
+      if (!projectile.isHoming && !projectile.isPiercing && magnetSources && magnetSources.length > 0) {
         const speed = projectile.velocity.length()
         _projDeflect.set(0, 0, 0)
         for (const source of magnetSources) {
@@ -262,6 +274,37 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             effects.machSpeedRing(_projRingPos, _projDir)
           }
         }
+      }
+
+      // Swirl Blast: pipeline de colisão próprio (multi-hit, sem orbe/bônus — só inimigos), o
+      // resto do bloco abaixo (orbHit/hit único/bonusHit) é do tiro normal/teleguiado.
+      if (projectile.isPiercing) {
+        const pierceHits = enemies.resolvePiercingProjectileHits(_projPrevPos, projectile.mesh.position, {
+          damage: projectile.damage,
+          piercedTargets: projectile.piercedTargets,
+        })
+        for (const h of pierceHits) {
+          hitsLog.push({
+            worldPos: h.worldPos, damage: projectile.damage, killed: h.killed,
+            isHoming: false, meshRef: h.meshRef, points: h.enemyKillPoints || 0,
+          })
+          if (h.killed) {
+            if (h.bossDefeated) {
+              bossDefeated = true
+              bossDefeatedIsHoming = false
+              bossHitWorldPos = h.worldPos
+            } else {
+              enemyKills += 1
+            }
+          }
+          if (h.enemyKillPoints) enemyKillPoints += h.enemyKillPoints
+          if (h.squadWipe) {
+            squadWipe = true
+            squadWipeBonus += (h.squadWipeBonus || 150)
+          }
+        }
+        if (projectile.traveled > SWIRL_BLAST_MAX_RANGE) removeProjectile(projectile)
+        continue
       }
 
       const hitBuffer = projectile.isHoming ? 0 : PROJECTILE_HIT_BUFFER
@@ -458,6 +501,21 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       return shotsFired
     },
 
+    // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 2: mesh placeholder (cubo azul);
+    // sem flash/som próprio ainda (etapa 5/7) nem giro do mesh (etapa 4).
+    fireSwirlBlast(origin, direction) {
+      const mesh = new THREE.Mesh(swirlPlaceholderGeometry, swirlPlaceholderMaterial)
+      mesh.position.copy(origin)
+      mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+      scene.add(mesh)
+      projectiles.push({
+        mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
+        damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME,
+        isPiercing: true, piercedTargets: new Set(),
+      })
+      return true
+    },
+
     // carta utilitária "giro rebatedor": projéteis inimigos dentro do raio, perto do jogador,
     // são destruídos e viram tiros do próprio jogador mirando no inimigo vivo mais próximo.
     deflectNearbyProjectiles(playerPos, radius) {
@@ -495,6 +553,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       homingProjectileGeometry.dispose()
       homingProjectileMaterial.dispose()
       homingMaxChargeMaterial.dispose()
+      swirlPlaceholderGeometry.dispose()
+      swirlPlaceholderMaterial.dispose()
     },
   }
 }

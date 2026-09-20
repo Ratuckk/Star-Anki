@@ -64,6 +64,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
       return fired
     },
+    fireSwirlBlast: (origin, direction) => {
+      const fired = projectiles.fireSwirlBlast(origin, direction)
+      if (fired) player.getTelemetry?.()?.recordEvent('swirl', 'Swirl Blast disparado!', { origin })
+      return fired
+    },
     deflectNearbyProjectiles: (playerPos, radius) => {
       const count = projectiles.deflectNearbyProjectiles(playerPos, radius)
       if (count > 0) {

@@ -260,3 +260,45 @@ não loga. Único cuidado extra: `triggerFullSpin` deixa `fullSpinT` "ativo" por
 depois de disparado — testar o caso "sem giro" logo em seguida de um teste "com giro" no mesmo
 frame dá falso positivo (giro anterior ainda não tinha terminado a animação); precisa deixar a
 animação assentar (ou usar personagens/steps separados) antes de testar a combinação sem giro.
+
+---
+
+### Swirl Blast — Etapa 2 (projétil placeholder + mecânica de perfuração)
+
+- `combat/projectiles.js`: novo bloco de constantes do Swirl (`SWIRL_BLAST_SPEED=520`,
+  `DAMAGE=6`, `LIFETIME=8`, `MAX_RANGE=700`) + mesh placeholder (`BoxGeometry` azul sólido —
+  o vórtice giratório de verdade é etapa 4). Nova `fireSwirlBlast(origin, direction)`: cria o
+  projétil com `isPiercing: true` e `piercedTargets: new Set()`. No `update()`, os branches de
+  steer (`PLAYER_PROJECTILE_STEER_RATE`) e deflexão do Ímã agora excluem `isPiercing` (R1: reto
+  puro, sem steer/homing/magnet) — sem isso, o Swirl herdava o "puxão" de mira do tiro normal e
+  a curva do campo do Ímã. Novo branch dedicado no loop de colisão: chama
+  `enemies.resolvePiercingProjectileHits`, itera TODOS os hits (não só o primeiro), soma
+  kills/pontos, e só remove o projétil por alcance/vida — nunca por ter acertado algo.
+- `enemies/index.js`: nova `resolvePiercingProjectileHits(prevPos, currPos, meta)` — mesma
+  lógica de morte de `resolveProjectileHit` (telemetria, sons por kind, split da Horda, corte do
+  Verme, wipe de esquadrão), mas iterando **todos** os inimigos vivos não presentes em
+  `piercedTargets` e devolvendo um array de hits em vez de parar no primeiro. Etapa 2 = só o
+  caso genérico (regras especiais de detrito/chefe/escudo/dourado/fragata entram na etapa 3).
+- `combat/index.js` / `game-loop.js`: `fireSwirlBlast` exposto e chamado de verdade no release
+  do fogo quando `canSwirl` (troca o `console.log` da etapa 1); `player.startSwirlCooldown()`
+  chamado no disparo. Fora do combo completo, cai no `fireHomingShot` normal como antes.
+
+**Achado de teste importante — blasters "teleportam" sob a própria IA.** A primeira tentativa de
+validar "3-4 blasters alinhados, todos tomam 6" (critério do próprio doc) falhou: só o mais
+próximo morria. Depurei chamando `resolvePiercingProjectileHits` direto (sem `step()`) com um
+segmento cobrindo 2 alvos — funcionou perfeitamente (os dois tomaram dano). Rodando pelo loop
+real (`sa.step()` múltiplas vezes) com log de posição por frame, os blasters não travados
+"saltavam" 16-51 unidades num ÚNICO frame — a FSM deles recalcula posição ABSOLUTA (órbita em
+volta do jogador) a cada frame, sobrescrevendo qualquer `mesh.position` setado manualmente assim
+que o primeiro `update()` deles roda. Não é bug do Swirl: é como o `blaster.js` já funciona.
+Reposicionar um inimigo tipo blaster e esperar que ele fique parado por mais de 1 frame não é um
+teste válido. Corrigi o teste espaçando os 4 blasters em só 1.8u (dentro do alcance de viagem de
+UM frame do Swirl, ~8.6u a 520u/s) — os 4 morreram no mesmo frame, todos com "Recebeu 6 de dano
+perfurante" no log de combate. Confirmado também que o dispatch real do `game-loop.js` cria o
+Swirl só quando as 3 condições batem, e cai no homing normal caso contrário.
+
+**Nota pra próximos testes de mecânica de projétil**: pra alinhar inimigos de propósito num
+teste determinístico, ou (a) usar um obstáculo estático (detrito) em vez de blaster/mini-swarm/
+etc. (que têm FSM própria recalculando posição a cada frame), ou (b) manter tudo dentro do
+alcance de viagem de UM frame só, ou (c) chamar a função de resolução de colisão diretamente
+(sem `step()`) pra isolar a mecânica da IA de movimento.
