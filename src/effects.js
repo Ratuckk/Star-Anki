@@ -178,12 +178,19 @@ const HOMING_AFTERIMAGE_DURATION = 0.25
 // homing) — então o Swirl lia como um tiro azul comum. Agora tem geometrias PRÓPRIAS, grandes
 // (ver bloco abaixo), anexadas ao mesmo array `muzzleFlashes` (já genérico o bastante pra
 // suportar duração/growth/opacidade por instância — nenhum código de update precisou mudar).
-const SWIRL_COLOR = 0x2b8fff          // mesma cor de projectiles.js (SWIRL_COLOR) — duplicado de
-                                       // propósito, effects.js não importa cores de combat/
-const SWIRL_FLASH_DURATION = 0.45     // era 0.28 — mais tempo visível, é super ataque
-const SWIRL_FLASH_RING_SCALE = 4.5    // era 3.0 — fator de crescimento do anel de choque principal
-const SWIRL_AFTERIMAGE_DURATION = 0.55 // era 0.5
-const SWIRL_EXPLOSION_RADIUS = 4.5    // era 2.5 — impacto contra boss/escudo agora é uma explosão ÉPICA (dano é sempre 6 fixo)
+const SWIRL_COLOR = 0x2b8fff          // mesma cor de projectiles.js (SWIRL_CORE_COLOR) — duplicado
+                                       // de propósito, effects.js não importa cores de combat/
+const SWIRL_HOT_COLOR = 0xeaffff      // idem SWIRL_HOT_COLOR em projectiles.js
+// Overhaul v2 (pedido do usuário) — valores da proposta em escala "Rodada 1" (0.6×, mesma lógica
+// de projectiles.js: SWIRL_SCALE ali). Durações não são "tamanho", ficam no valor cheio proposto.
+const SWIRL_FLASH_DURATION = 0.55     // era 0.45 — duração total do flash de disparo
+const SWIRL_FLASH_RING_SCALE = 8.0 * 0.6 // 4.8 — era 4.5, crescimento do anel de choque principal
+const SWIRL_AFTERIMAGE_DURATION = 0.8 // era 0.55 — cada fantasma da trilha vive mais
+const SWIRL_EXPLOSION_RADIUS = 7.0 * 0.6 // 4.2 — impacto contra boss/escudo/dourado (dano é sempre 6 fixo)
+// Anel de bloqueio (novo, §2 da proposta v2) — aparece brevemente sobre o chefe/dourado no
+// instante do disparo, quando o Swirl sai em modo homing. Confirma pro jogador "vai nele".
+const SWIRL_LOCK_RETICLE_DURATION = 0.4
+const SWIRL_LOCK_RETICLE_RADIUS = 2.2
 
 // ============ HIT SPARK ============
 const HIT_SPARK_PARTICLES = 6
@@ -453,8 +460,17 @@ export function createEffectsSystem(scene, opts = {}) {
   const swirlFlashConeGeo = new THREE.ConeGeometry(1.3, 5.0, 8)
   swirlFlashConeGeo.rotateX(-Math.PI / 2)
   const swirlFlashRingGeo = new THREE.RingGeometry(0.9, 1.9, 24)
-  const swirlAfterimageCoreGeo = new THREE.ConeGeometry(0.75, 6.5, 8)
+  // Overhaul v2 — o corpo real agora é uma pirâmide de 3 lados (SWIRL_CORE_RADIUS=1.8,
+  // SWIRL_CORE_LENGTH=6.0 em projectiles.js — duplicado aqui de propósito, mesmo padrão de
+  // SWIRL_COLOR acima). O afterimage precisa da MESMA silhueta triangular, senão a trilha lê
+  // como um formato diferente do projétil de verdade.
+  const swirlAfterimageCoreGeo = new THREE.ConeGeometry(1.8, 6.0, 3)
   swirlAfterimageCoreGeo.rotateX(Math.PI / 2)
+  // Anel de lock (novo, homing contra chefe/dourado) — aro fino, some rápido.
+  const swirlLockReticleGeo = new THREE.RingGeometry(SWIRL_LOCK_RETICLE_RADIUS * 0.85, SWIRL_LOCK_RETICLE_RADIUS, 32)
+  // Fragmentos triangulares da explosão de impacto (novo, §6 da proposta v2) — tetraedros
+  // pequenos que voam em leque hemisférico, reforça a leitura "triangular" também no impacto.
+  const swirlFragmentGeo = new THREE.TetrahedronGeometry(0.5 * 0.6, 0)
 
   const _FORWARD_AXIS = new THREE.Vector3(0, 0, 1)
   const _BACKWARD_AXIS = new THREE.Vector3(0, 0, -1)
@@ -825,12 +841,15 @@ export function createEffectsSystem(scene, opts = {}) {
   //   2) anel de choque expandindo perpendicular ao tiro, SWIRL_FLASH_RING_SCALE×
   //   3) segundo anel (branco, mais lento) — reforça o peso do disparo
   //   4) bloom branco saturado no bico — o "instante zero" da descarga
-  function swirlBlastFlash(position, direction) {
+  function swirlBlastFlash(position, direction, isHoming = false) {
     const normDir = direction.clone().normalize()
+    // overhaul v2 — disparo em modo homing (chefe/dourado travado) fica visivelmente mais
+    // intenso, reforça "isto vai travar em algo" já no instante do disparo
+    const flashOpacity = isHoming ? 1.0 : 0.9
 
     // 1) cone azul grande
     const coreMat = new THREE.MeshBasicMaterial({
-      color: SWIRL_COLOR, transparent: true, opacity: 0.9,
+      color: SWIRL_COLOR, transparent: true, opacity: flashOpacity,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const coreMesh = new THREE.Mesh(swirlFlashConeGeo, coreMat)
@@ -885,6 +904,26 @@ export function createEffectsSystem(scene, opts = {}) {
     })
   }
 
+  // Anel de lock (novo, §2 da proposta v2) — aparece brevemente SOBRE o chefe/dourado travado,
+  // no instante do disparo, quando o Swirl sai em modo homing. Confirma pro jogador qual alvo.
+  // `fireDirection` orienta o anel de frente pra quem disparou (normal = -fireDirection) — sem
+  // isso o anel ficaria de perfil pra câmera na maioria dos ângulos (RingGeometry nasce com
+  // normal fixa em +Z; este arquivo não tem acesso à câmera pra fazer billboard de verdade).
+  function swirlLockReticle(targetPosition, fireDirection) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 1.0,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })
+    const mesh = new THREE.Mesh(swirlLockReticleGeo, material)
+    mesh.position.copy(targetPosition)
+    if (fireDirection) mesh.quaternion.setFromUnitVectors(_FORWARD_AXIS, fireDirection.clone().normalize().negate())
+    scene.add(mesh)
+    muzzleFlashes.push({
+      mesh, life: 0, duration: SWIRL_LOCK_RETICLE_DURATION,
+      initialScale: 1.0, growth: 0.3, startOpacity: 1.0,
+    })
+  }
+
   // Afterimage da trilha (§4.4) — geometria própria grande (swirlAfterimageCoreGeo, 0.75×6.5),
   // antes reusava `sharedConeGeometry` (0.5×2.5, mesma do rastro do homing) e lia como um
   // pontinho fino.
@@ -908,6 +947,30 @@ export function createEffectsSystem(scene, opts = {}) {
     explosion(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS, { rings: true })
     shockwave(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS * 1.1)
     shockwave(position, 0xffffff, SWIRL_EXPLOSION_RADIUS * 0.7)
+
+    // Overhaul v2 (§6) — onda de fragmentos triangulares: 8 tetraedros pequenos girando pra fora
+    // em leque hemisférico, reforça a leitura "triangular" também no impacto, não só em voo.
+    for (let i = 0; i < 8; i += 1) {
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos(2 * Math.random() - 1)
+      const speed = 8 + Math.random() * 10
+      const velocity = new THREE.Vector3(
+        Math.sin(phi) * Math.cos(theta), Math.sin(phi) * Math.sin(theta), Math.cos(phi),
+      ).multiplyScalar(speed)
+      const material = new THREE.MeshBasicMaterial({
+        color: SWIRL_COLOR, transparent: true, opacity: 0.9,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      })
+      const mesh = new THREE.Mesh(swirlFragmentGeo, material)
+      mesh.position.copy(position)
+      mesh.quaternion.setFromEuler(new THREE.Euler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2))
+      scene.add(mesh)
+      muzzleFlashes.push({
+        mesh, life: 0, duration: 0.9,
+        initialScale: 1.0, growth: 0.4, startOpacity: 0.9,
+        velocity,
+      })
+    }
   }
 
   function hitSpark(position, colorHex = 0xffffff) {
@@ -2059,6 +2122,8 @@ export function createEffectsSystem(scene, opts = {}) {
     swirlFlashConeGeo.dispose()
     swirlFlashRingGeo.dispose()
     swirlAfterimageCoreGeo.dispose()
+    swirlLockReticleGeo.dispose()
+    swirlFragmentGeo.dispose()
     microOrbeCoreGeo.dispose()
     microOrbeRingGeo.dispose()
     microOrbeCoreMat.dispose()
@@ -2089,7 +2154,7 @@ export function createEffectsSystem(scene, opts = {}) {
     getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
     getHealOrbesCollected: () => healOrbesCollectedThisFrame,
     setChargeGlow, smokeRing, homingAfterimage,
-    swirlBlastFlash, swirlAfterimage, swirlBlastExplosion,
+    swirlBlastFlash, swirlAfterimage, swirlBlastExplosion, swirlLockReticle,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,
     propulsionBurst, glassShatter, bloomSprite, contrailParticle, bossImpactRing,
     gridPulse, spawnContrailTick, spinWind, deflectBurst,

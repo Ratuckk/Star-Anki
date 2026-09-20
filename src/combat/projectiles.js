@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 import { PLAYER_SOUND_CUES, ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
+import { aiValidator } from '../ai-validator.js'
+import { BOSS_KIND } from '../enemies/boss.js'
+import { GOLDEN_KIND } from '../enemies/golden.js'
 
 // ============ TIROS DO JOGADOR — normal + carregado (teleguiado) ============
 // Extraído de combat.js (v0.38.0, split por sistema). Os dois tipos de tiro ficam JUNTOS aqui de
@@ -106,77 +109,204 @@ const MAX_CHARGE_VISUAL_SCALE = 1.2
 // que qualquer hitRadius do jogo, garante que o próximo frame não recaia no alvo recém-atingido
 const RICOCHET_NUDGE_DISTANCE = 3
 
-// ============ SWIRL BLAST — projétil perfurante (Docs/# Swirl Blast — Design & Plano de I.md) ============
+// ============ SWIRL BLAST — projétil perfurante (Docs/# Swirl Blast — Design & Plano de I.md +
+// "Proposta — Overhaul visual do Swirl Blast (v2)", pedido do usuário) ============
 const SWIRL_BLAST_SPEED = 520     // velocidade em u/s (~2x o tiro normal de 260) — requisito R5
 const SWIRL_BLAST_DAMAGE = 6      // dano por alvo atingido, sem falloff — requisito R4
 const SWIRL_BLAST_LIFETIME = 8    // segundos de vida (mesmo do tiro normal)
 const SWIRL_BLAST_MAX_RANGE = 700 // alcance máximo em u (mesmo do tiro normal)
 const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado pra trás (§4.4)
 
-// --- Visual (§4.1 do doc) — Group de 4 camadas: core (silhueta do homing) + anéis de vórtice
-// espalhados ao longo do comprimento + aura luminosa + glow na ponta. Gira em torno do próprio
-// eixo de voo (SWIRL_SPIN_RATE) — ver aplicação em update(), que reconstrói a orientação
-// (direção + spin acumulado) a cada frame, já que o quaternion genérico do projétil é
-// recalculado every frame só com a direção pura.
-// RECALIBRADO — bug reportado pelo usuário: "o disparo é basicamente invisível". Causa raiz: as
-// geometrias originais eram do MESMO tamanho do tiro normal (core 0.6×3.6 vs. halo do tiro
-// normal 0.46×3.3), então o Swirl lia como "um tiro azul normal" em vez de super ataque.
-// Referências de escala do jogo: nave do jogador = 3.4 de comprimento; tiro carregado = 0.53×3.36.
-// O assembly abaixo tem comprimento ~7.5 (2.2× a nave) e aura com diâmetro ~5.2 (maior que a
-// envergadura da nave) — leitura inconfundível de "super ataque" mesmo a 520 u/s.
-const SWIRL_COLOR = 0x2b8fff          // azul — mesma família do tiro carregado máximo
-const SWIRL_SPIN_RATE = 18            // rad/s de giro em torno do próprio eixo de voo
-const SWIRL_CORE_RADIUS = 0.9         // era 0.6 — ~2× o tiro normal
-const SWIRL_CORE_LENGTH = 7.5         // era 3.6 — ~2.2× o comprimento da nave do jogador
-const SWIRL_RING_RADIUS = 1.6         // era 0.75 — anéis de vórtice bem mais gordos
-const SWIRL_RING_TUBE = 0.3           // era 0.12 — tubo do toro mais espesso, visível a distância
-// 4 anéis (era 3) com escala crescente da frente pra trás — desenha um funil/parafuso que vende
-// a leitura de vórtice, não uma fileira de anéis idênticos.
-const SWIRL_RING_SPECS = [
-  { z: -2.8, scale: 0.75 },
-  { z: -0.9, scale: 1.00 },
-  { z: 1.0, scale: 1.15 },
-  { z: 2.9, scale: 1.30 },
-]
-const SWIRL_AURA_RADIUS = 2.6         // era 1.1 — diâmetro ~5.2, maior que a envergadura da nave
-const SWIRL_TIP_GLOW_RADIUS = 1.0     // era 0.35 — punch de luz no bico 3× maior
+// --- Overhaul v2 (pedido do usuário): forma triangular (pirâmide de 3 lados, não mais cone
+// redondo) em 9 camadas, e homing contra CHEFE e DOURADO (os dois — "chefes inclui o dourado")
+// quando travados no release. Isso é um desvio DELIBERADO do requisito R1 original ("disparo
+// reto, sem homing") do doc de design — confirmado explicitamente com o usuário depois de
+// apontar o conflito; R1 continua valendo pra todo o resto (inimigos comuns, fragata — que já
+// para o Swirl por conta própria e não precisa de homing pra ser atingida).
+//
+// ESCALA "Rodada 1" — todos os números de tamanho abaixo são 0.6× do valor final da proposta v2
+// (o próprio documento recomenda testar em 2 rodadas por causa de riscos reais: pode invadir o
+// near-clip da câmera, pode trivializar a luta de chefe com o homing, pode ficar grande demais —
+// escolha do usuário depois do susto recente com o tamanho errado da Horda). Se ficar bom em
+// teste, a Rodada 2 é só multiplicar os *_RADIUS/*_LENGTH abaixo por (1/0.6) pra chegar nos
+// valores cheios da proposta.
+const SWIRL_SCALE = 0.6
 
-const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 8)
+const SWIRL_CORE_COLOR = 0x2b8fff  // azul principal — mesma família do tiro carregado máximo
+const SWIRL_DEEP_COLOR = 0x1a5fb4  // azul escuro da "plumagem" traseira
+const SWIRL_HOT_COLOR = 0xeaffff   // quase-branco do núcleo/agulha/bico
+const SWIRL_TRAIL_COLOR = 0x5ac8ff // azul claro da cauda/exaustão
+
+const SWIRL_SPIN_RATE = 18            // rad/s — giro do GRUPO inteiro em torno do próprio eixo de voo
+
+// 1) Pirâmide principal (o "drill") — ConeGeometry com 3 segmentos radiais = pirâmide de base
+// triangular, não um cone redondo. É essa aresta angular que lê como "cortante" de qualquer
+// ângulo de câmera.
+const SWIRL_CORE_RADIUS = 3.0 * SWIRL_SCALE   // 1.8
+const SWIRL_CORE_LENGTH = 10.0 * SWIRL_SCALE  // 6.0
+// 2) Pirâmide traseira invertida (plumagem) — mais larga e mais curta que a principal, aponta
+// pro lado oposto. Junto com a principal forma um losango alongado visto de perfil.
+const SWIRL_TAIL_RADIUS = 6.0 * SWIRL_SCALE   // 3.6
+const SWIRL_TAIL_LENGTH = 8.0 * SWIRL_SCALE   // 4.8
+// 3) Agulha frontal fina — o bico que fisicamente "rasga" os alvos.
+const SWIRL_NEEDLE_RADIUS = 0.9 * SWIRL_SCALE // 0.54
+const SWIRL_NEEDLE_LENGTH = 8.0 * SWIRL_SCALE // 4.8
+// 4) Espiral de contenção — TorusKnotGeometry enrolando o corpo inteiro feito uma mola. É o
+// componente mais importante da leitura "vórtice"; sem ele são só pirâmides soltas.
+const SWIRL_SPIRAL_RADIUS = 4.5 * SWIRL_SCALE // 2.7
+const SWIRL_SPIRAL_TUBE = 0.12 * SWIRL_SCALE  // 0.072 (arredondado pra 0.09 na geometria — tubo real menor que isso fica invisível)
+const SWIRL_SPIRAL_SPIN_BASE = 15     // rad/s quando reto
+const SWIRL_SPIRAL_SPIN_HOMING = 22   // rad/s quando teleguiado (mais rápido = "travando em algo")
+const SWIRL_SPIRAL_OPACITY_BASE = 0.75
+const SWIRL_SPIRAL_OPACITY_HOMING = 1.0
+// 5) 5 anéis triangulares em funil — mesma técnica angular da pirâmide principal (3 segmentos
+// radiais = anel oco triangular, não redondo), escalas crescentes do bico pra cauda desenhando
+// um funil, cada um girando numa velocidade própria (dessincronizados, reforça "vórtice vivo").
+const SWIRL_RING_RADIUS = 2.5 * SWIRL_SCALE // 1.5 — base, escalada por instância abaixo
+const SWIRL_RING_TUBE = 0.3 * SWIRL_SCALE   // 0.18
+const SWIRL_RING_SPECS = [
+  { z: -3.5 * SWIRL_SCALE, scale: 0.5, spin: 15 },
+  { z: -1.75 * SWIRL_SCALE, scale: 0.9, spin: 18 },
+  { z: 0, scale: 1.3, spin: 21 },
+  { z: 1.75 * SWIRL_SCALE, scale: 1.7, spin: 24 },
+  { z: 3.5 * SWIRL_SCALE, scale: 2.1, spin: 27 },
+]
+// 6) Aura de contenção — envelopa tudo, não gira, é o "campo de força".
+const SWIRL_AURA_RADIUS = 5.0 * SWIRL_SCALE // 3.0
+// 7) Núcleo branco saturado — cilindro coaxial dentro das pirâmides, "raio dentro da broca".
+const SWIRL_INNER_CORE_RADIUS_TOP = 0.8 * SWIRL_SCALE    // 0.48
+const SWIRL_INNER_CORE_RADIUS_BOTTOM = 1.4 * SWIRL_SCALE // 0.84
+const SWIRL_INNER_CORE_LENGTH = 9.0 * SWIRL_SCALE         // 5.4
+// 8) Trail plume — cone invertido saindo da base da pirâmide traseira, dá cauda.
+const SWIRL_PLUME_RADIUS = 5.5 * SWIRL_SCALE // 3.3
+const SWIRL_PLUME_LENGTH = 6.0 * SWIRL_SCALE // 3.6
+// 9) Pontos de exaustão — 3 esferas pequenas nas quinas da base da pirâmide traseira (a base
+// triangular tem 3 vértices — uma luz em cada).
+const SWIRL_EXHAUST_RADIUS = 0.6 * SWIRL_SCALE // 0.36
+const SWIRL_EXHAUST_DISTANCE = SWIRL_TAIL_RADIUS * 0.85
+
+// Punch visual quando o alvo travado é chefe/dourado (§2 da proposta v2) — turn rate limitado
+// (lerp de DIREÇÃO, não retargeting instantâneo como o teleguiado comum): é um torpedo que
+// corrige aos poucos, não um míssil telepático perfeito.
+const SWIRL_HOMING_TURN_RATE = 4.0 // rad/s do lerp direção→alvo
+
+const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 3)
 swirlCoreGeometry.rotateX(Math.PI / 2)
 const swirlCoreMaterial = new THREE.MeshBasicMaterial({
-  color: SWIRL_COLOR, transparent: true, opacity: 0.95,
+  color: SWIRL_CORE_COLOR, transparent: true, opacity: 0.95,
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
-const swirlRingGeometry = new THREE.TorusGeometry(SWIRL_RING_RADIUS, SWIRL_RING_TUBE, 8, 24)
+const swirlTailGeometry = new THREE.ConeGeometry(SWIRL_TAIL_RADIUS, SWIRL_TAIL_LENGTH, 3)
+swirlTailGeometry.rotateX(-Math.PI / 2)
+const swirlTailMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_DEEP_COLOR, transparent: true, opacity: 0.7,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlNeedleGeometry = new THREE.ConeGeometry(SWIRL_NEEDLE_RADIUS, SWIRL_NEEDLE_LENGTH, 3)
+swirlNeedleGeometry.rotateX(Math.PI / 2)
+const swirlNeedleMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_HOT_COLOR, transparent: true, opacity: 1.0,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlSpiralGeometry = new THREE.TorusKnotGeometry(SWIRL_SPIRAL_RADIUS, 0.09, 128, 8, 2, 3)
+// material PRÓPRIO por instância (não compartilhado) — a opacidade/velocidade de giro mudam
+// quando o alvo é chefe/dourado, e precisa variar por projétil sem afetar outro Swirl em voo
+function buildSwirlSpiralMaterial() {
+  return new THREE.MeshBasicMaterial({
+    color: SWIRL_CORE_COLOR, transparent: true, opacity: SWIRL_SPIRAL_OPACITY_BASE,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  })
+}
+const swirlRingGeometry = new THREE.TorusGeometry(SWIRL_RING_RADIUS, SWIRL_RING_TUBE, 3, 24)
 const swirlRingMaterial = new THREE.MeshBasicMaterial({
-  color: SWIRL_COLOR, transparent: true, opacity: 0.85,
+  color: SWIRL_CORE_COLOR, transparent: true, opacity: 0.85,
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
 const swirlAuraGeometry = new THREE.SphereGeometry(SWIRL_AURA_RADIUS, 14, 12)
 const swirlAuraMaterial = new THREE.MeshBasicMaterial({
-  color: SWIRL_COLOR, transparent: true, opacity: 0.22,
+  color: SWIRL_CORE_COLOR, transparent: true, opacity: 0.10,
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
-const swirlTipGlowGeometry = new THREE.SphereGeometry(SWIRL_TIP_GLOW_RADIUS, 10, 8)
-const swirlTipGlowMaterial = new THREE.MeshBasicMaterial({
-  color: 0xeaffff, transparent: true, opacity: 0.95,
+const swirlInnerCoreGeometry = new THREE.CylinderGeometry(SWIRL_INNER_CORE_RADIUS_TOP, SWIRL_INNER_CORE_RADIUS_BOTTOM, SWIRL_INNER_CORE_LENGTH, 6)
+swirlInnerCoreGeometry.rotateX(Math.PI / 2)
+const swirlInnerCoreMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_HOT_COLOR, transparent: true, opacity: 1.0,
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
-
+const swirlPlumeGeometry = new THREE.ConeGeometry(SWIRL_PLUME_RADIUS, SWIRL_PLUME_LENGTH, 6)
+swirlPlumeGeometry.rotateX(-Math.PI / 2)
+const swirlPlumeMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_TRAIL_COLOR, transparent: true, opacity: 0.4,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlExhaustGeometry = new THREE.SphereGeometry(SWIRL_EXHAUST_RADIUS, 8, 6)
+const swirlExhaustMaterial = new THREE.MeshBasicMaterial({
+  color: SWIRL_TRAIL_COLOR, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
 function buildSwirlBlastMesh() {
   const group = new THREE.Group()
+
+  // corpo (estático, gira só com o grupo inteiro)
   group.add(new THREE.Mesh(swirlCoreGeometry, swirlCoreMaterial))
+  const tail = new THREE.Mesh(swirlTailGeometry, swirlTailMaterial)
+  tail.position.z = -(SWIRL_CORE_LENGTH / 2 + SWIRL_TAIL_LENGTH / 2) * 0.55
+  group.add(tail)
+  const needle = new THREE.Mesh(swirlNeedleGeometry, swirlNeedleMaterial)
+  needle.position.z = SWIRL_CORE_LENGTH / 2 + SWIRL_NEEDLE_LENGTH * 0.3
+  group.add(needle)
+
+  // casca dinâmica — espiral (material próprio, marcada pra update() achar) + anéis triangulares
+  // em funil (cada um com sua própria velocidade de giro, marcados via userData)
+  const spiral = new THREE.Mesh(swirlSpiralGeometry, buildSwirlSpiralMaterial())
+  spiral.userData.swirlRole = 'spiral'
+  spiral.userData.spinAngle = Math.random() * Math.PI * 2
+  group.add(spiral)
+
   for (const spec of SWIRL_RING_SPECS) {
     const ring = new THREE.Mesh(swirlRingGeometry, swirlRingMaterial)
     ring.position.z = spec.z
     ring.scale.setScalar(spec.scale)
+    ring.userData.swirlRole = 'ring'
+    ring.userData.spinSpeed = spec.spin
+    ring.userData.spinAngle = Math.random() * Math.PI * 2
     group.add(ring)
   }
+
   group.add(new THREE.Mesh(swirlAuraGeometry, swirlAuraMaterial))
-  const tip = new THREE.Mesh(swirlTipGlowGeometry, swirlTipGlowMaterial)
-  tip.position.z = SWIRL_CORE_LENGTH / 2
-  group.add(tip)
+
+  // punch — núcleo branco coaxial, cauda, pontos de exaustão nas 3 quinas da base traseira
+  group.add(new THREE.Mesh(swirlInnerCoreGeometry, swirlInnerCoreMaterial))
+  const plume = new THREE.Mesh(swirlPlumeGeometry, swirlPlumeMaterial)
+  plume.position.z = tail.position.z - SWIRL_TAIL_LENGTH * 0.4
+  group.add(plume)
+  for (let i = 0; i < 3; i += 1) {
+    const angle = (i / 3) * Math.PI * 2
+    const exhaust = new THREE.Mesh(swirlExhaustGeometry, swirlExhaustMaterial)
+    exhaust.position.set(Math.cos(angle) * SWIRL_EXHAUST_DISTANCE, Math.sin(angle) * SWIRL_EXHAUST_DISTANCE, tail.position.z)
+    group.add(exhaust)
+  }
+
   return group
+}
+
+// Chamado a cada frame (só pra projéteis isPiercing) — gira a espiral e os 5 anéis funil em
+// velocidades independentes (dessincronizados de propósito), por cima do giro do grupo inteiro
+// (SWIRL_SPIN_RATE, aplicado no quaternion do group em update()). Também aplica o "acende mais
+// forte" da espiral quando o projétil está travado em chefe/dourado.
+function updateSwirlDynamicShell(projectile, dt) {
+  const isHoming = !!projectile.swirlHomingTarget
+  for (const child of projectile.mesh.children) {
+    if (child.userData.swirlRole === 'ring') {
+      child.userData.spinAngle += child.userData.spinSpeed * dt
+      child.rotation.z = child.userData.spinAngle
+    } else if (child.userData.swirlRole === 'spiral') {
+      const spinRate = isHoming ? SWIRL_SPIRAL_SPIN_HOMING : SWIRL_SPIRAL_SPIN_BASE
+      child.userData.spinAngle += spinRate * dt
+      child.rotation.z = child.userData.spinAngle
+      child.material.opacity = isHoming ? SWIRL_SPIRAL_OPACITY_HOMING : SWIRL_SPIRAL_OPACITY_BASE
+    }
+  }
 }
 
 const FRENZY_OFFSET_L = new THREE.Vector3(-0.8, 0, 0)
@@ -199,7 +329,17 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
   let fireCooldownDuration = DEFAULT_FIRE_COOLDOWN
 
   function removeProjectile(p) {
-    if (p.mesh) scene.remove(p.mesh)
+    if (p.mesh) {
+      // material da espiral do Swirl é PRÓPRIO por instância (não compartilhado, ver
+      // buildSwirlSpiralMaterial) — precisa descartar aqui, o dispose() global só cobre as
+      // geometrias/materiais compartilhados entre todos os Swirls
+      if (p.isPiercing) {
+        for (const child of p.mesh.children) {
+          if (child.userData.swirlRole === 'spiral' && child.material) child.material.dispose()
+        }
+      }
+      scene.remove(p.mesh)
+    }
     const idx = projectiles.indexOf(p)
     if (idx !== -1) projectiles.splice(idx, 1)
   }
@@ -307,6 +447,30 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // >>> FIM DO BLOCO NOVO <<<
       // ============================================================
 
+      // Swirl Blast v2 — homing contra chefe/dourado travado no release (desvio deliberado do
+      // R1 "sempre reto" original, só pra esse caso — pedido explícito do usuário). Lerp de
+      // DIREÇÃO com taxa limitada (SWIRL_HOMING_TURN_RATE), não retargeting instantâneo como o
+      // `projectile.homingTarget` genérico acima (que também sobrescreveria a VELOCIDADE pro
+      // valor do teleguiado comum — errado aqui, o Swirl mantém sua própria velocidade sempre).
+      if (projectile.isPiercing && projectile.swirlHomingTarget) {
+        if (projectile.swirlHomingTarget.dying) {
+          const speedBeforeFreeze = projectile.velocity.length()
+          projectile.swirlHomingTarget = null
+          aiValidator.expect(
+            'Swirl Blast congela a direção (mantendo a velocidade) quando o alvo travado morre no meio do voo',
+            () => Math.abs(projectile.velocity.length() - speedBeforeFreeze) < 0.01,
+            { speedBeforeFreeze, speedAfter: projectile.velocity.length() },
+          )
+        } else {
+          const speed = projectile.velocity.length()
+          _projDir.copy(projectile.velocity).normalize()
+          _projDesired.copy(projectile.swirlHomingTarget.mesh.position).sub(projectile.mesh.position).normalize()
+          const turnT = Math.min(1, SWIRL_HOMING_TURN_RATE * dt)
+          _projSteered.copy(_projDir).lerp(_projDesired, turnT)
+          if (_projSteered.lengthSq() > 1e-6) projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
+        }
+      }
+
       if (projectile.life != null) {
         projectile.life -= dt
         if (projectile.life <= 0) { removeProjectile(projectile); continue }
@@ -328,6 +492,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       if (projectile.isPiercing) {
         projectile.spinAngle += SWIRL_SPIN_RATE * dt
         projectile.mesh.rotateZ(projectile.spinAngle)
+        updateSwirlDynamicShell(projectile, dt)
         if (effects && effects.swirlAfterimage) {
           projectile.afterimageTimer -= dt
           if (projectile.afterimageTimer <= 0) {
@@ -598,17 +763,26 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     },
 
     // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 7: Sound Cue próprio (§4.7).
-    fireSwirlBlast(origin, direction) {
+    // `bossTarget` (novo, overhaul v2): entidade chefe/dourado travada no release — quem chama
+    // (combat/index.js) já filtrou por BOSS_KIND/GOLDEN_KIND, aqui só decide se ativa o homing.
+    fireSwirlBlast(origin, direction, bossTarget = null) {
       const mesh = buildSwirlBlastMesh()
       mesh.position.copy(origin)
       mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
       scene.add(mesh)
-      if (effects && effects.swirlBlastFlash) effects.swirlBlastFlash(origin, direction)
+      if (effects && effects.swirlBlastFlash) effects.swirlBlastFlash(origin, direction, !!bossTarget)
+      if (bossTarget && effects && effects.swirlLockReticle) effects.swirlLockReticle(bossTarget.mesh.position, direction)
       triggerSoundCue(PLAYER_SOUND_CUES.swirl_blast_fire, { origin })
+      aiValidator.expect(
+        'Swirl Blast só ativa homing quando o alvo travado é chefe ou dourado',
+        () => !bossTarget || bossTarget.kind === BOSS_KIND || bossTarget.kind === GOLDEN_KIND,
+        { bossTargetKind: bossTarget?.kind ?? null },
+      )
       projectiles.push({
         mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
         damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME, spinAngle: 0, afterimageTimer: 0,
         isPiercing: true, piercedTargets: new Set(), goldenPiercedTargets: new Set(),
+        swirlHomingTarget: bossTarget || null,
       })
       return true
     },
@@ -652,12 +826,21 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       homingMaxChargeMaterial.dispose()
       swirlCoreGeometry.dispose()
       swirlCoreMaterial.dispose()
+      swirlTailGeometry.dispose()
+      swirlTailMaterial.dispose()
+      swirlNeedleGeometry.dispose()
+      swirlNeedleMaterial.dispose()
+      swirlSpiralGeometry.dispose()
       swirlRingGeometry.dispose()
       swirlRingMaterial.dispose()
       swirlAuraGeometry.dispose()
       swirlAuraMaterial.dispose()
-      swirlTipGlowGeometry.dispose()
-      swirlTipGlowMaterial.dispose()
+      swirlInnerCoreGeometry.dispose()
+      swirlInnerCoreMaterial.dispose()
+      swirlPlumeGeometry.dispose()
+      swirlPlumeMaterial.dispose()
+      swirlExhaustGeometry.dispose()
+      swirlExhaustMaterial.dispose()
     },
   }
 }

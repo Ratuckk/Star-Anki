@@ -698,3 +698,64 @@ completou esse fetch a tempo, mesmo problema já visto no timeout de 300s de uma
 chegou a ser requisitado no log do servidor — o import map trava antes disso). Ambas as mudanças
 seguem 1:1 padrões já existentes e testados (`rollAfterimage`/`isFullSpinActive` e
 `setSquadronCommandState`), mas ainda vale o usuário confirmar visualmente no próximo playtest.
+
+### v0.91.0 — Overhaul visual v2 do Swirl Blast — forma triangular de 9 camadas + homing contra chefe/dourado
+
+Pedido do usuário via documento de proposta pronto (`Docs/# Swirl Blast — Design & Plano de I.md`
+tem a amenda no topo). Duas clarificações resolvidas ANTES de codar (ver histórico da conversa):
+
+1. **Base de cálculo desatualizada** — o documento assumia como "hoje" os números PRÉ-v0.88.0 (ver
+   entrada "Swirl Blast: escala visual recalibrada" nesta mesma cadeia de arquivos), mas o jogo já
+   tinha valores maiores em produção. Usuário confirmou: aplicar os valores PROPOSTOS ao pé da
+   letra (não recalcular a partir do real "hoje").
+2. **Escala inicial** — o próprio doc recomenda 2 rodadas de teste (moderada 0.6× primeiro, cheia
+   depois) por riscos reais que ele mesmo lista (near-clip da câmera, homing pode trivializar luta
+   de chefe, pode ficar grande demais). Usuário escolheu **Rodada 1 (0.6×)** primeiro, depois do
+   susto recente com o tamanho errado da Horda — quer ver funcionando antes de ir pro tamanho
+   cheio. Constante `SWIRL_SCALE = 0.6` em `projectiles.js` — pra Rodada 2, é só subir esse valor
+   pra 1.0 (todos os `*_RADIUS`/`*_LENGTH` já são derivados dele).
+3. **Conflito com R1 do doc original** ("disparo reto, sem homing", citado como pedido explícito
+   do usuário) — a proposta v2 pede homing contra chefe/dourado, batendo de frente com R1.
+   Levantado explicitamente antes de implementar; usuário confirmou "homing apenas contra chefes"
+   e depois esclareceu "chefes inclui o dourado" — R1 amendado só pra esse caso específico
+   (`BOSS_KIND`/`GOLDEN_KIND`), continua valendo pra todo o resto. Doc original marcado com a
+   amenda.
+
+**`src/combat/projectiles.js`** — reescrita completa do bloco Swirl:
+- Geometria: 9 camadas (pirâmide principal 3 segmentos radiais, pirâmide traseira invertida,
+  agulha frontal, `TorusKnotGeometry` de espiral, 5 anéis triangulares em funil com velocidade de
+  giro PRÓPRIA cada um via `userData.spinSpeed` — dessincronizados de propósito —, aura, núcleo
+  cilíndrico branco, cone de cauda, 3 esferas de exaustão nas quinas da base traseira). Material
+  da espiral é PRÓPRIO por instância (`buildSwirlSpiralMaterial()`, não compartilhado) — precisa
+  variar opacidade/velocidade por projétil quando homing está ativo, sem afetar outro Swirl em
+  voo; descartado em `removeProjectile` (não no `dispose()` global, que só cobre o que é
+  compartilhado).
+- Homing: `projectile.swirlHomingTarget` (campo NOVO, não reaproveita o `projectile.homingTarget`
+  genérico do teleguiado comum — aquele também sobrescreveria a VELOCIDADE pro valor do
+  teleguiado, errado aqui). Lerp de DIREÇÃO com `SWIRL_HOMING_TURN_RATE=4.0 rad/s`, mantendo a
+  velocidade do Swirl sempre. Congela (mantendo velocidade) se o alvo morrer no meio do voo.
+- `fireSwirlBlast(origin, direction, bossTarget = null)` — 3º parâmetro novo.
+- `updateSwirlDynamicShell()` — gira a espiral e os 5 anéis cada um na sua velocidade, por cima do
+  giro do grupo inteiro (`SWIRL_SPIN_RATE`); acende a espiral (opacidade 0.75→1.0, giro 15→22
+  rad/s) quando `swirlHomingTarget` está ativo.
+
+**`src/combat/index.js`** — `fireSwirlBlast` agora consulta `lockon.getLockedEntities()` e filtra
+por `BOSS_KIND`/`GOLDEN_KIND` ANTES de `game-loop.js` chamar `combat.clearLockedEnemies()` (que já
+rodava incondicionalmente depois do branch de release do fogo — não precisou de mudança lá).
+
+**`src/effects.js`** — `swirlBlastFlash` ganhou parâmetro `isHoming` (mais intenso quando
+travado); `swirlAfterimage` usa a mesma silhueta triangular nova (3 segmentos, não mais 8);
+`swirlBlastExplosion` ganhou 8 fragmentos triangulares (`TetrahedronGeometry`) voando em leque
+hemisférico; `swirlLockReticle(targetPosition, fireDirection)` novo — anel branco breve sobre o
+alvo no instante do disparo homing (orientado contra `fireDirection`, não há acesso à câmera
+neste arquivo pra fazer billboard de verdade).
+
+**Validado com `aiValidator.expect()`**: homing só ativa com alvo chefe/dourado; velocidade
+preservada ao congelar por morte do alvo no meio do voo. Testado ao vivo via
+`window.__starAnki` (`combat.sweepLockOn` + `combat.fireSwirlBlast` chamados diretamente,
+contornando o gate de carga/giro do game-loop só pra teste) — **duas trajetórias reais**
+capturadas frame a frame: (a) chefe travado fora do eixo de disparo → X cresce em direção ao
+chefe com incremento CRESCENTE a cada frame (correção proporcional visível, não teleporte); (b)
+sem nenhum lock → X e Y decrescem em incremento CONSTANTE (reta perfeita, R1 preservado). Zero
+erros no console em toda a sessão de teste; `getScene().children` confirmou o Group de 15 filhos
+(1+1+1+1+5+1+1+1+3) batendo exato com as 9 camadas descritas.

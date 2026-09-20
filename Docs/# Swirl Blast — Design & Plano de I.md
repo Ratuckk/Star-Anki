@@ -2,7 +2,17 @@
 
 > **Versão:** 0.2 (revisado com feedback do usuário)
 > **Alvo:** habilidade base do jogador, ativada por combo de estados
-> **Status:** proposta — aguardando aprovação antes de qualquer alteração de código
+> **Status:** implementado (v0.85.x em diante) — ver progresso/PROGRESSO_POS_.70.md e
+> progresso/PROGRESSO_POS_.80.md pro histórico real de entregas.
+>
+> **AMENDA (overhaul visual v2, pedido do usuário, ver progresso/PROGRESSO_POS_.80.md)**: **R1
+> ("disparo reto, sem homing") não vale mais no caso específico de chefe/dourado travado no
+> release** — o Swirl agora faz homing (turn rate limitado, 4 rad/s) contra `BOSS_KIND`/
+> `GOLDEN_KIND` quando um dos dois está travado no instante do disparo. Confirmado explicitamente
+> com o usuário depois de apontar o conflito com R1 ("chefes inclui o dourado"). R1 continua
+> valendo pra TODO o resto — inimigos comuns, fragata (que já para o Swirl sozinha, sem precisar
+> de homing). Ver `src/combat/projectiles.js` (`SWIRL_HOMING_TURN_RATE`,
+> `projectile.swirlHomingTarget`).
 
 ---
 
@@ -20,7 +30,7 @@ Além de mecanicamente forte, é visualmente marcante: um **vórtice azul girat�
 
 | # | Requisito | Como o doc atende |
 |---|---|---|
-| R1 | "disparo reto" | Projétil sem steer, sem homing, trajetória linear pura (§3.2) |
+| R1 | "disparo reto" | Projétil sem steer, sem homing, trajetória linear pura (§3.2). **AMENDADO**: exceto contra chefe/dourado travado — ver nota no topo do doc. |
 | R2 | "grande" | Geometria ~2× o tiro normal, mais aura e vórtice (§4.1) |
 | R3 | "perfurante" | Atravessa todos os inimigos, um hit por alvo (§3.2) |
 | R4 | "6 de dano em tudo que atinge" | `SWIRL_BLAST_DAMAGE = 6` (§7) |

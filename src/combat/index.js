@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import { TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS } from '../enemies/index.js'
+import { BOSS_KIND } from '../enemies/boss.js'
+import { GOLDEN_KIND } from '../enemies/golden.js'
 import { createProjectileSystem, DEFAULT_FIRE_COOLDOWN } from './projectiles.js'
 import { createTargetsSystem } from './targets.js'
 import { createLockOnSystem } from './lockon.js'
@@ -64,9 +66,15 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       }
       return fired
     },
+    // overhaul v2 (pedido do usuário): homing contra chefe/dourado ("chefes inclui o dourado")
+    // travado no instante do disparo — locks ainda não foram limpos aqui (game-loop.js só chama
+    // combat.clearLockedEnemies() DEPOIS de fireSwirlBlast, ver o branch de release do fogo).
     fireSwirlBlast: (origin, direction) => {
-      const fired = projectiles.fireSwirlBlast(origin, direction)
-      if (fired) player.getTelemetry?.()?.recordEvent('swirl', 'Swirl Blast disparado!', { origin })
+      const bossTarget = lockon.getLockedEntities().find((e) => e.kind === BOSS_KIND || e.kind === GOLDEN_KIND) || null
+      const fired = projectiles.fireSwirlBlast(origin, direction, bossTarget)
+      if (fired) {
+        player.getTelemetry?.()?.recordEvent('swirl', `Swirl Blast disparado!${bossTarget ? ' (homing em ' + bossTarget.kind + ')' : ''}`, { origin, homing: !!bossTarget })
+      }
       return fired
     },
     deflectNearbyProjectiles: (playerPos, radius) => {
