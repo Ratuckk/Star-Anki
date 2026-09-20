@@ -107,3 +107,47 @@ working directory também significa que `git status`/`git diff` podem pegar muda
 de outra sessão no meio do trabalho (aconteceu aqui: `rail.js` tinha uma reescrita da cambalhota
 em andamento, não-relacionada) — sempre revisar `git diff --stat` arquivo por arquivo antes de
 `git add`, nunca usar `-A`/`.` cego quando há sinal de trabalho concorrente.
+
+---
+
+### Cambalhota all-range: de "arco de trajetória" pra loop cosmético fiel ao original — v0.85.1
+
+Retrabalho da entrega anterior (v0.84.1, cambalhota). O usuário testou e reportou "basicamente não
+mudou nada" — a abordagem de v0.84.1 (arquear o PITCH usado no cálculo do `forward`, fazendo a
+TRAJETÓRIA subir/descer) era sutil demais pra ler como "animação"/cutscene. O usuário esclareceu
+que queria uma mini-cutscene de verdade, "assim como no jogo original", e apontou o link do
+decompilado `HarbourMasters/Starship` de novo como referência.
+
+Fui conferir o código-fonte de verdade (`src/engine/fox_play.c` do decomp, via `gh api
+repos/HarbourMasters/Starship/contents/...`) — `Player_PerformLoop` (chamado quando
+`player->somersault` está ativo) e `Camera_UpdateArwing360`. Descoberta importante: o jogo
+original **NÃO** arqueia a trajetória de vôo durante a cambalhota. O que ele faz de verdade:
+1. `player->aerobaticPitch` sobe suavemente de 0 a 360° ao longo da manobra — um `rotateX`
+   **cosmético** no MODELO da nave, totalmente dissociado da direção real de vôo (a matriz de
+   movimento sempre soma um `+180°` constante de yaw, presente também no vôo normal — não é a
+   guinada da manobra).
+2. `pos.y += 2.0f` por frame, só enquanto `aerobaticPitch < 180°` (metade da manobra) — uma subida
+   linear simples, não uma curva de arco.
+3. `Camera_UpdateArwing360`: `if (player->somersault) sp74.z += 500.0f` — a câmera some pra bem
+   mais longe da nave durante a manobra (zoom-out), dando espaço/tempo pra ver o loop inteiro
+   como se fosse uma cutscene, sem a câmera "colada" na nave acompanhando o giro (o que ficaria
+   nauseante).
+
+Reescrevi `updateSummersault`/`updateArena` (`rail.js`) nessa linha: `arenaYaw` continua girando
+180° suave (é o que de fato reposiciona a nave nesse jogo — mantido, diferente do original, por
+já ser a mecânica estabelecida aqui) só que agora em PARALELO a isso, `updateSummersault` devolve
+um ângulo de loop cosmético `eased * 2π` aplicado via `ship.rotateX(summersaultSpin)` (mesmo
+padrão do `updateFullSpin` do giro Z/C, só que no eixo de pitch em vez de roll) — o vetor
+`forward`/direção de vôo real NÃO usa mais esse ângulo (removido o offset de pitch da v0.84.1).
+Adicionado `SUMMERSAULT_CLIMB_SPEED` (10 u/s, só na primeira metade — `arenaPos.y +=` direto,
+igual ao `pos.y += 2`/frame original) e `SUMMERSAULT_CAM_PULLBACK` (16u somado ao `CAM_BEHIND` só
+durante a manobra) — o lerp de câmera que já existia (`CAM_LAG_RATE`) suaviza sozinho a ida e a
+volta do zoom-out, sem precisar de easing manual extra.
+
+Verificado via stepper determinístico (`window.__starAnki`, ver nota da entrega anterior):
+localizei o mesh da nave na cena (`scene.traverse`/`getObjectByProperty('uuid', ...)`) e
+acompanhei `ship.rotation` (spin contínuo confirmado), `rail.getPlayerPosition().y` (sobe de 3.06
+a ~6.3 e estabiliza, batendo com a janela de subida da primeira metade) e
+`camera.position.distanceTo(pos)` (sobe de ~10.4 pra ~24.3 no pico da manobra e já começa a
+descer no frame seguinte ao fim — zoom-out e retorno confirmados). `forward.y` ficou fixo (~0.03)
+o tempo todo, confirmando que a direção de vôo real não arqueia mais — só o corpo da nave.

@@ -207,16 +207,19 @@ const EMERGENCY_BRAKE_DURATION = 0.35
 const EMERGENCY_BRAKE_SPEED_MULT = 0.05
 const EMERGENCY_BRAKE_COOLDOWN = 1.5
 
-// item 6 — cambalhota (Baixo + repulsor): pedido do usuário pra ficar mais fiel ao U-turn do
-// Star Fox 64 — em vez de só girar o yaw 180° com um flip cosmético de pitch por cima (mesh
-// gira, mas a TRAJETÓRIA continuava reta/plana), agora o pitch usado no cálculo do vetor
-// forward da própria arena arqueia pra cima e desce de novo (seno, pico na metade da manobra)
-// AO MESMO TEMPO que o yaw gira 180° — a nave literalmente sobe, faz a volta por cima e desce
-// de novo já de bico pro lado oposto, então o `ship.lookAt(forward)` que já existia acompanha
-// o arco sozinho, sem precisar de rotateX cosmético extra. Congela o controle manual de
-// yaw/pitch/roll por essa duração (arenaPitch em si não muda, só o offset do voo durante o arco).
+// item 6 — cambalhota (Baixo + repulsor): pedido do usuário pra ficar mais fiel à cutscene de
+// U-turn do Star Fox 64 original (conferido no código decompilado, HarbourMasters/Starship,
+// src/engine/fox_play.c: Player_PerformLoop + Camera_UpdateArwing360). O jogo original NÃO faz
+// a nave arquear a TRAJETÓRIA pra cima/baixo — o que vende a manobra como "animação de verdade"
+// é (1) o MESH da nave dando um loop de pitch de 360° completo, cosmético, dissociado da
+// direção de vôo, e (2) a câmera puxando bem pra trás (Camera_UpdateArwing360: `sp74.z += 500`)
+// durante a manobra, tipo um zoom-out de mini-cutscene, pra dar tempo/espaço de ver o giro
+// inteiro. A guinada real (yaw, que de fato reposiciona a nave) continua girando 180° suave em
+// paralelo — só a ANIMAÇÃO visual (spin + câmera) é que virou fiel ao original nesta revisão.
+// Congela o controle manual de yaw/pitch/roll por essa duração.
 const SUMMERSAULT_DURATION = 0.6
-const SUMMERSAULT_ARC_PITCH = THREE.MathUtils.degToRad(55)
+const SUMMERSAULT_CLIMB_SPEED = 10 // unidades/s de subida, só na primeira metade (igual ao pos.y += 2/frame do original)
+const SUMMERSAULT_CAM_PULLBACK = 16 // distância extra de câmera durante a manobra (zoom-out de cutscene)
 
 function buildCurve() {
   const points = [
@@ -534,12 +537,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     summersaultT = 0
   }
 
-  // avança a animação da cambalhota e devolve o OFFSET de pitch (em radianos, positivo = sobe)
-  // a somar em cima do arenaPitch só pro cálculo do forward deste frame — não no arenaPitch de
-  // verdade, que fica congelado e retoma sozinho quando a manobra termina. O offset segue um
-  // seno com pico na METADE do progresso (mesmo `eased` do yaw, pra o topo do arco coincidir com
-  // a nave já de perfil, ~90° guinada) — nave sobe, vira por cima e desce já de bico invertido,
-  // e o ship.lookAt(forward) que já existia acompanha o arco sozinho (sem rotateX cosmético).
+  // avança a animação da cambalhota: a guinada real (arenaYaw) gira 180° suave, IGUAL a antes
+  // (é o que reposiciona a nave de verdade); o valor devolvido é só o ângulo do LOOP COSMÉTICO de
+  // pitch (0→2π ao longo da manobra, com o mesmo ease-out do yaw) — aplicado como rotateX extra
+  // no mesh em updateArena, sem afetar o vetor forward/direção de vôo. É essa volta completa do
+  // MODELO da nave (dissociada de pra onde ela está de fato voando) que faz a manobra ler como
+  // uma animação de verdade, igual ao Player_PerformLoop do jogo original.
   function updateSummersault(dt) {
     if (summersaultT >= 1) return 0
     summersaultT = Math.min(1, summersaultT + dt / SUMMERSAULT_DURATION)
@@ -547,7 +550,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     arenaYaw = summersaultStartYaw + Math.PI * eased
     // mesmo amortecimento pós-manobra do giro completo, ao terminar a cambalhota
     if (summersaultT >= 1) wobbleVel += WOBBLE_KICK * (Math.random() < 0.5 ? -1 : 1)
-    return Math.sin(Math.PI * eased) * SUMMERSAULT_ARC_PITCH
+    return eased * Math.PI * 2
   }
 
   // Fase 9 (ideia all-range 4): freio de emergência — cooldown próprio, independente da barra
@@ -637,7 +640,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   }
 
   function updateArena(dt, input, fullSpinAngle = 0, tumbleState = null) {
-    const summersaultArcPitch = updateSummersault(dt)
+    const summersaultSpin = updateSummersault(dt)
     const inSummersault = summersaultT < 1
     updateLateralDash(dt)
 
@@ -671,11 +674,15 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       // usuário — controle 100% manual em all-range de novo, ver comentário da constante acima.
     }
 
-    const forward = forwardFromYawPitch(arenaYaw, arenaPitch + summersaultArcPitch)
+    const forward = forwardFromYawPitch(arenaYaw, arenaPitch)
     // speedMultiplier (propulsor/repulsor da Fase 3) também vale no all-range, igual ao trilho;
     // o freio de emergência (Fase 9, ideia 4) trava isso quase a zero por um instante curto
     const brakeFactor = emergencyBrakeTimer > 0 ? EMERGENCY_BRAKE_SPEED_MULT : 1
     arenaPos.addScaledVector(forward, ARENA_SPEED * speedMultiplier * brakeFactor * dt)
+
+    // pequena subida na primeira metade da cambalhota, igual ao `pos.y += 2`/frame do jogo
+    // original (Player_PerformLoop) — só um empurrão de altitude, não muda o forward/heading
+    if (inSummersault && summersaultT < 0.5) arenaPos.y += SUMMERSAULT_CLIMB_SPEED * dt
 
     if (tumbleKnockbackVel.lengthSq() > 0.01) {
       arenaPos.addScaledVector(tumbleKnockbackVel, dt)
@@ -700,13 +707,18 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       if (tumbleState.pitch) ship.rotateX(tumbleState.pitch)
       if (tumbleState.yaw) ship.rotateY(tumbleState.yaw)
     }
+    if (summersaultSpin) ship.rotateX(summersaultSpin)
     applyWeightScale()
     applyImpulseOffsets(forward, up)
     applyShakeJitter()
     applyWeightJitter()
 
+    // câmera puxa pra trás durante a cambalhota (igual ao `sp74.z += 500` do
+    // Camera_UpdateArwing360 original) — dá espaço/tempo pra ver o loop inteiro, tipo um
+    // zoom-out de mini-cutscene; o lerp de câmera logo abaixo já suaviza a ida e a volta sozinho
+    const camPullback = inSummersault ? SUMMERSAULT_CAM_PULLBACK : 0
     const camTarget = arenaPos.clone()
-      .addScaledVector(forward, -CAM_BEHIND)
+      .addScaledVector(forward, -(CAM_BEHIND + camPullback))
       .addScaledVector(up, CAM_HEIGHT)
 
     camera.position.lerp(camTarget, dt === 0 ? 1 : 1 - Math.exp(-CAM_LAG_RATE * dt))
