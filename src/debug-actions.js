@@ -104,6 +104,10 @@ export function createDebugActions(deps) {
       debugFlags.disableArena = !debugFlags.disableArena
       hud.debug.setToggleActive('toggleDisableArena', debugFlags.disableArena)
     },
+    toggleAutoSpawn: () => {
+      debugFlags.disableAutoSpawn = !debugFlags.disableAutoSpawn
+      hud.debug.setToggleActive('toggleAutoSpawn', debugFlags.disableAutoSpawn)
+    },
     nukeEnemies: () => {
       if (enemies && enemies.getAlive) {
         const alive = enemies.getAlive().concat(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])

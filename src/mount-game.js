@@ -114,7 +114,7 @@ export function mountGame(session, deck, menu) {
   const state = {
     // ============ loop / debug ============
     debugVisible: false,
-    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false, manualStepActive: false },
+    debugFlags: { godMode: false, infiniteAmmoActive: false, hitboxesActive: false, slowMoActive: false, disableArena: false, manualStepActive: false, disableAutoSpawn: false },
     lastTime: performance.now(),
     rafId: null,
     stopped: false,

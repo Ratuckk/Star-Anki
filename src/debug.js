@@ -27,6 +27,7 @@ export const DEBUG_ACTIONS = [
   { id: 'exitArenaNow', label: 'Sair da arena agora', category: 'Setor & Fluxo' },
   { id: 'toggleDisableArena', label: 'Travar/desativar arenas', toggle: true, category: 'Setor & Fluxo' },
   { id: 'nukeEnemies', label: 'Detonar todos os inimigos (Nuke)', category: 'Combate' },
+  { id: 'toggleAutoSpawn', label: 'Desligar geração automática de inimigos', toggle: true, category: 'Spawns' },
   { id: 'spawnWave', label: 'Spawnar esquadrão misto', category: 'Spawns' },
   { id: 'grantAllCards', label: 'Conceder todas as cartas', category: 'Cartas & Buffs' },
   { id: 'resetBuffs', label: 'Resetar cartas e buffs', category: 'Cartas & Buffs' },

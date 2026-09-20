@@ -649,7 +649,9 @@ export function createGameLoop(deps) {
       Math.floor(player.getInvincibleRemainingMs() / INVINCIBILITY_FLICKER_MS) % 2 === 0,
     )
 
-    if (state.phase === 'goldenArena' || state.phase === 'bossBuildup') {
+    if (state.debugFlags?.disableAutoSpawn) {
+      // geração automática desligada via debug — não avança os timers de spawn
+    } else if (state.phase === 'goldenArena' || state.phase === 'bossBuildup') {
       state.enemyTimer -= dt * 1000
       if (state.enemyTimer <= 0) {
         if (combat.getEnemyCount() < progression.currentEnemyCap()) {

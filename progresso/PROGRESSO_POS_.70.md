@@ -1042,4 +1042,12 @@ chefe/dourado pra ver os perfis de fog do pilar 4 de verdade, ligar a setting
 `fogTacticalColors` manualmente pra ver as cores) — a validação desta entrega foi um combate
 comum de ~15s, não cobriu chefe/dourado/boss-no-deck nem um ciclo completo de setor.
 
+**Debug: toggle "Desligar geração automática de inimigos"** — `toggleAutoSpawn` (categoria
+Spawns), flag `debugFlags.disableAutoSpawn`. Gateia os dois blocos de timer automático em
+`game-loop.js` (spawn de `goldenArena`/`bossBuildup` e o spawn normal da fase `combat`, que
+cobre mini-swarm/sentinela/réplica/verme/sussurro/horda/esquadrão/inimigo comum) sem tocar nos
+timers de alvo bônus, entrada de arena dourada/chefe, ou tempestade de detritos (cada um já tem
+seu próprio controle). Os botões de spawn manual do painel de debug chamam `combat.spawnX()`
+direto, fora desse gate — continuam funcionando normalmente com o toggle ligado, como pedido.
+
 
