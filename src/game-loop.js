@@ -38,6 +38,7 @@ import {
   LEVEL_BACKGROUNDS,
   DENSE_FOG_THRESHOLD_RATIO, DENSE_FOG_REFERENCE_DENSITY,
   SWIRL_SLOW_MO_MS, SWIRL_SLOW_MO_FACTOR, SWIRL_FOV_BUMP_MS, SWIRL_FOV_TARGET,
+  ARCADE_CARD_CHOICE_TIME_SCALE,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
@@ -111,9 +112,24 @@ export function createGameLoop(deps) {
     if (state.stopped) return
     const rawDt = forcedRawDt != null ? forcedRawDt : Math.min((now - state.lastTime) / 1000, 0.1)
     const baseDt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
-    // Swirl Blast (§4.5) — cutscene de câmera lenta no disparo. Multiplica em cima do slowMo de
-    // debug se os dois estiverem ativos ao mesmo tempo (aceitável, é só um caso de teste raro).
-    const dt = state.swirlSlowMoMs > 0 ? baseDt * SWIRL_SLOW_MO_FACTOR : baseDt
+    // Bullet-time no Card Choice (Arcade) — Docs/Bullet-time no Card Choice (Arcade).md, §3.1.
+    // Só no modo arcade, só na tela de 3 cartas, e só com a pausa total desligada nas
+    // Configurações. Calculado ANTES do early-return de cardChoice (logo abaixo) — é essa
+    // condição que decide se aquele bloco continua pausando ou deixa o frame seguir.
+    const inArcadeCardChoiceBulletTime =
+      state.phase === 'cardChoice' && isNoDeck && !getSettings().arcadeCardChoicePauses
+    // Precedência entre as 3 fontes de câmera lenta (só uma decide o dt por frame, nunca
+    // compõem): slowMo de DEBUG sempre vence (ferramenta de dev, previsível); bullet-time do
+    // card choice (Docs/Bullet-time...) vem depois; Swirl Blast (§4.5) por último — na prática
+    // nunca competem de verdade (cardChoice pausa o combate, então o Swirl não tem como estar
+    // "no ar" nesse phase).
+    const dt = state.debugFlags.slowMoActive
+      ? baseDt
+      : inArcadeCardChoiceBulletTime
+        ? rawDt * ARCADE_CARD_CHOICE_TIME_SCALE
+        : state.swirlSlowMoMs > 0
+          ? baseDt * SWIRL_SLOW_MO_FACTOR
+          : baseDt
     state.swirlSlowMoMs = Math.max(0, state.swirlSlowMoMs - rawDt * 1000)
     state.swirlFovBumpMs = Math.max(0, state.swirlFovBumpMs - rawDt * 1000)
     state.lastTime = now
@@ -146,7 +162,14 @@ export function createGameLoop(deps) {
       }
     }
 
-    if (state.phase === 'bossQuestionPause' || state.phase === 'questionPause' || state.phase === 'cardChoice') {
+    if (state.phase === 'bossQuestionPause' || state.phase === 'questionPause') {
+      renderer.render(scene, camera)
+      return
+    }
+    // Bullet-time no Card Choice (Arcade), §3.2: cardChoice deixa de ser pausa incondicional —
+    // com `inArcadeCardChoiceBulletTime`, o frame CONTINUA (rail/inimigos/jogador seguem
+    // rodando com o dt já escalado lá em cima); sem isso, cai no comportamento de sempre.
+    if (state.phase === 'cardChoice' && !inArcadeCardChoiceBulletTime) {
       renderer.render(scene, camera)
       return
     }

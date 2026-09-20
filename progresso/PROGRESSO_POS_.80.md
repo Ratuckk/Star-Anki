@@ -458,3 +458,54 @@ dedicado. Pontos de ajuste fino deixados para playtest real (não códigos pende
 valores): força do FOV/slow-mo (§11.3/§11.4), se a aura do projétil fica "gorda" perto de alvos
 pequenos (§11.5), e se perfurar o escudo do chefe é forte demais sem nenhum balanceamento (§11.1)
 — usuário já orientou usar os padrões do doc e ajustar depois com playtest real.
+
+---
+
+### Bullet-time no Card Choice (Arcade) — implementado
+
+Segundo item do `Checklist de overhauls pendentes.md` a ganhar código nesta sessão (depois do
+Swirl Blast) — escolhido por ser o único dos 5 docs restantes marcado como "especificação
+completa" (os outros 4 são rascunhos com perguntas de design em aberto). 3 perguntas do §7
+respondidas pelo usuário, todas com a recomendação do próprio doc: `ARCADE_CARD_CHOICE_TIME_SCALE
+= 0.18`, input normal do jogador durante o bullet-time, toggle exposto em Configurações **e** no
+painel de pausa.
+
+- `settings.js`: `arcadeCardChoicePauses: true` (default = comportamento atual, pausa total).
+- `main-constants.js`: `ARCADE_CARD_CHOICE_TIME_SCALE = 0.18`.
+- `game-loop.js`:
+  - `inArcadeCardChoiceBulletTime` calculado no topo do `runFrame` (fase `cardChoice` + arcade +
+    setting desligada) — usado tanto pro cálculo do `dt` quanto pro early-return logo abaixo.
+  - **Precedência entre as 3 fontes de câmera lenta agora explícita** (debug slowMo > bullet-time
+    do card choice > Swirl Blast > normal — só uma decide o `dt` por frame, nunca compõem, exceto
+    debug+Swirl que já compunha antes). Reescrevi o comentário antigo do Swirl que dizia
+    "multiplica em cima do debug" porque não era mais verdade com o terceiro ramo — na prática
+    bullet-time e Swirl nunca competem de verdade (cardChoice pausa o combate, Swirl não tem como
+    estar "no ar" nesse phase).
+  - Early-return de `cardChoice` (linha que também cobria `bossQuestionPause`/`questionPause`)
+    virou dois blocos: as duas pausas de pergunta continuam incondicionais, `cardChoice` agora só
+    pausa se `!inArcadeCardChoiceBulletTime`.
+- `hud-settings.js`/`hud-pause.js`: novo `buildArcadeSection()` — mesmo padrão de reaproveitamento
+  de `buildFogSection()` (builder exportado, uma linha em cada lugar que já monta a tela de
+  Configurações e a sub-tela "Opções" do painel de pausa). Descobri que `.settings-hint` (classe
+  usada por outra seção pra texto explicativo abaixo do toggle) nunca tinha CSS de verdade em
+  lugar nenhum — adicionado em `index.html` junto (texto pequeno, cor apagada, mesmo princípio do
+  `.debug-hint` que já existia).
+- **Auditoria do §5 do doc (lugares que assumem `cardChoice` = pausado)**: verifiquei o bloco de
+  dano ao jogador (`game-loop.js`, "DANO AO JOGADOR") — não tem NENHUM gate de `state.phase`, roda
+  igual não importa a fase. `outOfLives` chama `endSector()` → `teardown()` → `hud.unmount()`, que
+  JÁ limpa `cardChoiceKeyHandler`/`cardChoiceGpStop` explicitamente (achei o código, não é
+  suposição). Ou seja: **o cenário "jogador morre durante a escolha de carta" já funciona
+  corretamente de graça**, sem precisar de nenhuma linha nova — não escrevi código defensivo
+  especulativo pra um caso que a arquitetura já cobre.
+
+**Validação** via stepper determinístico: com o setting desligado, `state.phase === 'cardChoice'`
+e a nave se move (~1.3u em 20 frames) — antes ficava 100% parada; religando o setting, volta a
+zero (pausa total preservada, comportamento antigo intacto). Medi a proporção real do `dt`
+comparando distância percorrida em bullet-time vs. velocidade normal na mesma janela de frames:
+**0.179**, batendo com o `0.18` esperado. Checkbox em Configurações renderiza e persiste
+corretamente no `localStorage` (confirmado visualmente + lendo o storage depois de clicar). A
+mesma seção no painel de pausa usa a função idêntica — não consegui abrir o painel via simulação
+de tecla no stepper (edge-detection de "tecla pressionada" não pegou o evento sintético; provável
+peculiaridade do `input.js` com KeyboardEvent disparado via JS em vez de reação real do SO), mas
+não há razão pra achar que quebra — é a mesma chamada de função já provada funcionando na tela de
+Configurações. Sem erros de console em nenhum teste.

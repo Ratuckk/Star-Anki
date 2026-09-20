@@ -190,6 +190,11 @@ export const BOSS_DEATH_CUTSCENE_MS = 3000
 export const DEATH_CUTSCENE_TIME_SCALE = 0.22
 export const DEATH_CUTSCENE_ZOOM_FOV = 55
 
+// Bullet-time no Card Choice do modo arcade (Docs/Bullet-time no Card Choice (Arcade).md) — mais
+// lento que o DEATH_CUTSCENE_TIME_SCALE porque aqui o jogador precisa LER 3 cartas e decidir, não
+// só apreciar uma cutscene. Só se aplica com `arcadeCardChoicePauses` desligado nas Configurações.
+export const ARCADE_CARD_CHOICE_TIME_SCALE = 0.18
+
 // ============ FOG COMO MECÂNICA DE GAMEPLAY (Overhaul 4) ============
 // Densidade do FogExp2 (scene.fog) deixa de ser fixa e passa a ser calibrada pela distância
 // máxima de spawn do contexto atual (trilho comum vs arena) — ver environment.js,

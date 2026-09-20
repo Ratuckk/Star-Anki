@@ -20,8 +20,9 @@ documento de especificação completo apontam pro arquivo correspondente nesta m
 - [x] **Overhaul de Personalidade e Vida dos Wingmen** — ver `# Overhaul de Personalidade e Vida.md`.
   Ideias 1, 5, 4, 2 implementadas em v0.82.0 (commits `bc8b22d`/`c596ecf`/`c3c5d61`/`5b63546`).
   Ideia 3 (rádio) continua bloqueada até o protótipo visual (3 opções) ser decidido.
-- [ ] **Bullet-time no Card Choice (Arcade)** — ver `Bullet-time no Card Choice (Arcade).md`.
-  Ideia B do Item 1 abaixo, escolhida pelo usuário — planejamento completo, nada implementado.
+- [x] **Bullet-time no Card Choice (Arcade)** — ver `Bullet-time no Card Choice (Arcade).md`.
+  Ideia B do Item 1 abaixo, escolhida pelo usuário — implementado (setting `arcadeCardChoicePauses`,
+  default ligado = comportamento antigo). Ver `progresso/PROGRESSO_POS_.80.md`.
 - [ ] **Boss — Colmeia-Mãe** — ver `Boss - Colmeia-Mãe.md`. Ideia 1 do Item 4 abaixo, escolhida
   pelo usuário pra virar rascunho de planejamento (Duelista Espelhado/Leviatã de Sucata seguem
   só como ideia, sem doc próprio ainda).

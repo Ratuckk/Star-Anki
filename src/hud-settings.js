@@ -135,6 +135,36 @@ export function buildFogSection() {
   return fogSection
 }
 
+// Bullet-time no Card Choice (Docs/Bullet-time no Card Choice (Arcade).md) — mesmo padrão de
+// reaproveitamento das outras seções (builder exportado, usado pela tela de Configurações
+// completa e pelo painel de pausa).
+export function buildArcadeSection() {
+  const arcadeSection = document.createElement('div')
+  arcadeSection.className = 'settings-section'
+  const arcadeTitle = document.createElement('h3')
+  arcadeTitle.textContent = 'Modo Arcade'
+  arcadeSection.appendChild(arcadeTitle)
+
+  const row = document.createElement('div')
+  row.className = 'settings-row'
+  const label = document.createElement('label')
+  label.textContent = 'Pausar totalmente na escolha de cartas (desligado = câmera lenta)'
+  row.appendChild(label)
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.checked = getSettings().arcadeCardChoicePauses
+  checkbox.addEventListener('change', () => setSetting('arcadeCardChoicePauses', checkbox.checked))
+  row.appendChild(checkbox)
+  arcadeSection.appendChild(row)
+
+  const hint = document.createElement('p')
+  hint.className = 'settings-hint'
+  hint.textContent = 'Só se aplica ao modo arcade (sem baralho) — no modo com baralho a escolha de carta sempre pausa.'
+  arcadeSection.appendChild(hint)
+
+  return arcadeSection
+}
+
 // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
 export function buildSensitivitySection() {
   const allRangeSection = document.createElement('div')
@@ -319,6 +349,7 @@ export function showSettingsScreen({ onBack }) {
 
   root.appendChild(buildVisualSection())
   root.appendChild(buildFogSection())
+  root.appendChild(buildArcadeSection())
   root.appendChild(buildSensitivitySection())
 
   const { el: controlsSection, cleanup: cleanupKeybindSection } = buildKeybindSection()

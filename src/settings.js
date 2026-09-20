@@ -22,6 +22,11 @@ const DEFAULTS = {
   // Sussurro/Dourado/Horda/Detrito reagem a fog denso (mais escondidos/discretos) — ver §3 do
   // Overhaul 4. Efeitos sonoros continuam tocando normalmente mesmo com isso desligado.
   fogTacticalEffects: true,
+  // Bullet-time no Card Choice do modo arcade (Docs/Bullet-time no Card Choice (Arcade).md) —
+  // default true preserva o comportamento de hoje (pausa total). Desligado, a tela de 3 cartas
+  // no arcade vira câmera lenta em vez de pausa (jogo continua rodando, só bem mais devagar) —
+  // ver game-loop.js, ARCADE_CARD_CHOICE_TIME_SCALE.
+  arcadeCardChoicePauses: true,
 }
 
 function readAll() {
