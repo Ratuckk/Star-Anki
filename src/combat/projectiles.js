@@ -49,9 +49,42 @@ const PROJECTILE_HIT_BUFFER = 0.3
 // teleguiado, seja via trava prévia ou via "N mais próximos" de fallback
 const MAX_HOMING_RANGE = 90
 
-const projectileGeometry = new THREE.ConeGeometry(0.21, 1.5, 5) // +25% visual (v0.29.6)
-projectileGeometry.rotateX(Math.PI / 2)
-const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0x3ea6ff })
+// Overhaul visual do tiro básico (pedido do usuário — "núcleo + halo", reaproveitando a técnica
+// outer/inner additive-blending já usada no laser do Chefe/Dourado, ver fireBossLaser em boss.js)
+// + tamanho geral +20% ("deixe 20% maior também", pedido explícito). Cada tiro vira um Group com
+// 2 camadas (halo translúcido por fora, núcleo quase-branco por dentro) em vez de 1 cone sólido
+// — todo código que já tratava a instância como objeto único (`.position`, `.quaternion`,
+// `.scale.setScalar()`, `scene.remove()`) continua funcionando sem mudança, Group herda tudo isso
+// de Object3D igual Mesh.
+const PLAYER_SHOT_SIZE_MULT = 1.2 // "deixe 20% maior"
+const PLAYER_SHOT_HALO_RADIUS = 0.21 * PLAYER_SHOT_SIZE_MULT
+const PLAYER_SHOT_HALO_LENGTH = 1.5 * PLAYER_SHOT_SIZE_MULT
+const PLAYER_SHOT_HALO_COLOR = 0x3ea6ff // cor de identidade original do tiro básico
+const PLAYER_SHOT_HALO_OPACITY = 0.45
+const PLAYER_SHOT_CORE_RADIUS = PLAYER_SHOT_HALO_RADIUS * 0.5
+const PLAYER_SHOT_CORE_LENGTH = PLAYER_SHOT_HALO_LENGTH * 0.85
+const PLAYER_SHOT_CORE_COLOR = 0xeaffff // quase-branco — núcleo brilhante
+const PLAYER_SHOT_CORE_OPACITY = 0.95
+
+const playerShotHaloGeometry = new THREE.ConeGeometry(PLAYER_SHOT_HALO_RADIUS, PLAYER_SHOT_HALO_LENGTH, 5)
+playerShotHaloGeometry.rotateX(Math.PI / 2)
+const playerShotHaloMaterial = new THREE.MeshBasicMaterial({
+  color: PLAYER_SHOT_HALO_COLOR, transparent: true, opacity: PLAYER_SHOT_HALO_OPACITY,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const playerShotCoreGeometry = new THREE.ConeGeometry(PLAYER_SHOT_CORE_RADIUS, PLAYER_SHOT_CORE_LENGTH, 5)
+playerShotCoreGeometry.rotateX(Math.PI / 2)
+const playerShotCoreMaterial = new THREE.MeshBasicMaterial({
+  color: PLAYER_SHOT_CORE_COLOR, transparent: true, opacity: PLAYER_SHOT_CORE_OPACITY,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+
+function buildPlayerShotMesh() {
+  const group = new THREE.Group()
+  group.add(new THREE.Mesh(playerShotHaloGeometry, playerShotHaloMaterial))
+  group.add(new THREE.Mesh(playerShotCoreGeometry, playerShotCoreMaterial))
+  return group
+}
 
 const homingProjectileGeometry = new THREE.ConeGeometry(0.528, 3.36, 6)
 homingProjectileGeometry.rotateX(Math.PI / 2)
@@ -103,7 +136,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     const visualScale = 1 + (projectileCount - 1) * PLAYER_PROJECTILE_GROWTH_PER_EXTRA
     for (let i = 0; i < projectileCount; i += 1) {
       const lateralOffset = (i - mid) * PROJECTILE_LATERAL_SPACING
-      const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
+      const mesh = buildPlayerShotMesh()
       mesh.position.copy(origin).addScaledVector(lateralAxis, lateralOffset)
       mesh.scale.setScalar(visualScale)
       scene.add(mesh)
@@ -119,7 +152,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
   // QoL (v0.29.4): fireSingle carrega PLAYER_PROJECTILE_DAMAGE por padrão — wingman e "giro
   // rebatedor" usam o mesmo projétil visual, mesmo dano do tiro normal por padrão.
   function fireSingle(origin, direction, damage = PLAYER_PROJECTILE_DAMAGE) {
-    const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial)
+    const mesh = buildPlayerShotMesh()
     mesh.position.copy(origin)
     scene.add(mesh)
     projectiles.push({
@@ -431,8 +464,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
 
     dispose() {
       for (const p of [...projectiles]) removeProjectile(p)
-      projectileGeometry.dispose()
-      projectileMaterial.dispose()
+      playerShotHaloGeometry.dispose()
+      playerShotHaloMaterial.dispose()
+      playerShotCoreGeometry.dispose()
+      playerShotCoreMaterial.dispose()
       homingProjectileGeometry.dispose()
       homingProjectileMaterial.dispose()
       homingMaxChargeMaterial.dispose()

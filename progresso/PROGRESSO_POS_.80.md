@@ -72,3 +72,38 @@ expõe `rail`/`state`/`step(frames, dtMs)` — usar o stepper determinístico (`
 + `step(n, dtMs)`) junto de `KeyboardEvent` sintético via `window.dispatchEvent` pra simular
 hold/tap de tecla é MUITO mais confiável pra reproduzir combos de input frame-exato do que
 `computer` (screenshot/key) do browser tool.
+
+---
+
+### Overhaul visual do tiro básico do jogador (núcleo + halo) — v0.85.0
+
+Pedido do usuário: 3 ideias de overhaul visual pro tiro básico (`combat/projectiles.js`, cone
+sólido único `0x3ea6ff`/`MeshBasicMaterial`, sem trilha/brilho além do muzzle flash no disparo).
+Ideias dadas: (1) rastro/estria de movimento, (2) brilho escalando com upgrade de
+`projectileCount`, (3) núcleo+halo (2 camadas, mesma técnica outer/inner additive-blending do
+laser do Chefe/Dourado). **Escolhida: 3**, com pedido extra de "+20% maior".
+
+Cada tiro normal (`fire()`/`fireSingle()`) virou um `THREE.Group` com 2 meshes (halo translúcido
+0x3ea6ff por fora + núcleo quase-branco 0xeaffff por dentro, ambos `AdditiveBlending`/
+`depthWrite: false`) em vez de 1 `Mesh` só, construído por `buildPlayerShotMesh()`. Constantes
+novas (`PLAYER_SHOT_SIZE_MULT=1.2`, `_HALO_RADIUS/_LENGTH/_COLOR/_OPACITY`,
+`_CORE_RADIUS/_LENGTH/_COLOR/_OPACITY`) ficam logo acima, tamanho geral derivado do cone antigo
+(0.21/1.5) × 1.2. Só o tiro NORMAL mudou — teleguiado/carga máxima (`homingProjectileGeometry`)
+não foram tocados, mantêm a identidade visual verde/azul própria deles.
+
+Nenhum outro código precisou mudar: todo lugar que já tratava a instância como objeto único
+(`.position`, `.quaternion.setFromUnitVectors` no steering/movimento, `.scale.setScalar()` no
+`visualScale` de upgrade, `scene.remove()`) continua funcionando sem alteração — `THREE.Group`
+herda tudo isso de `Object3D` igual `Mesh`. Verificado ao vivo via `window.__starAnki` (disparo
+manual com `combat.tryFire(origin, dir)` + inspeção do Group na cena): halo
+radius=0.252/height=1.8 (=0.21/1.5 × 1.2, confirma o +20%), núcleo radius=0.126/height=1.53,
+cores/opacidades/blending corretos, sem erros de console. Screenshot confirmou o brilho ciano
+suave visível perto da nave (em vez do cone sólido flat de antes).
+
+**Nota**: `preview_start "static"` (porta 8420) estava sendo usada por outra sessão concorrente
+neste mesmo diretório — tive que aguardar ela liberar a porta (`preview_list` mostrando "ended")
+antes de conseguir subir meu próprio server pra testar. Concorrência de sessão neste mesmo
+working directory também significa que `git status`/`git diff` podem pegar mudanças NÃO-COMMITADAS
+de outra sessão no meio do trabalho (aconteceu aqui: `rail.js` tinha uma reescrita da cambalhota
+em andamento, não-relacionada) — sempre revisar `git diff --stat` arquivo por arquivo antes de
+`git add`, nunca usar `-A`/`.` cego quando há sinal de trabalho concorrente.
