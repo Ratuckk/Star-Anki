@@ -38,6 +38,19 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### Estudo visual — overhaul dos números de dano (21/09/2026)
+
+- Documento de seis páginas em `output/pdf/overhaul-numeros-de-dano.pdf`: três direções
+  ilustradas — Mangá de colisão, Buraco negro contábil e Coral de guerra — com tempos de
+  animação propostos, identificação dos aliados, limites de poluição e comparação de custos.
+- Todas incluem dano confirmado do jogador e dos aliados (laser, aríete, Carga Compartilhada
+  e Boombuster), sem mudar balanceamento. São propostas; nenhuma foi implementada ou escolhida.
+- Inspeção do código: `game-loop.js` escolhe pontos em vez de dano quando `h.points` existe;
+  o retorno de `wingmen.update()` não inclui hits individuais para o HUD. A futura integração
+  precisa preservar autoria, dano efetivamente aplicado e golpe letal, sem duplicar pontos.
+- **Validado**: PDF renderizado em PNG e seis páginas revisadas visualmente; ajustados etiqueta
+  do jogador e arco do Coral. Sem alteração em módulos do jogo nem incremento de versão.
+
 ### v0.99.13 — Knockback mais pesado, alerta ancorado e desvio dos aliados corrigido
 
 - Todas as quatro intensidades de knockback passaram a durar o dobro: 2,4/3,6/5,2/7,2s. Durante
