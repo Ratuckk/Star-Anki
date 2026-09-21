@@ -181,8 +181,8 @@ const HOMING_AFTERIMAGE_DURATION = 0.25
 const SWIRL_COLOR = 0x2b8fff          // mesma cor de projectiles.js (SWIRL_CORE_COLOR) — duplicado
                                        // de propósito, effects.js não importa cores de combat/
 const SWIRL_HOT_COLOR = 0xeaffff      // idem SWIRL_HOT_COLOR em projectiles.js
-// Overhaul v2 (pedido do usuário) — valores da proposta em escala "Rodada 1" (0.6×, mesma lógica
-// de projectiles.js: SWIRL_SCALE ali). Durações não são "tamanho", ficam no valor cheio proposto.
+// Overhaul v2 (pedido do usuário) — tamanhos na escala "Rodada 2" (cheia, 1.0×, mesma lógica de
+// projectiles.js: SWIRL_SCALE ali). Durações não são "tamanho", sempre ficaram no valor cheio.
 const SWIRL_FLASH_DURATION = 0.55     // era 0.45 — duração total do flash de disparo
 const SWIRL_FLASH_RING_SCALE = 8.0 // Rodada 2 (escala cheia) — crescimento do anel de choque principal
 const SWIRL_AFTERIMAGE_DURATION = 0.8 // era 0.55 — cada fantasma da trilha vive mais
@@ -221,6 +221,18 @@ const GLASS_SHARD_DURATION = 0.65
 const GLASS_SHARD_SPEED_MIN = 8
 const GLASS_SHARD_SPEED_MAX = 18
 const GLASS_SHARD_SIZE = 0.18
+
+// vetor de velocidade aleatório uniformemente distribuído numa esfera, magnitude entre
+// minSpeed/maxSpeed — compartilhado entre glassShatter e swirlBlastExplosion (ambos espalham
+// fragmentos num leque hemisférico/esférico ao redor de um ponto de impacto)
+function randomSphereVelocity(minSpeed, maxSpeed) {
+  const theta = Math.random() * Math.PI * 2
+  const phi = Math.acos(2 * Math.random() - 1)
+  const speed = minSpeed + Math.random() * (maxSpeed - minSpeed)
+  return new THREE.Vector3(
+    Math.sin(phi) * Math.cos(theta), Math.sin(phi) * Math.sin(theta), Math.cos(phi),
+  ).multiplyScalar(speed)
+}
 
 // ============ BLOOM SPRITE ============
 const BLOOM_DURATION = 0.45
@@ -457,7 +469,10 @@ export function createEffectsSystem(scene, opts = {}) {
   // ============ SWIRL BLAST — geometrias próprias do flash/afterimage (ver bloco de constantes
   // SWIRL_* acima) — antes reusavam as geometrias TINY do muzzle flash normal e do rastro do
   // homing, o que fazia o "super ataque" ler como um tiro comum.
-  const swirlFlashConeGeo = new THREE.ConeGeometry(1.3, 5.0, 8)
+  // 3 segmentos radiais (pirâmide triangular, não cone redondo) — mesma silhueta do corpo real
+  // e do afterimage (swirlAfterimageCoreGeo abaixo), senão o flash de disparo lê como um formato
+  // diferente do projétil por um frame antes de cortar pro corpo triangular de verdade.
+  const swirlFlashConeGeo = new THREE.ConeGeometry(1.3, 5.0, 3)
   swirlFlashConeGeo.rotateX(-Math.PI / 2)
   const swirlFlashRingGeo = new THREE.RingGeometry(0.9, 1.9, 24)
   // Overhaul v2 — o corpo real agora é uma pirâmide de 3 lados (SWIRL_CORE_RADIUS=1.8,
@@ -858,7 +873,7 @@ export function createEffectsSystem(scene, opts = {}) {
     scene.add(coreMesh)
     muzzleFlashes.push({
       mesh: coreMesh, life: 0, duration: SWIRL_FLASH_DURATION,
-      initialScale: 1.0, growth: 0.6, startOpacity: 0.9,
+      initialScale: 1.0, growth: 0.6, startOpacity: flashOpacity,
     })
 
     // 2) anel de choque principal (azul), expandindo perpendicular ao tiro
@@ -951,12 +966,7 @@ export function createEffectsSystem(scene, opts = {}) {
     // Overhaul v2 (§6) — onda de fragmentos triangulares: 8 tetraedros pequenos girando pra fora
     // em leque hemisférico, reforça a leitura "triangular" também no impacto, não só em voo.
     for (let i = 0; i < 8; i += 1) {
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      const speed = 8 + Math.random() * 10
-      const velocity = new THREE.Vector3(
-        Math.sin(phi) * Math.cos(theta), Math.sin(phi) * Math.sin(theta), Math.cos(phi),
-      ).multiplyScalar(speed)
+      const velocity = randomSphereVelocity(8, 18)
       const material = new THREE.MeshBasicMaterial({
         color: SWIRL_COLOR, transparent: true, opacity: 0.9,
         depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
@@ -1084,14 +1094,7 @@ export function createEffectsSystem(scene, opts = {}) {
     for (let i = 0; i < GLASS_SHARD_COUNT; i++) {
       const mesh = new THREE.Mesh(geometry, material.clone())
       mesh.position.copy(position)
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      const speed = GLASS_SHARD_SPEED_MIN + Math.random() * (GLASS_SHARD_SPEED_MAX - GLASS_SHARD_SPEED_MIN)
-      const vel = new THREE.Vector3(
-        Math.sin(phi) * Math.cos(theta) * speed,
-        Math.sin(phi) * Math.sin(theta) * speed,
-        Math.cos(phi) * speed,
-      )
+      const vel = randomSphereVelocity(GLASS_SHARD_SPEED_MIN, GLASS_SHARD_SPEED_MAX)
       scene.add(mesh)
       shards.push({ mesh, velocity: vel })
     }

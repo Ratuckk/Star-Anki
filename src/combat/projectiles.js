@@ -150,7 +150,7 @@ const SWIRL_NEEDLE_LENGTH = 8.0 * SWIRL_SCALE // 4.8
 // 4) Espiral de contenção — TorusKnotGeometry enrolando o corpo inteiro feito uma mola. É o
 // componente mais importante da leitura "vórtice"; sem ele são só pirâmides soltas.
 const SWIRL_SPIRAL_RADIUS = 4.5 * SWIRL_SCALE // 2.7
-const SWIRL_SPIRAL_TUBE = 0.12 * SWIRL_SCALE  // 0.072 (arredondado pra 0.09 na geometria — tubo real menor que isso fica invisível)
+const SWIRL_SPIRAL_TUBE = Math.max(0.09, 0.12 * SWIRL_SCALE) // piso de 0.09 — tubo real menor que isso fica invisível
 const SWIRL_SPIRAL_SPIN_BASE = 15     // rad/s quando reto
 const SWIRL_SPIRAL_SPIN_HOMING = 22   // rad/s quando teleguiado (mais rápido = "travando em algo")
 const SWIRL_SPIRAL_OPACITY_BASE = 0.75
@@ -193,7 +193,11 @@ const SWIRL_HOMING_TURN_RATE = 18.0 // rad/s de correção angular enquanto FORA
 // raio de colisão (visto ao vivo: distância oscilando 18u↔40u ao redor de um chefe parado,
 // nunca cruzando o hitRadius de ~7.7u, até expirar). Dentro deste raio, aponta DIRETO pro alvo
 // (sem limite de giro) — é a "guiagem terminal" padrão de mísseis em jogos, só pro trecho final.
-const SWIRL_HOMING_SNAP_RANGE = 26 // unidades — maior que a órbita típica observada em teste
+// unidades — o raio de órbita estável da perseguição pura (contra alvo parado) é ~SWIRL_BLAST_SPEED
+// / SWIRL_HOMING_TURN_RATE (≈28.9 aqui); um snap range abaixo disso deixa uma faixa de distância/
+// ângulo onde o projétil orbita pra sempre sem nunca cruzar o raio de snap (bug real, achado por
+// simulação numérica). Margem de 1.3× garante que o snap sempre alcança a órbita.
+const SWIRL_HOMING_SNAP_RANGE = (SWIRL_BLAST_SPEED / SWIRL_HOMING_TURN_RATE) * 1.3
 
 const swirlCoreGeometry = new THREE.ConeGeometry(SWIRL_CORE_RADIUS, SWIRL_CORE_LENGTH, 3)
 swirlCoreGeometry.rotateX(Math.PI / 2)
@@ -213,15 +217,18 @@ const swirlNeedleMaterial = new THREE.MeshBasicMaterial({
   color: SWIRL_HOT_COLOR, transparent: true, opacity: 1.0,
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
-const swirlSpiralGeometry = new THREE.TorusKnotGeometry(SWIRL_SPIRAL_RADIUS, 0.09, 128, 8, 2, 3)
-// material PRÓPRIO por instância (não compartilhado) — a opacidade/velocidade de giro mudam
-// quando o alvo é chefe/dourado, e precisa variar por projétil sem afetar outro Swirl em voo
-function buildSwirlSpiralMaterial() {
-  return new THREE.MeshBasicMaterial({
-    color: SWIRL_CORE_COLOR, transparent: true, opacity: SWIRL_SPIRAL_OPACITY_BASE,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-  })
-}
+const swirlSpiralGeometry = new THREE.TorusKnotGeometry(SWIRL_SPIRAL_RADIUS, SWIRL_SPIRAL_TUBE, 128, 8, 2, 3)
+// dois materiais COMPARTILHADOS (não um por instância) — só existem 2 estados possíveis (reto/
+// homing), então updateSwirlDynamicShell troca a REFERÊNCIA de child.material entre eles em vez
+// de mutar opacity por instância, sem precisar alocar/compilar um material novo por disparo
+const swirlSpiralMaterialBase = new THREE.MeshBasicMaterial({
+  color: SWIRL_CORE_COLOR, transparent: true, opacity: SWIRL_SPIRAL_OPACITY_BASE,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
+const swirlSpiralMaterialHoming = new THREE.MeshBasicMaterial({
+  color: SWIRL_CORE_COLOR, transparent: true, opacity: SWIRL_SPIRAL_OPACITY_HOMING,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+})
 const swirlRingGeometry = new THREE.TorusGeometry(SWIRL_RING_RADIUS, SWIRL_RING_TUBE, 3, 24)
 const swirlRingMaterial = new THREE.MeshBasicMaterial({
   color: SWIRL_CORE_COLOR, transparent: true, opacity: 0.85,
@@ -263,7 +270,7 @@ function buildSwirlBlastMesh() {
 
   // casca dinâmica — espiral (material próprio, marcada pra update() achar) + anéis triangulares
   // em funil (cada um com sua própria velocidade de giro, marcados via userData)
-  const spiral = new THREE.Mesh(swirlSpiralGeometry, buildSwirlSpiralMaterial())
+  const spiral = new THREE.Mesh(swirlSpiralGeometry, swirlSpiralMaterialBase)
   spiral.userData.swirlRole = 'spiral'
   spiral.userData.spinAngle = Math.random() * Math.PI * 2
   group.add(spiral)
@@ -309,7 +316,7 @@ function updateSwirlDynamicShell(projectile, dt) {
       const spinRate = isHoming ? SWIRL_SPIRAL_SPIN_HOMING : SWIRL_SPIRAL_SPIN_BASE
       child.userData.spinAngle += spinRate * dt
       child.rotation.z = child.userData.spinAngle
-      child.material.opacity = isHoming ? SWIRL_SPIRAL_OPACITY_HOMING : SWIRL_SPIRAL_OPACITY_BASE
+      child.material = isHoming ? swirlSpiralMaterialHoming : swirlSpiralMaterialBase
     }
   }
 }
@@ -323,9 +330,38 @@ const _projDeflect = new THREE.Vector3()
 const _projToSource = new THREE.Vector3()
 const _projDir = new THREE.Vector3()
 const _projDesired = new THREE.Vector3()
-const _projSteered = new THREE.Vector3()
 const _projAxis = new THREE.Vector3()
 const _projRingPos = new THREE.Vector3()
+const _steerWorldUp = new THREE.Vector3(0, 1, 0)
+const _steerWorldRight = new THREE.Vector3(1, 0, 0)
+
+// Gira `dir` (MUTA em lugar) até `desired` por no máximo `maxAngle` radianos, via rotação de
+// eixo-ângulo — não Vector3.lerp entre vetores unitários, que degenera em ângulos largos (a
+// magnitude do vetor interpolado encolhe perto de 90°-180°, distorcendo a taxa de giro real; foi
+// exatamente esse bug que fazia o homing do Swirl Blast ultrapassar o alvo e orbitar sem nunca
+// conectar). Compartilhado entre o steer de mira normal e o homing do Swirl Blast — mesma lei de
+// giro limitado, único ponto de manutenção. `axisTemp` é um Vector3 reutilizável do chamador.
+function steerDirectionTowardTarget(dir, desired, maxAngle, axisTemp) {
+  const angle = Math.acos(THREE.MathUtils.clamp(dir.dot(desired), -1, 1))
+  if (angle <= maxAngle || angle < 1e-4) {
+    dir.copy(desired)
+    return dir
+  }
+  axisTemp.crossVectors(dir, desired)
+  if (axisTemp.lengthSq() <= 1e-8) {
+    // dir e desired (quase) paralelos/antiparalelos — cross product degenera pra zero, não dá
+    // pra derivar um eixo de giro a partir dos dois vetores. Sem isso, o passo de correção vira
+    // um no-op e `dir` fica CONGELADO nessa direção indefinidamente (podia acontecer, por
+    // exemplo, se um dourado travado teleportar pra trás do projétil em pleno voo). Usa qualquer
+    // eixo perpendicular a `dir` como desempate — a direção do giro não importa aqui (os dois
+    // lados fecham o ângulo de 180° igualmente rápido), só precisa parar de congelar.
+    axisTemp.crossVectors(dir, _steerWorldUp)
+    if (axisTemp.lengthSq() <= 1e-8) axisTemp.crossVectors(dir, _steerWorldRight)
+  }
+  axisTemp.normalize()
+  dir.applyAxisAngle(axisTemp, maxAngle).normalize()
+  return dir
+}
 
 export function createProjectileSystem(scene, effects, player, enemies, targets, lockon) {
   const projectiles = []
@@ -336,14 +372,6 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
 
   function removeProjectile(p) {
     if (p.mesh) {
-      // material da espiral do Swirl é PRÓPRIO por instância (não compartilhado, ver
-      // buildSwirlSpiralMaterial) — precisa descartar aqui, o dispose() global só cobre as
-      // geometrias/materiais compartilhados entre todos os Swirls
-      if (p.isPiercing) {
-        for (const child of p.mesh.children) {
-          if (child.userData.swirlRole === 'spiral' && child.material) child.material.dispose()
-        }
-      }
       scene.remove(p.mesh)
     }
     const idx = projectiles.indexOf(p)
@@ -423,9 +451,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       } else if (aimDirection && !projectile.isHoming && !projectile.isPiercing) {
         const speed = projectile.velocity.length()
         _projDir.copy(projectile.velocity).normalize()
-        const steerT = Math.min(1, PLAYER_PROJECTILE_STEER_RATE * dt)
-        _projSteered.copy(_projDir).lerp(aimDirection, steerT)
-        if (_projSteered.lengthSq() > 1e-6) projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
+        steerDirectionTowardTarget(_projDir, aimDirection, PLAYER_PROJECTILE_STEER_RATE * dt, _projAxis)
+        projectile.velocity.copy(_projDir).multiplyScalar(speed)
       }
 
       // ============================================================
@@ -482,25 +509,25 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           if (distToTarget <= SWIRL_HOMING_SNAP_RANGE) {
             projectile.velocity.copy(_projDesired).multiplyScalar(speed)
           } else {
-            const angle = Math.acos(THREE.MathUtils.clamp(_projDir.dot(_projDesired), -1, 1))
-            const maxTurn = SWIRL_HOMING_TURN_RATE * dt
-            if (angle <= maxTurn || angle < 1e-4) {
-              projectile.velocity.copy(_projDesired).multiplyScalar(speed)
-            } else {
-              _projAxis.crossVectors(_projDir, _projDesired)
-              if (_projAxis.lengthSq() > 1e-8) {
-                _projAxis.normalize()
-                _projSteered.copy(_projDir).applyAxisAngle(_projAxis, maxTurn)
-                projectile.velocity.copy(_projSteered.normalize().multiplyScalar(speed))
-              }
-            }
+            steerDirectionTowardTarget(_projDir, _projDesired, SWIRL_HOMING_TURN_RATE * dt, _projAxis)
+            projectile.velocity.copy(_projDir).multiplyScalar(speed)
           }
         }
       }
 
       if (projectile.life != null) {
         projectile.life -= dt
-        if (projectile.life <= 0) { removeProjectile(projectile); continue }
+        if (projectile.life <= 0) {
+          if (projectile.isPiercing && projectile.swirlHomingTarget) {
+            aiValidator.expect(
+              'Swirl Blast com alvo travado (chefe/dourado) não deveria expirar por tempo de vida sem conectar — indica falha no homing',
+              () => false,
+              { targetKind: projectile.swirlHomingTarget.kind, traveled: projectile.traveled },
+            )
+          }
+          removeProjectile(projectile)
+          continue
+        }
       }
 
       _projPrevPos.copy(projectile.mesh.position)
@@ -590,6 +617,13 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             stopped = true
             if (effects && effects.swirlBlastExplosion) effects.swirlBlastExplosion(h.worldPos, _projDir)
           }
+        }
+        if (!stopped && projectile.traveled > SWIRL_BLAST_MAX_RANGE && projectile.swirlHomingTarget) {
+          aiValidator.expect(
+            'Swirl Blast com alvo travado (chefe/dourado) não deveria expirar por alcance máximo sem conectar — indica falha no homing',
+            () => false,
+            { targetKind: projectile.swirlHomingTarget.kind, traveled: projectile.traveled },
+          )
         }
         if (stopped || projectile.traveled > SWIRL_BLAST_MAX_RANGE) removeProjectile(projectile)
         continue
@@ -858,6 +892,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       swirlNeedleGeometry.dispose()
       swirlNeedleMaterial.dispose()
       swirlSpiralGeometry.dispose()
+      swirlSpiralMaterialBase.dispose()
+      swirlSpiralMaterialHoming.dispose()
       swirlRingGeometry.dispose()
       swirlRingMaterial.dispose()
       swirlAuraGeometry.dispose()

@@ -942,3 +942,60 @@ inspeção de `naturalWidth`/classe `visible` que o frame 0 da estática fica vi
 (síncrono, no mesmo tick da chamada), os 7 frames chegam pré-decodificados (`naturalWidth: 260`
 todos), e a rajada de prontidão do `[D]` realmente encadeia mensagens de pilotos diferentes em
 sequência (Falco "Locked and loaded!" confirmado). Zero erros de console.
+
+### v0.94.0 — Swirl Blast: 10 bugs achados por code-review (`/code-review`) + corrigidos
+
+Pedido do usuário: "cace por bugs" em cima da entrega anterior do Swirl Blast (v2 visual + homing
++ Rodada 2). Review multi-ângulo (8 agentes: scan linha-a-linha, auditoria de comportamento
+removido, rastreio cross-file, reuse/simplificação/eficiência/altitude, convenções do CLAUDE.md) +
+verificação 1-voto em cada candidato antes de reportar. 10 achados, todos corrigidos:
+
+1. **Bug real, o mais grave**: `SWIRL_HOMING_SNAP_RANGE` (26) era MENOR que o raio de órbita
+   estável da perseguição pura (`SWIRL_BLAST_SPEED / SWIRL_HOMING_TURN_RATE` ≈ 28.9) — simulação
+   numérica do agente verificador provou que um chefe/dourado travado a ~27-31u de distância e
+   ~93-103° de ângulo do disparo faz o projétil orbitar pra sempre sem cruzar o raio de snap,
+   exatamente o bug que a Rodada 2 achou e "corrigiu" antes. Nenhum dos 4 testes ao vivo daquela
+   sessão caiu nessa faixa de ressonância — passaram por sorte geométrica, não porque o fix era
+   geral. Corrigido derivando o snap range da física real: `(SWIRL_BLAST_SPEED /
+   SWIRL_HOMING_TURN_RATE) * 1.3` (margem de segurança). Reproduzido o caso exato ao vivo
+   (distância 29u, ângulo 95° — 98° cai fora do cone de trava por causa do `PASS_BEHIND` do
+   lock-on, então usei 95° pra manter o alvo travável) — antes expirava sem conectar, depois do
+   fix conecta no frame 2.
+2. Flash de disparo (`swirlBlastFlash`) calculava `flashOpacity=1.0` pra tiro homing mas o
+   `muzzleFlashes.push` tinha `startOpacity: 0.9` hardcoded, sobrescrito todo frame pelo loop
+   genérico — o "flash mais intenso quando travado" nunca aparecia. Corrigido: usa `flashOpacity`.
+3. Rotação por eixo-ângulo do homing não tinha fallback quando direção atual e desejada ficam
+   (quase) antiparalelas (cross product degenera a zero) — a velocidade congelava sem corrigir.
+   Corrigido: se o eixo degenerar, usa qualquer eixo perpendicular (world-up, ou world-right se
+   o primeiro também degenerar) como desempate.
+4. `SWIRL_SPIRAL_TUBE` era calculado a partir de `SWIRL_SCALE` mas a geometria usava o literal
+   `0.09` direto, ignorando a constante — a espessura da espiral parou de escalar quando
+   `SWIRL_SCALE` virou 1.0 na Rodada 2. Corrigido: geometria usa a constante (com piso de 0.09
+   pra não sumir em escalas pequenas).
+5. `swirlFlashConeGeo` (flash do disparo) continuava cone redondo (8 segmentos) enquanto o
+   afterimage já tinha sido migrado pra 3 segmentos triangulares — mismatch visual de 1 frame no
+   instante que devia vender a identidade triangular nova. Corrigido: 3 segmentos.
+6. Nenhum `aiValidator.expect()` cobria "o Swirl com alvo travado realmente conecta antes de
+   expirar" — exatamente a invariante que quebrou duas vezes nesta feature (achado #1 acima
+   incluso) e só foi pega por debug manual ao vivo, violando a obrigação do
+   `FLUXO_VALIDACAO_IA.md` de instrumentar invariante crítica. Corrigido: `expect()` nos dois
+   pontos de remoção por expiração (vida e alcance máximo) cobrando `false` se o projétil ainda
+   tinha `swirlHomingTarget` ativo — vira `expectativas_falhas` no log se acontecer de novo.
+7. A rotação por eixo-ângulo corrigida ficou inline só pro Swirl, enquanto o steer de mira normal
+   (assist de tiro comum) ao lado continuava com o mesmo `Vector3.lerp` que degenera — mesma
+   classe de bug, sem correção. Extraído `steerDirectionTowardTarget(dir, desired, maxAngle,
+   axisTemp)` compartilhado (com o fallback do item 3 embutido), usado pelos dois lugares agora.
+8. `swirlBlastExplosion` reimplementava a mesma matemática de espalhamento esférico aleatório
+   (theta/phi/speed) que `glassShatter` já tinha — extraído `randomSphereVelocity(min, max)`
+   compartilhado (mantive os dois em sistemas de animação separados, `muzzleFlashes` vs
+   `glassShards`, que têm ciclos de vida diferentes — só a matemática do vetor era duplicada).
+9. Comentário em `effects.js` dizia "escala Rodada 1 (0.6×)" mas os valores logo abaixo já eram
+   Rodada 2 (cheia) — corrigido o texto do comentário.
+10. `buildSwirlSpiralMaterial()` alocava um material novo por disparo só pra variar opacidade
+    entre reto/homing — trocado por 2 materiais compartilhados (`swirlSpiralMaterialBase`/
+    `Homing`) com troca de REFERÊNCIA em `updateSwirlDynamicShell`, zero alocação por disparo.
+
+**Validado ao vivo** após os fixes: os 3 casos de teste da Rodada 2 (fácil/moderado/extremo)
+continuam conectando (4-6 frames), R1 sem alvo travado continua com trajetória perfeitamente reta
+(10 frames de delta idêntico), zero erros de console, e o caso de ressonância do achado #1
+(antes expirava sem nunca acertar) agora conecta no frame 2.
