@@ -951,6 +951,13 @@
   .enemy-lock-marker .lock-sq-c {
     animation: lock-sq-settle 0.12s ease-out 0.26s forwards, lock-sq-spin 1s linear 0.38s infinite;
   }
+  /* Lock extra liberado pela Miyu: mesma animação, forma triangular e cor ciano. */
+  .enemy-lock-marker.is-assist .lock-sq {
+    border-color: #00e5ff;
+    box-shadow: 0 0 8px rgba(0,229,255,0.8), inset 0 0 6px rgba(0,229,255,0.5);
+    border-radius: 0;
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
   /* cada quadrado SEGURA de verdade no próprio tamanho (0%→60% parado) antes de encolher e
      sumir (60%→100%) — sem essa pausa a diferença de tamanho passava rápido demais pra notar */
   @keyframes lock-sq-converge-a {

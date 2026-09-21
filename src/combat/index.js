@@ -60,8 +60,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     },
 
     fireHomingShot: (origin, direction, maxTargets, isMaxCharge) => {
+      const lockedBeforeFiring = lockon.getLockedEntities()
       const fired = projectiles.fireHomingShot(origin, direction, maxTargets, isMaxCharge)
       if (fired) {
+        squadron.fireMiyuAssistShots?.(lockedBeforeFiring, player.config.homingMaxTargets)
         player.getTelemetry?.()?.recordEvent('homing', `Tiro teleguiado disparado! Carga máx: ${isMaxCharge}, Alvos: ${maxTargets}`, { isMaxCharge, maxTargets })
       }
       return fired
@@ -197,7 +199,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnBossOrbs: (count, opts) => targets.spawnBossOrbs(count, opts),
     clearBossOrbs: () => targets.clearBossOrbs(),
 
-    sweepLockOn: (origin, direction, maxAllowed) => lockon.sweepLockOn(origin, direction, maxAllowed),
+    sweepLockOn: (origin, direction, maxAllowed, baseMaxAllowed) => lockon.sweepLockOn(origin, direction, maxAllowed, baseMaxAllowed),
     isAimingAtEnemy: (origin, direction) => lockon.isAimingAtEnemy(origin, direction),
     clearLockedEnemies: () => lockon.clearLockedEnemies(),
     getLockedEnemySnapshots: () => lockon.getLockedEnemySnapshots(),

@@ -182,6 +182,7 @@ export function injectHudExtraStyles() {
   left: 50%;
   bottom: 15%;
   transform: translateX(-50%);
+  opacity: 0;
   display: grid;
   place-items: center;
   gap: 1px;
@@ -189,10 +190,10 @@ export function injectHudExtraStyles() {
   font: 900 10px ui-monospace, monospace;
   letter-spacing: .16em;
   text-shadow: 0 0 12px rgba(255, 30, 50, .95);
-  z-index: 28;
+  z-index: 60;
   pointer-events: none;
-  animation: hud-danger-indicator 900ms ease-out forwards;
 }
+.hud-danger-indicator.active { animation: hud-danger-indicator 1200ms ease-out forwards; }
 .hud-danger-indicator span { font-size: 34px; line-height: .9; }
 @keyframes hud-danger-indicator { 0% { opacity: 0; transform: translateX(-50%) scale(.45); } 18% { opacity: 1; transform: translateX(-50%) scale(1.18); } 100% { opacity: 0; transform: translateX(-50%) scale(.9); } }
 
@@ -330,6 +331,7 @@ export function injectHudExtraStyles() {
   pointer-events: none;
 }
 .hud-ability-subicon {
+  position: relative;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -345,6 +347,25 @@ export function injectHudExtraStyles() {
   line-height: 1;
   filter: drop-shadow(0 1px 1px #000);
 }
+.hud-ability-subnum {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
+  z-index: 2;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111827;
+  border: 1px solid var(--sub-color, #38bdf8);
+  color: #fff;
+  font: 800 8px ui-monospace, monospace;
+  text-shadow: 0 1px 2px #000;
+}
+.hud-ability-subnum:empty { display: none; }
 .hud-ability-subicon.ready { border-color: var(--sub-color, #38bdf8); box-shadow: 0 0 4px var(--sub-color, #38bdf8); }
 .hud-ability-subicon.cooling { border-color: #333944; opacity: 0.7; }
 
@@ -2135,7 +2156,7 @@ export function injectHudExtraStyles() {
 .hud-wingman-ability-panel {
   position: absolute;
   left: 28px;
-  top: 18%;
+  top: 18px;
   display: flex;
   align-items: center;
   gap: 12px;

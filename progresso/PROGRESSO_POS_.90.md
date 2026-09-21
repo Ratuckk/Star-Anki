@@ -36,11 +36,9 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
   `FOCUS_ABILITY_CARDS` já existe no código mas fica inerte até as cartas Slippy Morale e Peppy
   Auxílio nascerem.
 - [ ] Item 3 completo: 9 cartas restantes (Peppy Guarda Extra/Rescue/Auxílio, Slippy Repair
-  Aliados/Morale Boost/Impulsão Conjunta, Miyu Assist+1/Boombuster/Status) + item 0 (visuais da
-  Miyu: lock triângulo ciano, charge glow do assist, disparo extra magenta) + faíscas de hit
-  não-letal mais espalhadas (item final, independente).
-- [ ] **Peppy Rescue depende de knockback por tier** (QoL #6/#7, ainda não implementado) — vem
-  antes na ordem de entrega.
+  Aliados/Morale Boost/Impulsão Conjunta, Miyu Assist+1/Boombuster/Status) + faíscas de hit
+  não-letal mais espalhadas (item final, independente). O item 0 (visuais da Miyu) foi fechado
+  na v0.98.0.
 - [ ] **Slippy Repair Aliados depende de wingmen com HP** (Checklist item 3, ainda não
   implementado) — vem antes na ordem de entrega.
 - [ ] **Miyu Boombuster depende de projétil homing pra wingmen** (sistema novo, ainda não existe).
@@ -48,6 +46,34 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.98.0 — Correções visuais, cutscene Arcade e Carga Compartilhada
+
+Correção dos seis pontos reportados após a v0.97.0, sem alterar comportamento de IA, spawn ou
+movimento dos inimigos.
+
+- **Knockback**: as durações dos quatro tiers foram dobradas para **1.2s, 1.8s, 2.6s e 3.6s**;
+  força, giro, regras de tier e o cancelamento suavizado de 0.2s permanecem iguais.
+- **Indicador central**: `PERIGO` agora é uma peça fixa da HUD, acima das demais camadas, que é
+  reiniciada em cada impacto de tier 2–4. Antes era criado e removido no fim da animação, uma
+  janela curta demais que podia fazê-lo não ser visto.
+- **Habilidades e cooldowns**: a habilidade principal mantém seu ícone e contador na posição
+  superior original. Cada habilidade adicional fica abaixo, com ícone próprio e contador visível
+  próprio; o Intercept do Falco continua usando `interceptCooldown`, separado de `abilityCooldown`.
+- **Arcade sem baralho**: depois da apresentação `boss`, o fluxo entra direto na luta; não agenda
+  mais a apresentação `bossSummon`, que era a segunda cutscene.
+- **Miyu — Item 0 fechado**: locks acima do teto base recebem triângulo ciano, a camada externa da
+  mira carregada cresce 1.25× durante Carga Compartilhada e, ao soltar o tiro, cada lock extra
+  recebe um laser magenta independente da Miyu. A validação IA registra que esses disparos só
+  existem para locks além do teto base.
+- **Falco Intercept**: o raio azul ficou mais espesso, brilhante e duradouro; ao destruir o
+  projétil, agora deixa explosão e onda de choque azuis visíveis.
+- **Quotes dos aliados**: o painel foi movido para o topo esquerdo, acima da bandeja de buffs de
+  cartas, removendo a sobreposição.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passam. Próximo playtest: disparar um Intercept do Falco, usar Carga Compartilhada com pelo menos
+um lock além do limite normal e confirmar os dois indicadores visuais.
 
 ### v0.97.0 — Knockback por tier de ameaça (pré-requisito do Peppy Rescue)
 
@@ -59,7 +85,8 @@ o pré-requisito QoL #6/#7 agora está fechado antes de criar a carta Rescue.
   tier 3; Chefe/Dourado, tier 4. Projéteis, lasers e molduras usam tier 2–4 pelo `powerLevel`.
   A classificação só controla a reação da nave do jogador; não muda IA, movimento, HP, tiro ou
   spawn de inimigos.
-- **Perda de controle calibrada e cancelável**: duração/força sobem de 0.6s/leve até 1.8s/máxima.
+- **Perda de controle calibrada e cancelável**: originalmente, duração/força subiam de 0.6s/leve
+  até 1.8s/máxima; as durações foram dobradas na v0.98.0.
   Um giro completo ou a repulsão encerram o tumble por uma rampa de 0.2s, em vez de cortar a
   rotação/empurrão de um frame para o outro.
 - **Último escudo pesa mais**: se um impacto físico quebra a última carga, o tier é elevado no

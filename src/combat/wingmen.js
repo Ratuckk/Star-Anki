@@ -7,6 +7,7 @@ import { FRAGATA_KIND } from '../enemies/fragata.js'
 import { BOSS_KIND } from '../enemies/boss.js'
 import { GOLDEN_KIND } from '../enemies/golden.js'
 import { POWER_LEVEL_AREA_DAMAGE } from '../enemies/shared.js'
+import { aiValidator } from '../ai-validator.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -164,6 +165,10 @@ const _wmInvQuat = new THREE.Quaternion()
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
+// ============ MIYU — COR DO DISPARO EXTRA ============
+// Só o disparo adicional da Carga Compartilhada usa magenta. O laser de combate normal dela
+// permanece rosa, distinguindo visualmente o bônus sem trocar a identidade da piloto.
+const MIYU_ASSIST_SHOT_COLOR = 0xd500f9
 // Dispersão angular (rad) da rajada de dogfight — mira imperfeita, tiros não saem 100% retos.
 // Valor base agora é por piloto (combatProfile.aimSpreadRad, Ideia 2 do Overhaul de
 // Personalidade); esta constante só documenta a origem histórica.
@@ -505,21 +510,25 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const interceptBeams = []
   const interceptBeamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 6)
   interceptBeamGeometry.rotateX(Math.PI / 2)
-  const FALCO_INTERCEPT_BEAM_LIFETIME = 0.14
+  const FALCO_INTERCEPT_BEAM_LIFETIME = 0.32
 
   function fireFalcoInterceptBeam(origin, targetPos) {
     const dir = targetPos.clone().sub(origin)
     const dist = dir.length()
     if (dist < 1e-4) return
     dir.multiplyScalar(1 / dist)
-    const material = new THREE.MeshBasicMaterial({ color: FALCO_INTERCEPT_COLOR, transparent: true, opacity: 0.95 })
+    const material = new THREE.MeshBasicMaterial({ color: FALCO_INTERCEPT_COLOR, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false })
     const mesh = new THREE.Mesh(interceptBeamGeometry, material)
     mesh.position.copy(origin).addScaledVector(dir, dist / 2)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
-    mesh.scale.z = dist
+    mesh.scale.set(2.2, 2.2, dist)
     scene.add(mesh)
     interceptBeams.push({ mesh, material, life: FALCO_INTERCEPT_BEAM_LIFETIME })
-    if (effects && effects.muzzleFlash) effects.muzzleFlash(origin, dir)
+    if (effects) {
+      effects.muzzleFlash?.(origin, dir)
+      effects.explosion?.(targetPos, FALCO_INTERCEPT_COLOR, 0.38, { rings: true })
+      effects.shockwave?.(targetPos, FALCO_INTERCEPT_COLOR, 0.55)
+    }
   }
 
   function clearInterceptBeams() {
@@ -846,8 +855,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  function fireWingmanLaser(wingman, origin, direction) {
-    const mesh = new THREE.Mesh(laserGeometry, wingman.laserMaterial)
+  function fireWingmanLaser(wingman, origin, direction, opts = {}) {
+    const material = opts.color != null
+      ? new THREE.MeshBasicMaterial({ color: opts.color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
+      : wingman.laserMaterial
+    const mesh = new THREE.Mesh(laserGeometry, material)
     mesh.position.copy(origin)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction.clone().normalize())
     scene.add(mesh)
@@ -865,6 +877,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       life: WINGMAN_LASER_LIFETIME,
       color: wingman.profile.laserColor,
       damage: WINGMAN_LASER_DAMAGE,
+      ownMaterial: material !== wingman.laserMaterial,
       owner: wingman, // usado pelo proc do Reparo de Campo (Slippy) na resolução de acerto
     })
 
@@ -877,6 +890,31 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       burstRemaining: wingman.burstRemaining,
       elapsed,
     })
+  }
+
+  // Carga Compartilhada: para cada lock QUE EXCEDE o teto base, Miyu solta um laser magenta
+  // independente. Os tiros do jogador continuam sendo resolvidos pelo sistema de homing usual;
+  // estes são lasers de ala normais, visíveis e com dano próprio, em vez de um bônus invisível.
+  function fireMiyuAssistShots(lockedTargets, baseMaxTargets) {
+    const miyu = activeWingmen.find((w) => w.profile.id === 3 && w.abilityActive && w.escortKind === 'assist')
+    if (!miyu || !Array.isArray(lockedTargets)) return 0
+    let shots = 0
+    for (const target of lockedTargets.slice(Math.max(0, baseMaxTargets))) {
+      if (!target?.mesh || target.dying) continue
+      _wmToEnemy.copy(target.mesh.position).sub(miyu.mesh.position)
+      if (_wmToEnemy.lengthSq() < 0.001) continue
+      _wmToEnemy.normalize()
+      const muzzle = _wmLaserMuzzle.copy(miyu.mesh.position).addScaledVector(_wmToEnemy, 1.3)
+      fireWingmanLaser(miyu, muzzle, _wmToEnemy, { color: MIYU_ASSIST_SHOT_COLOR })
+      shots += 1
+    }
+    aiValidator.expect(
+      'Carga Compartilhada da Miyu só cria disparos extras para locks além do teto base',
+      () => shots <= Math.max(0, lockedTargets.length - baseMaxTargets),
+      { shots, locks: lockedTargets.length, baseMaxTargets },
+    )
+    if (shots > 0) aiValidator.logMechanic('miyu-assist-shot', 'disparos-magenta', { shots, baseMaxTargets })
+    return shots
   }
 
   // ============ TICK DE ATUALIZAÇÃO DA IA DE VOO LIVRE ============
@@ -1508,6 +1546,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       laser.life -= dt
       if (laser.life <= 0) {
         scene.remove(laser.mesh)
+        if (laser.ownMaterial) laser.mesh.material.dispose()
         activeLasers.splice(i, 1)
         continue
       }
@@ -1559,6 +1598,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             if (!radioMessage) radioMessage = speak(owner.profile, 'ability_repair')
           }
           scene.remove(laser.mesh)
+          if (laser.ownMaterial) laser.mesh.material.dispose()
           activeLasers.splice(i, 1)
           continue
         }
@@ -1624,6 +1664,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function clearLasers() {
     for (let i = activeLasers.length - 1; i >= 0; i--) {
       scene.remove(activeLasers[i].mesh)
+      if (activeLasers[i].ownMaterial) activeLasers[i].mesh.material.dispose()
     }
     activeLasers.length = 0
     clearInterceptBeams()
@@ -1639,6 +1680,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   return {
     update,
     tryFireSupport,
+    fireMiyuAssistShots,
     setWingmanCount,
     spawnMember,
     removeMember,

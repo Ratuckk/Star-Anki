@@ -86,6 +86,11 @@ export function createGameHud() {
   knockbackVignette.className = 'hud-knockback-vignette'
   root.appendChild(knockbackVignette)
 
+  const dangerIndicator = document.createElement('div')
+  dangerIndicator.className = 'hud-danger-indicator'
+  dangerIndicator.innerHTML = '<span>⚠</span><b>PERIGO</b>'
+  root.appendChild(dangerIndicator)
+
   const bossTint = document.createElement('div')
   bossTint.className = 'hud-boss-tint'
   root.appendChild(bossTint)
@@ -1820,12 +1825,9 @@ export function createGameHud() {
       void knockbackVignette.offsetWidth
       knockbackVignette.classList.add('active')
       if (resolvedTier < 2) return
-      const indicator = document.createElement('div')
-      indicator.className = `hud-danger-indicator tier-${resolvedTier}`
-      indicator.innerHTML = '<span>⚠</span><b>PERIGO</b>'
-      root.appendChild(indicator)
-      const remove = () => indicator.remove()
-      indicator.addEventListener('animationend', remove, { once: true })
+      dangerIndicator.className = `hud-danger-indicator tier-${resolvedTier}`
+      void dangerIndicator.offsetWidth
+      dangerIndicator.classList.add('active')
     },
 
     showTierIncrease(level) {
@@ -2075,6 +2077,7 @@ export function createGameHud() {
         el.style.left = `${item.xFrac * 100}%`
         el.style.top = `${item.yFrac * 100}%`
         el.style.setProperty('--marker-size', `${lockMarkerSizePx(item.sizeHint)}px`)
+        el.classList.toggle('is-assist', item.source === 'miyu')
       }
       for (const [id, el] of lockMarkerPool) {
         if (!seen.has(id)) { el.remove(); lockMarkerPool.delete(id) }
@@ -2417,15 +2420,17 @@ export function createGameHud() {
           if (!entry) {
             const el = document.createElement('div')
             el.className = 'hud-ability-subicon'
-            el.innerHTML = '<span class="hud-ability-subicon-glyph"></span>'
+            el.innerHTML = '<span class="hud-ability-subicon-glyph"></span><span class="hud-ability-subnum"></span>'
             slot.subcolumn.appendChild(el)
-            entry = { el, glyph: el.querySelector('.hud-ability-subicon-glyph') }
+            entry = { el, glyph: el.querySelector('.hud-ability-subicon-glyph'), num: el.querySelector('.hud-ability-subnum') }
             slot.subIconEls.set(s.id, entry)
           }
           const colorHex = typeof s.color === 'number' ? `#${s.color.toString(16).padStart(6, '0')}` : '#38bdf8'
           entry.el.style.setProperty('--sub-color', colorHex)
           entry.glyph.textContent = s.icon || ''
-          entry.el.title = s.ready ? '' : String(Math.ceil(s.cooldownRemaining))
+          const cooldownText = s.ready ? '' : String(Math.ceil(s.cooldownRemaining))
+          entry.el.title = cooldownText
+          entry.num.textContent = cooldownText
           entry.el.classList.toggle('ready', !!s.ready)
           entry.el.classList.toggle('cooling', !s.ready)
         }

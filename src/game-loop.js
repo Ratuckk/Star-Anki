@@ -289,9 +289,9 @@ export function createGameLoop(deps) {
           }
         }
         const chargeFrac = Math.min(1, (state.fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
-        effects.setChargeGlow(true, chargeFrac, nosePos, _fireDirection)
+        effects.setChargeGlow(true, chargeFrac, nosePos, _fireDirection, { miyuAssistActive: assistMult > 1 })
 
-        combat.sweepLockOn(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs))
+        combat.sweepLockOn(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), player.config.homingMaxTargets)
         const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
           const ndcL = s.worldPos.project(camera)
           return {
@@ -299,6 +299,7 @@ export function createGameLoop(deps) {
             xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
             yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
             sizeHint: s.sizeHint,
+            source: s.source,
           }
         })
         hud.setLockedEnemyMarkers(lockedBars)

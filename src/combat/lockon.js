@@ -31,6 +31,11 @@ const MAX_LOCK_RANGE = 90
 const MIN_LOCK_RANGE = 10
 const PASS_BEHIND = -4
 
+// ============ ORIGEM DO LOCK — MIYU vs. BASE ============
+// A Carga Compartilhada só muda a aparência das travas que excedem o teto BASE do jogador.
+export const LOCK_SOURCE_BASE = 'base'
+export const LOCK_SOURCE_MIYU = 'miyu'
+
 // ============ LAYOUT DE MULTI-LOCK ============
 // raio do anel de marcadores quando há >1 trava no MESMO alvo grande. Não é o raio de colisão:
 // é o raio VISUAL onde os quadradinhos ficam distribuídos. Escolhido pra ficar perceptivelmente
@@ -66,7 +71,7 @@ export function createLockOnSystem(rail, enemies) {
   return {
     // maxAllowed (main.js): quantos alvos podem estar travados NESTE instante do carregamento —
     // 1 no início, +1 a cada intervalo (travar um alvo novo por vez, não todos de uma vez).
-    sweepLockOn(origin, direction, maxAllowed = Infinity) {
+    sweepLockOn(origin, direction, maxAllowed = Infinity, baseMaxAllowed = maxAllowed) {
       const frame = rail.getFrameAt(0)
 
       // 1) MANUTENÇÃO — remove records inválidos. NÃO usa mais o ângulo da mira atual: isto é
@@ -103,7 +108,8 @@ export function createLockOnSystem(rail, enemies) {
         const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
         if (angle >= LOCK_ACQUIRE_ANGLE) continue
 
-        lockedEnemies.push({ entity: e, seq: nextLockSeq++ })
+        const source = lockedEnemies.length >= baseMaxAllowed ? LOCK_SOURCE_MIYU : LOCK_SOURCE_BASE
+        lockedEnemies.push({ entity: e, seq: nextLockSeq++, source })
       }
     },
 
@@ -197,7 +203,7 @@ export function createLockOnSystem(rail, enemies) {
         // trava única (o caso 99% das vezes — inimigo comum): marcador exatamente na âncora.
         // Sem offset, sem espalhamento, sem ruído.
         if (group.length === 1) {
-          result.push({ id: group[0].seq, worldPos: _tmpWorldPos.clone(), sizeHint })
+          result.push({ id: group[0].seq, worldPos: _tmpWorldPos.clone(), sizeHint, source: group[0].source })
           continue
         }
 
@@ -210,7 +216,7 @@ export function createLockOnSystem(rail, enemies) {
         for (let i = 0; i < group.length; i += 1) {
           const angle = (i / group.length) * Math.PI * 2
           _tmpOffset.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
-          result.push({ id: group[i].seq, worldPos: _tmpWorldPos.clone().add(_tmpOffset), sizeHint })
+          result.push({ id: group[i].seq, worldPos: _tmpWorldPos.clone().add(_tmpOffset), sizeHint, source: group[i].source })
         }
       }
       return result

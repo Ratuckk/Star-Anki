@@ -512,7 +512,10 @@ export function createEffectsSystem(scene, opts = {}) {
   }
 
   // ============ EFEITOS EXISTENTES ============
-  function setChargeGlow(active, fraction, position, direction) {
+  // ============ CHARGE GLOW — BOOST DA MIYU ============
+  // Só a última camada cresce durante a Carga Compartilhada, preservando a leitura da mira.
+  const CHARGE_GLOW_MIYU_BOOST_MULT = 1.25
+  function setChargeGlow(active, fraction, position, direction, opts = {}) {
     const f = Math.max(0, Math.min(1, fraction || 0))
     const atMaxCharge = f >= 1
     const now = performance.now()
@@ -526,7 +529,8 @@ export function createEffectsSystem(scene, opts = {}) {
       const { scaleMin, scaleMax, opacityMin, opacityMax } = layer.cfg
       const localT = threshold >= 1 ? 1 : Math.min(1, (f - threshold) / (1 - threshold))
       const pulse = 1 + Math.sin(now * 0.001 * CHARGE_GLOW_PULSE_RATE + i * 1.7) * CHARGE_GLOW_PULSE_AMOUNT
-      layer.mesh.scale.setScalar((scaleMin + (scaleMax - scaleMin) * localT) * pulse)
+      const miyuBoost = opts.miyuAssistActive && i === n - 1 ? CHARGE_GLOW_MIYU_BOOST_MULT : 1
+      layer.mesh.scale.setScalar((scaleMin + (scaleMax - scaleMin) * localT) * pulse * miyuBoost)
       layer.mat.opacity = (opacityMin + (opacityMax - opacityMin) * localT) * CHARGE_GLOW_OPACITY_MULT
       layer.mesh.position.copy(position).addScaledVector(direction, CHARGE_GLOW_AHEAD)
     })

@@ -65,11 +65,10 @@ export function createBossFlow(deps) {
     if (deck?.isNoDeck) {
       // Sem baralho não há pergunta pra caçar orbe nenhum (ver comentário em main-constants.js,
       // BOSS_NO_DECK_SCORE_INTERVAL) — pula a caçada inteira (bossBuildup/triggerBossQuestion)
-      // e vai direto pro finishBossHunt, que já dispara a cutscene de invocação antes da luta
-      // de verdade (senão o combate começava "no susto"). rail.enterArena() acima continua
-      // rodando igual ao fluxo normal — sem ele o chefe nasceria/lutaria no modo trilho errado.
+      // e já chega aqui após a apresentação `boss`. Não agenda `bossSummon`: isso reproduzia a
+      // cutscene duas vezes no Arcade. rail.enterArena() acima continua necessário para a luta.
       state.bossOrbsRemaining = 0
-      finishBossHunt()
+      enterBossFight()
       return
     }
     state.bossBuildupTimer = BOSS_BUILDUP_MS
