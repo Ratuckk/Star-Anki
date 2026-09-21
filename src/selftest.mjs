@@ -559,7 +559,7 @@ assert.deepStrictEqual(simulateBlasterHitOutcome(2, 2, false), { killed: true, w
 assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, true), { killed: false, wingBreaks: false }, 'asa já quebrada não quebra de novo')
 
 // ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
-import { createWingmanRadio } from './combat/wingman-radio.js'
+import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS } from './combat/wingman-radio.js'
 
 {
   const radio = createWingmanRadio()
@@ -567,10 +567,12 @@ import { createWingmanRadio } from './combat/wingman-radio.js'
   assert.ok(typeof line1 === 'string' && line1.length > 0, 'trySpeak deve devolver uma fala pra um par piloto+evento válido')
 
   const line2 = radio.trySpeak(1, 'ability_guard', 1500)
-  assert.strictEqual(line2, null, 'cooldown global (6s) deve bloquear uma segunda fala logo em seguida, mesmo de outro piloto/evento')
+  assert.strictEqual(line2, null, 'cooldown global (6-20s aleatório) deve bloquear uma segunda fala logo em seguida, mesmo de outro piloto/evento')
 
-  const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + 6000)
-  assert.ok(typeof line3 === 'string', 'depois do cooldown global (6s) passar, trySpeak deve voltar a falar')
+  // Cooldown agora é aleatório entre 6s e 20s (não mais fixo) — usar o MÁXIMO garante que o
+  // cooldown já passou não importa qual valor foi sorteado na fala anterior.
+  const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + GLOBAL_COOLDOWN_MAX_MS)
+  assert.ok(typeof line3 === 'string', 'depois do cooldown global máximo (20s) passar, trySpeak deve voltar a falar')
 
   const missingPilot = radio.trySpeak(99, 'kill', 50000)
   assert.strictEqual(missingPilot, null, 'pilotId inexistente deve devolver null, não lançar erro')
@@ -581,6 +583,15 @@ import { createWingmanRadio } from './combat/wingman-radio.js'
   radio.reset()
   const afterReset = radio.trySpeak(2, 'kill', 100)
   assert.ok(typeof afterReset === 'string', 'reset() deve zerar o cooldown global')
+}
+
+{
+  // ABILITY_EVENT_IDS classifica o eventId em ability (painel superior) vs. trivial (inferior) —
+  // ver hud-game.js. Um eventId de ability nunca pode ser confundido com um trivial.
+  assert.ok(ABILITY_EVENT_IDS.has('ability_ram'), 'ability_ram deve ser classificado como ability')
+  assert.ok(ABILITY_EVENT_IDS.has('ability_guard'), 'ability_guard deve ser classificado como ability')
+  assert.ok(!ABILITY_EVENT_IDS.has('kill'), 'kill é trivial, não deve estar em ABILITY_EVENT_IDS')
+  assert.ok(!ABILITY_EVENT_IDS.has('focus_ready'), 'focus_ready é trivial, não deve estar em ABILITY_EVENT_IDS')
 }
 
 {

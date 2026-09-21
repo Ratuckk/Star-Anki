@@ -2066,6 +2066,51 @@ export function injectHudExtraStyles() {
   animation: hud-wingman-radio-flicker 180ms steps(1, end);
 }
 
+/* ============ PAINEL DE ABILITY (região superior) — Documento de Implementação, item 2 ============ */
+/* Mesma estrutura interna (.hud-wingman-radio-corner/-avatar/-name/-line, reaproveitadas sem
+   redefinição — não são escopadas ao pai, valem pros dois painéis). Só a caixa raiz muda: posição
+   (top em vez de bottom), cor mais saturada, e uma entrada em fatias mais dramática (steps a
+   partir da esquerda) — pra distinguir "fala de habilidade" de "papo" trivial à primeira vista. */
+.hud-wingman-ability-panel {
+  position: absolute;
+  left: 28px;
+  top: 18%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 17px 8px 8px;
+  border-radius: 4px;
+  background: rgba(8, 12, 22, 0.94);
+  border: 1.5px solid var(--pc, #38bdf8);
+  box-shadow: 0 0 26px var(--pg, rgba(56, 189, 248, 0.7)), 0 6px 16px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transform: translateY(-14px);
+  transition: opacity 140ms ease-out, transform 200ms ease-out, border-color 200ms, box-shadow 200ms;
+  pointer-events: none;
+  z-index: 45;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+.hud-wingman-ability-panel.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+@keyframes hud-wingman-ability-glitch-in {
+  0%   { clip-path: inset(0 88% 0 0); }
+  12%  { clip-path: inset(0 60% 0 30%); }
+  24%  { clip-path: inset(0 20% 0 65%); }
+  36%  { clip-path: inset(0 70% 0 5%); }
+  48%  { clip-path: inset(0 10% 0 80%); }
+  60%  { clip-path: inset(0 45% 0 15%); }
+  75%  { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+.hud-wingman-ability-panel.entering {
+  animation: hud-wingman-ability-glitch-in 320ms steps(3, end);
+}
+.hud-wingman-ability-panel.leaving {
+  animation: hud-wingman-radio-flicker 180ms steps(1, end);
+}
+
 /* ============ ALERTA DE EVENTO AMBIENTAL: TEMPESTADE DE DETRITOS ============ */
 .hud-storm-warning {
   position: absolute;

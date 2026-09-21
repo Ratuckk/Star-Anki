@@ -145,7 +145,7 @@ export function createGameHud() {
   // mount, nunca mais têm o `src` tocado depois disso) empilhados atrás do retrato; "tocar o
   // flipbook" agora é só alternar QUAL já está visível (classe CSS), sem nenhuma rede/decode
   // envolvida no caminho crítico — instantâneo e confiável.
-  wingmanRadioPanel.innerHTML = `
+  const WINGMAN_RADIO_PANEL_MARKUP = `
     <div class="hud-wingman-radio-corner tl"></div>
     <div class="hud-wingman-radio-corner tr"></div>
     <div class="hud-wingman-radio-corner bl"></div>
@@ -159,9 +159,19 @@ export function createGameHud() {
       <div class="hud-wingman-radio-line"></div>
     </div>
   `
+  wingmanRadioPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
   root.appendChild(wingmanRadioPanel)
-  const wingmanRadioFrameEls = Array.from(wingmanRadioPanel.querySelectorAll('.wr-frame'))
-  const wingmanRadioPortraitEl = wingmanRadioPanel.querySelector('.wr-portrait')
+
+  // ============ PAINEL DE ABILITY (região superior) — Documento de Implementação, item 2 ============
+  // Mesma estrutura visual/timing do painel trivial acima, canal INDEPENDENTE (fila própria,
+  // nunca compete pelo cooldown do outro) — só muda a posição (top, via CSS) e a animação de
+  // entrada (mais dramática). Roteamento entre os dois: ver showWingmanRadio()/showWingmanRadioQueue()
+  // mais abaixo, que decidem a região pelo payload.isAbility (combat/wingmen.js → ABILITY_EVENT_IDS).
+  const wingmanAbilityPanel = document.createElement('div')
+  wingmanAbilityPanel.className = 'hud-wingman-ability-panel'
+  wingmanAbilityPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
+  root.appendChild(wingmanAbilityPanel)
+
   // Pré-carrega os 4 retratos assim que o HUD monta — o `.wr-portrait.src` ainda É reatribuído a
   // cada mensagem (só troca 1x por fala, sem pressão de tempo), mas com cache já quente o
   // load é efetivamente instantâneo em vez de competir com o resto da rede na primeira fala.
@@ -169,78 +179,122 @@ export function createGameHud() {
     const preload = new Image()
     preload.src = url
   }
-  // Não usa scheduleTimeout/pendingTimeouts (aquele Set é só pra setTimeout) porque tem 1
-  // setInterval no meio (flipbook de estática) — gerencia a própria lista pra limpar tudo de
-  // uma vez tanto ao reiniciar (nova fala chega enquanto a anterior ainda anima) quanto no
-  // unmount().
-  let wingmanRadioTimers = []
-  function clearWingmanRadioTimers() {
-    for (const t of wingmanRadioTimers) { if (t.type === 'interval') clearInterval(t.id); else clearTimeout(t.id) }
-    wingmanRadioTimers = []
-  }
-  // Fila de mensagens (ex.: rajada de "prontidão" do [D], 4 pilotos em sequência garantida) — ver
-  // showWingmanRadioQueue(). Um trigger avulso (showWingmanRadio) interrompe fila+animação atuais
-  // e toca na hora; a fila só é usada quando o chamador quer sequência garantida.
-  let wingmanRadioQueue = []
-  let wingmanRadioPlaying = false
 
-  function setWingmanRadioFrame(frameIdx) {
-    for (const el of wingmanRadioFrameEls) el.classList.toggle('visible', el.dataset.frame === String(frameIdx))
-    wingmanRadioPortraitEl.classList.remove('visible')
-  }
+  // Factory: cada região (trivial/inferior, ability/superior) tem seu próprio painel DOM, fila e
+  // timers — nasce da extração do código original (que só existia pro painel trivial) pra não
+  // duplicar ~60 linhas de gerência de timer/glitch quando o painel de ability foi adicionado.
+  function createWingmanRadioRegion(panelEl) {
+    const frameEls = Array.from(panelEl.querySelectorAll('.wr-frame'))
+    const portraitEl = panelEl.querySelector('.wr-portrait')
+    const nameEl = panelEl.querySelector('.hud-wingman-radio-name')
+    const lineEl = panelEl.querySelector('.hud-wingman-radio-line')
+    // Não usa scheduleTimeout/pendingTimeouts (aquele Set é só pra setTimeout) porque tem 1
+    // setInterval no meio (flipbook de estática) — gerencia a própria lista pra limpar tudo de
+    // uma vez tanto ao reiniciar (nova fala chega enquanto a anterior ainda anima) quanto no
+    // unmount().
+    let timers = []
+    let queue = []
+    let playing = false
+    let currentPilotId = null
 
-  function playWingmanRadioMessage({ pilotId, name, color, text }) {
-    wingmanRadioPlaying = true
-    clearWingmanRadioTimers()
-    wingmanRadioPanel.classList.remove('leaving')
-    wingmanRadioPanel.style.setProperty('--pc', color)
-    wingmanRadioPanel.style.setProperty('--pg', `${color}80`)
-    const nameEl = wingmanRadioPanel.querySelector('.hud-wingman-radio-name')
-    const lineEl = wingmanRadioPanel.querySelector('.hud-wingman-radio-line')
-    if (nameEl) nameEl.textContent = name
-    if (lineEl) lineEl.textContent = text
+    function clearTimers() {
+      for (const t of timers) { if (t.type === 'interval') clearInterval(t.id); else clearTimeout(t.id) }
+      timers = []
+    }
+    function setFrame(frameIdx) {
+      for (const el of frameEls) el.classList.toggle('visible', el.dataset.frame === String(frameIdx))
+      portraitEl.classList.remove('visible')
+    }
+    function play({ pilotId, name, color, text }) {
+      playing = true
+      currentPilotId = pilotId
+      clearTimers()
+      panelEl.classList.remove('leaving')
+      panelEl.style.setProperty('--pc', color)
+      panelEl.style.setProperty('--pg', `${color}80`)
+      if (nameEl) nameEl.textContent = name
+      if (lineEl) lineEl.textContent = text
 
-    // Painel "corta" pra dentro (glitch de steps) ao mesmo tempo em que o retrato passa pelos
-    // frames de estática — as duas animações rodam juntas, não uma depois da outra. Os frames já
-    // estão decodificados (pré-carregados no mount, `src` nunca reatribuído) — "tocar" é só
-    // alternar a classe `visible`, sem nenhum load no meio do caminho.
-    wingmanRadioPanel.classList.add('active', 'entering')
-    let frameIdx = 0
-    setWingmanRadioFrame(0)
-    const sprite = WINGMAN_RADIO_AVATARS[pilotId]
-    if (sprite) wingmanRadioPortraitEl.src = sprite
-    const staticIv = setInterval(() => {
-      frameIdx += 1
-      if (frameIdx >= WINGMAN_RADIO_STATIC_FRAMES.length) {
-        clearInterval(staticIv)
-        for (const el of wingmanRadioFrameEls) el.classList.remove('visible')
-        wingmanRadioPortraitEl.classList.add('visible')
-        return
-      }
-      setWingmanRadioFrame(frameIdx)
-    }, WINGMAN_RADIO_STATIC_FRAME_MS)
-    wingmanRadioTimers.push({ type: 'interval', id: staticIv })
-
-    const enterDoneId = setTimeout(() => {
-      wingmanRadioPanel.classList.remove('entering')
-    }, WINGMAN_RADIO_ENTER_MS)
-    wingmanRadioTimers.push({ type: 'timeout', id: enterDoneId })
-
-    const leaveStartId = setTimeout(() => {
-      wingmanRadioPanel.classList.add('leaving')
-      const removeId = setTimeout(() => {
-        wingmanRadioPanel.classList.remove('active', 'leaving')
-        wingmanRadioPlaying = false
-        // Fila (ex.: rajada de prontidão do foco) — encadeia a próxima fala automaticamente.
-        if (wingmanRadioQueue.length > 0) {
-          const next = wingmanRadioQueue.shift()
-          playWingmanRadioMessage(next)
+      // Painel "corta" pra dentro (glitch de steps) ao mesmo tempo em que o retrato passa pelos
+      // frames de estática — as duas animações rodam juntas, não uma depois da outra. Os frames já
+      // estão decodificados (pré-carregados no mount, `src` nunca reatribuído) — "tocar" é só
+      // alternar a classe `visible`, sem nenhum load no meio do caminho.
+      panelEl.classList.add('active', 'entering')
+      let frameIdx = 0
+      setFrame(0)
+      const sprite = WINGMAN_RADIO_AVATARS[pilotId]
+      if (sprite) portraitEl.src = sprite
+      const staticIv = setInterval(() => {
+        frameIdx += 1
+        if (frameIdx >= WINGMAN_RADIO_STATIC_FRAMES.length) {
+          clearInterval(staticIv)
+          for (const el of frameEls) el.classList.remove('visible')
+          portraitEl.classList.add('visible')
+          return
         }
+        setFrame(frameIdx)
+      }, WINGMAN_RADIO_STATIC_FRAME_MS)
+      timers.push({ type: 'interval', id: staticIv })
+
+      const enterDoneId = setTimeout(() => {
+        panelEl.classList.remove('entering')
+      }, WINGMAN_RADIO_ENTER_MS)
+      timers.push({ type: 'timeout', id: enterDoneId })
+
+      const leaveStartId = setTimeout(() => {
+        panelEl.classList.add('leaving')
+        const removeId = setTimeout(() => {
+          panelEl.classList.remove('active', 'leaving')
+          playing = false
+          currentPilotId = null
+          // Fila (ex.: rajada de prontidão do foco) — encadeia a próxima fala automaticamente.
+          if (queue.length > 0) {
+            const next = queue.shift()
+            play(next)
+          }
+        }, WINGMAN_RADIO_LEAVE_MS)
+        timers.push({ type: 'timeout', id: removeId })
+      }, WINGMAN_RADIO_HOLD_MS)
+      timers.push({ type: 'timeout', id: leaveStartId })
+    }
+    // Esconde na hora (fade-out rápido), sem encadear a fila — usado pela regra "não pode estar
+    // nas 2 regiões ao mesmo tempo pro mesmo piloto" (Documento de Implementação, item 2.1-2.3).
+    function forceHide() {
+      if (!playing) return
+      clearTimers()
+      panelEl.classList.remove('entering')
+      panelEl.classList.add('leaving')
+      const removeId = setTimeout(() => {
+        panelEl.classList.remove('active', 'leaving')
+        playing = false
+        currentPilotId = null
       }, WINGMAN_RADIO_LEAVE_MS)
-      wingmanRadioTimers.push({ type: 'timeout', id: removeId })
-    }, WINGMAN_RADIO_HOLD_MS)
-    wingmanRadioTimers.push({ type: 'timeout', id: leaveStartId })
+      timers.push({ type: 'timeout', id: removeId })
+    }
+    function show(payload) {
+      clearTimers()
+      queue = []
+      play(payload)
+    }
+    function showQueue(payloads) {
+      if (!payloads || payloads.length === 0) return
+      if (playing) { queue.push(...payloads); return }
+      const [first, ...rest] = payloads
+      queue = rest
+      play(first)
+    }
+    function unmount() {
+      clearTimers()
+      panelEl.classList.remove('active', 'entering', 'leaving')
+      playing = false
+      currentPilotId = null
+      queue = []
+    }
+    return { show, showQueue, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId }
   }
+
+  const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
+  const wingmanRadioRegionAbility = createWingmanRadioRegion(wingmanAbilityPanel)
 
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
   // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
@@ -2398,27 +2452,29 @@ export function createGameHud() {
     },
 
     // Overhaul de Personalidade (Ideia 3) — payload vem de combat/wingmen.js via
-    // wingman-radio.js: { pilotId, name, color, text }. color já chega como string CSS ('#rrggbb').
-    // Trigger avulso: interrompe qualquer fila/animação em andamento e toca na hora.
+    // wingman-radio.js: { pilotId, name, color, text, isAbility }. color já chega como string CSS
+    // ('#rrggbb'). Trigger avulso: interrompe qualquer fila/animação em andamento NA REGIÃO
+    // escolhida e toca na hora. Regra "não pode estar nas 2 regiões ao mesmo tempo pro MESMO
+    // piloto" (Documento de Implementação, item 2.1-2.3): se a região OPOSTA está tocando esse
+    // mesmo pilotId, esconde ela primeiro (fade-out rápido, sem encadear a fila dela).
     showWingmanRadio(payload) {
-      clearWingmanRadioTimers()
-      wingmanRadioQueue = []
-      playWingmanRadioMessage(payload)
+      const region = payload.isAbility ? wingmanRadioRegionAbility : wingmanRadioRegionTrivial
+      const otherRegion = payload.isAbility ? wingmanRadioRegionTrivial : wingmanRadioRegionAbility
+      if (otherRegion.currentPilotId() === payload.pilotId) otherRegion.forceHide()
+      region.show(payload)
     },
 
     // Fila garantida — ex.: rajada de "prontidão" do comando de foco, onde os até 4 pilotos
     // precisam falar em SEQUÊNCIA, sem se atropelar nem competir pelo cooldown do dispatcher (que
     // já foi ignorado lá na origem, ver wingman-radio.js → getLine()). Se já tem algo tocando,
-    // entra no fim da fila; senão começa na hora.
+    // entra no fim da fila; senão começa na hora. Hoje só carrega falas triviais (focus_ready) —
+    // ver combat/wingmen.js → toggleCommand() — então a fila sempre roda na região inferior.
     showWingmanRadioQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      if (wingmanRadioPlaying) {
-        wingmanRadioQueue.push(...payloads)
-        return
+      for (const p of payloads) {
+        if (wingmanRadioRegionAbility.currentPilotId() === p.pilotId) wingmanRadioRegionAbility.forceHide()
       }
-      const [first, ...rest] = payloads
-      wingmanRadioQueue = rest
-      playWingmanRadioMessage(first)
+      wingmanRadioRegionTrivial.showQueue(payloads)
     },
 
     updateSquadronNoticePosition(xFrac, yFrac) {
@@ -2516,10 +2572,8 @@ export function createGameHud() {
       cancelTimeout(stormWarningTimeout)
       stormWarningTimeout = null
       stormWarning.classList.remove('active')
-      clearWingmanRadioTimers()
-      wingmanRadioPanel.classList.remove('active', 'entering', 'leaving')
-      wingmanRadioQueue = []
-      wingmanRadioPlaying = false
+      wingmanRadioRegionTrivial.unmount()
+      wingmanRadioRegionAbility.unmount()
       cancelTimeout(launchBannerHideTimeout)
       launchBannerHideTimeout = null
       for (const id of pendingTimeouts) clearTimeout(id)

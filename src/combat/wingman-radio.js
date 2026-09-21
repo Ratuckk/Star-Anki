@@ -7,7 +7,28 @@
 //
 // Falas em inglês, catchphrases curtas no espírito de Star Fox 64 (pedido do usuário) — o jogo
 // inteiro é em português, isso é homenagem direta à série, não inconsistência de idioma.
-const GLOBAL_COOLDOWN_MS = 6000
+
+// ============ ORIGEM DO EVENTO — ABILITY vs. TRIVIAL (Docs/# Documento de Implementação) ============
+// Todo eventId cai numa de duas categorias, que decidem em qual região do HUD a fala aparece
+// (hud-game.js: painel superior = ability, inferior = trivial — nunca as duas ao mesmo tempo pro
+// MESMO piloto). Um eventId de ability NUNCA dispara no painel trivial e vice-versa — garantido
+// por construção (quem chama já sabe qual eventId está disparando, não há ambiguidade em runtime).
+// Os 4 primeiros (ram/guard/repair/assist) já existem hoje; os demais pertencem a cartas ainda não
+// implementadas (Falco Intercept, Peppy Rescue/Auxílio, Slippy Morale/Impulsão, Miyu Boombuster,
+// foco com carta de upgrade) — cadastrados aqui de antemão pra já nascerem classificados certo
+// quando cada fase de personagem os disparar pela primeira vez.
+export const ABILITY_EVENT_IDS = new Set([
+  'ability_ram', 'ability_intercept',
+  'ability_guard', 'ability_rescue', 'ability_aux_shield',
+  'ability_repair', 'ability_morale', 'ability_boost_dash',
+  'ability_assist', 'ability_boombuster', 'ability_focus_upgrade',
+])
+
+// ============ COOLDOWN GLOBAL DO DISPATCHER ============
+// Tempo mínimo entre DUAS falas quaisquer (global, não por piloto). Aleatório a cada disparo —
+// evita cadência robótica. Antes era fixo em 6s; agora mínimo 6s, máximo 20s.
+export const GLOBAL_COOLDOWN_MIN_MS = 6000
+export const GLOBAL_COOLDOWN_MAX_MS = 20000
 
 // Estrutura: { [pilotId]: { [eventId]: [strings] } } — pilotId bate com WINGMAN_PROFILES[i].id
 // (0 Falco, 1 Peppy, 2 Slippy, 3 Miyu — ver combat/wingmen.js).
@@ -87,14 +108,17 @@ const LINES = {
 }
 
 export function createWingmanRadio() {
-  let lastSpokenAt = -Infinity
+  // Guarda o PRÓXIMO instante liberado (não o último em que alguém falou) — cada fala sorteia um
+  // novo intervalo entre GLOBAL_COOLDOWN_MIN_MS e GLOBAL_COOLDOWN_MAX_MS, evitando cadência
+  // robótica de cooldown fixo.
+  let nextAllowedAt = -Infinity
   let hasSaidAlone = false
 
   function pick(pilotId, eventId, now) {
-    if (now - lastSpokenAt < GLOBAL_COOLDOWN_MS) return null
+    if (now < nextAllowedAt) return null
     const pool = LINES[pilotId]?.[eventId]
     if (!pool || pool.length === 0) return null
-    lastSpokenAt = now
+    nextAllowedAt = now + GLOBAL_COOLDOWN_MIN_MS + Math.random() * (GLOBAL_COOLDOWN_MAX_MS - GLOBAL_COOLDOWN_MIN_MS)
     return pool[Math.floor(Math.random() * pool.length)]
   }
 
@@ -121,7 +145,7 @@ export function createWingmanRadio() {
       return pool[Math.floor(Math.random() * pool.length)]
     },
     reset() {
-      lastSpokenAt = -Infinity
+      nextAllowedAt = -Infinity
       hasSaidAlone = false
     },
   }

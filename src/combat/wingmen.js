@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createWingmanTelemetry } from './wingman-telemetry.js'
-import { createWingmanRadio } from './wingman-radio.js'
+import { createWingmanRadio, ABILITY_EVENT_IDS } from './wingman-radio.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import { HORDA_KIND } from '../enemies/horda.js'
 import { FRAGATA_KIND } from '../enemies/fragata.js'
@@ -436,14 +436,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // game-loop.js, ou dismiss de piloto que esvazia o esquadrão) ficam aqui até o próximo update()
   // pegar e devolver no wingmanResult — 1 frame de atraso, imperceptível pra um popup de texto.
   let pendingRadioMessage = null
-  function buildRadioPayload(profile, text) {
-    return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text }
+  // isAbility decide em qual região do HUD a fala aparece (hud-game.js: painel superior/ability
+  // vs. inferior/trivial) — classificado por eventId via ABILITY_EVENT_IDS, nunca por engano.
+  function buildRadioPayload(profile, text, eventId) {
+    return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text, isAbility: ABILITY_EVENT_IDS.has(eventId) }
   }
   // Chama o dispatcher pra um evento de um piloto específico; devolve o payload pro HUD ou null
   // (cooldown global ainda ativo, ou esse par piloto+evento não tem fala cadastrada).
   function speak(profile, eventId) {
     const text = wingmanRadio.trySpeak(profile.id, eventId)
-    return text ? buildRadioPayload(profile, text) : null
+    return text ? buildRadioPayload(profile, text, eventId) : null
   }
   // Rádio: qual evento de "engajei" falar depende do tipo de inimigo — chefe/dourado e alguns
   // inimigos com identidade mais forte (Horda, Fragata) têm fala própria; o resto cai no genérico
@@ -626,7 +628,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // vazio — só 1x por partida (ver wingman-radio.js → trySpeakAlone).
     if (activeWingmen.length === 0) {
       const text = wingmanRadio.trySpeakAlone(w.profile.id)
-      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text)
+      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'alone')
     }
   }
 
@@ -722,11 +724,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // como os outros eventos, e não passa pelo cooldown global do dispatcher — usa getLine(),
       // que é um lookup puro). Só quem realmente recebeu a ordem fala (abilityActive continua de
       // fora, ver comentário acima).
+      // Regra 2.4 do Documento de Implementação (focus quote: trivial vs. ability, via
+      // FOCUS_ABILITY_CARDS) fica pendente até as cartas Slippy Morale/Peppy Auxílio existirem —
+      // até lá todo mundo fala 'focus_ready' (trivial), comportamento atual preservado.
       const readyQueue = []
       for (const w of activeWingmen) {
         if (w.abilityActive) continue
         const text = wingmanRadio.getLine(w.profile.id, 'focus_ready')
-        if (text) readyQueue.push(buildRadioPayload(w.profile, text))
+        if (text) readyQueue.push(buildRadioPayload(w.profile, text, 'focus_ready'))
       }
       if (readyQueue.length > 0) pendingRadioQueue = readyQueue
 

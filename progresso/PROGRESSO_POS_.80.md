@@ -999,3 +999,64 @@ verificação 1-voto em cada candidato antes de reportar. 10 achados, todos corr
 continuam conectando (4-6 frames), R1 sem alvo travado continua com trajetória perfeitamente reta
 (10 frames de delta idêntico), zero erros de console, e o caso de ressonância do achado #1
 (antes expirava sem nunca acertar) agora conecta no frame 2.
+
+---
+
+### v0.95.0 — Rádio dos Aliados Fase 1 (sistema base do `Docs/# Documento de Implementação — Nova.md`)
+
+Início da implementação do documento novo (rádio pra todos os 4 pilotos → depois cartas por
+personagem, Falco → Peppy → Slippy → Miyu). Usuário escolheu começar pela Fase 1 (infra do rádio,
+itens 1+2 do doc) e mandar o TEXTO das ~54 falas triviais novas depois — o doc define a estrutura
+(30 falas/piloto, 5 por ability) mas não trazia o conteúdo das falas, então **as falas em si não
+foram tocadas nesta entrega** (as ~24-25 atuais por piloto continuam, já expandidas de uma entrega
+anterior — ver "Rádio dos Aliados — correção de bug + expansão de conteúdo" acima; o "~66 atuais"
+citado no doc novo já estava desatualizado antes mesmo de começar).
+
+- **`combat/wingman-radio.js`**: `ABILITY_EVENT_IDS` (Set exportado) classifica todo eventId como
+  ability ou trivial — os 4 que já existem hoje (`ability_ram/guard/repair/assist`) mais 7 que só
+  vão nascer nas fases de cartas por personagem (`ability_intercept/rescue/aux_shield/morale/
+  boost_dash/boombuster/focus_upgrade`), cadastrados de antemão pra já nascerem classificados
+  certo. Cooldown global virou aleatório: `nextAllowedAt` (renomeado de `lastSpokenAt`, que na
+  prática já guardava o PRÓXIMO instante liberado) sorteia entre `GLOBAL_COOLDOWN_MIN_MS` (6000,
+  igual antes) e `GLOBAL_COOLDOWN_MAX_MS` (20000, novo).
+- **`combat/wingmen.js`**: `buildRadioPayload(profile, text, eventId)` ganhou `isAbility:
+  ABILITY_EVENT_IDS.has(eventId)` no payload — os 3 call sites (`speak()`, `dismissWingman` via
+  `trySpeakAlone`, rajada de prontidão do `toggleCommand()`) passam o eventId agora. A regra 2.4
+  do doc (foco: ability quote se o piloto tem carta de upgrade e ela não está em cooldown) fica
+  **pendente** até `FOCUS_ABILITY_CARDS`/as cartas Slippy Morale e Peppy Auxílio existirem —
+  comentado no código, `focus_ready` continua sempre trivial por ora (comportamento preservado).
+- **`hud-game.js`**: painel de rádio virou uma FACTORY (`createWingmanRadioRegion(panelEl)`)
+  reaproveitada 2x — `wingmanRadioRegionTrivial` (painel original, inferior) e
+  `wingmanRadioRegionAbility` (novo `.hud-wingman-ability-panel`, superior, `top: 18%`), cada uma
+  com fila/timers/estado próprios (extraído do código original, que só existia pro painel
+  inferior — evita duplicar ~60 linhas de gerência de timer/flipbook de estática). Roteamento em
+  `showWingmanRadio()`: escolhe a região por `payload.isAbility`; regra "não pode estar nas 2
+  regiões ao mesmo tempo pro MESMO piloto" (item 2.1-2.3 do doc) via `forceHide()` na região
+  oposta quando ela já mostra esse `pilotId`. `showWingmanRadioQueue()` (rajada de prontidão) só
+  carrega falas triviais hoje, então sempre roda na região inferior — mas ainda checa/esconde a
+  região de ability se ela estiver com o mesmo piloto, pela mesma regra.
+- **`hud-styles.js`**: `.hud-wingman-ability-panel` — mesma estrutura interna reaproveitada sem
+  redefinição (`.hud-wingman-radio-corner/-avatar/-name/-line` não são escopadas ao painel pai),
+  só a caixa raiz muda: `top: 18%` em vez de `bottom`, borda/glow mais saturados, e uma entrada em
+  fatias verticais (`hud-wingman-ability-glitch-in`, steps a partir da esquerda) mais dramática
+  que a entrada do painel trivial, pra diferenciar "fala de habilidade" de "papo" à primeira vista.
+- **`selftest.mjs`**: teste do cooldown global atualizado pro range aleatório (usa
+  `GLOBAL_COOLDOWN_MAX_MS` como pior caso, exportado só pra teste); teste novo confirmando a
+  classificação de `ABILITY_EVENT_IDS` (`ability_ram`/`ability_guard` dentro, `kill`/`focus_ready`
+  fora).
+
+**Validado**: `node src/selftest.mjs` passa. Ao vivo (`preview_start` + Esquadrão completo, `state.
+phase` forçado via `window.__starAnki`): os dois painéis existem no DOM com os 7 frames de estática
+cada; setei manualmente o painel de ability (Falco, "Ramming speed!") e confirmei visualmente a
+posição superior/cor saturada/estrutura corretas; **o painel inferior foi sobrescrito por um evento
+REAL de gameplay** (Miyu, `engage_horda`, "Multiple contacts, staying sharp.") durante o teste,
+substituindo o texto que eu tinha setado manualmente — confirma o pipeline de dispatch real (não só
+o CSS) funcionando ponta a ponta pro canal trivial. Não consegui forçar um evento de ability real
+(`ability_ram`/`ability_guard`) via console nesta sessão (dependem de FSM interna do wingman não
+exposta em `window.__starAnki`) — o roteamento pro painel superior fica confirmado por leitura de
+código + teste manual de CSS/estrutura, não por um disparo de ability orgânico ao vivo; vale
+confirmar num playtest real com o usuário quando alguma habilidade ativar.
+
+**Falta pra fechar o doc**: texto das falas novas (usuário vai mandar), regra 2.4 completa (depende
+das cartas de foco), e os itens 3 (12 cartas por personagem, uma por uma) + faíscas brancas mais
+espalhadas (item final, independente).
