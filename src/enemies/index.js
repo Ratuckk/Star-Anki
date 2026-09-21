@@ -1644,6 +1644,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut),
     getGoldenAlive: () => golden.getAlive(),
+    // Contrato de rota para aliados: apenas obstáculos inertes entram aqui. Não é uma lista de
+    // combate nem altera colisão/dano; classes futuras que bloqueiem navegação devem ser incluídas
+    // explicitamente com seu raio real, sem expor inimigos móveis por engano.
+    getAvoidanceObstacles: () => enemies
+      .filter((e) => e.kind === DETRITO_KIND && !e.dying && !e.fadingOut && e.mesh)
+      .map((e) => ({ id: e.id, kind: e.kind, mesh: e.mesh, radius: hitRadiusFor(e), driftVel: e.driftVel || null })),
     // raio "de trava" pro lock-on/HUD (QoL #2) — golden já expõe `.radius` próprio, o resto usa
     // o mesmo hitRadius da colisão (hitRadiusFor), incluindo o chefe (que não tinha radius
     // próprio e caía no fallback hardcoded de lockon.js antes desta função existir)

@@ -171,6 +171,9 @@ const _wlStep = new THREE.Vector3()
 const _wmNoseToPlayer = new THREE.Vector3()
 const _wmInvQuat = new THREE.Quaternion()
 const _wmAttackLane = new THREE.Vector3()
+const _wmObstacleRelative = new THREE.Vector3()
+const _wmObstacleRelativeVelocity = new THREE.Vector3()
+const _wmObstacleClosestPoint = new THREE.Vector3()
 
 // Taxa de giro (rad/s, usada por quaternion.rotateTowards) e velocidade/aceleração de cruzeiro
 // agora vêm de `profile.flightProfile` (Overhaul de Personalidade, Ideia 1) — cada piloto tem o
@@ -248,6 +251,15 @@ const WINGMAN_RETREAT_DURATION_S = 5
 const WINGMAN_REPAIR_RADIUS_BASE = 15
 const WINGMAN_REPAIR_RADIUS_PER_STACK = 8
 const WINGMAN_CRITICAL_COLOR = new THREE.Color(0xff263d)
+
+// ============ DESVIO DE OBSTÁCULOS — OPÇÃO 1 ============
+// Aliados prevêem o ponto de maior aproximação contra detritos e aplicam só um vetor lateral
+// temporário. Não há teleporte, troca de state nem dano por colisão: é uma rota segura que
+// preserva dogfight, escolta e formação. O lado fica travado por obstáculo para não oscilar.
+const WINGMAN_OBSTACLE_LOOKAHEAD_S = 1.1
+const WINGMAN_OBSTACLE_CLEARANCE = 3.2
+const WINGMAN_OBSTACLE_AVOID_SPEED = 28
+const WINGMAN_OBSTACLE_RADIUS = 1.25
 
 const GUARD_ESCORT_S = 4.0
 const GUARD_TRIGGER_RANGE = 9
@@ -761,6 +773,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       shieldRegenDelay: 0,
       retreatEffectTimer: 0,
       collisionBumpCooldown: 0,
+      obstacleAvoidanceId: null,
+      obstacleAvoidanceSide: 0,
       chainCount: 0,
       escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
       auxShieldVisual,
@@ -901,6 +915,65 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       for (const g of enemies.getGoldenAlive()) if (!g.dying && g.mesh) alive.push(g)
     }
     return alive
+  }
+
+  // Contrato de leitura para obstáculos atuais e futuros: o sistema de inimigos expõe apenas
+  // objetos inertes que devem ser contornados. Hoje são os detritos; uma classe futura entra na
+  // mesma lista sem precisar alterar a física dos aliados.
+  function steerAroundObstacle(wingman, desiredVelocity, frame) {
+    const obstacles = enemies?.getAvoidanceObstacles?.() || []
+    let chosen = null
+    let chosenTime = Infinity
+
+    for (const obstacle of obstacles) {
+      const position = obstacle.mesh?.position
+      if (!position) continue
+      _wmObstacleRelative.copy(position).sub(wingman.mesh.position)
+      _wmObstacleRelativeVelocity.copy(desiredVelocity)
+      if (obstacle.driftVel) _wmObstacleRelativeVelocity.sub(obstacle.driftVel)
+      const relativeSpeedSq = _wmObstacleRelativeVelocity.lengthSq()
+      if (relativeSpeedSq < 0.01) continue
+
+      const closestTime = THREE.MathUtils.clamp(
+        -_wmObstacleRelative.dot(_wmObstacleRelativeVelocity) / relativeSpeedSq,
+        0,
+        WINGMAN_OBSTACLE_LOOKAHEAD_S,
+      )
+      _wmObstacleClosestPoint.copy(_wmObstacleRelative).addScaledVector(_wmObstacleRelativeVelocity, closestTime)
+      const safeRadius = (obstacle.radius || 0) + WINGMAN_OBSTACLE_RADIUS + WINGMAN_OBSTACLE_CLEARANCE
+      if (_wmObstacleClosestPoint.lengthSq() > safeRadius * safeRadius || closestTime >= chosenTime) continue
+      chosen = obstacle
+      chosenTime = closestTime
+    }
+
+    if (!chosen) {
+      wingman.obstacleAvoidanceId = null
+      wingman.obstacleAvoidanceSide = 0
+      return false
+    }
+
+    if (wingman.obstacleAvoidanceId !== chosen.id) {
+      _wmObstacleRelative.copy(chosen.mesh.position).sub(wingman.mesh.position)
+      const lateralOffset = _wmObstacleRelative.dot(frame.right)
+      // Se o obstáculo estiver exatamente no centro, a paridade dá uma decisão determinística;
+      // assim dois aliados não escolhem sempre a mesma curva por acaso.
+      wingman.obstacleAvoidanceSide = lateralOffset === 0
+        ? ((wingman.profile.id + chosen.id) % 2 === 0 ? -1 : 1)
+        : -Math.sign(lateralOffset)
+      wingman.obstacleAvoidanceId = chosen.id
+      aiValidator.expect(
+        'Desvio de obstáculo sempre escolhe uma lateral válida e finita',
+        () => Number.isFinite(wingman.obstacleAvoidanceSide) && Math.abs(wingman.obstacleAvoidanceSide) === 1,
+        { pilotId: wingman.profile.id, obstacleId: chosen.id, side: wingman.obstacleAvoidanceSide },
+      )
+      aiValidator.logMechanic('wingman-obstacle-avoidance', 'curva-preditiva-iniciada', {
+        pilotId: wingman.profile.id, obstacleId: chosen.id, kind: chosen.kind, closestTime: chosenTime,
+      })
+    }
+
+    const urgency = 1 - chosenTime / WINGMAN_OBSTACLE_LOOKAHEAD_S
+    desiredVelocity.addScaledVector(frame.right, wingman.obstacleAvoidanceSide * WINGMAN_OBSTACLE_AVOID_SPEED * (0.45 + urgency * 0.55))
+    return true
   }
 
   // Compartilhado pelo fim natural (duração de 6s esgotada, ver update()) e pelo cancelamento
@@ -1761,6 +1834,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       else if (w.state === 'escort') cruiseSpeed *= 1.25
 
       _wmDesiredVelocity.copy(_wmAimDir).multiplyScalar(cruiseSpeed)
+
+      // Opção 1 escolhida pelo usuário: o steering evasivo é aditivo e não muda a intenção
+      // principal do piloto. Portanto ele continua podendo escoltar, atacar ou regressar enquanto
+      // contorna o detrito, e retoma sua vaga naturalmente ao sair da janela de risco. Investida
+      // e Rescue preservam sua trajetória comprometida para não falharem no alvo por um desvio.
+      if (w.state !== 'ram' && w.state !== 'rescue') steerAroundObstacle(w, _wmDesiredVelocity, frame)
 
       // Repulsão suave e amortecida (nunca explosiva)
       for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {

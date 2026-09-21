@@ -29,12 +29,35 @@ sem prioridade definida — ficam só de referência:
 
 Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
-- [x] Documento concluído: o item final das faíscas foi entregue na v0.99.7. O item 0 (visuais
-  da Miyu) foi fechado na v0.98.0 e o Boombuster foi entregue na v0.99.5.
+- [ ] Auditoria posterior (v0.99.10) reabriu itens do documento: Impulsão Conjunta ainda não
+  protege o jogador, o bônus de aríete dela não é somado, e o fallback distante do Boombuster não
+  é aleatório. Também aguardam protótipos e escolha do usuário: indicador do Intercept, mira com
+  escala projetada real e triângulo da Miyu redesenhado.
 
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.10 — Curva preditiva dos aliados contra detritos
+
+Implementada a **Opção 1** escolhida pelo usuário para navegação de obstáculos:
+
+- Detritos agora expõem um contrato de rota exclusivo (`id`, posição, raio e deriva), separado de
+  alvo de combate e de colisão/dano. Um obstáculo futuro só entra nesse contrato se for declarado
+  explicitamente, evitando que inimigos móveis passem a repelir aliados acidentalmente.
+- Cada aliado antecipa o ponto de maior aproximação por até 1,1s e acrescenta uma curva lateral
+  suave à rota que já tinha. O lado da curva é estável enquanto aquele detrito for a ameaça, então
+  não há ping-pong visual entre esquerda e direita; ao sair da zona de risco, a formação retoma a
+  vaga normal sozinha.
+- Dogfight, escolta e retorno à formação continuam ativos durante o contorno. Investida de Falco e
+  Rescue de Peppy preservam sua trajetória comprometida, para a evasão não fazer uma habilidade
+  perder o alvo. Detritos continuam sem causar dano aos aliados, conforme a decisão de balanceamento.
+- `aiValidator` registra o começo de cada curva e valida que a lateral escolhida é sempre `-1` ou
+  `+1`, permitindo conferir o comportamento emergente no log real de playtest.
+
+**Validado**: sintaxe dos dois módulos, `node src/selftest.mjs` e `git diff --check` passaram.
+**Pendente de playtest**: spawnar 2–3 aliados e detritos comuns/em deriva; depois copiar o log de
+Validação IA para confirmar ausência de falhas e calibrar a distância da curva.
 
 ### v0.99.9 — Rádio separado abaixo das cartas + speedlines de habilidade
 
@@ -71,9 +94,8 @@ Correção dos sintomas reportados em playtest (aliados muito longe e vários oc
 - Nova expectativa do `aiValidator` registra se algum aliado sair de `regroup` sem ter alcançado
   a própria vaga.
 
-**Pendente de escolha visual**: `Docs/prototipo-radio-posicionamento.html` traz três composições
-para mover os quotes abaixo da bandeja de cartas e permitir múltiplas transmissões legíveis. O
-painel real não foi alterado até o usuário escolher uma opção.
+**Resolvido na v0.99.9**: a Opção 3 de posicionamento foi escolhida e integrada; esta anotação
+fica preservada apenas como contexto histórico da escolha.
 
 ---
 
