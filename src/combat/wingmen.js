@@ -182,14 +182,14 @@ const _wmObstacleClosestPoint = new THREE.Vector3()
 const WINGMAN_LASER_SPEED = 125
 const WINGMAN_LASER_LIFETIME = 1.8
 const WINGMAN_LASER_DAMAGE = 1
-// ============ MIYU — COR DO DISPARO EXTRA ============
-// Só o disparo adicional da Carga Compartilhada usa magenta. O laser de combate normal dela
-// permanece rosa, distinguindo visualmente o bônus sem trocar a identidade da piloto.
-const MIYU_ASSIST_SHOT_COLOR = 0xd500f9
+// ============ MIYU — COR DOS DISPAROS CARREGADOS ============
+// Carga Compartilhada e Boombuster usam roxo no projétil, nas argolas e no rastro. O laser
+// normal de combate da Miyu permanece rosa, preservando a identidade visual da piloto.
+const MIYU_CHARGED_SHOT_COLOR = 0x9b5de5
 // ============ MIYU — BOOMBUSTER ============
-// Orbes magenta homing: 3 de dano (definido pelo usuário), até 1 + stacks alvos. Cooldown
+// Orbes roxos homing: 3 de dano (definido pelo usuário), até 1 + stacks alvos. Cooldown
 // sugerido pelo documento (10→4s) e raio de 90u escolhido para cobrir o combate normal.
-const MIYU_BOOMBUSTER_COLOR = 0xd500f9
+const MIYU_BOOMBUSTER_COLOR = MIYU_CHARGED_SHOT_COLOR
 const MIYU_BOOMBUSTER_DAMAGE = 3
 const MIYU_BOOMBUSTER_BASE_COOLDOWN_S = 10
 const MIYU_BOOMBUSTER_COOLDOWN_PER_STACK_S = 2
@@ -1109,10 +1109,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       owner: wingman, // usado pelo proc do Reparo de Campo (Slippy) na resolução de acerto
       homingTarget: opts.homingTarget || null,
       homingTurnRate: opts.homingTurnRate || 0,
+      chargedVisual: !!opts.chargedVisual,
+      chargedTrailTimer: 0,
     })
 
     if (effects && effects.muzzleFlash) {
       effects.muzzleFlash(origin, direction)
+    }
+    if (opts.chargedVisual && effects) {
+      effects.maxChargeRings?.(origin, direction, opts.color)
+      effects.projectileTrail?.(origin, mesh.quaternion, opts.color)
     }
 
     telemetry.recordEvent(wingman.profile.name, 'combat', `Disparou laser de suporte/ataque (dano ${WINGMAN_LASER_DAMAGE})`, {
@@ -1122,7 +1128,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     })
   }
 
-  // Carga Compartilhada: para cada lock QUE EXCEDE o teto base, Miyu solta um laser magenta
+  // Carga Compartilhada: para cada lock QUE EXCEDE o teto base, Miyu solta um laser roxo
   // independente. Os tiros do jogador continuam sendo resolvidos pelo sistema de homing usual;
   // estes são lasers de ala normais, visíveis e com dano próprio, em vez de um bônus invisível.
   function fireMiyuAssistShots(lockedTargets, baseMaxTargets) {
@@ -1135,7 +1141,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (_wmToEnemy.lengthSq() < 0.001) continue
       _wmToEnemy.normalize()
       const muzzle = _wmLaserMuzzle.copy(miyu.mesh.position).addScaledVector(_wmToEnemy, 1.3)
-      fireWingmanLaser(miyu, muzzle, _wmToEnemy, { color: MIYU_ASSIST_SHOT_COLOR })
+      fireWingmanLaser(miyu, muzzle, _wmToEnemy, { color: MIYU_CHARGED_SHOT_COLOR, chargedVisual: true })
       shots += 1
     }
     aiValidator.expect(
@@ -1143,7 +1149,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       () => shots <= Math.max(0, lockedTargets.length - baseMaxTargets),
       { shots, locks: lockedTargets.length, baseMaxTargets },
     )
-    if (shots > 0) aiValidator.logMechanic('miyu-assist-shot', 'disparos-magenta', { shots, baseMaxTargets })
+    if (shots > 0) aiValidator.logMechanic('miyu-assist-shot', 'disparos-roxos', { shots, baseMaxTargets })
     return shots
   }
 
@@ -1159,7 +1165,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       const muzzle = _wmLaserMuzzle.copy(miyu.mesh.position).addScaledVector(_wmToEnemy, 1.3)
       fireWingmanLaser(miyu, muzzle, _wmToEnemy, {
         color: MIYU_BOOMBUSTER_COLOR, damage: MIYU_BOOMBUSTER_DAMAGE, homingTarget: target,
-        homingTurnRate: MIYU_BOOMBUSTER_TURN_RATE, lifetime: MIYU_BOOMBUSTER_LIFETIME_S,
+        homingTurnRate: MIYU_BOOMBUSTER_TURN_RATE, lifetime: MIYU_BOOMBUSTER_LIFETIME_S, chargedVisual: true,
       })
     }
     miyu.boombusterCooldown = cooldown
@@ -1962,6 +1968,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       _wlStep.copy(laser.velocity).multiplyScalar(dt)
       laser.mesh.position.add(_wlStep)
       laser.traveled += _wlStep.length()
+      if (laser.chargedVisual) {
+        laser.chargedTrailTimer -= dt
+        if (laser.chargedTrailTimer <= 0) {
+          effects?.projectileTrail?.(laser.mesh.position, laser.mesh.quaternion, laser.color)
+          laser.chargedTrailTimer = 0.075
+        }
+      }
 
       // Checa colisão com inimigos
       if (enemies && enemies.resolveProjectileHit) {
@@ -1973,6 +1986,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (hit) {
           if (effects && effects.hitSpark) {
             effects.hitSpark(laser.mesh.position, laser.color)
+          }
+          if (laser.chargedVisual && effects) {
+            effects.maxChargeRings?.(laser.mesh.position, laser.velocity, laser.color)
           }
           if (hit.killed) {
             enemyKills++

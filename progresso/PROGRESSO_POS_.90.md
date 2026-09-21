@@ -31,12 +31,32 @@ Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 - [ ] Auditoria posterior (v0.99.10) reabriu itens do documento: Impulsão Conjunta ainda não
   protege o jogador, o bônus de aríete dela não é somado, e o fallback distante do Boombuster não
-  é aleatório. Também aguardam protótipos e escolha do usuário: indicador do Intercept, mira com
-  escala projetada real e triângulo da Miyu redesenhado.
+  é aleatório. O indicador do Intercept foi concluído na v0.99.11; a mira com escala projetada
+  real e o triângulo da Miyu, na v0.99.12.
 
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.12 — Locks projetados e disparos carregados roxos da Miyu
+
+Escolha do usuário: **Opção 1** do protótipo de lock-on — composição limpa, três frames de
+convergência e triângulo ciano para os locks extras da Miyu.
+
+- O tamanho-base do marcador agora é calculado com o `hit radius`, distância e FOV reais da
+  câmera. Assim, o terceiro frame coincide com o tamanho projetado do inimigo em tela, em vez de
+  depender de uma faixa estática em pixels; os dois primeiros ficam em 1,9× e 1,4× para manter a
+  leitura da convergência.
+- O lock adicional da Miyu deixou de ser um quadrado cortado por `clip-path`: agora é um contorno
+  triangular de três arestas, cujo retângulo envolvente tem exatamente o tamanho do inimigo.
+- Carga Compartilhada e Boombuster passaram a usar o mesmo roxo (`#9b5de5`) no projétil, nas duas
+  argolas de saída, no rastro ao longo do voo e nas argolas do impacto. O laser normal da Miyu
+  permanece rosa. Esta aplicação também cobre o Boombuster por ele ser seu disparo carregado
+  teleguiado.
+
+**Validado**: sintaxe de todos os módulos alterados e `node src/selftest.mjs` passaram. **Pendente
+de playtest visual**: confirmar a leitura em alvos muito próximos/grandes e observar a densidade
+dos rastros roxos numa salva com 3 stacks.
 
 ### v0.99.11 — Intercept do Falco com confirmação visual forte
 
@@ -133,12 +153,12 @@ Tooltip do Boombuster corrigido para dizer explicitamente `1 + stacks` alvos, ig
 
 ### v0.99.5 — Etapa 5: Miyu (Assist, Boombuster e Status)
 
-- Auditoria confirmou os visuais já existentes: locks extras da Miyu são triângulos ciano, a
-  camada externa do glow cresce 25% durante Assist e seus tiros extras já são magenta.
+- Auditoria confirmou que a camada externa do glow cresce 25% durante Assist. Os locks e tiros
+  carregados foram corrigidos depois na v0.99.12 (triângulo real ciano e efeitos roxos).
 - **Assist +1 Alvo (0/3)**: acrescenta um lock extra por stack enquanto Carga Compartilhada está
   ativa, sempre respeitando o teto global de oito.
 - **Boombuster (0/3)**: após a escolha do usuário pela **Opção 2 — Orbes de rastreio**, Miyu
-  dispara simultaneamente orbes homing magenta. Cada um causa 3 de dano; seleciona até
+  dispara simultaneamente orbes homing roxos. Cada um causa 3 de dano; seleciona até
   `1 + stacks` alvos, priorizando os mais próximos do jogador dentro de 90u e recorrendo a alvos
   vivos fora do raio quando necessário. Cooldown configurável: 10/8/6/4s. O sub-ícone 🟣 tem
   cooldown próprio no HUD.

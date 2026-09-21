@@ -61,6 +61,8 @@ const _toThreat = new THREE.Vector3()
 const _reticleWorldPos = new THREE.Vector3()
 const _fireDirection = new THREE.Vector3()
 const _minimapRel = new THREE.Vector3()
+const _lockCameraForward = new THREE.Vector3()
+const _lockToTarget = new THREE.Vector3()
 
 export function createGameLoop(deps) {
   const {
@@ -292,13 +294,19 @@ export function createGameLoop(deps) {
         effects.setChargeGlow(true, chargeFrac, nosePos, _fireDirection, { miyuAssistActive: assistMult > 1 })
 
         combat.sweepLockOn(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), player.config.homingMaxTargets)
+        // O HUD trabalha em pixels CSS: projeta o diâmetro real do hit radius no plano da
+        // câmera, em vez de reduzir todo inimigo a uma faixa fixa de tamanhos.
+        camera.getWorldDirection(_lockCameraForward)
         const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
+          const depth = Math.max(0.001, _lockToTarget.copy(s.worldPos).sub(camera.position).dot(_lockCameraForward))
+          const projectedSizePx = (s.sizeHint * window.innerHeight) /
+            (Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * depth)
           const ndcL = s.worldPos.project(camera)
           return {
             id: s.id,
             xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
             yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
-            sizeHint: s.sizeHint,
+            projectedSizePx: Math.max(2, projectedSizePx),
             source: s.source,
           }
         })

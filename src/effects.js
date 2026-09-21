@@ -731,11 +731,11 @@ export function createEffectsSystem(scene, opts = {}) {
     hitSpark(cuePos, 0xffffff)
   }
 
-  function machSpeedRing(position, direction) {
+  function machSpeedRing(position, direction, colorHex = 0x38bdf8) {
     _tmpNorm.copy(direction).normalize()
     _tmpQuat.setFromUnitVectors(_FORWARD_AXIS, _tmpNorm)
     const material = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8, transparent: true, opacity: 0.88,
+      color: colorHex, transparent: true, opacity: 0.88,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(sharedTorusGeometry, material)
@@ -746,10 +746,10 @@ export function createEffectsSystem(scene, opts = {}) {
     maxChargeRingsList.push({ mesh, life: 0, duration: 0.28, baseScale: 0.7, maxScale: 2.2 })
   }
 
-  function maxChargeRings(position, direction) {
+  function maxChargeRings(position, direction, colorHex = 0x38bdf8) {
     const normDir = direction.clone().normalize()
-    machSpeedRing(position.clone().addScaledVector(normDir, 1.2), normDir)
-    machSpeedRing(position.clone().addScaledVector(normDir, 2.6), normDir)
+    machSpeedRing(position.clone().addScaledVector(normDir, 1.2), normDir, colorHex)
+    machSpeedRing(position.clone().addScaledVector(normDir, 2.6), normDir, colorHex)
   }
 
   function spinWind(position, forward, spinDirection = 1) {
@@ -1039,11 +1039,11 @@ export function createEffectsSystem(scene, opts = {}) {
     entry.untilMs = performance.now() + durationSec * 1000
   }
 
-  function projectileTrail(position, quaternion) {
+  function projectileTrail(position, quaternion, colorHex = 0x6fc4ff) {
     const geometry = new THREE.ConeGeometry(0.16, 1.0, 5)
     geometry.rotateX(Math.PI / 2)
     const material = new THREE.MeshBasicMaterial({
-      color: 0x6fc4ff, transparent: true, opacity: 0.4,
+      color: colorHex, transparent: true, opacity: 0.4,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     })
     const mesh = new THREE.Mesh(geometry, material)

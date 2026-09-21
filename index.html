@@ -942,10 +942,8 @@
   .wingman-vitals.out span { color:#ff6674; }
   @keyframes wingman-vital-critical { 50% { filter:drop-shadow(0 0 5px #ff263d); opacity:.45; } }
 
-  /* mira do tiro carregado (lock-on por alvo): em vez do círculo pulsante de antes, 3 quadrados
-     verdes de tamanhos diferentes surgem em sequência e convergem (maior → menor, cada um
-     encolhendo e sumindo) até sobrar só 1, que aí gira continuamente sobre o inimigo travado —
-     o "lock-in completo". */
+  /* Mira do tiro carregado: a base acompanha o diâmetro projetado do alvo. Os dois primeiros
+     frames são propositalmente maiores; o terceiro coincide com o tamanho visual do inimigo. */
   .enemy-lock-marker {
     position: absolute;
     width: var(--marker-size, 30px);
@@ -966,23 +964,40 @@
   .enemy-lock-marker .lock-sq-c {
     animation: lock-sq-settle 0.12s ease-out 0.26s forwards, lock-sq-spin 1s linear 0.38s infinite;
   }
-  /* Lock extra liberado pela Miyu: mesma animação, forma triangular e cor ciano. */
+  /* Lock extra liberado pela Miyu: triângulo de três arestas reais, não um quadrado recortado. */
   .enemy-lock-marker.is-assist .lock-sq {
-    border-color: #00e5ff;
-    box-shadow: 0 0 8px rgba(0,229,255,0.8), inset 0 0 6px rgba(0,229,255,0.5);
-    border-radius: 0;
-    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    border: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .lock-triangle-edge { display: none; }
+  .enemy-lock-marker.is-assist .lock-triangle-edge {
+    display: block;
+    position: absolute;
+    height: 2px;
+    background: #00e5ff;
+    box-shadow: 0 0 8px rgba(0,229,255,.95), 0 0 3px rgba(255,255,255,.75);
+    transform-origin: 0 50%;
+  }
+  .enemy-lock-marker.is-assist .lock-triangle-left {
+    left: 50%; top: 0; width: 111.803%; transform: rotate(116.565deg);
+  }
+  .enemy-lock-marker.is-assist .lock-triangle-right {
+    left: 50%; top: 0; width: 111.803%; transform: rotate(63.435deg);
+  }
+  .enemy-lock-marker.is-assist .lock-triangle-base {
+    left: 0; top: 100%; width: 100%; transform: translateY(-100%);
   }
   /* cada quadrado SEGURA de verdade no próprio tamanho (0%→60% parado) antes de encolher e
      sumir (60%→100%) — sem essa pausa a diferença de tamanho passava rápido demais pra notar */
   @keyframes lock-sq-converge-a {
-    0%   { transform: scale(2.4); opacity: 1; }
-    60%  { transform: scale(2.4); opacity: 1; }
+    0%   { transform: scale(1.9); opacity: 1; }
+    60%  { transform: scale(1.9); opacity: 1; }
     100% { transform: scale(1.3); opacity: 0; }
   }
   @keyframes lock-sq-converge-b {
-    0%   { transform: scale(1.7); opacity: 1; }
-    60%  { transform: scale(1.7); opacity: 1; }
+    0%   { transform: scale(1.4); opacity: 1; }
+    60%  { transform: scale(1.4); opacity: 1; }
     100% { transform: scale(1.1); opacity: 0; }
   }
   @keyframes lock-sq-settle {
