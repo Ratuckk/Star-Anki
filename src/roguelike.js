@@ -63,7 +63,7 @@ export const ROGUELIKE_CARDS = [
   // Etapa 5 — Miyu. Assist eleva o teto de locks durante Carga Compartilhada; Boombuster é uma
   // salva de orbes magenta homing; Status prolonga os dogfights da piloto.
   { id: 'miyu-assist-target', category: 'utilitario', label: 'Miyu — Assist +1 Alvo', icon: '🔺', description: 'Carga Compartilhada libera +1 trava adicional por stack. Até 3 stacks, respeitando o teto global.' },
-  { id: 'miyu-boombuster', category: 'ofensivo', label: 'Miyu — Boombuster', icon: '🟣', description: 'Dispara orbes magenta homing de 3 dano contra até 1 alvo por stack, a cada 10–4s.' },
+  { id: 'miyu-boombuster', category: 'ofensivo', label: 'Miyu — Boombuster', icon: '🟣', description: 'Dispara orbes magenta homing de 3 dano contra até 1 + stacks alvos, a cada 10–4s.' },
   { id: 'miyu-status', category: 'ofensivo', label: 'Miyu — Fôlego Fantasma', icon: '⏳', description: '+2s na duração do dogfight de Miyu por stack. Até 3 stacks.' },
 ]
 

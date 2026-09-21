@@ -37,6 +37,10 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.6 — Correção de texto do Boombuster
+
+Tooltip do Boombuster corrigido para dizer explicitamente `1 + stacks` alvos, igual ao efeito real.
+
 ### v0.99.5 — Etapa 5: Miyu (Assist, Boombuster e Status)
 
 - Auditoria confirmou os visuais já existentes: locks extras da Miyu são triângulos ciano, a
