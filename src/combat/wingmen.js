@@ -256,9 +256,9 @@ const WINGMAN_CRITICAL_COLOR = new THREE.Color(0xff263d)
 // Aliados prevêem o ponto de maior aproximação contra detritos e aplicam só um vetor lateral
 // temporário. Não há teleporte, troca de state nem dano por colisão: é uma rota segura que
 // preserva dogfight, escolta e formação. O lado fica travado por obstáculo para não oscilar.
-const WINGMAN_OBSTACLE_LOOKAHEAD_S = 1.1
-const WINGMAN_OBSTACLE_CLEARANCE = 3.2
-const WINGMAN_OBSTACLE_AVOID_SPEED = 28
+const WINGMAN_OBSTACLE_LOOKAHEAD_S = 2.0
+const WINGMAN_OBSTACLE_CLEARANCE = 7.5
+const WINGMAN_OBSTACLE_AVOID_SPEED = 52
 const WINGMAN_OBSTACLE_RADIUS = 1.25
 
 const GUARD_ESCORT_S = 4.0
@@ -934,8 +934,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       const position = obstacle.mesh?.position
       if (!position) continue
       _wmObstacleRelative.copy(position).sub(wingman.mesh.position)
-      _wmObstacleRelativeVelocity.copy(desiredVelocity)
-      if (obstacle.driftVel) _wmObstacleRelativeVelocity.sub(obstacle.driftVel)
+      // A posição relativa é obstáculo - aliado; portanto a velocidade relativa precisa ser
+      // velocidade do obstáculo - velocidade pretendida do aliado. O sinal inverso fazia o
+      // ponto de maior aproximação cair em t=0 justamente quando o aliado avançava no detrito.
+      _wmObstacleRelativeVelocity.copy(obstacle.driftVel || _wmObstacleRelativeVelocity.set(0, 0, 0))
+      _wmObstacleRelativeVelocity.sub(desiredVelocity)
       const relativeSpeedSq = _wmObstacleRelativeVelocity.lengthSq()
       if (relativeSpeedSq < 0.01) continue
 
@@ -977,7 +980,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
 
     const urgency = 1 - chosenTime / WINGMAN_OBSTACLE_LOOKAHEAD_S
-    desiredVelocity.addScaledVector(frame.right, wingman.obstacleAvoidanceSide * WINGMAN_OBSTACLE_AVOID_SPEED * (0.45 + urgency * 0.55))
+    const lateralSpeed = Math.max(WINGMAN_OBSTACLE_AVOID_SPEED, desiredVelocity.length() * 0.55)
+    desiredVelocity.addScaledVector(frame.right, wingman.obstacleAvoidanceSide * lateralSpeed * (0.45 + urgency * 0.55))
     return true
   }
 
@@ -1846,11 +1850,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       _wmDesiredVelocity.copy(_wmAimDir).multiplyScalar(cruiseSpeed)
 
-      // Opção 1 escolhida pelo usuário: o steering evasivo é aditivo e não muda a intenção
-      // principal do piloto. Portanto ele continua podendo escoltar, atacar ou regressar enquanto
-      // contorna o detrito, e retoma sua vaga naturalmente ao sair da janela de risco. Investida
-      // e Rescue preservam sua trajetória comprometida para não falharem no alvo por um desvio.
-      if (w.state !== 'ram' && w.state !== 'rescue') steerAroundObstacle(w, _wmDesiredVelocity, frame)
+      // O desvio é aditivo e não troca o state: formação, escolta, ataque, Investida e Rescue
+      // preservam a intenção original, mas nenhum aliado atravessa deliberadamente um detrito.
+      steerAroundObstacle(w, _wmDesiredVelocity, frame)
 
       // Repulsão suave e amortecida (nunca explosiva)
       for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {

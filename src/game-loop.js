@@ -63,6 +63,8 @@ const _fireDirection = new THREE.Vector3()
 const _minimapRel = new THREE.Vector3()
 const _lockCameraForward = new THREE.Vector3()
 const _lockToTarget = new THREE.Vector3()
+const _knockbackHudPos = new THREE.Vector3()
+const TUMBLE_LOCKED_INPUT = Object.freeze({ moveX: 0, moveY: 0, bank: 0 })
 
 export function createGameLoop(deps) {
   const {
@@ -77,6 +79,14 @@ export function createGameLoop(deps) {
   // Overhaul de Personalidade dos wingmen, Ideia 5 — instância própria (não recriar por frame,
   // precisa lembrar quando foi a última vida perdida entre ticks).
   const wingmanReactivity = createWingmanReactivity()
+
+  function showKnockbackFeedback(tier, playerPosition, frame) {
+    _knockbackHudPos.copy(playerPosition).addScaledVector(frame.up, 4.4).project(camera)
+    hud.showKnockbackFeedback?.(tier, {
+      xFrac: THREE.MathUtils.clamp((_knockbackHudPos.x + 1) / 2, 0.04, 0.96),
+      yFrac: THREE.MathUtils.clamp((1 - _knockbackHudPos.y) / 2, 0.04, 0.96),
+    })
+  }
 
   function triggerDebrisStorm(durationMs = 15000) {
     if (!ENVIRONMENT_CONFIG.enableDebrisStormEvent) return
@@ -185,10 +195,13 @@ export function createGameLoop(deps) {
     state.hitShakeTimer = Math.max(0, state.hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(state.hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (state.hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
+    const tumbleLocked = rail.isTumbling()
     player.update(dt, inputState.repulsionHeld)
 
-    // pedido do usuário: removida a guinada assistida rumo ao inimigo mais próximo (Fase 9)
-    rail.update(dt, inputState)
+    // Durante knockback só o tiro e as manobras de recuperação são aceitos. O motor de trilho
+    // recebe direção neutra, mas propulsão/repulsão continuam passando ao player e o giro segue
+    // sendo tratado abaixo para poder cancelar a cambalhota.
+    rail.update(dt, tumbleLocked ? TUMBLE_LOCKED_INPUT : inputState)
 
     // Swirl Blast (§4.5) — FOV bump + "punch" de câmera por cima do que rail.update() acabou de
     // calcular (o lerp de FOV do boost continua rodando por baixo; isso só SOBRESCREVE o valor
@@ -410,7 +423,7 @@ export function createGameLoop(deps) {
       }
     }
 
-    if (isActionPressed(bindings, inputState.pressed, 'squadronCommand')) {
+    if (!tumbleLocked && isActionPressed(bindings, inputState.pressed, 'squadronCommand')) {
       const res = combat.toggleSquadronCommand(playerPos)
       if (res && hud && hud.showSquadronNotice) {
         const shipAbove = playerPos.clone().addScaledVector(noseFrame.up, 3.2)
@@ -752,7 +765,7 @@ export function createGameLoop(deps) {
     }
     if (events.enemyCollisionWorldPos && events.enemyCollisionTier > 0) {
       rail.triggerEnemyCollisionTumble(events.enemyCollisionTier, events.enemyCollisionWorldPos)
-      hud.showKnockbackFeedback?.(events.enemyCollisionTier)
+      showKnockbackFeedback(events.enemyCollisionTier, playerPos, noseFrame)
       state.hitShakeTimer = Math.max(state.hitShakeTimer, 180 + events.enemyCollisionTier * 70)
     }
 
@@ -774,14 +787,14 @@ export function createGameLoop(deps) {
         const projectileTier = Math.min(4, Math.max(2, events.enemyHitPowerLevel || 1))
         const finalTumbleTier = result.shieldBroke ? Math.max(3, projectileTier) : projectileTier
         rail.triggerEnemyCollisionTumble(finalTumbleTier, null)
-        hud.showKnockbackFeedback?.(finalTumbleTier)
+        showKnockbackFeedback(finalTumbleTier, playerPos, noseFrame)
       } else if (result.shieldBroke && events.enemyCollisionTier > 0) {
         // QoL #6d: o último ponto de escudo sempre pesa como impacto alto, mesmo que a fonte
         // física original fosse um inimigo pequeno (o trigger de tier baixo deste frame é
         // sobrescrito de propósito por esta chamada).
         const finalCollisionTier = Math.max(3, events.enemyCollisionTier)
         rail.triggerEnemyCollisionTumble(finalCollisionTier, events.enemyCollisionWorldPos)
-        hud.showKnockbackFeedback?.(finalCollisionTier)
+        showKnockbackFeedback(finalCollisionTier, playerPos, noseFrame)
       }
 
       if (result.absorbedByShield) {

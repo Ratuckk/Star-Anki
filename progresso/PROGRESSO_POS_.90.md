@@ -38,6 +38,27 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.13 — Knockback mais pesado, alerta ancorado e desvio dos aliados corrigido
+
+- Todas as quatro intensidades de knockback passaram a durar o dobro: 2,4/3,6/5,2/7,2s. Durante
+  a cambalhota, a direção de voo e o comando de esquadrão ficam bloqueados; tiro, giro completo,
+  propulsão e repulsão continuam disponíveis como as únicas respostas ativas. A expectativa do
+  `aiValidator` agora confere que a duração iniciada é exatamente a configurada para o tier.
+- O alerta de perigo foi ampliado em 100% (ícone de 34px para 68px) e recebe a projeção da nave
+  em tela, aparecendo logo acima dela em vez de ficar preso ao rodapé/centro do HUD.
+- Rádio trivial e quote de habilidade cresceram 25% (retrato, tipografia, espaçamento e caixa).
+  A âncora entre os dois canais também cresceu para que continuem sem sobreposição abaixo das
+  cartas.
+- **Correção de causa raiz dos aliados/detritos**: a velocidade relativa do preditor estava com
+  sinal invertido. Ao avançar para um detrito, ele calculava o instante de maior aproximação como
+  zero e só reagia tarde demais. Agora usa obstáculo−aliado, olha 2s adiante, com margem maior e
+  força lateral proporcional à velocidade. O desvio é aplicado em patrulha, escolta, dogfight,
+  Investida e Rescue, sem trocar o estado atual do aliado.
+
+**Validado**: sintaxe dos cinco módulos, `node src/selftest.mjs` e `git diff --check` passaram.
+**Pendente de playtest**: exercitar detritos grandes/em deriva com 2–4 aliados e enviar o Log de
+Validação IA; os eventos `wingman-obstacle-avoidance` devem iniciar antes do contato.
+
 ### v0.99.12 — Locks projetados e disparos carregados roxos da Miyu
 
 Escolha do usuário: **Opção 1** do protótipo de lock-on — composição limpa, três frames de
@@ -87,6 +108,9 @@ Implementada a **Opção 1** escolhida pelo usuário para navegação de obstác
   perder o alvo. Detritos continuam sem causar dano aos aliados, conforme a decisão de balanceamento.
 - `aiValidator` registra o começo de cada curva e valida que a lateral escolhida é sempre `-1` ou
   `+1`, permitindo conferir o comportamento emergente no log real de playtest.
+
+**Corrigido na v0.99.13**: o sinal da velocidade relativa estava invertido; a versão original
+reagia tarde em vários vetores de aproximação. A janela e a margem também foram ampliadas.
 
 **Validado**: sintaxe dos dois módulos, `node src/selftest.mjs` e `git diff --check` passaram.
 **Pendente de playtest**: spawnar 2–3 aliados e detritos comuns/em deriva; depois copiar o log de

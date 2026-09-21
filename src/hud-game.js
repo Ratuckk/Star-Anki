@@ -696,7 +696,8 @@ export function createGameHud() {
     const cardsBottom = cardsTray.offsetTop + cardsTray.offsetHeight
     const abilityTop = Math.max(172, cardsBottom + 24)
     root.style.setProperty('--wingman-ability-top', `${abilityTop}px`)
-    root.style.setProperty('--wingman-radio-top', `${abilityTop + 132}px`)
+    // Os dois blocos cresceram 25%; preserva uma faixa livre entre diálogo e habilidade.
+    root.style.setProperty('--wingman-radio-top', `${abilityTop + 165}px`)
   }
   const radioTrayResizeObserver = typeof ResizeObserver !== 'undefined'
     ? new ResizeObserver(updateWingmanRadioAnchor)
@@ -1878,13 +1879,17 @@ export function createGameHud() {
       damageVignette.classList.add('flash')
     },
 
-    showKnockbackFeedback(tier) {
+    showKnockbackFeedback(tier, anchor = null) {
       const resolvedTier = Math.max(1, Math.min(4, Math.round(tier) || 1))
       knockbackVignette.style.setProperty('--knockback-intensity', String(resolvedTier / 4))
       knockbackVignette.classList.remove('active')
       void knockbackVignette.offsetWidth
       knockbackVignette.classList.add('active')
       if (resolvedTier < 2) return
+      if (anchor) {
+        dangerIndicator.style.left = `${anchor.xFrac * 100}%`
+        dangerIndicator.style.top = `${anchor.yFrac * 100}%`
+      }
       dangerIndicator.className = `hud-danger-indicator tier-${resolvedTier}`
       void dangerIndicator.offsetWidth
       dangerIndicator.classList.add('active')

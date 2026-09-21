@@ -373,13 +373,13 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let fullSpinDir = 0
 
   // ============ KNOCKBACK POR TIER DE AMEAÇA (QoL #6/#7) ============
-  // Tier 1..4: impactos leves → críticos. As durações já incluem o aumento de ~50% pedido no
-  // item 7; cancelar por giro/repulsão termina a entrada de controle em 0.2s, sem corte seco.
+  // Tier 1..4: impactos leves → críticos. Duração dobrada para todas as origens de knockback;
+  // giro completo, propulsão e repulsão continuam sendo as únicas saídas ativas da cambalhota.
   const TUMBLE_TIERS = {
-    1: { duration: 1.2, force: 42, spin: Math.PI * 5.5 },
-    2: { duration: 1.8, force: 72, spin: Math.PI * 7.0 },
-    3: { duration: 2.6, force: 105, spin: Math.PI * 8.5 },
-    4: { duration: 3.6, force: 140, spin: Math.PI * 9.5 },
+    1: { duration: 2.4, force: 42, spin: Math.PI * 5.5 },
+    2: { duration: 3.6, force: 72, spin: Math.PI * 7.0 },
+    3: { duration: 5.2, force: 105, spin: Math.PI * 8.5 },
+    4: { duration: 7.2, force: 140, spin: Math.PI * 9.5 },
   }
   const TUMBLE_CANCEL_RAMP_S = 0.2
   let tumbleTimer = 0
@@ -632,7 +632,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     }
     aiValidator.expect(
       'Knockback sempre inicia com tier e duração válidos',
-      () => tumbleTier >= 1 && tumbleTier <= 4 && tumbleTimer > 0 && tumbleDuration > 0,
+      () => tumbleTier >= 1 && tumbleTier <= 4 && tumbleTimer === TUMBLE_TIERS[resolvedTier].duration && tumbleDuration === TUMBLE_TIERS[resolvedTier].duration,
       { tier: tumbleTier, timer: tumbleTimer, duration: tumbleDuration },
     )
     aiValidator.logMechanic('knockback-tier', 'iniciado', { tier: tumbleTier, duration: tumbleDuration })

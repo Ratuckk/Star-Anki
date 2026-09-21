@@ -180,7 +180,7 @@ export function injectHudExtraStyles() {
 .hud-danger-indicator {
   position: absolute;
   left: 50%;
-  bottom: 15%;
+  top: 50%;
   transform: translateX(-50%);
   opacity: 0;
   display: grid;
@@ -194,7 +194,7 @@ export function injectHudExtraStyles() {
   pointer-events: none;
 }
 .hud-danger-indicator.active { animation: hud-danger-indicator 1200ms ease-out forwards; }
-.hud-danger-indicator span { font-size: 34px; line-height: .9; }
+.hud-danger-indicator span { font-size: 68px; line-height: .9; }
 @keyframes hud-danger-indicator { 0% { opacity: 0; transform: translateX(-50%) scale(.45); } 18% { opacity: 1; transform: translateX(-50%) scale(1.18); } 100% { opacity: 0; transform: translateX(-50%) scale(.9); } }
 
 /* ============ FEEDBACK ESCALONADO (PERFEITO/BOM/ACERTOU) ============ */
@@ -2068,9 +2068,9 @@ export function injectHudExtraStyles() {
   bottom: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 17px 8px 8px;
-  border-radius: 4px;
+  gap: 15px;
+  padding: 10px 21px 10px 10px;
+  border-radius: 5px;
   background: rgba(8, 12, 22, 0.92);
   border: 1px solid var(--pc, #38bdf8);
   box-shadow: 0 0 18px var(--pg, rgba(56, 189, 248, 0.4)), 0 6px 16px rgba(0, 0, 0, 0.6);
@@ -2087,8 +2087,8 @@ export function injectHudExtraStyles() {
 }
 .hud-wingman-radio-corner {
   position: absolute;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-color: var(--pc, #38bdf8);
   opacity: 0.9;
 }
@@ -2098,8 +2098,8 @@ export function injectHudExtraStyles() {
 .hud-wingman-radio-corner.br { right: -1px; bottom: -1px; border-right: 2px solid; border-bottom: 2px solid; }
 .hud-wingman-radio-avatar {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 55px;
+  height: 55px;
   flex-shrink: 0;
   border-radius: 4px;
   overflow: hidden;
@@ -2121,14 +2121,14 @@ export function injectHudExtraStyles() {
   opacity: 1;
 }
 .hud-wingman-radio-name {
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 800;
   letter-spacing: 0.06em;
   color: #e2e8f0;
   text-transform: uppercase;
 }
 .hud-wingman-radio-line {
-  font-size: 11px;
+  font-size: 13.75px;
   color: #f8fafc;
   margin-top: 2px;
 }
@@ -2162,9 +2162,9 @@ export function injectHudExtraStyles() {
   top: var(--wingman-ability-top, 172px);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px 10px 10px;
-  border-radius: 5px;
+  gap: 15px;
+  padding: 12.5px 22.5px 12.5px 12.5px;
+  border-radius: 6px;
   background: rgba(8, 12, 22, 0.94);
   border: 1.5px solid var(--pc, #38bdf8);
   border-left-width: 6px;
