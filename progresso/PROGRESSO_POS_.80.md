@@ -1060,3 +1060,63 @@ confirmar num playtest real com o usuário quando alguma habilidade ativar.
 **Falta pra fechar o doc**: texto das falas novas (usuário vai mandar), regra 2.4 completa (depende
 das cartas de foco), e os itens 3 (12 cartas por personagem, uma por uma) + faíscas brancas mais
 espalhadas (item final, independente).
+
+---
+
+### v0.96.0 — Falco: as 3 cartas (Combate/Intercept/Status) + sub-ícone de cooldown
+
+Segunda fase do `Docs/# Documento de Implementação — Nova.md` (ordem: rádio → Falco → Peppy →
+Slippy → Miyu). O usuário corrigiu no meio do caminho: ele queria que EU escrevesse as falas
+novas, não que mandasse o texto pronto — escritas direto em inglês, no tom confiante/cascavel já
+estabelecido de Falco: `ability_ram` ganhou +2 falas (chegando a 5, "5 falas por ability" do doc);
+`ability_intercept` nasceu com 5 falas próprias (`combat/wingman-radio.js`).
+
+**As 3 cartas novas** (`roguelike.js`, categoria ofensivo, 0/3 stacks cada, só aparecem com Falco
+recrutado — `wingmanCount <= 0` no exclude set, mesma regra das cartas "Vínculo" existentes):
+
+- **`falco-combat-chain`** ("Investida em Cadeia"): ao ACERTAR a Investida Aríete (não em timeout
+  sem conectar), se tem stacks e ainda não encadeou o máximo, procura o inimigo vivo mais próximo
+  da posição ATUAL de Falco (`FALCO_CHAIN_RADIUS = 80u`) e reinicia o state 'ram' contra ele sem
+  cooldown extra — só entra em cooldown normal quando a cadeia acaba (esgotou stacks OU não achou
+  ninguém por perto). `w.chainCount` zera a cada nova investida (não a cada elo).
+- **`falco-intercept`** ("Interceptação"): a cada `6 - stacks` segundos (cooldown PRÓPRIO,
+  independente do da Investida Aríete), acha o projétil inimigo mais perigoso
+  (`powerLevel >= POWER_LEVEL_AREA_DAMAGE`, novo `enemies.getThreateningProjectile()`) mais perto
+  do JOGADOR e destrói na hora (`enemies.removeProjectilesNear()`, raio pequeno em cima da posição
+  do projétil). Roda em QUALQUER state do wingman (não só dogfight), proteção proativa. Decisão de
+  design: o feixe visual é um array PRÓPRIO (`interceptBeams`), fora de `activeLasers` de
+  propósito — reusar `fireWingmanLaser`/`activeLasers` faria o "tiro" participar da resolução de
+  colisão normal contra inimigos de verdade (8 de dano por acidente, o projétil já foi destruído
+  instantaneamente, então o feixe é só cosmético: fade de 140ms, sem hitbox).
+- **`falco-status`** ("Fôlego de Combate"): `+2s` de `dogfightDuration` por stack (base 5.5s → até
+  11.5s com 3 stacks). `effectiveDogfightDuration(profile, opts)` novo em `combat/wingmen.js`,
+  substitui as 2 leituras diretas de `profile.combatProfile.dogfightDuration` — só Falco (id 0)
+  ganha o bônus, os outros 3 pilotos continuam com o valor de sempre.
+
+**Arquitetura de stacks**: seguido o padrão JÁ existente das cartas "Vínculo" (não o
+`ownerPilotId`/`applyWingmanCard` genérico que o doc original propunha) — os 3 contadores moram em
+`player.js` (`falcoChainStacks`/`falcoInterceptStacks`/`falcoStatusStacks`, cap 3, getters
+dedicados), lidos por `combat/wingmen.js` via `opts` no `update()` (mesmo padrão de
+`shieldNotFull`), repassados de `combat/index.js`. Reaproveitar o padrão existente em vez de somar
+um segundo sistema paralelo pro mesmo conceito.
+
+**Sub-ícone de cooldown** (item 3 do doc): novo `combat.getSubAbilityStates(cardStacks)` →
+`hud.setSquadronSubAbilities()` — círculo pequeno (`.hud-ability-subicon`) empilhado abaixo do
+hexágono principal do piloto, só aparece se o jogador tem a carta com cooldown próprio (hoje só
+Falco Intercept — Combate reusa o cooldown do Ram, Status não tem cooldown nenhum). Reaproveita
+elementos entre frames (só troca classe ready/cooling), remove sozinho se a carta sumir (reset de
+partida).
+
+**Validado ao vivo** (`window.__starAnki`, stepper determinístico): `debugMaxBuffs()` confirmado
+cravando os 3 stacks em 3; sub-ícone aparece no DOM com classe `ready`, glifo 🛑 e `cooldownTotal:
+3` (6-3 stacks) assim que o jogador tem a carta. **Intercept disparou organicamente contra um
+projétil real da Horda** (`t=1.84s` no flight log, sem eu forçar nada) — confirma o pipeline
+completo, não só a função isolada. **Chain-ram forçado via comando de foco [D]** (`toggleSquadronCommand`,
+bypassa o gate probabilístico de engajamento pra teste determinístico): Falco rammou tank #47 →
+encadeou (1/3) → rammou tank #49 → encadeou (2/3) → encadeou (3/3) contra um miniSwarm auto-spawnado
+que calhou de estar por perto → parou exatamente no cap de 3 e voltou pra formação. Zero erros de
+console (só o ServiceWorker de infraestrutura, já documentado em entregas anteriores).
+
+**Falta pra fechar Falco**: nenhuma carta pendente — as 3 estão implementadas. Falta a `getLine`
+confirmar a fala nova via playtest real com áudio (validado só por lookup de string aqui). Próximo:
+Peppy (rádio + cartas, incluindo knockback por tier como pré-requisito de Rescue).

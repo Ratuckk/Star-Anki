@@ -6,6 +6,7 @@ import { HORDA_KIND } from '../enemies/horda.js'
 import { FRAGATA_KIND } from '../enemies/fragata.js'
 import { BOSS_KIND } from '../enemies/boss.js'
 import { GOLDEN_KIND } from '../enemies/golden.js'
+import { POWER_LEVEL_AREA_DAMAGE } from '../enemies/shared.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -179,6 +180,22 @@ const RAM_HIT_RADIUS = 2.2
 const RAM_DAMAGE = 6
 const RAM_DAMAGE_VS_BOSS = 2
 const RAM_TIMEOUT_S = 2.5
+
+// ============ CARTAS DE FALCO (Docs/# Documento de Implementação — Nova.md, item 3) ============
+// Falco Combate: raio de busca do próximo alvo em cadeia (sugestão do próprio doc, "a definir
+// pela IA") a partir da posição ATUAL de Falco no instante do acerto — não da posição do alvo.
+const FALCO_CHAIN_RADIUS = 80
+// Falco Intercept: nível de poder mínimo do projétil pra valer a pena interceptar (3 = área, 4 =
+// alto impacto — chefe/dourado/horda hoje; nível 3 ainda não é emitido por nenhum inimigo, mas o
+// doc já pede a checagem "3-4" de antemão). Cooldown por stack: `6 - stacks` segundos (6s sem
+// carta não dispara — a ability só ativa com stacks > 0). Raio de remoção reaproveita
+// removeProjectilesNear() num círculo pequeno em cima do projétil — não precisa de colisão nova.
+const FALCO_INTERCEPT_MIN_POWER_LEVEL = POWER_LEVEL_AREA_DAMAGE
+const FALCO_INTERCEPT_BASE_COOLDOWN_S = 6
+const FALCO_INTERCEPT_REMOVE_RADIUS = 2.5
+const FALCO_INTERCEPT_COLOR = 0x0066ff // azul mais forte que o laser padrão de Falco (0x38bdf8)
+// Falco Status: bônus de dogfightDuration por stack (base 5.5s → 11.5s com 3 stacks).
+const FALCO_STATUS_BONUS_S = 2
 
 const GUARD_ESCORT_S = 4.0
 const GUARD_TRIGGER_RANGE = 9
@@ -479,6 +496,40 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const laserGeometry = new THREE.CylinderGeometry(0.09, 0.09, 1.4, 6)
   laserGeometry.rotateX(Math.PI / 2)
 
+  // Carta "Falco Intercept" — feixe VISUAL-ONLY (array próprio, fora de activeLasers de
+  // propósito): o projétil interceptado já é destruído na hora via
+  // enemies.removeProjectilesNear(), então esse feixe não pode participar da resolução de
+  // colisão normal (senão ia poder acertar/matar um inimigo qualquer no meio do caminho, dano
+  // não previsto pelo doc). Geometria unitária (altura 1, eixo Z) escalada por instância pra
+  // cobrir a distância real Falco→projétil.
+  const interceptBeams = []
+  const interceptBeamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 6)
+  interceptBeamGeometry.rotateX(Math.PI / 2)
+  const FALCO_INTERCEPT_BEAM_LIFETIME = 0.14
+
+  function fireFalcoInterceptBeam(origin, targetPos) {
+    const dir = targetPos.clone().sub(origin)
+    const dist = dir.length()
+    if (dist < 1e-4) return
+    dir.multiplyScalar(1 / dist)
+    const material = new THREE.MeshBasicMaterial({ color: FALCO_INTERCEPT_COLOR, transparent: true, opacity: 0.95 })
+    const mesh = new THREE.Mesh(interceptBeamGeometry, material)
+    mesh.position.copy(origin).addScaledVector(dir, dist / 2)
+    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
+    mesh.scale.z = dist
+    scene.add(mesh)
+    interceptBeams.push({ mesh, material, life: FALCO_INTERCEPT_BEAM_LIFETIME })
+    if (effects && effects.muzzleFlash) effects.muzzleFlash(origin, dir)
+  }
+
+  function clearInterceptBeams() {
+    for (let i = interceptBeams.length - 1; i >= 0; i--) {
+      scene.remove(interceptBeams[i].mesh)
+      interceptBeams[i].material.dispose()
+    }
+    interceptBeams.length = 0
+  }
+
   // Multiplicador de cooldown por piloto (id 0-3), reduzido pelas cartas "Vínculo" — mora no
   // sistema (não na instância do wingman) pra sobreviver a remoção/respawn via debug.
   const abilityCooldownMultByProfileId = [1, 1, 1, 1]
@@ -492,6 +543,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function abilityCooldownFor(profile) {
     return profile.abilityCooldownBase * abilityCooldownMultByProfileId[profile.id]
+  }
+
+  // Carta "Falco Status" — só Falco (id 0) é afetado; os outros pilotos usam o
+  // combatProfile.dogfightDuration de sempre, sem alteração.
+  function effectiveDogfightDuration(profile, opts) {
+    const bonus = profile.id === 0 ? (opts.falcoStatusStacks || 0) * FALCO_STATUS_BONUS_S : 0
+    return profile.combatProfile.dogfightDuration + bonus
   }
 
   function getAbilityStates() {
@@ -513,6 +571,32 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         cooldownTotal,
       }
     })
+  }
+
+  // Sub-ícones de cooldown por piloto (Docs/# Documento de Implementação — Nova.md, item 3 —
+  // "Sub-ícones de cooldown"): cada carta com cooldown PRÓPRIO (independente do hex principal)
+  // gera um sub-ícone, só aparece se o jogador tem a carta. Hoje só Falco Intercept se qualifica
+  // (Combate reusa o cooldown do Ram; Status é passivo, sem cooldown nenhum). `cardStacks` vem de
+  // game-loop.js (leitura direta do player, mesmo padrão do opts passado pro update() normal).
+  function getSubAbilityStates(cardStacks = {}) {
+    const falcoInterceptStacks = cardStacks.falcoInterceptStacks || 0
+    const falcoSubs = []
+    if (falcoInterceptStacks > 0) {
+      const w = activeWingmen.find((x) => x.profile.id === 0)
+      const cooldownTotal = Math.max(1, FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks)
+      falcoSubs.push({
+        id: 'falco-intercept',
+        icon: '🛑',
+        color: WINGMAN_PROFILES[0].accentColor,
+        ready: !!w && w.interceptCooldown <= 0,
+        cooldownRemaining: w ? Math.max(0, w.interceptCooldown) : cooldownTotal,
+        cooldownTotal,
+      })
+    }
+    return WINGMAN_PROFILES.map((profile) => ({
+      profileId: profile.id,
+      subs: profile.id === 0 ? falcoSubs : [],
+    }))
   }
 
   function getAssistChargeMult() {
@@ -580,6 +664,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       abilityActive: false,
       abilityTimer: 0,
       abilityApplied: false,
+      // Falco: cooldown próprio do Intercept (independente do abilityCooldown da Investida
+      // Aríete) e contador de alvos já encadeados na Investida em Cadeia (zerado a cada nova
+      // investida, ver início do state 'ram' abaixo).
+      interceptCooldown: 0,
+      chainCount: 0,
       escortKind: null, // 'guard' | 'assist' — só usado quando state === 'escort'
       // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
       miyuCloakTimer: 0, // Miyu: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
@@ -876,6 +965,23 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       w.fireCooldown -= dt
       if (w.engagementCooldown > 0) w.engagementCooldown -= dt
       if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
+      if (w.interceptCooldown > 0) w.interceptCooldown -= dt
+
+      // Carta "Falco Intercept" — roda em QUALQUER state (não só dogfight/ram): Falco protege o
+      // jogador proativamente, mesmo em formação. Independente do abilityCooldown da Investida
+      // Aríete (timers separados, ver criação do wingman).
+      const falcoInterceptStacks = opts.falcoInterceptStacks || 0
+      if (w.profile.id === 0 && falcoInterceptStacks > 0 && w.interceptCooldown <= 0 &&
+          enemies && enemies.getThreateningProjectile && enemies.removeProjectilesNear) {
+        const threat = enemies.getThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
+        if (threat) {
+          enemies.removeProjectilesNear(threat.worldPos, FALCO_INTERCEPT_REMOVE_RADIUS)
+          fireFalcoInterceptBeam(w.mesh.position, threat.worldPos)
+          w.interceptCooldown = FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks
+          telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
+          if (!radioMessage) radioMessage = speak(w.profile, 'ability_intercept')
+        }
+      }
 
       // Fogo das turbinas reage a boost ou manobras — discreto, sem "inchar" a nave inteira
       const isThrusting = boostActive || w.state === 'dogfight' || w.state === 'ram'
@@ -1098,7 +1204,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         // em vez do 6.0 fixo global — Peppy sai antes (3.5s), Falco/Miyu ficam mais (5.5s).
         const enemyLost = !w.targetEnemy || w.targetEnemy.dying || !w.targetEnemy.mesh ||
           w.mesh.position.distanceTo(w.targetEnemy.mesh.position) > 110 ||
-          w.stateTimer > w.profile.combatProfile.dogfightDuration
+          w.stateTimer > effectiveDogfightDuration(w.profile, opts)
 
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
@@ -1126,6 +1232,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.stateTimer = 0
             w.abilityActive = true
             w.abilityTimer = 0
+            w.chainCount = 0 // carta "Falco Combate" — cada ativação nova começa a cadeia do zero
             triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
           } else {
             w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(_wmAimDir, -16)
@@ -1150,7 +1257,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
             // fim natural da rajada — mesma proporção (0.7) que 4.2/6.0 já tinha antes desta
             // mudança, agora escalada pelo teto de segurança do piloto
-            if (w.burstRemaining <= 0 && w.stateTimer > w.profile.combatProfile.dogfightDuration * 0.7) {
+            if (w.burstRemaining <= 0 && w.stateTimer > effectiveDogfightDuration(w.profile, opts) * 0.7) {
               telemetry.recordEvent(w.profile.name, 'combat', 'Concluiu rajada de ataque no dogfight. Retornando à formação', { elapsed })
               w.state = 'patrol'
               w.stateTimer = 0
@@ -1176,6 +1283,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.patrolTarget.copy(target.mesh.position)
           const distNow = w.mesh.position.distanceTo(target.mesh.position)
           if (distNow < RAM_HIT_RADIUS || w.abilityTimer > RAM_TIMEOUT_S) {
+            let didHit = false
             if (distNow < RAM_HIT_RADIUS && enemies && enemies.resolveProjectileHit) {
               const isBig = target.kind === 'boss' || target.kind === 'golden'
               const hit = enemies.resolveProjectileHit(w.mesh.position, target.mesh.position, {
@@ -1184,6 +1292,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                 hitBuffer: 1.5,
               })
               if (hit) {
+                didHit = true
                 if (effects && effects.explosion) {
                   effects.explosion(target.mesh.position, isBig ? 1.5 : 1.0)
                 }
@@ -1202,12 +1311,40 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                 }
               }
             }
-            w.abilityActive = false
-            w.abilityCooldown = abilityCooldownFor(w.profile)
-            w.state = 'patrol'
-            w.stateTimer = 0
-            w.targetEnemy = null
-            w.engagementCooldown = 4.5
+
+            // Carta "Falco Combate" — em vez de voltar pra formação, encadeia contra o próximo
+            // inimigo vivo mais próximo da posição ATUAL de Falco (não do alvo abatido). Só
+            // tenta encadear em cima de um acerto de verdade (didHit), nunca num timeout sem
+            // conectar. Sem cooldown extra entre elos da cadeia (só no fim dela, comportamento
+            // padrão de sempre).
+            const chainStacks = opts.falcoChainStacks || 0
+            let chained = false
+            if (didHit && chainStacks > 0 && w.chainCount < chainStacks && enemies && enemies.getAlive) {
+              let nextTarget = null
+              let nextDist = FALCO_CHAIN_RADIUS
+              for (const candidate of enemies.getAlive()) {
+                if (candidate === target || !candidate.mesh) continue
+                const d = w.mesh.position.distanceTo(candidate.mesh.position)
+                if (d < nextDist) { nextDist = d; nextTarget = candidate }
+              }
+              if (nextTarget) {
+                chained = true
+                w.chainCount += 1
+                w.targetEnemy = nextTarget
+                w.abilityTimer = 0
+                telemetry.recordEvent(w.profile.name, 'ability', `Investida em Cadeia: Falco parte pro próximo alvo (${w.chainCount}/${chainStacks})!`, { elapsed })
+              }
+            }
+
+            if (!chained) {
+              w.abilityActive = false
+              w.abilityCooldown = abilityCooldownFor(w.profile)
+              w.state = 'patrol'
+              w.stateTimer = 0
+              w.targetEnemy = null
+              w.engagementCooldown = 4.5
+              w.chainCount = 0
+            }
           }
         }
       } else if (w.state === 'escort') {
@@ -1428,6 +1565,20 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
     }
 
+    // 2b. Feixes de Intercept de Falco — puramente visuais, só decaem/fadeiam (ver
+    // fireFalcoInterceptBeam acima; o projétil já foi destruído no instante do disparo).
+    for (let i = interceptBeams.length - 1; i >= 0; i--) {
+      const beam = interceptBeams[i]
+      beam.life -= dt
+      if (beam.life <= 0) {
+        scene.remove(beam.mesh)
+        beam.material.dispose()
+        interceptBeams.splice(i, 1)
+        continue
+      }
+      beam.material.opacity = Math.max(0, beam.life / FALCO_INTERCEPT_BEAM_LIFETIME)
+    }
+
     telemetry.update(activeWingmen, playerPos, frame, squadronCommandMode, elapsed)
 
     return {
@@ -1475,12 +1626,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       scene.remove(activeLasers[i].mesh)
     }
     activeLasers.length = 0
+    clearInterceptBeams()
   }
 
   function dispose() {
     clearSquadron()
     clearLasers()
     laserGeometry.dispose()
+    interceptBeamGeometry.dispose()
   }
 
   return {
@@ -1505,6 +1658,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     getWingmanCount: () => activeWingmen.length,
     getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
     getAbilityStates,
+    getSubAbilityStates,
     applyAbilityCooldownCard,
     getAssistChargeMult,
     getAssistExtraTargets,

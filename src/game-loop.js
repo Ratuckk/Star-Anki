@@ -945,6 +945,9 @@ export function createGameLoop(deps) {
     }
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
+    if (hud.setSquadronSubAbilities && combat.getSubAbilityStates) {
+      hud.setSquadronSubAbilities(combat.getSubAbilityStates({ falcoInterceptStacks: player.getFalcoInterceptStacks() }))
+    }
     if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())
     if (hud.setSwirlCooldown) hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())
 

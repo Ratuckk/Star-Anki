@@ -39,6 +39,13 @@ export const ROGUELIKE_CARDS = [
   { id: 'wingman-guard-cooldown', category: 'defensivo', label: 'Vínculo: Peppy', icon: '🔰', description: 'Reduz o cooldown da Guarda de Peppy. Só disponível com Peppy na ala.' },
   { id: 'wingman-repair-cooldown', category: 'defensivo', label: 'Vínculo: Slippy', icon: '🩹', description: 'Reduz o cooldown do Reparo de Campo de Slippy. Só disponível com Slippy na ala.' },
   { id: 'wingman-assist-cooldown', category: 'utilitario', label: 'Vínculo: Miyu', icon: '🔗', description: 'Reduz o cooldown da Carga Compartilhada de Miyu. Só disponível com Miyu na ala.' },
+
+  // Cartas de Falco (Docs/# Documento de Implementação — Nova.md, item 3) — só aparecem com
+  // Falco recrutado (buildCardExcludeSet em player.js), até 3 stacks cada. Efeito de fato mora
+  // em combat/wingmen.js, lendo os stacks (player.getFalco*Stacks()) via opts no update().
+  { id: 'falco-combat-chain', category: 'ofensivo', label: 'Falco — Investida em Cadeia', icon: '☄️', description: 'Ao acertar a Investida Aríete, Falco imediatamente parte pro inimigo vivo mais próximo e investe de novo, sem cooldown extra — até 3 alvos em cadeia. Se não achar ninguém por perto, volta à formação normalmente.' },
+  { id: 'falco-intercept', category: 'ofensivo', label: 'Falco — Interceptação', icon: '🛑', description: 'Falco abate projéteis pesados inimigos antes que cheguem em você, a cada 6s (5s/4s/3s com mais stacks).' },
+  { id: 'falco-status', category: 'ofensivo', label: 'Falco — Fôlego de Combate', icon: '⏳', description: '+2s na duração do dogfight de Falco por stack (base 5.5s → até 11.5s com 3 stacks).' },
 ]
 
 export function pickRandomCards(count, exclude = new Set()) {

@@ -364,6 +364,7 @@ export function createGameHud() {
         <div class="hud-ability-sweep"></div>
       </div>
       <span class="hud-ability-num"></span>
+      <div class="hud-ability-subcolumn"></div>
     `
     abilityRow.appendChild(slot)
     const hex = slot.querySelector('.hud-ability-hex')
@@ -372,6 +373,8 @@ export function createGameHud() {
       icon: hex.querySelector('.hud-ability-icon'),
       sweep: hex.querySelector('.hud-ability-sweep'),
       num: slot.querySelector('.hud-ability-num'),
+      subcolumn: slot.querySelector('.hud-ability-subcolumn'),
+      subIconEls: new Map(), // id da carta → { el, iconEl } — reaproveitado entre chamadas
     }
   })
   let prevAbilitySignature = ''
@@ -2374,6 +2377,46 @@ export function createGameHud() {
         slot.el.classList.toggle('ready', s.recruited && s.ready)
         slot.el.classList.toggle('cooling', s.recruited && !s.ready && !s.active)
         slot.el.classList.toggle('active', s.recruited && s.active)
+      })
+    },
+
+    // Sub-ícones de cooldown (Documento de Implementação, item 3) — um círculo empilhado por
+    // carta com cooldown PRÓPRIO que o jogador já tem (ver combat/wingmen.js →
+    // getSubAbilityStates). Sem ordenação por urgência (pedido explícito do usuário); a ordem é a
+    // mesma em que `subs` chega. Reconstrói só quando o SET de ids muda — reaproveita os elementos
+    // entre frames pro estado ready/cooling só trocar de classe, não recriar DOM toda hora.
+    setSquadronSubAbilities(groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return
+      groups.forEach((g, i) => {
+        const slot = abilityHexEls[i]
+        if (!slot) return
+        const subs = g.subs || []
+        const seenIds = new Set()
+        for (const s of subs) {
+          seenIds.add(s.id)
+          let entry = slot.subIconEls.get(s.id)
+          if (!entry) {
+            const el = document.createElement('div')
+            el.className = 'hud-ability-subicon'
+            el.innerHTML = '<span class="hud-ability-subicon-glyph"></span>'
+            slot.subcolumn.appendChild(el)
+            entry = { el, glyph: el.querySelector('.hud-ability-subicon-glyph') }
+            slot.subIconEls.set(s.id, entry)
+          }
+          const colorHex = typeof s.color === 'number' ? `#${s.color.toString(16).padStart(6, '0')}` : '#38bdf8'
+          entry.el.style.setProperty('--sub-color', colorHex)
+          entry.glyph.textContent = s.icon || ''
+          entry.el.title = s.ready ? '' : String(Math.ceil(s.cooldownRemaining))
+          entry.el.classList.toggle('ready', !!s.ready)
+          entry.el.classList.toggle('cooling', !s.ready)
+        }
+        // Remove sub-ícones cuja carta não está mais na lista (ex.: reset de partida)
+        for (const [id, entry] of slot.subIconEls) {
+          if (!seenIds.has(id)) {
+            entry.el.remove()
+            slot.subIconEls.delete(id)
+          }
+        }
       })
     },
 

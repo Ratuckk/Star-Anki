@@ -99,6 +99,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getSquadronCommandState: () => squadron.getCommandState ? squadron.getCommandState() : { mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 },
     toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
     getAbilityStates: () => squadron.getAbilityStates(),
+    getSubAbilityStates: (cardStacks) => squadron.getSubAbilityStates(cardStacks),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
     getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets() : 0,
@@ -274,6 +275,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         homingCharging: opts.homingCharging,
         shieldNotFull: player.getShieldValue() < player.getShieldMax(),
         reactivity: opts.reactivity,
+        // Cartas de Falco (Docs/# Documento de Implementação — Nova.md) — stacks lidos direto do
+        // player, mesmo padrão de shieldNotFull acima.
+        falcoChainStacks: player.getFalcoChainStacks?.() || 0,
+        falcoInterceptStacks: player.getFalcoInterceptStacks?.() || 0,
+        falcoStatusStacks: player.getFalcoStatusStacks?.() || 0,
       }) || {}
 
       // Habilidades únicas do esquadrão que afetam o jogador diretamente (Peppy: Guarda / Slippy:

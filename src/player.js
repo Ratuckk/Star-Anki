@@ -36,6 +36,11 @@ export const HOMING_MAX_TARGETS_CAP = 8
 // atingir o alvo mirado. Cap defensivo (evita uma cadeia infinita se o jogador empilhar demais).
 const RICOCHET_CAP = 5
 
+// Cartas de Falco (Docs/# Documento de Implementação — Nova.md, item 3) — cada uma vai até 3
+// stacks (0/3 do doc). Efeito de fato mora em combat/wingmen.js, que lê esses valores via opts
+// no update() (mesmo padrão de player.config.homingMaxTargets lido por combat/lockon.js).
+const FALCO_CARD_STACKS_CAP = 3
+
 // giro completo (Z/C, 2 toques): cooldown global (não importa o lado) pra não spammar
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
 const FULL_SPIN_COOLDOWN_MS = 3000
@@ -89,6 +94,9 @@ export function createPlayerSystem(session) {
   let homingChargeMinMs = HOMING_CHARGE_MIN_MS
   let homingChargeMaxMs = HOMING_CHARGE_MAX_MS
   let ricochetCount = 0
+  let falcoChainStacks = 0 // carta "Falco Combate" — investida em cadeia contra o alvo mais próximo
+  let falcoInterceptStacks = 0 // carta "Falco Intercept" — abate projéteis pesados (powerLevel 3-4)
+  let falcoStatusStacks = 0 // carta "Falco Status" — +2s de dogfightDuration por stack
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
   let fullSpinCooldownTimer = 0
 
@@ -260,6 +268,15 @@ export function createPlayerSystem(session) {
         case 'ricochet':
           ricochetCount = Math.min(RICOCHET_CAP, ricochetCount + 1)
           break
+        case 'falco-combat-chain':
+          falcoChainStacks = Math.min(FALCO_CARD_STACKS_CAP, falcoChainStacks + 1)
+          break
+        case 'falco-intercept':
+          falcoInterceptStacks = Math.min(FALCO_CARD_STACKS_CAP, falcoInterceptStacks + 1)
+          break
+        case 'falco-status':
+          falcoStatusStacks = Math.min(FALCO_CARD_STACKS_CAP, falcoStatusStacks + 1)
+          break
         case 'swirl-blast-cooldown':
           swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
           break
@@ -288,6 +305,11 @@ export function createPlayerSystem(session) {
     },
 
     getCollectedCards: () => new Map(collectedCards),
+    // Lidos por combat/wingmen.js (via opts no update(), mesmo padrão de shieldNotFull) — o
+    // efeito de fato das cartas de Falco mora lá, aqui é só o contador de stacks (0-3).
+    getFalcoChainStacks: () => falcoChainStacks,
+    getFalcoInterceptStacks: () => falcoInterceptStacks,
+    getFalcoStatusStacks: () => falcoStatusStacks,
 
     resetCards() {
       collectedCards.clear()
@@ -303,6 +325,9 @@ export function createPlayerSystem(session) {
       homingChargeMinMs = HOMING_CHARGE_MIN_MS
       homingChargeMaxMs = HOMING_CHARGE_MAX_MS
       ricochetCount = 0
+      falcoChainStacks = 0
+      falcoInterceptStacks = 0
+      falcoStatusStacks = 0
       fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
       ramCardActive = false
       fireCooldown = DEFAULT_FIRE_COOLDOWN
@@ -332,6 +357,12 @@ export function createPlayerSystem(session) {
       if (wingmanCount <= 1) exclude.add('wingman-guard-cooldown')
       if (wingmanCount <= 2) exclude.add('wingman-repair-cooldown')
       if (wingmanCount <= 3) exclude.add('wingman-assist-cooldown')
+      // Cartas de Falco: mesma regra de recrutamento das Vínculo (wingmanCount <= 0 = Falco ainda
+      // não está na ala), mais o cap de stacks (0/3) de cada uma.
+      if (wingmanCount <= 0) { exclude.add('falco-combat-chain'); exclude.add('falco-intercept'); exclude.add('falco-status') }
+      if (falcoChainStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-combat-chain')
+      if (falcoInterceptStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-intercept')
+      if (falcoStatusStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-status')
       return exclude
     },
 
@@ -507,6 +538,9 @@ export function createPlayerSystem(session) {
       fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE + 150 * DEBUG_MAX_UNCAPPED_STACKS
       wingmanCount = WINGMAN_CAP
       ricochetCount = RICOCHET_CAP
+      falcoChainStacks = FALCO_CARD_STACKS_CAP
+      falcoInterceptStacks = FALCO_CARD_STACKS_CAP
+      falcoStatusStacks = FALCO_CARD_STACKS_CAP
       deflectCardActive = true
       ramCardActive = true
       session.lives = LIVES_CAP
@@ -523,6 +557,9 @@ export function createPlayerSystem(session) {
       collectedCards.set('longer-dodge-iframe', DEBUG_MAX_UNCAPPED_STACKS)
       collectedCards.set('wingman', WINGMAN_CAP)
       collectedCards.set('ricochet', RICOCHET_CAP)
+      collectedCards.set('falco-combat-chain', FALCO_CARD_STACKS_CAP)
+      collectedCards.set('falco-intercept', FALCO_CARD_STACKS_CAP)
+      collectedCards.set('falco-status', FALCO_CARD_STACKS_CAP)
       collectedCards.set('deflect-on-spin', 1)
       collectedCards.set('propulsion-ram', 1)
       collectedCards.set('extra-life', 2)

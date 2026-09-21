@@ -1580,6 +1580,22 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return removed
     },
 
+    // Carta "Falco Intercept" (Docs/# Documento de Implementação — Nova.md, item 3) — acha o
+    // projétil inimigo mais perigoso (powerLevel >= minPowerLevel) mais próximo do JOGADOR (é o
+    // que realmente ameaça, não o mais próximo de Falco). Devolve só a posição — a remoção de
+    // verdade reaproveita removeProjectilesNear() num raio pequeno em cima dessa posição, sem
+    // precisar expor a referência interna do projétil pra fora deste módulo.
+    getThreateningProjectile(minPowerLevel, playerPosition) {
+      let best = null
+      let bestDist = Infinity
+      for (const p of enemyProjectiles) {
+        if ((p.powerLevel ?? POWER_LEVEL_BASIC) < minPowerLevel) continue
+        const d = playerPosition.distanceTo(p.mesh.position)
+        if (d < bestDist) { bestDist = d; best = p }
+      }
+      return best ? { worldPos: best.mesh.position.clone() } : null
+    },
+
     setEnemyAggressiveness(multiplier) { enemyAggression = multiplier },
     setEnemyProjectileSpeedBonus(bonus) { enemyProjectileSpeedBonus = bonus },
     setEnemyAimError(deg) { enemyAimErrorDeg = Math.max(1, deg) },

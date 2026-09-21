@@ -39,7 +39,10 @@ const LINES = {
     engage_boss: ['Now THIS is a real fight!', "Let's rattle 'em!"],
     engage_horda: ["Swarm's mine, don't crowd me!"],
     engage_fragata: ["That shield won't hold forever!"],
-    ability_ram: ['Time to make my move!', 'Ramming speed!', "Outta my way!"],
+    ability_ram: ['Time to make my move!', 'Ramming speed!', "Outta my way!", 'Locked on — here I come!', 'Brace for impact, hotshot!'],
+    // Carta "Falco Intercept" (Docs/# Documento de Implementação — Nova.md, item 3) — Falco
+    // abate um projétil pesado (powerLevel 3-4) antes que ele chegue no jogador.
+    ability_intercept: ['Not on my watch!', 'I got your six, Fox!', "Yeah, I don't think so!", 'Ha! Too slow!', 'Denied!'],
     kill: ['Got him!', 'Too easy.'],
     boss_kill: ['Yeah! Take that, big guy!'],
     golden_kill: ['Special delivery — right in the face!'],

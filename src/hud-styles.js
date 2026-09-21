@@ -287,6 +287,37 @@ export function injectHudExtraStyles() {
   box-shadow: inset 0 0 0 2.5px #fff;
 }
 
+/* ============ SUB-ÍCONES DE COOLDOWN (Documento de Implementação, item 3) ============ */
+/* Cada carta com cooldown PRÓPRIO do piloto (independente do hexágono principal) empilha um
+   círculo pequeno abaixo do slot — só aparece se o jogador tem a carta. Reaproveita as cores do
+   hexágono via --sub-color (setado por piloto em setSquadronSubAbilities). */
+.hud-ability-subcolumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  pointer-events: none;
+}
+.hud-ability-subicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(20, 24, 32, 0.75);
+  border: 1.5px solid #333944;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.hud-ability-subicon-glyph {
+  font-size: 8px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px #000);
+}
+.hud-ability-subicon.ready { border-color: var(--sub-color, #38bdf8); box-shadow: 0 0 4px var(--sub-color, #38bdf8); }
+.hud-ability-subicon.cooling { border-color: #333944; opacity: 0.7; }
+
 /* Coluna que empilha o widget de FOCO do esquadrão + o contador de cooldown do Swirl Blast no
    mesmo slot horizontal do topbar (pedido do usuário: Swirl "embaixo do mesmo local" do foco). */
 .hud-squad-column {
