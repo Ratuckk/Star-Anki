@@ -36,6 +36,28 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.9 — Rádio separado abaixo das cartas + speedlines de habilidade
+
+Escolhas visuais do usuário integradas: composição de canais da **Opção 3**, com separação maior,
+e animação de habilidade da **Opção 2** (derrapagem com speedlines).
+
+- O rádio trivial e o painel de habilidade agora ficam abaixo da bandeja de cartas, em duas faixas
+  distintas. A posição é calculada a partir da altura real da bandeja e atualiza quando as cartas
+  quebram linha por quantidade ou redimensionamento da tela.
+- Ability quotes entram em 1,2s: chegam com speedlines longas, freiam comprimindo as linhas e
+  estabilizam; na saída, painel e linhas aceleram para a direita. Quotes triviais preservam a
+  animação de rádio anterior.
+- A fila do Foco é dividida por `isAbility`: cada canal mantém sua própria sequência e um quote
+  de habilidade não pode mais ser renderizado na faixa trivial. Canais coexistem para pilotos
+  diferentes; a exclusão mútua continua valendo para o mesmo piloto.
+- A regra de Focus foi completada: Slippy com Morale e Peppy com Auxílio disponível usam
+  `ability_focus_upgrade`; os demais continuam com `focus_ready`.
+
+**Validado**: sintaxe, selftest e inspeção de whitespace. Próximo playtest: acionar Foco com
+Slippy Morale e Peppy Auxílio, além de acumular várias linhas de cartas para conferir as âncoras.
+
+---
+
 ### v0.99.8 — Formação dos aliados: retorno real e ataques separados
 
 Correção dos sintomas reportados em playtest (aliados muito longe e vários ocupando o mesmo ponto):

@@ -920,7 +920,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  function toggleCommand(lockedTargets = [], playerPos, slippyMoraleStacks = 0) {
+  function toggleCommand(lockedTargets = [], playerPos, slippyMoraleStacks = 0, peppyAuxShieldStacks = 0) {
     if (squadronCommandMode === 'free') {
       if (squadronCommandCooldownTimer > 0) {
         return { mode: 'cooldown', remaining: squadronCommandCooldownTimer }
@@ -969,14 +969,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // como os outros eventos, e não passa pelo cooldown global do dispatcher — usa getLine(),
       // que é um lookup puro). Só quem realmente recebeu a ordem fala (abilityActive continua de
       // fora, ver comentário acima).
-      // Regra 2.4 do Documento de Implementação (focus quote: trivial vs. ability, via
-      // FOCUS_ABILITY_CARDS) fica pendente até as cartas Slippy Morale/Peppy Auxílio existirem —
-      // até lá todo mundo fala 'focus_ready' (trivial), comportamento atual preservado.
+      // Regra 2.4 do Documento de Implementação: Slippy com Morale ou Peppy com Auxílio e
+      // cooldown disponível usam `ability_focus_upgrade` no canal superior; os demais mantêm
+      // `focus_ready` no rádio trivial. As filas são separadas no HUD pelo campo isAbility.
       const readyQueue = []
       for (const w of activeWingmen) {
         if (w.abilityActive) continue
-        const upgradedFocus = w.profile.id === 2 && moraleDamageBonus > 0
-        const eventId = upgradedFocus ? 'ability_morale' : 'focus_ready'
+        const slippyFocusUpgrade = w.profile.id === 2 && moraleDamageBonus > 0
+        const peppyFocusUpgrade = w.profile.id === 1 && peppyAuxShieldStacks > 0 && w.abilityCooldown <= 0
+        const eventId = slippyFocusUpgrade || peppyFocusUpgrade ? 'ability_focus_upgrade' : 'focus_ready'
         const text = wingmanRadio.getLine(w.profile.id, eventId)
         if (text) readyQueue.push(buildRadioPayload(w.profile, text, eventId))
       }

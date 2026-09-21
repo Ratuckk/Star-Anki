@@ -2063,8 +2063,9 @@ export function injectHudExtraStyles() {
    flicker rápido antes de sumir. Ver Docs/Rádio dos Aliados — Opção B v2 (protótipo).html. */
 .hud-wingman-radio {
   position: absolute;
-  left: 28px;
-  bottom: 30px;
+  left: 12px;
+  top: var(--wingman-radio-top, 304px);
+  bottom: auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2157,15 +2158,16 @@ export function injectHudExtraStyles() {
    partir da esquerda) — pra distinguir "fala de habilidade" de "papo" trivial à primeira vista. */
 .hud-wingman-ability-panel {
   position: absolute;
-  left: 28px;
-  top: 18px;
+  left: 12px;
+  top: var(--wingman-ability-top, 172px);
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 17px 8px 8px;
-  border-radius: 4px;
+  padding: 10px 18px 10px 10px;
+  border-radius: 5px;
   background: rgba(8, 12, 22, 0.94);
   border: 1.5px solid var(--pc, #38bdf8);
+  border-left-width: 6px;
   box-shadow: 0 0 26px var(--pg, rgba(56, 189, 248, 0.7)), 0 6px 16px rgba(0, 0, 0, 0.6);
   opacity: 0;
   transform: translateY(-14px);
@@ -2178,21 +2180,57 @@ export function injectHudExtraStyles() {
   opacity: 1;
   transform: translateY(0);
 }
-@keyframes hud-wingman-ability-glitch-in {
-  0%   { clip-path: inset(0 88% 0 0); }
-  12%  { clip-path: inset(0 60% 0 30%); }
-  24%  { clip-path: inset(0 20% 0 65%); }
-  36%  { clip-path: inset(0 70% 0 5%); }
-  48%  { clip-path: inset(0 10% 0 80%); }
-  60%  { clip-path: inset(0 45% 0 15%); }
-  75%  { clip-path: inset(0 0 0 0); }
-  100% { clip-path: inset(0 0 0 0); }
+/* Opção 2 escolhida: o quote entra como painel em derrapagem. As speedlines chegam longas,
+   comprimem na freada e quase somem enquanto a fala é lida; ao sair, voltam aceleradas. */
+.hud-wingman-ability-speedlines {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hud-wingman-ability-speedlines i {
+  position: absolute;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--pc, #38bdf8), #ffffff);
+  box-shadow: 0 0 5px var(--pc, #38bdf8);
+  transform-origin: right;
+}
+.hud-wingman-ability-speedlines i:nth-child(1) { top: 16%; width: 74%; }
+.hud-wingman-ability-speedlines i:nth-child(2) { top: 31%; width: 44%; }
+.hud-wingman-ability-speedlines i:nth-child(3) { top: 49%; width: 90%; }
+.hud-wingman-ability-speedlines i:nth-child(4) { top: 66%; width: 57%; }
+.hud-wingman-ability-speedlines i:nth-child(5) { top: 83%; width: 78%; }
+@keyframes hud-wingman-ability-drift-in {
+  0% { clip-path: inset(0 100% 0 0); transform: translateX(-390px) scaleX(1.18); }
+  45% { clip-path: inset(0 0 0 0); transform: translateX(-22px) scaleX(1.05); }
+  72% { transform: translateX(8px) scaleX(0.98); }
+  100% { transform: translateX(0) scaleX(1); }
+}
+@keyframes hud-wingman-ability-lines-brake {
+  0% { opacity: 0; transform: translateX(-530px) scaleX(3); }
+  45% { opacity: 1; transform: translateX(-20px) scaleX(1.15); }
+  68% { opacity: 0.72; transform: translateX(12px) scaleX(0.75); }
+  100% { opacity: 0.18; transform: scaleX(0.3); }
+}
+@keyframes hud-wingman-ability-drift-out {
+  to { opacity: 0; transform: translateX(450px) scaleX(1.35); }
+}
+@keyframes hud-wingman-ability-lines-boost {
+  0% { opacity: 0.18; transform: scaleX(0.3); }
+  100% { opacity: 0; transform: translateX(580px) scaleX(3); }
 }
 .hud-wingman-ability-panel.entering {
-  animation: hud-wingman-ability-glitch-in 320ms steps(3, end);
+  animation: hud-wingman-ability-drift-in 1.2s cubic-bezier(0.12, 0.68, 0.16, 1) both;
+}
+.hud-wingman-ability-panel.entering .hud-wingman-ability-speedlines i {
+  animation: hud-wingman-ability-lines-brake 1.2s ease-out both;
 }
 .hud-wingman-ability-panel.leaving {
-  animation: hud-wingman-radio-flicker 180ms steps(1, end);
+  animation: hud-wingman-ability-drift-out 420ms cubic-bezier(0.76, 0, 0.99, 0.35) both;
+}
+.hud-wingman-ability-panel.leaving .hud-wingman-ability-speedlines i {
+  animation: hud-wingman-ability-lines-boost 420ms ease-in both;
 }
 
 /* ============ ALERTA DE EVENTO AMBIENTAL: TEMPESTADE DE DETRITOS ============ */

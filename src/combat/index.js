@@ -101,7 +101,12 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getWingmanVitals: () => squadron.getVitalSnapshots?.() || [],
     getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
     getSquadronCommandState: () => squadron.getCommandState ? squadron.getCommandState() : { mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 },
-    toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos, player.getSlippyMoraleStacks?.() || 0),
+    toggleSquadronCommand: (playerPos) => squadron.toggleCommand(
+      lockon.getLockedEntities ? lockon.getLockedEntities() : [],
+      playerPos,
+      player.getSlippyMoraleStacks?.() || 0,
+      player.getPeppyAuxShieldStacks?.() || 0,
+    ),
     getAbilityStates: () => squadron.getAbilityStates(),
     getSubAbilityStates: (cardStacks) => squadron.getSubAbilityStates(cardStacks),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),

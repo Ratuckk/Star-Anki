@@ -40,6 +40,9 @@ const WINGMAN_RADIO_STATIC_FRAME_MS = 55
 const WINGMAN_RADIO_HOLD_MS = 2400
 const WINGMAN_RADIO_ENTER_MS = 280
 const WINGMAN_RADIO_LEAVE_MS = 190
+// Ability quote escolhido: speedlines entram, freiam por 1.2s e reaparecem acelerados na saída.
+const WINGMAN_ABILITY_ENTER_MS = 1200
+const WINGMAN_ABILITY_LEAVE_MS = 420
 
 // Extraído de hud.js na refatoração que separa cada tela em seu próprio arquivo. Zero mudança
 // de comportamento. `createGameHud` continua sendo uma closure única — todos os métodos abaixo
@@ -168,6 +171,14 @@ export function createGameHud() {
       <div class="hud-wingman-radio-line"></div>
     </div>
   `
+  // Ability quote recebe uma camada exclusiva de speedlines. O painel trivial mantém o markup
+  // original: o destaque visual pertence só à ativação de habilidade, nunca à conversa comum.
+  const WINGMAN_ABILITY_PANEL_MARKUP = `
+    <div class="hud-wingman-ability-speedlines" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i>
+    </div>
+    ${WINGMAN_RADIO_PANEL_MARKUP}
+  `
   wingmanRadioPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
   root.appendChild(wingmanRadioPanel)
 
@@ -178,7 +189,7 @@ export function createGameHud() {
   // mais abaixo, que decidem a região pelo payload.isAbility (combat/wingmen.js → ABILITY_EVENT_IDS).
   const wingmanAbilityPanel = document.createElement('div')
   wingmanAbilityPanel.className = 'hud-wingman-ability-panel'
-  wingmanAbilityPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
+  wingmanAbilityPanel.innerHTML = WINGMAN_ABILITY_PANEL_MARKUP
   root.appendChild(wingmanAbilityPanel)
 
   // Pré-carrega os 4 retratos assim que o HUD monta — o `.wr-portrait.src` ainda É reatribuído a
@@ -192,7 +203,7 @@ export function createGameHud() {
   // Factory: cada região (trivial/inferior, ability/superior) tem seu próprio painel DOM, fila e
   // timers — nasce da extração do código original (que só existia pro painel trivial) pra não
   // duplicar ~60 linhas de gerência de timer/glitch quando o painel de ability foi adicionado.
-  function createWingmanRadioRegion(panelEl) {
+  function createWingmanRadioRegion(panelEl, { enterMs = WINGMAN_RADIO_ENTER_MS, leaveMs = WINGMAN_RADIO_LEAVE_MS } = {}) {
     const frameEls = Array.from(panelEl.querySelectorAll('.wr-frame'))
     const portraitEl = panelEl.querySelector('.wr-portrait')
     const nameEl = panelEl.querySelector('.hud-wingman-radio-name')
@@ -247,7 +258,7 @@ export function createGameHud() {
 
       const enterDoneId = setTimeout(() => {
         panelEl.classList.remove('entering')
-      }, WINGMAN_RADIO_ENTER_MS)
+      }, enterMs)
       timers.push({ type: 'timeout', id: enterDoneId })
 
       const leaveStartId = setTimeout(() => {
@@ -261,7 +272,7 @@ export function createGameHud() {
             const next = queue.shift()
             play(next)
           }
-        }, WINGMAN_RADIO_LEAVE_MS)
+        }, leaveMs)
         timers.push({ type: 'timeout', id: removeId })
       }, WINGMAN_RADIO_HOLD_MS)
       timers.push({ type: 'timeout', id: leaveStartId })
@@ -277,7 +288,7 @@ export function createGameHud() {
         panelEl.classList.remove('active', 'leaving')
         playing = false
         currentPilotId = null
-      }, WINGMAN_RADIO_LEAVE_MS)
+      }, leaveMs)
       timers.push({ type: 'timeout', id: removeId })
     }
     function show(payload) {
@@ -299,11 +310,14 @@ export function createGameHud() {
       currentPilotId = null
       queue = []
     }
-    return { show, showQueue, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId }
+    return { show, showQueue, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
   }
 
   const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
-  const wingmanRadioRegionAbility = createWingmanRadioRegion(wingmanAbilityPanel)
+  const wingmanRadioRegionAbility = createWingmanRadioRegion(wingmanAbilityPanel, {
+    enterMs: WINGMAN_ABILITY_ENTER_MS,
+    leaveMs: WINGMAN_ABILITY_LEAVE_MS,
+  })
   // Quando a mesma pessoa muda de canal (trivial ↔ ability), o painel anterior precisa terminar
   // sua saída antes do novo entrar. Sem esta pequena serialização os dois ficavam visíveis pelos
   // 190ms da animação de fade, contrariando a exclusão mútua por piloto do documento.
@@ -322,7 +336,24 @@ export function createGameHud() {
     radioChannelTransitionTimeout = setTimeout(() => {
       radioChannelTransitionTimeout = null
       region.show(payload)
-    }, WINGMAN_RADIO_LEAVE_MS)
+    }, otherRegion.getLeaveMs())
+  }
+
+  // Mantém os dois canais independentes quando o foco gera várias falas. Só há espera quando
+  // o MESMO piloto já está no canal oposto; pilotos diferentes podem transmitir em paralelo.
+  function showRadioQueueForChannel(payloads, region, otherRegion) {
+    if (!payloads || payloads.length === 0) return
+    const samePilotPayload = payloads.find((payload) => payload.pilotId === otherRegion.currentPilotId())
+    if (!samePilotPayload) {
+      region.showQueue(payloads)
+      return
+    }
+    cancelRadioChannelTransition()
+    otherRegion.forceHide()
+    radioChannelTransitionTimeout = setTimeout(() => {
+      radioChannelTransitionTimeout = null
+      region.showQueue(payloads)
+    }, otherRegion.getLeaveMs())
   }
 
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
@@ -671,6 +702,20 @@ export function createGameHud() {
   cardsTray.className = 'hud-cards-tray'
   root.appendChild(cardsTray)
   let prevCardsSignature = ''
+  // O tamanho da bandeja muda com a quantidade de cartas e com a largura de tela. Os quotes
+  // começam sempre depois dela, com dois canais bem separados; ResizeObserver cobre quebra de
+  // linha ao redimensionar a janela sem depender de nova carta adquirida.
+  function updateWingmanRadioAnchor() {
+    const cardsBottom = cardsTray.offsetTop + cardsTray.offsetHeight
+    const abilityTop = Math.max(172, cardsBottom + 24)
+    root.style.setProperty('--wingman-ability-top', `${abilityTop}px`)
+    root.style.setProperty('--wingman-radio-top', `${abilityTop + 132}px`)
+  }
+  const radioTrayResizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(updateWingmanRadioAnchor)
+    : null
+  radioTrayResizeObserver?.observe(cardsTray)
+  updateWingmanRadioAnchor()
 
   const question = document.createElement('p')
   question.className = 'hud-question'
@@ -2390,6 +2435,7 @@ export function createGameHud() {
       if (!cardsMap) {
         cardsTray.innerHTML = ''
         prevCardsSignature = ''
+        updateWingmanRadioAnchor()
         return
       }
       const entries = Array.from(cardsMap.entries()).filter(([_, count]) => count > 0)
@@ -2423,6 +2469,7 @@ export function createGameHud() {
         `
         cardsTray.appendChild(chip)
       }
+      updateWingmanRadioAnchor()
     },
 
     // 4 slots fixos (ver criação de abilityHexEls acima) — states vem de combat.getAbilityStates(),
@@ -2585,24 +2632,15 @@ export function createGameHud() {
       showRadioAfterOtherRegion(payload, region, otherRegion)
     },
 
-    // Fila garantida — ex.: rajada de "prontidão" do comando de foco, onde os até 4 pilotos
-    // precisam falar em SEQUÊNCIA, sem se atropelar nem competir pelo cooldown do dispatcher (que
-    // já foi ignorado lá na origem, ver wingman-radio.js → getLine()). Se já tem algo tocando,
-    // entra no fim da fila; senão começa na hora. Hoje só carrega falas triviais (focus_ready) —
-    // ver combat/wingmen.js → toggleCommand() — então a fila sempre roda na região inferior.
+    // Fila garantida do Foco: divide payloads por CANAL antes de enfileirar. Assim um quote de
+    // ability jamais cai no rádio trivial e as duas sequências podem coexistir quando pertencem
+    // a pilotos diferentes; a exclusão continua valendo apenas para o mesmo piloto.
     showWingmanRadioQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      cancelRadioChannelTransition()
-      const abilityPilotId = wingmanRadioRegionAbility.currentPilotId()
-      if (payloads.some((p) => p.pilotId === abilityPilotId)) {
-        wingmanRadioRegionAbility.forceHide()
-        radioChannelTransitionTimeout = setTimeout(() => {
-          radioChannelTransitionTimeout = null
-          wingmanRadioRegionTrivial.showQueue(payloads)
-        }, WINGMAN_RADIO_LEAVE_MS)
-      } else {
-        wingmanRadioRegionTrivial.showQueue(payloads)
-      }
+      const abilityPayloads = payloads.filter((payload) => payload.isAbility)
+      const trivialPayloads = payloads.filter((payload) => !payload.isAbility)
+      showRadioQueueForChannel(abilityPayloads, wingmanRadioRegionAbility, wingmanRadioRegionTrivial)
+      showRadioQueueForChannel(trivialPayloads, wingmanRadioRegionTrivial, wingmanRadioRegionAbility)
     },
 
     updateSquadronNoticePosition(xFrac, yFrac) {
@@ -2738,6 +2776,7 @@ export function createGameHud() {
       root.classList.remove('cinematic-active', 'game-paused')
       cardsTray.innerHTML = ''
       prevCardsSignature = ''
+      radioTrayResizeObserver?.disconnect()
       root.innerHTML = ''
     },
   }
