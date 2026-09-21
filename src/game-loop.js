@@ -980,7 +980,11 @@ export function createGameLoop(deps) {
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
     if (hud.setSquadronSubAbilities && combat.getSubAbilityStates) {
-      hud.setSquadronSubAbilities(combat.getSubAbilityStates({ falcoInterceptStacks: player.getFalcoInterceptStacks(), peppyRescueStacks: player.getPeppyRescueStacks?.() || 0 }))
+      hud.setSquadronSubAbilities(combat.getSubAbilityStates({
+        falcoInterceptStacks: player.getFalcoInterceptStacks(),
+        peppyRescueStacks: player.getPeppyRescueStacks?.() || 0,
+        miyuBoombusterStacks: player.getMiyuBoombusterStacks?.() || 0,
+      }))
     }
     if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())
     if (hud.setSwirlCooldown) hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())

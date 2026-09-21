@@ -149,6 +149,7 @@ const _wmDesiredVelocity = new THREE.Vector3()
 const _wmDiff = new THREE.Vector3()
 const _wmPush = new THREE.Vector3()
 const _wmToEnemy = new THREE.Vector3()
+const _wmVelNorm = new THREE.Vector3()
 const _wmAimDir = new THREE.Vector3()
 const _wmSpreadDir = new THREE.Vector3()
 const _wmLaserMuzzle = new THREE.Vector3()
@@ -169,6 +170,17 @@ const WINGMAN_LASER_DAMAGE = 1
 // Só o disparo adicional da Carga Compartilhada usa magenta. O laser de combate normal dela
 // permanece rosa, distinguindo visualmente o bônus sem trocar a identidade da piloto.
 const MIYU_ASSIST_SHOT_COLOR = 0xd500f9
+// ============ MIYU — BOOMBUSTER ============
+// Orbes magenta homing: 3 de dano (definido pelo usuário), até 1 + stacks alvos. Cooldown
+// sugerido pelo documento (10→4s) e raio de 90u escolhido para cobrir o combate normal.
+const MIYU_BOOMBUSTER_COLOR = 0xd500f9
+const MIYU_BOOMBUSTER_DAMAGE = 3
+const MIYU_BOOMBUSTER_BASE_COOLDOWN_S = 10
+const MIYU_BOOMBUSTER_COOLDOWN_PER_STACK_S = 2
+const MIYU_BOOMBUSTER_TARGET_RADIUS = 90
+const MIYU_BOOMBUSTER_TURN_RATE = 6.5
+const MIYU_BOOMBUSTER_LIFETIME_S = 3.0
+const MIYU_STATUS_BONUS_S = 2
 // Dispersão angular (rad) da rajada de dogfight — mira imperfeita, tiros não saem 100% retos.
 // Valor base agora é por piloto (combatProfile.aimSpreadRad, Ideia 2 do Overhaul de
 // Personalidade); esta constante só documenta a origem histórica.
@@ -579,7 +591,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Carta "Falco Status" — só Falco (id 0) é afetado; os outros pilotos usam o
   // combatProfile.dogfightDuration de sempre, sem alteração.
   function effectiveDogfightDuration(profile, opts) {
-    const bonus = profile.id === 0 ? (opts.falcoStatusStacks || 0) * FALCO_STATUS_BONUS_S : 0
+    const bonus = profile.id === 0 ? (opts.falcoStatusStacks || 0) * FALCO_STATUS_BONUS_S
+      : profile.id === 3 ? (opts.miyuStatusStacks || 0) * MIYU_STATUS_BONUS_S : 0
     return profile.combatProfile.dogfightDuration + bonus
   }
 
@@ -613,6 +626,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const falcoInterceptStacks = cardStacks.falcoInterceptStacks || 0
     const falcoSubs = []
     const peppySubs = []
+    const miyuSubs = []
     if (falcoInterceptStacks > 0) {
       const w = activeWingmen.find((x) => x.profile.id === 0)
       const cooldownTotal = Math.max(1, FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks)
@@ -630,9 +644,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       const cooldownTotal = Math.max(1, PEPPY_RESCUE_BASE_COOLDOWN_S - PEPPY_RESCUE_COOLDOWN_PER_STACK_S * cardStacks.peppyRescueStacks)
       peppySubs.push({ id: 'peppy-rescue', icon: '🛟', color: WINGMAN_PROFILES[1].accentColor, ready: !!w && w.rescueCooldown <= 0, cooldownRemaining: w ? Math.max(0, w.rescueCooldown) : cooldownTotal, cooldownTotal })
     }
+    if ((cardStacks.miyuBoombusterStacks || 0) > 0) {
+      const stacks = cardStacks.miyuBoombusterStacks
+      const w = activeWingmen.find((x) => x.profile.id === 3)
+      const cooldownTotal = Math.max(1, MIYU_BOOMBUSTER_BASE_COOLDOWN_S - MIYU_BOOMBUSTER_COOLDOWN_PER_STACK_S * stacks)
+      miyuSubs.push({ id: 'miyu-boombuster', icon: '🟣', color: MIYU_BOOMBUSTER_COLOR, ready: !!w && w.boombusterCooldown <= 0, cooldownRemaining: w ? Math.max(0, w.boombusterCooldown) : cooldownTotal, cooldownTotal })
+    }
     return WINGMAN_PROFILES.map((profile) => ({
       profileId: profile.id,
-      subs: profile.id === 0 ? falcoSubs : profile.id === 1 ? peppySubs : [],
+      subs: profile.id === 0 ? falcoSubs : profile.id === 1 ? peppySubs : profile.id === 3 ? miyuSubs : [],
     }))
   }
 
@@ -643,8 +663,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Quantos alvos extras de trava do tiro teleguiado a Carga Compartilhada da Miyu concede
   // enquanto acoplado — empilha com a carta 'more-homing-targets', o teto (HOMING_MAX_TARGETS_CAP)
   // é respeitado do lado de fora (game-loop.js), aqui é só o bônus bruto.
-  function getAssistExtraTargets() {
-    return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_EXTRA_TARGETS : 0
+  function getAssistExtraTargets(stacks = 0) {
+    return activeWingmen.some((w) => w.abilityActive && w.escortKind === 'assist') ? ASSIST_EXTRA_TARGETS + stacks : 0
   }
 
   // Coleta os materiais únicos de um mesh composto (grupo de partes) — usado pela Miyu pra
@@ -720,6 +740,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // investida, ver início do state 'ram' abaixo).
       interceptCooldown: 0,
       rescueCooldown: 0,
+      boombusterCooldown: 0,
       hp: WINGMAN_BASE_HP,
       maxHp: WINGMAN_BASE_HP,
       shieldMax: WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0),
@@ -989,11 +1010,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       mesh,
       velocity: direction.clone().normalize().multiplyScalar(WINGMAN_LASER_SPEED),
       traveled: 0,
-      life: WINGMAN_LASER_LIFETIME,
-      color: wingman.profile.laserColor,
-      damage: WINGMAN_LASER_DAMAGE,
+      life: opts.lifetime ?? WINGMAN_LASER_LIFETIME,
+      color: opts.color ?? wingman.profile.laserColor,
+      damage: opts.damage ?? WINGMAN_LASER_DAMAGE,
       ownMaterial: material !== wingman.laserMaterial,
       owner: wingman, // usado pelo proc do Reparo de Campo (Slippy) na resolução de acerto
+      homingTarget: opts.homingTarget || null,
+      homingTurnRate: opts.homingTurnRate || 0,
     })
 
     if (effects && effects.muzzleFlash) {
@@ -1030,6 +1053,26 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     )
     if (shots > 0) aiValidator.logMechanic('miyu-assist-shot', 'disparos-magenta', { shots, baseMaxTargets })
     return shots
+  }
+
+  function fireMiyuBoombuster(miyu, playerPos, stacks) {
+    const cooldown = Math.max(1, MIYU_BOOMBUSTER_BASE_COOLDOWN_S - MIYU_BOOMBUSTER_COOLDOWN_PER_STACK_S * stacks)
+    const nearby = getAliveEnemies().filter((target) => playerPos.distanceTo(target.mesh.position) <= MIYU_BOOMBUSTER_TARGET_RADIUS)
+    const pool = nearby.length > 0 ? nearby : getAliveEnemies()
+    if (pool.length === 0) return 0
+    pool.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+    const targets = pool.slice(0, Math.min(pool.length, 1 + stacks))
+    for (const target of targets) {
+      _wmToEnemy.copy(target.mesh.position).sub(miyu.mesh.position).normalize()
+      const muzzle = _wmLaserMuzzle.copy(miyu.mesh.position).addScaledVector(_wmToEnemy, 1.3)
+      fireWingmanLaser(miyu, muzzle, _wmToEnemy, {
+        color: MIYU_BOOMBUSTER_COLOR, damage: MIYU_BOOMBUSTER_DAMAGE, homingTarget: target,
+        homingTurnRate: MIYU_BOOMBUSTER_TURN_RATE, lifetime: MIYU_BOOMBUSTER_LIFETIME_S,
+      })
+    }
+    miyu.boombusterCooldown = cooldown
+    aiValidator.expect('Boombuster limita a salva ao número correto de alvos', () => targets.length <= 1 + stacks, { targets: targets.length, stacks })
+    return targets.length
   }
 
   // ============ TICK DE ATUALIZAÇÃO DA IA DE VOO LIVRE ============
@@ -1130,6 +1173,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
       if (w.interceptCooldown > 0) w.interceptCooldown -= dt
       if (w.rescueCooldown > 0) w.rescueCooldown -= dt
+      if (w.boombusterCooldown > 0) w.boombusterCooldown -= dt
       if (w.collisionBumpCooldown > 0) w.collisionBumpCooldown -= dt
       const desiredMaxHp = WINGMAN_BASE_HP + Math.max(0, opts.wingmanHullStacks || 0)
       if (w.maxHp !== desiredMaxHp) w.maxHp = desiredMaxHp
@@ -1202,6 +1246,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         w.abilityTimer = 0
         telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Auxílio: barreira frontal durante repulsão', { elapsed })
         if (!radioMessage) radioMessage = speak(w.profile, 'ability_aux_shield')
+      }
+
+      const miyuBoombusterStacks = opts.miyuBoombusterStacks || 0
+      if (w.state !== 'damaged-passive' && w.profile.id === 3 && miyuBoombusterStacks > 0 && w.boombusterCooldown <= 0) {
+        const shots = fireMiyuBoombuster(w, playerPos, miyuBoombusterStacks)
+        if (shots > 0) {
+          telemetry.recordEvent(w.profile.name, 'ability', `Boombuster lançou ${shots} orbe(s) homing magenta`, { elapsed })
+          if (!radioMessage) radioMessage = speak(w.profile, 'ability_boombuster')
+        }
       }
 
       // Fogo das turbinas reage a boost ou manobras — discreto, sem "inchar" a nave inteira
@@ -1774,6 +1827,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       _wlPrevPos.copy(laser.mesh.position)
+      if (laser.homingTarget?.mesh && !laser.homingTarget.dying) {
+        _wmToEnemy.copy(laser.homingTarget.mesh.position).sub(laser.mesh.position)
+        if (_wmToEnemy.lengthSq() > 0.001) {
+          _wmToEnemy.normalize()
+          _wmVelNorm.copy(laser.velocity).normalize().lerp(_wmToEnemy, Math.min(1, laser.homingTurnRate * dt)).normalize()
+          laser.velocity.copy(_wmVelNorm.multiplyScalar(WINGMAN_LASER_SPEED))
+          laser.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _wmVelNorm)
+        }
+      }
       _wlStep.copy(laser.velocity).multiplyScalar(dt)
       laser.mesh.position.add(_wlStep)
       laser.traveled += _wlStep.length()

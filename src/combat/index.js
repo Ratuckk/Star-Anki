@@ -106,7 +106,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getSubAbilityStates: (cardStacks) => squadron.getSubAbilityStates(cardStacks),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
-    getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets() : 0,
+    getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets(player.getMiyuAssistStacks?.() || 0) : 0,
     getMoraleDamageBonus: () => squadron.getMoraleDamageBonus?.() || 0,
 
     // Telemetria da Esquadrilha
@@ -318,6 +318,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         slippyMoraleStacks: player.getSlippyMoraleStacks?.() || 0,
         slippyBoostStacks: player.getSlippyBoostStacks?.() || 0,
         wingmanHullStacks: player.getWingmanHullStacks?.() || 0,
+        miyuBoombusterStacks: player.getMiyuBoombusterStacks?.() || 0,
+        miyuStatusStacks: player.getMiyuStatusStacks?.() || 0,
         moraleDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
         repulsionActive: opts.repulsionActive,
         playerTumbling: rail.isTumbling?.() || false,

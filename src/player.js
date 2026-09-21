@@ -57,6 +57,13 @@ const SLIPPY_MORALE_STACKS_CAP = 3
 const SLIPPY_BOOST_STACKS_CAP = 2
 const WINGMAN_HULL_STACKS_CAP = 3
 
+// ============ CARTAS DA MIYU ============
+// Assist amplia o teto de locks; Boombuster cria uma salva homing independente; Status soma
+// duração de dogfight. Todos os três efeitos são reiniciados caso Miyu seja abatida.
+const MIYU_ASSIST_STACKS_CAP = 3
+const MIYU_BOOMBUSTER_STACKS_CAP = 3
+const MIYU_STATUS_STACKS_CAP = 3
+
 // giro completo (Z/C, 2 toques): cooldown global (não importa o lado) pra não spammar
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
 const FULL_SPIN_COOLDOWN_MS = 3000
@@ -122,6 +129,9 @@ export function createPlayerSystem(session) {
   let slippyMoraleStacks = 0
   let slippyBoostStacks = 0
   let wingmanHullStacks = 0
+  let miyuAssistStacks = 0
+  let miyuBoombusterStacks = 0
+  let miyuStatusStacks = 0
   const downedWingmanIds = new Set()
   let recoveredWingmanId = null
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
@@ -340,6 +350,15 @@ export function createPlayerSystem(session) {
         case 'wingman-hull-support':
           wingmanHullStacks = Math.min(WINGMAN_HULL_STACKS_CAP, wingmanHullStacks + 1)
           break
+        case 'miyu-assist-target':
+          miyuAssistStacks = Math.min(MIYU_ASSIST_STACKS_CAP, miyuAssistStacks + 1)
+          break
+        case 'miyu-boombuster':
+          miyuBoombusterStacks = Math.min(MIYU_BOOMBUSTER_STACKS_CAP, miyuBoombusterStacks + 1)
+          break
+        case 'miyu-status':
+          miyuStatusStacks = Math.min(MIYU_STATUS_STACKS_CAP, miyuStatusStacks + 1)
+          break
         case 'swirl-blast-cooldown':
           swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
           break
@@ -380,6 +399,9 @@ export function createPlayerSystem(session) {
     getSlippyMoraleStacks: () => slippyMoraleStacks,
     getSlippyBoostStacks: () => slippyBoostStacks,
     getWingmanHullStacks: () => wingmanHullStacks,
+    getMiyuAssistStacks: () => miyuAssistStacks,
+    getMiyuBoombusterStacks: () => miyuBoombusterStacks,
+    getMiyuStatusStacks: () => miyuStatusStacks,
     consumeRecoveredWingmanId() {
       const id = recoveredWingmanId
       recoveredWingmanId = null
@@ -399,6 +421,7 @@ export function createPlayerSystem(session) {
       if (profileId === 0) { falcoChainStacks = 0; falcoInterceptStacks = 0; falcoStatusStacks = 0 }
       if (profileId === 1) { peppyGuardExtraStacks = 0; peppyRescueStacks = 0; peppyAuxShieldStacks = 0 }
       if (profileId === 2) { slippyRepairStacks = 0; slippyMoraleStacks = 0; slippyBoostStacks = 0 }
+      if (profileId === 3) { miyuAssistStacks = 0; miyuBoombusterStacks = 0; miyuStatusStacks = 0 }
     },
 
     resetCards() {
@@ -425,6 +448,9 @@ export function createPlayerSystem(session) {
       slippyMoraleStacks = 0
       slippyBoostStacks = 0
       wingmanHullStacks = 0
+      miyuAssistStacks = 0
+      miyuBoombusterStacks = 0
+      miyuStatusStacks = 0
       downedWingmanIds.clear()
       recoveredWingmanId = null
       temporaryShieldValue = 0
@@ -474,6 +500,10 @@ export function createPlayerSystem(session) {
       if (slippyMoraleStacks >= SLIPPY_MORALE_STACKS_CAP) exclude.add('slippy-morale-boost')
       if (slippyBoostStacks >= SLIPPY_BOOST_STACKS_CAP) exclude.add('slippy-joint-boost')
       if (wingmanHullStacks >= WINGMAN_HULL_STACKS_CAP) exclude.add('wingman-hull-support')
+      if (!hasPilot(3)) { exclude.add('miyu-assist-target'); exclude.add('miyu-boombuster'); exclude.add('miyu-status') }
+      if (miyuAssistStacks >= MIYU_ASSIST_STACKS_CAP) exclude.add('miyu-assist-target')
+      if (miyuBoombusterStacks >= MIYU_BOOMBUSTER_STACKS_CAP) exclude.add('miyu-boombuster')
+      if (miyuStatusStacks >= MIYU_STATUS_STACKS_CAP) exclude.add('miyu-status')
       // Mesmo no teto de quatro, a carta volta ao pool se existe piloto abatido para resgatar.
       if (downedWingmanIds.size > 0) exclude.delete('wingman')
       return exclude

@@ -29,14 +29,30 @@ sem prioridade definida — ficam só de referência:
 
 Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
-- [ ] Item 3 completo: 3 cartas restantes (Miyu Assist+1/Boombuster/Status) + faíscas de hit
-  não-letal mais espalhadas (item final, independente). O item 0 (visuais da Miyu) foi fechado
-  na v0.98.0.
+- [ ] Item 3 completo: faltam apenas as faíscas de hit não-letal mais espalhadas (item final,
+  independente). O item 0 (visuais da Miyu) foi fechado na v0.98.0.
 - [ ] **Miyu Boombuster depende de projétil homing pra wingmen** (sistema novo, ainda não existe).
 
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.5 — Etapa 5: Miyu (Assist, Boombuster e Status)
+
+- Auditoria confirmou os visuais já existentes: locks extras da Miyu são triângulos ciano, a
+  camada externa do glow cresce 25% durante Assist e seus tiros extras já são magenta.
+- **Assist +1 Alvo (0/3)**: acrescenta um lock extra por stack enquanto Carga Compartilhada está
+  ativa, sempre respeitando o teto global de oito.
+- **Boombuster (0/3)**: após a escolha do usuário pela **Opção 2 — Orbes de rastreio**, Miyu
+  dispara simultaneamente orbes homing magenta. Cada um causa 3 de dano; seleciona até
+  `1 + stacks` alvos, priorizando os mais próximos do jogador dentro de 90u e recorrendo a alvos
+  vivos fora do raio quando necessário. Cooldown configurável: 10/8/6/4s. O sub-ícone 🟣 tem
+  cooldown próprio no HUD.
+- **Status (0/3)**: soma +2s de dogfight por stack para Miyu.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passaram. Próximo playtest: Assist com 1–3 stacks, salva do Boombuster contra múltiplos inimigos
+e tempo de dogfight da Miyu.
 
 ### v0.99.4 — Cobertura de molduras da Sentinela para aliados
 
