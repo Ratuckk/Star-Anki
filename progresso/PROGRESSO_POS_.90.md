@@ -32,8 +32,8 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 - [ ] Regra 2.4 (foco vira ability quote se o piloto tem carta de upgrade sem cooldown) —
   `FOCUS_ABILITY_CARDS` já existe no código mas fica inerte até as cartas Slippy Morale e Peppy
   Auxílio nascerem.
-- [ ] Item 3 completo: 9 cartas restantes (Peppy Guarda Extra/Rescue/Auxílio, Slippy Repair
-  Aliados/Morale Boost/Impulsão Conjunta, Miyu Assist+1/Boombuster/Status) + faíscas de hit
+- [ ] Item 3 completo: 6 cartas restantes (Slippy Repair Aliados/Morale Boost/Impulsão Conjunta,
+  Miyu Assist+1/Boombuster/Status) + faíscas de hit
   não-letal mais espalhadas (item final, independente). O item 0 (visuais da Miyu) foi fechado
   na v0.98.0.
 - [ ] **Slippy Repair Aliados depende de wingmen com HP** (Checklist item 3, ainda não
@@ -43,6 +43,28 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.2 — Etapa 3: Peppy (Guarda Extra, Rescue e Auxílio)
+
+Implementação da etapa Peppy após a escolha do usuário pela **Opção 1 — Órbita protetora** para
+a direção visual. A Guarda preserva seu gatilho atual (só parte quando o escudo normal não está
+cheio), para não alterar silenciosamente o comportamento base.
+
+- **Guarda Extra (0/3)**: a Guarda normal ainda repõe uma carga azul; cada stack concede mais uma
+  carga temporária verde acima de `shieldMax`, por 10s. Ela não regenera, é removida ao expirar ou
+  perder vida e absorve dano antes do escudo normal. HUD clássico mostra pips verdes extras;
+  HUD orbital muda o arco para verde durante a proteção.
+- **Rescue (0/3)**: ao detectar tumble, Peppy voa até o jogador; ao alcançar 5u, cancela a
+  cambalhota pela rampa existente, concede +1 escudo e entra em cooldown próprio de 20/16/12s.
+  O sub-ícone 🛟 aparece abaixo do hexágono principal, independente da Guarda.
+- **Auxílio (0/1)**: durante a repulsão, Peppy assume a frente e a barreira ampla bloqueia
+  projéteis que chegam à sua zona, antes da resolução de dano do jogador. O único dreno continua
+  sendo o da própria repulsão; bloquear não adiciona custo.
+- **Validação IA**: invariantes para cargas temporárias (0–3) e cooldown do Rescue (12–20s).
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passam. Próximo playtest: usar Guarda Extra com 3 stacks, disparar Rescue durante tier 3/4 e
+segurar repulsão diante de projéteis.
 
 ### v0.99.1 — Etapa 2 revisada: Falco Intercept sem remoção em área
 

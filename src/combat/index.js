@@ -271,6 +271,13 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bossCollisionWorldPos = enemyResult.bossCollisionWorldPos || null
         enemyCollisionWorldPos = enemyResult.enemyCollisionWorldPos || null
         enemyCollisionTier = enemyResult.enemyCollisionTier || 0
+        // Auxílio do Peppy usa a posição já alcançada no frame anterior e remove projéteis antes
+        // da resolução de hit do jogador. O dreno continua exclusivamente no repulsor do player.
+        const auxShield = opts.repulsionActive ? squadron.getAuxShieldState?.() : null
+        if (auxShield && enemies.removeProjectilesNear) {
+          const blocked = enemies.removeProjectilesNear(auxShield.worldPos, auxShield.radius)
+          for (const pos of blocked) effects?.shockwave?.(pos, 0x7be7ff, 0.4)
+        }
         const projResult = enemies.updateProjectiles(dt, playerPosition, opts)
         enemyHits += projResult.hits
         enemyProjectileHits += projResult.hits
@@ -290,6 +297,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         falcoChainStacks: player.getFalcoChainStacks?.() || 0,
         falcoInterceptStacks: player.getFalcoInterceptStacks?.() || 0,
         falcoStatusStacks: player.getFalcoStatusStacks?.() || 0,
+        peppyRescueStacks: player.getPeppyRescueStacks?.() || 0,
+        peppyGuardExtraStacks: player.getPeppyGuardExtraStacks?.() || 0,
+        peppyAuxShieldStacks: player.getPeppyAuxShieldStacks?.() || 0,
+        repulsionActive: opts.repulsionActive,
+        playerTumbling: rail.isTumbling?.() || false,
       }) || {}
 
       // Habilidades únicas do esquadrão que afetam o jogador diretamente (Peppy: Guarda / Slippy:
@@ -297,6 +309,13 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       // precisa subir esse encanamento até o game-loop.
       if (wingmanResult.shieldGrants > 0 && player.grantShieldPip) {
         for (let i = 0; i < wingmanResult.shieldGrants; i++) player.grantShieldPip()
+      }
+      if (wingmanResult.guardExtraShieldGrants > 0 && player.grantTemporaryShieldPips) {
+        player.grantTemporaryShieldPips(wingmanResult.guardExtraShieldGrants)
+      }
+      if (wingmanResult.rescueCancels > 0) rail.cancelTumble?.()
+      if (wingmanResult.rescueShieldGrants > 0 && player.grantShieldPip) {
+        for (let i = 0; i < wingmanResult.rescueShieldGrants; i++) player.grantShieldPip()
       }
       if (wingmanResult.healOrbSpawns && wingmanResult.healOrbSpawns.length > 0 && effects && effects.spawnMicroOrbe) {
         for (const pos of wingmanResult.healOrbSpawns) effects.spawnMicroOrbe(pos, { kind: 'heal' })

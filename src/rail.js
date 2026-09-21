@@ -1089,6 +1089,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerHighImpactTumble,
     triggerEnemyCollisionTumble,
     cancelTumble,
+    isTumbling: () => tumbleTimer > 0,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
     triggerRecoil,
     triggerImpactSquash,

@@ -531,6 +531,7 @@ export function createGameLoop(deps) {
       ramDamage: ramActive ? RAM_DAMAGE : 0,
       allowBossOrbHit: state.phase === 'bossBuildup',
       boostActive: boostOn,
+      repulsionActive: player.isRepulsionActive(),
       shipHitboxPoints,
       homingCharging: isCharging,
       reactivity,
@@ -946,7 +947,7 @@ export function createGameLoop(deps) {
 
     hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier, difficultyLevel })
     hud.setLives(session.lives, player.getMaxLives())
-    hud.setShield(player.getShieldValue(), player.getShieldMax())
+    hud.setShield(player.getShieldValue(), player.getShieldMax(), player.getTemporaryShieldValue?.() || 0)
     // HUD orbital (settings.vitalsHudStyle): âncora dos arcos = projeção na tela da nave, mesmo
     // padrão de setReticlePosition/updateSquadronNoticePosition abaixo. Clamp com margem generosa
     // porque o cluster se estende bem mais PRA CIMA da âncora do que pros lados/baixo (a
@@ -964,7 +965,7 @@ export function createGameLoop(deps) {
     hud.updateCollectedCards(player.getCollectedCards())
     if (hud.setSquadronAbilities && combat.getAbilityStates) hud.setSquadronAbilities(combat.getAbilityStates())
     if (hud.setSquadronSubAbilities && combat.getSubAbilityStates) {
-      hud.setSquadronSubAbilities(combat.getSubAbilityStates({ falcoInterceptStacks: player.getFalcoInterceptStacks() }))
+      hud.setSquadronSubAbilities(combat.getSubAbilityStates({ falcoInterceptStacks: player.getFalcoInterceptStacks(), peppyRescueStacks: player.getPeppyRescueStacks?.() || 0 }))
     }
     if (hud.setSquadronCommandState && combat.getSquadronCommandState) hud.setSquadronCommandState(combat.getSquadronCommandState())
     if (hud.setSwirlCooldown) hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())

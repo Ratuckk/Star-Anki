@@ -1550,21 +1550,28 @@ export function createGameHud() {
       prevLives = lives
     },
 
-    setShield(value, maxValue) {
+    setShield(value, maxValue, temporaryValue = 0) {
       const roundedShield = Math.round(value)
+      const roundedTemporary = Math.round(temporaryValue)
+      const visibleShield = roundedShield + roundedTemporary
       if (!useOrbitalVitals) {
-        if (maxValue !== shieldSegsMax) {
-          shieldSegsMax = maxValue
-          shieldSegEls = rebuildSegs(shieldSegsEl, maxValue)
+        const visibleMax = maxValue + roundedTemporary
+        if (visibleMax !== shieldSegsMax) {
+          shieldSegsMax = visibleMax
+          shieldSegEls = rebuildSegs(shieldSegsEl, visibleMax)
         }
-        shieldSegEls.forEach((seg, i) => seg.classList.toggle('fill-shield', i < roundedShield))
+        shieldSegEls.forEach((seg, i) => {
+          seg.classList.toggle('fill-shield', i < roundedShield)
+          seg.classList.toggle('fill-temp-shield', i >= maxValue && i < maxValue + roundedTemporary)
+        })
       } else {
-        const frac = maxValue > 0 ? Math.max(0, Math.min(1, value / maxValue)) : 0
+        const frac = maxValue > 0 ? Math.max(0, Math.min(1, visibleShield / (maxValue + roundedTemporary))) : 0
         shieldArc.style.strokeDashoffset = String((1 - frac) * 100)
-        if (prevShield == null || roundedShield !== prevShield) pulseOrbitalVisible(shieldArc)
+        shieldArc.classList.toggle('peppy-extra', roundedTemporary > 0)
+        if (prevShield == null || visibleShield !== prevShield) pulseOrbitalVisible(shieldArc)
       }
-      if (prevShield != null && roundedShield < prevShield) flashVitalsHit()
-      prevShield = roundedShield
+      if (prevShield != null && visibleShield < prevShield) flashVitalsHit()
+      prevShield = visibleShield
     },
 
     setBoost(charge, active) {

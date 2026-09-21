@@ -708,6 +708,7 @@ export function injectHudExtraStyles() {
 }
 .hud-seg.fill-health { background: #3df0a6; box-shadow: 0 0 6px rgba(61,240,166,.7); }
 .hud-seg.fill-shield { background: #4a9bff; box-shadow: 0 0 6px rgba(74,155,255,.7); }
+.hud-seg.fill-temp-shield { background: #39ff6a; box-shadow: 0 0 8px rgba(57,255,106,.85); }
 .hud-health-wrap.crit .hud-seg.fill-health {
   animation: hud-seg-crit 550ms infinite alternate;
 }
@@ -806,6 +807,7 @@ export function injectHudExtraStyles() {
   transition: stroke-dashoffset 0.15s linear, stroke 0.2s ease, opacity 0.12s ease-out;
 }
 .hvo-shield { stroke: #4a9bff; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(74,155,255,.7)); }
+.hvo-shield.peppy-extra { stroke: #39ff6a; filter: drop-shadow(0 0 7px rgba(57,255,106,.85)); }
 .hvo-health { stroke: #3df0a6; stroke-width: 8px; filter: drop-shadow(0 0 5px rgba(61,240,166,.65)); }
 .hvo-boost  { stroke: #ffd54a; stroke-width: 7px; filter: drop-shadow(0 0 5px rgba(255,213,74,.7)); }
 .hvo-boost.active {

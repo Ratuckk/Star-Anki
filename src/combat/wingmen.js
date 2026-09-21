@@ -201,6 +201,15 @@ const FALCO_INTERCEPT_COLOR = 0x0066ff // azul mais forte que o laser padrão de
 // Falco Status: bônus de dogfightDuration por stack (base 5.5s → 11.5s com 3 stacks).
 const FALCO_STATUS_BONUS_S = 2
 
+// ============ PEPPY RESCUE — COOLDOWN E ALCANCE ============
+// Cartão 0/3: 20, 16 ou 12 segundos. Peppy só cancela knockback ao chegar perto do jogador;
+// não há teleporte, portanto o resgate permanece legível e respeita a distância física.
+const PEPPY_RESCUE_BASE_COOLDOWN_S = 20
+const PEPPY_RESCUE_COOLDOWN_PER_STACK_S = 4
+const PEPPY_RESCUE_TRIGGER_RANGE = 5
+const PEPPY_AUX_SHIELD_INNER_RADIUS = 2.8
+const PEPPY_AUX_SHIELD_OUTER_RADIUS = 3.15
+
 const GUARD_ESCORT_S = 4.0
 const GUARD_TRIGGER_RANGE = 9
 
@@ -589,6 +598,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function getSubAbilityStates(cardStacks = {}) {
     const falcoInterceptStacks = cardStacks.falcoInterceptStacks || 0
     const falcoSubs = []
+    const peppySubs = []
     if (falcoInterceptStacks > 0) {
       const w = activeWingmen.find((x) => x.profile.id === 0)
       const cooldownTotal = Math.max(1, FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks)
@@ -601,9 +611,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         cooldownTotal,
       })
     }
+    if ((cardStacks.peppyRescueStacks || 0) > 0) {
+      const w = activeWingmen.find((x) => x.profile.id === 1)
+      const cooldownTotal = Math.max(1, PEPPY_RESCUE_BASE_COOLDOWN_S - PEPPY_RESCUE_COOLDOWN_PER_STACK_S * cardStacks.peppyRescueStacks)
+      peppySubs.push({ id: 'peppy-rescue', icon: '🛟', color: WINGMAN_PROFILES[1].accentColor, ready: !!w && w.rescueCooldown <= 0, cooldownRemaining: w ? Math.max(0, w.rescueCooldown) : cooldownTotal, cooldownTotal })
+    }
     return WINGMAN_PROFILES.map((profile) => ({
       profileId: profile.id,
-      subs: profile.id === 0 ? falcoSubs : [],
+      subs: profile.id === 0 ? falcoSubs : profile.id === 1 ? peppySubs : [],
     }))
   }
 
@@ -630,6 +645,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return [...materials]
   }
 
+  // Arco frontal da Opção 1: fica preso ao Peppy e só aparece durante a repulsão.
+  // O impacto em cada projétil bloqueado é criado pelo sistema de combate.
+  function createPeppyAuxShieldVisual() {
+    const arc = new THREE.Mesh(
+      new THREE.RingGeometry(PEPPY_AUX_SHIELD_INNER_RADIUS, PEPPY_AUX_SHIELD_OUTER_RADIUS, 28, 1, 0, Math.PI),
+      new THREE.MeshBasicMaterial({ color: 0x7be7ff, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false }),
+    )
+    arc.position.z = 1.8
+    arc.visible = false
+    return arc
+  }
+
   function spawnMember(profileId) {
     const profile = WINGMAN_PROFILES[profileId]
     if (!profile) return null
@@ -650,6 +677,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     scene.add(mesh)
 
     const laserMaterial = new THREE.MeshBasicMaterial({ color: profile.laserColor })
+    const auxShieldVisual = profile.id === 1 ? createPeppyAuxShieldVisual() : null
+    if (auxShieldVisual) mesh.add(auxShieldVisual)
 
     const wingman = {
       profile,
@@ -676,8 +705,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // Aríete) e contador de alvos já encadeados na Investida em Cadeia (zerado a cada nova
       // investida, ver início do state 'ram' abaixo).
       interceptCooldown: 0,
+      rescueCooldown: 0,
       chainCount: 0,
-      escortKind: null, // 'guard' | 'assist' — só usado quando state === 'escort'
+      escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
+      auxShieldVisual,
       // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
       miyuCloakTimer: 0, // Miyu: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
       miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
@@ -968,6 +999,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     let goldenSpecialHit = false
     let goldenHitWorldPos = null
     let shieldGrants = 0
+    let guardExtraShieldGrants = 0
+    let rescueShieldGrants = 0
+    let rescueCancels = 0
     const healOrbSpawns = []
     // Rádio (Ideia 3): consome qualquer mensagem disparada fora deste laço (dano externo, dismiss
     // — ver pendingRadioMessage acima) antes de tentar os eventos do próprio frame.
@@ -1003,6 +1037,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (w.engagementCooldown > 0) w.engagementCooldown -= dt
       if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
       if (w.interceptCooldown > 0) w.interceptCooldown -= dt
+      if (w.rescueCooldown > 0) w.rescueCooldown -= dt
+      if (w.auxShieldVisual) {
+        const active = w.abilityActive && w.escortKind === 'auxShield'
+        w.auxShieldVisual.visible = active
+        if (active) {
+          w.auxShieldVisual.rotation.z += dt * 0.8
+          w.auxShieldVisual.material.opacity = 0.58 + Math.sin(elapsed * 5) * 0.16
+        }
+      }
 
       // Carta "Falco Intercept" — roda em QUALQUER state (não só dogfight/ram): Falco protege o
       // jogador proativamente, mesmo em formação. Independente do abilityCooldown da Investida
@@ -1022,6 +1065,27 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
           if (!radioMessage) radioMessage = speak(w.profile, 'ability_intercept')
         }
+      }
+
+      const peppyRescueStacks = opts.peppyRescueStacks || 0
+      if (w.profile.id === 1 && peppyRescueStacks > 0 && w.rescueCooldown <= 0 &&
+          opts.playerTumbling && !w.abilityActive) {
+        w.state = 'rescue'
+        w.stateTimer = 0
+        w.abilityActive = true
+        w.abilityTimer = 0
+        telemetry.recordEvent(w.profile.name, 'ability', 'Peppy iniciou Rescue contra a cambalhota do jogador', { elapsed })
+        if (!radioMessage) radioMessage = speak(w.profile, 'ability_rescue')
+      }
+
+      const peppyAuxActive = w.profile.id === 1 && (opts.peppyAuxShieldStacks || 0) > 0 && !!opts.repulsionActive
+      if (peppyAuxActive && !w.abilityActive) {
+        w.state = 'escort'
+        w.escortKind = 'auxShield'
+        w.abilityActive = true
+        w.abilityTimer = 0
+        telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Auxílio: barreira frontal durante repulsão', { elapsed })
+        if (!radioMessage) radioMessage = speak(w.profile, 'ability_aux_shield')
       }
 
       // Fogo das turbinas reage a boost ou manobras — discreto, sem "inchar" a nave inteira
@@ -1388,10 +1452,28 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             }
           }
         }
+      } else if (w.state === 'rescue') {
+        w.patrolTarget.copy(playerPos)
+        if (w.mesh.position.distanceTo(playerPos) < PEPPY_RESCUE_TRIGGER_RANGE) {
+          const cooldown = PEPPY_RESCUE_BASE_COOLDOWN_S - PEPPY_RESCUE_COOLDOWN_PER_STACK_S * peppyRescueStacks
+          w.rescueCooldown = Math.max(1, cooldown)
+          w.abilityActive = false
+          w.state = 'patrol'
+          w.stateTimer = 0
+          w.engagementCooldown = 2.5
+          rescueShieldGrants += 1
+          rescueCancels += 1
+          aiValidator.expect(
+            'Rescue do Peppy só conclui uma vez por aproximação e entra no cooldown correto',
+            () => w.rescueCooldown >= 12 && w.rescueCooldown <= 20,
+            { rescueCooldown: w.rescueCooldown, stacks: peppyRescueStacks },
+          )
+          telemetry.recordEvent(w.profile.name, 'ability', 'Rescue alcançou o jogador: tumble cancelado e +1 escudo', { elapsed })
+        }
       } else if (w.state === 'escort') {
         // ============ ESCOLTA (Peppy: Guarda / Miyu: Carga Compartilhada) ============
         w.abilityTimer += dt
-        const side = w.profile.homeSide * ESCORT_SIDE_OFFSET
+        const side = w.escortKind === 'auxShield' ? 0 : w.profile.homeSide * ESCORT_SIDE_OFFSET
         w.patrolTarget.copy(playerPos)
           .addScaledVector(frame.right, side)
           .addScaledVector(frame.up, ESCORT_UP_OFFSET)
@@ -1401,6 +1483,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (!w.abilityApplied && w.mesh.position.distanceTo(playerPos) < GUARD_TRIGGER_RANGE) {
             w.abilityApplied = true
             shieldGrants += 1
+            guardExtraShieldGrants += opts.peppyGuardExtraStacks || 0
             triggerSoundCue(WINGMAN_SOUND_CUES.peppy_guard, { worldPos: w.mesh.position })
             telemetry.recordEvent(w.profile.name, 'ability', 'Guarda de Peppy: +1 escudo transferido com sucesso ao jogador', { elapsed })
           }
@@ -1422,6 +1505,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.stateTimer = 0
             w.engagementCooldown = 4.0
           }
+        } else if (w.escortKind === 'auxShield' && !opts.repulsionActive) {
+          w.abilityActive = false
+          w.escortKind = null
+          w.state = 'patrol'
+          w.stateTimer = 0
         }
       }
 
@@ -1632,6 +1720,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       goldenSpecialHit,
       goldenHitWorldPos,
       shieldGrants,
+      guardExtraShieldGrants,
+      rescueShieldGrants,
+      rescueCancels,
       healOrbSpawns,
       radioMessage,
       radioQueue,
@@ -1704,6 +1795,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
     getAbilityStates,
     getSubAbilityStates,
+    getAuxShieldState: () => {
+      const peppy = activeWingmen.find((w) => w.profile.id === 1 && w.escortKind === 'auxShield' && w.abilityActive)
+      return peppy ? { worldPos: peppy.mesh.position.clone(), radius: 5 } : null
+    },
     applyAbilityCooldownCard,
     getAssistChargeMult,
     getAssistExtraTargets,

@@ -41,6 +41,14 @@ const RICOCHET_CAP = 5
 // no update() (mesmo padrão de player.config.homingMaxTargets lido por combat/lockon.js).
 const FALCO_CARD_STACKS_CAP = 3
 
+// ============ CARTAS DO PEPPY — ESCUDO TEMPORÁRIO ============
+// Guarda Extra acumula até três cargas ACIMA do teto normal por 10s. Essas cargas são um estado
+// separado: não aumentam shieldMax, não regeneram e sempre absorvem dano antes do escudo azul.
+const PEPPY_GUARD_EXTRA_STACKS_CAP = 3
+const PEPPY_RESCUE_STACKS_CAP = 3
+const PEPPY_AUX_SHIELD_STACKS_CAP = 1
+const PEPPY_GUARD_EXTRA_DURATION_MS = 10000
+
 // giro completo (Z/C, 2 toques): cooldown global (não importa o lado) pra não spammar
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
 const FULL_SPIN_COOLDOWN_MS = 3000
@@ -79,6 +87,8 @@ export function createPlayerSystem(session) {
   let shieldRegenRate = SHIELD_REGEN_RATE
   let shieldValue = shieldMax
   let shieldRegenDelayTimer = 0
+  let temporaryShieldValue = 0
+  let temporaryShieldTimerMs = 0
   let wrongAnswerCount = 0
 
   let invincibilityDurationMs = INVINCIBILITY_MS
@@ -97,6 +107,9 @@ export function createPlayerSystem(session) {
   let falcoChainStacks = 0 // carta "Falco Combate" — investida em cadeia contra o alvo mais próximo
   let falcoInterceptStacks = 0 // carta "Falco Intercept" — abate projéteis pesados (powerLevel 3-4)
   let falcoStatusStacks = 0 // carta "Falco Status" — +2s de dogfightDuration por stack
+  let peppyGuardExtraStacks = 0
+  let peppyRescueStacks = 0
+  let peppyAuxShieldStacks = 0
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
   let fullSpinCooldownTimer = 0
 
@@ -146,6 +159,8 @@ export function createPlayerSystem(session) {
     session.health = maxHealth
     shieldValue = shieldMax
     shieldRegenDelayTimer = 0
+    temporaryShieldValue = 0
+    temporaryShieldTimerMs = 0
     return false
   }
 
@@ -167,6 +182,8 @@ export function createPlayerSystem(session) {
     getMaxLives: () => maxLives,
     getShieldValue: () => shieldValue,
     getShieldMax: () => shieldMax,
+    getTemporaryShieldValue: () => temporaryShieldValue,
+    getTemporaryShieldRemainingMs: () => temporaryShieldTimerMs,
     getShieldRegenDelayTimer: () => shieldRegenDelayTimer,
     getShieldRegenRate: () => shieldRegenRate,
     setWrongCount(count) { wrongAnswerCount = Math.max(0, count || 0) },
@@ -277,6 +294,15 @@ export function createPlayerSystem(session) {
         case 'falco-status':
           falcoStatusStacks = Math.min(FALCO_CARD_STACKS_CAP, falcoStatusStacks + 1)
           break
+        case 'peppy-guard-extra':
+          peppyGuardExtraStacks = Math.min(PEPPY_GUARD_EXTRA_STACKS_CAP, peppyGuardExtraStacks + 1)
+          break
+        case 'peppy-rescue':
+          peppyRescueStacks = Math.min(PEPPY_RESCUE_STACKS_CAP, peppyRescueStacks + 1)
+          break
+        case 'peppy-aux-shield':
+          peppyAuxShieldStacks = PEPPY_AUX_SHIELD_STACKS_CAP
+          break
         case 'swirl-blast-cooldown':
           swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
           break
@@ -310,6 +336,9 @@ export function createPlayerSystem(session) {
     getFalcoChainStacks: () => falcoChainStacks,
     getFalcoInterceptStacks: () => falcoInterceptStacks,
     getFalcoStatusStacks: () => falcoStatusStacks,
+    getPeppyGuardExtraStacks: () => peppyGuardExtraStacks,
+    getPeppyRescueStacks: () => peppyRescueStacks,
+    getPeppyAuxShieldStacks: () => peppyAuxShieldStacks,
 
     resetCards() {
       collectedCards.clear()
@@ -328,6 +357,11 @@ export function createPlayerSystem(session) {
       falcoChainStacks = 0
       falcoInterceptStacks = 0
       falcoStatusStacks = 0
+      peppyGuardExtraStacks = 0
+      peppyRescueStacks = 0
+      peppyAuxShieldStacks = 0
+      temporaryShieldValue = 0
+      temporaryShieldTimerMs = 0
       fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
       ramCardActive = false
       fireCooldown = DEFAULT_FIRE_COOLDOWN
@@ -363,6 +397,10 @@ export function createPlayerSystem(session) {
       if (falcoChainStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-combat-chain')
       if (falcoInterceptStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-intercept')
       if (falcoStatusStacks >= FALCO_CARD_STACKS_CAP) exclude.add('falco-status')
+      if (wingmanCount <= 1) { exclude.add('peppy-guard-extra'); exclude.add('peppy-rescue'); exclude.add('peppy-aux-shield') }
+      if (peppyGuardExtraStacks >= PEPPY_GUARD_EXTRA_STACKS_CAP) exclude.add('peppy-guard-extra')
+      if (peppyRescueStacks >= PEPPY_RESCUE_STACKS_CAP) exclude.add('peppy-rescue')
+      if (peppyAuxShieldStacks >= PEPPY_AUX_SHIELD_STACKS_CAP) exclude.add('peppy-aux-shield')
       return exclude
     },
 
@@ -374,6 +412,17 @@ export function createPlayerSystem(session) {
       // Seção 3 do backlog (contrapeso do jogador): em patamares altos (wrongAnswerCount >= 3), atraso de +150ms na recarga do escudo
       shieldRegenDelayTimer = shieldRegenDelayMs + (wrongAnswerCount >= 3 ? 150 : 0)
       let remaining = Math.max(1, amount)
+      const absorbedByTemporaryShield = temporaryShieldValue > 0
+      if (absorbedByTemporaryShield) {
+        const absorbed = Math.min(temporaryShieldValue, remaining)
+        temporaryShieldValue -= absorbed
+        remaining -= absorbed
+      }
+      aiValidator.expect(
+        'Escudo temporário do Peppy nunca fica negativo nem passa de três cargas',
+        () => temporaryShieldValue >= 0 && temporaryShieldValue <= PEPPY_GUARD_EXTRA_STACKS_CAP,
+        { temporaryShieldValue, damage: amount },
+      )
       const absorbedByShield = shieldValue > 0
       if (absorbedByShield) {
         if (shieldValue >= remaining) {
@@ -393,7 +442,7 @@ export function createPlayerSystem(session) {
         { shieldValue, shieldMax, damage: amount }
       )
       const shieldBroke = absorbedByShield && shieldValue <= 0
-      if (absorbedByShield) {
+      if (absorbedByTemporaryShield || absorbedByShield) {
         if (shieldBroke) {
           triggerSoundCue(PLAYER_SOUND_CUES.shield_break, { remainingShield: shieldValue, damage: amount })
         } else {
@@ -421,9 +470,9 @@ export function createPlayerSystem(session) {
         }
       }
       telemetry?.recordEvent('damage', `Dano sofrido: ${amount} (Escudo: ${absorbedByShield ? 'absorveu' : 'vazio'}, HP restante: ${session.health}, Vidas: ${session.lives})`, {
-        amount, absorbedByShield, shieldBroke, outOfLives, health: session.health, lives: session.lives,
+        amount, absorbedByShield, absorbedByTemporaryShield, shieldBroke, outOfLives, health: session.health, lives: session.lives,
       })
-      return { absorbedByShield, shieldBroke, outOfLives }
+      return { absorbedByShield: absorbedByShield || absorbedByTemporaryShield, absorbedByTemporaryShield, shieldBroke, outOfLives }
     },
 
     applyHealthLoss,
@@ -515,6 +564,15 @@ export function createPlayerSystem(session) {
       return granted
     },
 
+    grantTemporaryShieldPips(amount = 1) {
+      if (!Number.isFinite(amount) || amount <= 0) return 0
+      const granted = Math.min(PEPPY_GUARD_EXTRA_STACKS_CAP, Math.floor(amount))
+      temporaryShieldValue = Math.max(temporaryShieldValue, granted)
+      temporaryShieldTimerMs = PEPPY_GUARD_EXTRA_DURATION_MS
+      telemetry?.recordEvent('shield', `Guarda Extra de Peppy: +${granted} escudo temporário por 10s`, { granted, temporaryShieldValue })
+      return granted
+    },
+
     // debug "Aplicar buffs máximos": pula direto pro teto, ignorando o ganho gradual por carta.
     // QoL (v0.29.4): antes só setava aimAssistAngle e projectileCount, apesar do nome prometer
     // "buffs máximos". Agora aplica TODOS os tetos diretamente, refletindo o efeito de ter
@@ -583,6 +641,10 @@ export function createPlayerSystem(session) {
           boostCharge = Math.max(0, boostCharge - (dt * 1000) / BOOST_BRAKE_DRAIN_MS)
         }
         if (!repulsionHeld || boostCharge <= 0) repulsionActive = false
+      }
+      if (temporaryShieldTimerMs > 0) {
+        temporaryShieldTimerMs = Math.max(0, temporaryShieldTimerMs - dt * 1000)
+        if (temporaryShieldTimerMs <= 0) temporaryShieldValue = 0
       }
       if (swirlCooldownMs > 0) swirlCooldownMs = Math.max(0, swirlCooldownMs - dt * 1000)
       if (propulsionActiveTimer <= 0 && !repulsionActive && boostCharge < 1) {

@@ -46,6 +46,12 @@ export const ROGUELIKE_CARDS = [
   { id: 'falco-combat-chain', category: 'ofensivo', label: 'Falco — Investida em Cadeia', icon: '☄️', description: 'Ao acertar a Investida Aríete, Falco imediatamente parte pro inimigo vivo mais próximo e investe de novo, sem cooldown extra — até 3 alvos em cadeia. Se não achar ninguém por perto, volta à formação normalmente.' },
   { id: 'falco-intercept', category: 'ofensivo', label: 'Falco — Interceptação', icon: '🛑', description: 'Falco abate projéteis pesados inimigos antes que cheguem em você, a cada 6s (5s/4s/3s com mais stacks).' },
   { id: 'falco-status', category: 'ofensivo', label: 'Falco — Fôlego de Combate', icon: '⏳', description: '+2s na duração do dogfight de Falco por stack (base 5.5s → até 11.5s com 3 stacks).' },
+
+  // Cartas do Peppy — os limites e o estado vivem em player.js; movimento, cooldowns e bloqueio
+  // de projéteis ficam no sistema de esquadrão para reutilizar o fluxo das habilidades existentes.
+  { id: 'peppy-guard-extra', category: 'defensivo', label: 'Peppy — Guarda Extra', icon: '🟢', description: 'A Guarda concede até +3 cargas temporárias verdes acima do escudo normal, por 10s. Elas absorvem dano primeiro.' },
+  { id: 'peppy-rescue', category: 'defensivo', label: 'Peppy — Rescue', icon: '🛟', description: 'Ao detectar knockback, Peppy cancela a cambalhota e concede +1 escudo. Cooldown: 20s, 16s ou 12s.' },
+  { id: 'peppy-aux-shield', category: 'defensivo', label: 'Peppy — Auxílio', icon: '🛡️', description: 'Durante a repulsão, Peppy assume a frente e bloqueia projéteis sem custo extra de boost.' },
 ]
 
 export function pickRandomCards(count, exclude = new Set()) {
