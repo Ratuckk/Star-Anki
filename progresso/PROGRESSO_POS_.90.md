@@ -44,6 +44,26 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.1 — Etapa 2 revisada: Falco Intercept sem remoção em área
+
+Continuação após a Etapa 1 do rádio. Convenção de versão alterada por pedido explícito do usuário:
+**não avançar para v1.0.0 sem autorização**; entregas posteriores usam mais casas decimais.
+
+Auditoria confirmou que Investida em Cadeia (0/3, alvo vivo mais próximo dentro de 80u), cooldown
+próprio do Intercept (6→3s) e Fôlego de Combate (+2s/stack, até 11.5s) já obedeciam ao documento.
+Foi encontrado e corrigido um desvio no Intercept:
+
+- Antes, ele escolhia um projétil pesado, mas chamava `removeProjectilesNear()` com raio de 2.5u,
+  removendo também qualquer outro projétil que estivesse próximo. Isso transformava uma defesa
+  unitária em limpeza em área, fora do comportamento definido.
+- `enemies/index.js` agora encapsula a busca e a remoção atômica de **um** projétil perigoso;
+  `wingmen.js` usa essa operação para Falco e registra `aiValidator.expect()` exigindo
+  `removedCount === 1` em toda ativação. O visual azul já aprovado não foi alterado.
+
+**Validado**: `node --check src/enemies/index.js`, `node --check src/combat/wingmen.js`,
+`node src/selftest.mjs` e `git diff --check` passam. Próximo playtest: colocar dois projéteis
+pesados próximos um do outro e confirmar que o Intercept elimina somente um.
+
 ### v0.99.0 — Etapa 1 revisada: Rádio dos Aliados completo e exclusão de painéis
 
 Auditoria e conclusão da Etapa 1 solicitada no documento de implementação, sem iniciar as etapas

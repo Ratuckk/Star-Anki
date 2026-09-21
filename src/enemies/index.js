@@ -220,6 +220,20 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     if (idx !== -1) enemyProjectiles.splice(idx, 1)
   }
 
+  // Busca centralizada para consumidores que precisam lidar com UM projétil perigoso. Mantém a
+  // referência interna privada, evitando que habilidades como o Intercept precisem aproximar uma
+  // posição e acabem removendo projéteis vizinhos por acidente.
+  function findThreateningProjectile(minPowerLevel, playerPosition) {
+    let best = null
+    let bestDist = Infinity
+    for (const p of enemyProjectiles) {
+      if ((p.powerLevel ?? POWER_LEVEL_BASIC) < minPowerLevel) continue
+      const d = playerPosition.distanceTo(p.mesh.position)
+      if (d < bestDist) { bestDist = d; best = p }
+    }
+    return best
+  }
+
   function removeEnemyLaser(l) {
     if (l.mesh) scene.remove(l.mesh)
     if (l.geo) l.geo.dispose()
@@ -1612,20 +1626,23 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return removed
     },
 
-    // Carta "Falco Intercept" (Docs/# Documento de Implementação — Nova.md, item 3) — acha o
-    // projétil inimigo mais perigoso (powerLevel >= minPowerLevel) mais próximo do JOGADOR (é o
-    // que realmente ameaça, não o mais próximo de Falco). Devolve só a posição — a remoção de
-    // verdade reaproveita removeProjectilesNear() num raio pequeno em cima dessa posição, sem
-    // precisar expor a referência interna do projétil pra fora deste módulo.
+    // Carta "Falco Intercept" — remove EXATAMENTE o projétil pesado escolhido, nunca uma área
+    // inteira. O retorno só expõe os dados visuais necessários ao Falco; a referência interna do
+    // array continua encapsulada neste sistema.
+    interceptThreateningProjectile(minPowerLevel, playerPosition) {
+      const target = findThreateningProjectile(minPowerLevel, playerPosition)
+      if (!target) return null
+      const worldPos = target.mesh.position.clone()
+      const powerLevel = target.powerLevel ?? POWER_LEVEL_BASIC
+      removeEnemyProjectile(target)
+      return { worldPos, powerLevel, removedCount: 1 }
+    },
+
+    // Consulta sem remoção, mantida para chamadas de leitura e debug. O Intercept usa o método
+    // atômico acima para não transformar a habilidade em dano de área.
     getThreateningProjectile(minPowerLevel, playerPosition) {
-      let best = null
-      let bestDist = Infinity
-      for (const p of enemyProjectiles) {
-        if ((p.powerLevel ?? POWER_LEVEL_BASIC) < minPowerLevel) continue
-        const d = playerPosition.distanceTo(p.mesh.position)
-        if (d < bestDist) { bestDist = d; best = p }
-      }
-      return best ? { worldPos: best.mesh.position.clone() } : null
+      const target = findThreateningProjectile(minPowerLevel, playerPosition)
+      return target ? { worldPos: target.mesh.position.clone() } : null
     },
 
     setEnemyAggressiveness(multiplier) { enemyAggression = multiplier },

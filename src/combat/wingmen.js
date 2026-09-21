@@ -193,11 +193,10 @@ const FALCO_CHAIN_RADIUS = 80
 // Falco Intercept: nível de poder mínimo do projétil pra valer a pena interceptar (3 = área, 4 =
 // alto impacto — chefe/dourado/horda hoje; nível 3 ainda não é emitido por nenhum inimigo, mas o
 // doc já pede a checagem "3-4" de antemão). Cooldown por stack: `6 - stacks` segundos (6s sem
-// carta não dispara — a ability só ativa com stacks > 0). Raio de remoção reaproveita
-// removeProjectilesNear() num círculo pequeno em cima do projétil — não precisa de colisão nova.
+// carta não dispara — a ability só ativa com stacks > 0). A remoção é atômica no sistema de
+// inimigos: um Intercept nunca pode destruir projéteis vizinhos como efeito colateral.
 const FALCO_INTERCEPT_MIN_POWER_LEVEL = POWER_LEVEL_AREA_DAMAGE
 const FALCO_INTERCEPT_BASE_COOLDOWN_S = 6
-const FALCO_INTERCEPT_REMOVE_RADIUS = 2.5
 const FALCO_INTERCEPT_COLOR = 0x0066ff // azul mais forte que o laser padrão de Falco (0x38bdf8)
 // Falco Status: bônus de dogfightDuration por stack (base 5.5s → 11.5s com 3 stacks).
 const FALCO_STATUS_BONUS_S = 2
@@ -1010,10 +1009,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // Aríete (timers separados, ver criação do wingman).
       const falcoInterceptStacks = opts.falcoInterceptStacks || 0
       if (w.profile.id === 0 && falcoInterceptStacks > 0 && w.interceptCooldown <= 0 &&
-          enemies && enemies.getThreateningProjectile && enemies.removeProjectilesNear) {
-        const threat = enemies.getThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
+          enemies && enemies.interceptThreateningProjectile) {
+        const threat = enemies.interceptThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
         if (threat) {
-          enemies.removeProjectilesNear(threat.worldPos, FALCO_INTERCEPT_REMOVE_RADIUS)
+          aiValidator.expect(
+            'Intercept do Falco remove exatamente um projétil pesado por ativação',
+            () => threat.removedCount === 1,
+            { removedCount: threat.removedCount, powerLevel: threat.powerLevel },
+          )
           fireFalcoInterceptBeam(w.mesh.position, threat.worldPos)
           w.interceptCooldown = FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks
           telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
