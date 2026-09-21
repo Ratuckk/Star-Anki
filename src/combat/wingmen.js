@@ -134,6 +134,18 @@ export const FORMATION_SLOTS = [
   { side: 11.0, up: 2.2, forward: 16.0 },
 ]
 
+// ============ REAGRUPAMENTO E LINHAS DE ATAQUE ============
+// Um aliado só sai de `regroup` quando realmente retorna à sua própria vaga, nunca por um
+// timeout. Durante foco, cada piloto usa uma linha de aproximação exclusiva no mesmo alvo;
+// isso evita que os quatro convirjam para o mesmo ponto visual e pareçam uma única nave.
+const WINGMAN_MAX_DISTANCE_RAIL = 48
+const WINGMAN_MAX_DISTANCE_ARENA = 72
+const WINGMAN_REGROUP_ARRIVAL_RAIL = 8
+const WINGMAN_REGROUP_ARRIVAL_ARENA = 12
+const WINGMAN_REGROUP_SPEED_CAP = 64
+const WINGMAN_ATTACK_LANE_SPACING = 5
+const WINGMAN_ATTACK_LANE_VERTICAL = 1.6
+
 // Reutilizáveis de rotação e matriz ortonormal para cálculo de orientação sem piruetas
 const _rotMatrix = new THREE.Matrix4()
 const _targetQuat = new THREE.Quaternion()
@@ -158,6 +170,7 @@ const _wlPrevPos = new THREE.Vector3()
 const _wlStep = new THREE.Vector3()
 const _wmNoseToPlayer = new THREE.Vector3()
 const _wmInvQuat = new THREE.Quaternion()
+const _wmAttackLane = new THREE.Vector3()
 
 // Taxa de giro (rad/s, usada por quaternion.rotateTowards) e velocidade/aceleração de cruzeiro
 // agora vêm de `profile.flightProfile` (Overhaul de Personalidade, Ideia 1) — cada piloto tem o
@@ -1075,6 +1088,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return targets.length
   }
 
+  // Define uma aproximação distinta por piloto quando mais de um ataca o mesmo inimigo. A
+  // separação é em relação ao frame do jogador para permanecer estável no trilho e na arena.
+  function setDogfightApproachTarget(wingman, enemyPosition, approachDirection, frame) {
+    const laneIndex = wingman.profile.id - (WINGMAN_PROFILES.length - 1) * 0.5
+    _wmAttackLane.copy(frame.right).multiplyScalar(laneIndex * WINGMAN_ATTACK_LANE_SPACING)
+    _wmAttackLane.addScaledVector(frame.up, (wingman.profile.id % 2 === 0 ? -1 : 1) * WINGMAN_ATTACK_LANE_VERTICAL)
+    wingman.patrolTarget.copy(enemyPosition)
+      .addScaledVector(approachDirection, -16)
+      .add(_wmAttackLane)
+  }
+
   // ============ TICK DE ATUALIZAÇÃO DA IA DE VOO LIVRE ============
 
   function update(dt, playerPos, frame, opts = {}) {
@@ -1335,8 +1359,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         w.engagementCooldown = 2.0
       }
 
-      // 1. Regroup se ficou longe demais do jogador
-      const maxDistance = inArena ? 130 : 65
+      // 1. Regroup se ficou longe demais do jogador. Os limites são deliberadamente menores que
+      // os anteriores (130/65): aquela folga fazia aliados distantes continuarem visíveis como
+      // pontos isolados, principalmente na arena.
+      const maxDistance = inArena ? WINGMAN_MAX_DISTANCE_ARENA : WINGMAN_MAX_DISTANCE_RAIL
       if (distToPlayer > maxDistance && w.state !== 'regroup' && !w.abilityActive) {
         telemetry.recordEvent(w.profile.name, 'state', `Regroup acionado: caça a ${distToPlayer.toFixed(1)}u da nave (máx: ${maxDistance}u)`, { elapsed })
         w.state = 'regroup'
@@ -1346,8 +1372,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       if (w.state === 'regroup') {
         w.patrolTarget.copy(_wmSlotPos)
-        if (distToPlayer < (inArena ? 50 : 35) || w.stateTimer > 3.0) {
-          telemetry.recordEvent(w.profile.name, 'state', 'Retornou à vaga de formação após regroup', { elapsed })
+        const distanceToSlot = w.mesh.position.distanceTo(_wmSlotPos)
+        const arrivalDistance = inArena ? WINGMAN_REGROUP_ARRIVAL_ARENA : WINGMAN_REGROUP_ARRIVAL_RAIL
+        if (distanceToSlot <= arrivalDistance) {
+          aiValidator.expect(
+            'Aliado só encerra regroup ao alcançar a própria vaga de formação',
+            () => distanceToSlot <= arrivalDistance,
+            { pilotId: w.profile.id, distanceToSlot, arrivalDistance, inArena },
+          )
+          telemetry.recordEvent(w.profile.name, 'state', 'Retornou à própria vaga de formação após regroup', { elapsed })
           w.state = 'patrol'
           w.stateTimer = 0
         }
@@ -1524,7 +1557,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             w.chainCount = 0 // carta "Falco Combate" — cada ativação nova começa a cadeia do zero
             triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
           } else {
-            w.patrolTarget.copy(w.targetEnemy.mesh.position).addScaledVector(_wmAimDir, -16)
+            setDogfightApproachTarget(w, w.targetEnemy.mesh.position, _wmAimDir, frame)
 
             w.burstTimer -= dt
             if (w.burstTimer <= 0 && w.burstRemaining > 0 && dist < 85) {
@@ -1704,6 +1737,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       else _wmAimDir.copy(frame.forward)
 
       let cruiseSpeed = w.profile.flightProfile.cruiseSpeed
+      if (w.state === 'regroup') {
+        // Recuperação proporcional à distância restante, com teto: retorna rápido o suficiente
+        // para não ficar perdido fora da tela, sem teleporte ou mudança brusca de direção.
+        cruiseSpeed += Math.min(WINGMAN_REGROUP_SPEED_CAP, targetDist * 1.25)
+      }
       if (!inArena) {
         // No rail, compensa a velocidade do mundo (+48u/s)
         cruiseSpeed += 48

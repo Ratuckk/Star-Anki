@@ -36,6 +36,25 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.8 — Formação dos aliados: retorno real e ataques separados
+
+Correção dos sintomas reportados em playtest (aliados muito longe e vários ocupando o mesmo ponto):
+
+- `regroup` deixou de encerrar por timeout de três segundos. Agora só retorna a `patrol` ao chegar
+  à vaga individual de formação, com limites de distância menores (48u no trilho, 72u na arena)
+  e velocidade adicional proporcional à distância para não permanecer perdido fora da tela.
+- Ataques ao mesmo inimigo agora usam linhas de aproximação próprias por piloto, com separação
+  lateral e vertical estável no frame do jogador. O comando de Foco continua permitindo atacar o
+  mesmo alvo, mas sem fundir as naves visualmente no ponto de ataque.
+- Nova expectativa do `aiValidator` registra se algum aliado sair de `regroup` sem ter alcançado
+  a própria vaga.
+
+**Pendente de escolha visual**: `Docs/prototipo-radio-posicionamento.html` traz três composições
+para mover os quotes abaixo da bandeja de cartas e permitir múltiplas transmissões legíveis. O
+painel real não foi alterado até o usuário escolher uma opção.
+
+---
+
 ### v0.99.7 — Faíscas de impacto concluídas
 
 Etapa final independente do documento `Docs/# Documento de Implementação — Nova.md`:
