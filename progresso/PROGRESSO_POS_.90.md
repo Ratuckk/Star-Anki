@@ -38,6 +38,12 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.4 — Cobertura de molduras da Sentinela para aliados
+
+Correção complementar da Etapa 4: as molduras da Sentinela também verificam a posição de cada
+aliado ativo no instante de cruzamento do plano, usando a mesma abertura segura do jogador. Assim,
+projéteis, lasers e molduras podem afetar aliados; colisões físicas continuam só com tranco visual.
+
 ### v0.99.3 — Etapa 4: Slippy e integridade da ala
 
 - **Integridade dos aliados**: cada piloto começa com 4 HP e 3 de escudo; Peppy e Slippy têm 5

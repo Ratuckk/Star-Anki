@@ -897,11 +897,26 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let hits = 0
     let damage = 1
     let powerLevel = POWER_LEVEL_BASIC
+    const wingmanHitIds = []
+    const wingmanTargets = opts.wingmanTargets || []
     for (const gate of [...enemyGates]) {
       updateGateFlight(gate, dt, rail)
       updateGateAnimation(gate)
 
       const alongDir = _egRel.copy(playerPosition).sub(gate.mesh.position).dot(gate.dir)
+
+      // Cada aliado cruza a moldura no próprio instante; a resolução reutiliza a abertura viva
+      // da Sentinela sem transformar a nave em alvo da IA. Retirada/invencibilidade já vem
+      // filtrada em `wingmanTargets` pelo esquadrão.
+      if (!gate.wingmanResolvedIds) gate.wingmanResolvedIds = new Set()
+      for (const target of wingmanTargets) {
+        if (gate.wingmanResolvedIds.has(target.id)) continue
+        const targetAlong = _egRel.copy(target.worldPos).sub(gate.mesh.position).dot(gate.dir)
+        if (targetAlong > 0) continue
+        gate.wingmanResolvedIds.add(target.id)
+        const { hit } = resolveGateHit(gate, target.worldPos, { ...opts, shipHitboxPoints: [target] })
+        if (hit) wingmanHitIds.push(target.id)
+      }
 
       // Resolve colisão no instante da passagem pelo plano do jogador (uma única vez)
       if (alongDir <= 0 && !gate.hitResolved) {
@@ -919,7 +934,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         removeEnemyGate(gate)
       }
     }
-    return { hits, damage, powerLevel }
+    return { hits, damage, powerLevel, wingmanHitIds }
   }
 
   // ============ OVERHAUL DE SPAWN EM 3 FASES (peek/materialize/settle) ============
@@ -1289,7 +1304,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         hits: p.hits + l.hits + g.hits,
         damage: Math.max(p.damage, l.damage, g.damage),
         powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
-        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || [])],
+        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || [])],
       }
     },
 
