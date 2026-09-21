@@ -347,6 +347,7 @@ export function createGameLoop(deps) {
         if (nowMs - state.lastDodgeLeftTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(-1)
           player.triggerFullSpinIframes()
+          rail.cancelTumble?.()
           effects.spinWind(playerPos, noseFrame.forward, -1)
           if (player.isDeflectActive()) {
             combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
@@ -366,6 +367,7 @@ export function createGameLoop(deps) {
         if (nowMs - state.lastDodgeRightTapAt <= DODGE_TAP_WINDOW_MS && !player.isFullSpinOnCooldown()) {
           rail.triggerFullSpin(1)
           player.triggerFullSpinIframes()
+          rail.cancelTumble?.()
           effects.spinWind(playerPos, noseFrame.forward, 1)
           if (player.isDeflectActive()) {
             combat.deflectNearbyProjectiles(playerPos, DEFLECT_RADIUS)
@@ -395,7 +397,7 @@ export function createGameLoop(deps) {
           effects.summersaultVFX(playerPos, noseFrame.forward)
         }
       } else {
-        player.activateRepulsion()
+        if (player.activateRepulsion()) rail.cancelTumble?.()
       }
     }
 
@@ -723,6 +725,11 @@ export function createGameLoop(deps) {
         effects.shockwave(playerPos, 0xffaa00, 1.0)
       }
     }
+    if (events.enemyCollisionWorldPos && events.enemyCollisionTier > 0) {
+      rail.triggerEnemyCollisionTumble(events.enemyCollisionTier, events.enemyCollisionWorldPos)
+      hud.showKnockbackFeedback?.(events.enemyCollisionTier)
+      state.hitShakeTimer = Math.max(state.hitShakeTimer, 180 + events.enemyCollisionTier * 70)
+    }
 
     // ============ DANO AO JOGADOR (escudo vs vida, efeitos distintos) ============
     if (events.enemyHits > 0 && !player.isInvincible() && !state.debugFlags.godMode) {
@@ -738,8 +745,18 @@ export function createGameLoop(deps) {
       // PROJECTILE_POWER_LEVEL em enemies/shared.js) — giro + pisca vermelho por 2s, pedido
       // explícito do usuário. Dispara mesmo se o escudo absorveu o dano (é reação a TOMAR o
       // hit, não ao dano de vida em si).
-      if ((events.enemyHitPowerLevel || 1) >= POWER_LEVEL_HIGH_IMPACT) {
-        rail.triggerHighImpactTumble(null)
+      if (events.enemyProjectileHits > 0) {
+        const projectileTier = Math.min(4, Math.max(2, events.enemyHitPowerLevel || 1))
+        const finalTumbleTier = result.shieldBroke ? Math.max(3, projectileTier) : projectileTier
+        rail.triggerEnemyCollisionTumble(finalTumbleTier, null)
+        hud.showKnockbackFeedback?.(finalTumbleTier)
+      } else if (result.shieldBroke && events.enemyCollisionTier > 0) {
+        // QoL #6d: o último ponto de escudo sempre pesa como impacto alto, mesmo que a fonte
+        // física original fosse um inimigo pequeno (o trigger de tier baixo deste frame é
+        // sobrescrito de propósito por esta chamada).
+        const finalCollisionTier = Math.max(3, events.enemyCollisionTier)
+        rail.triggerEnemyCollisionTumble(finalCollisionTier, events.enemyCollisionWorldPos)
+        hud.showKnockbackFeedback?.(finalCollisionTier)
       }
 
       if (result.absorbedByShield) {

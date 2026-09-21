@@ -166,6 +166,36 @@ export function injectHudExtraStyles() {
   z-index: 4;
 }
 
+/* ============ KNOCKBACK POR TIER (QoL #6) ============ */
+.hud-knockback-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+  background: radial-gradient(ellipse 115% 105% at center, transparent 38%, rgba(255, 18, 35, calc(0.76 * var(--knockback-intensity, 1))) 100%);
+}
+.hud-knockback-vignette.active { animation: hud-knockback-vignette 900ms ease-out forwards; }
+@keyframes hud-knockback-vignette { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+.hud-danger-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 15%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  gap: 1px;
+  color: #ff3348;
+  font: 900 10px ui-monospace, monospace;
+  letter-spacing: .16em;
+  text-shadow: 0 0 12px rgba(255, 30, 50, .95);
+  z-index: 28;
+  pointer-events: none;
+  animation: hud-danger-indicator 900ms ease-out forwards;
+}
+.hud-danger-indicator span { font-size: 34px; line-height: .9; }
+@keyframes hud-danger-indicator { 0% { opacity: 0; transform: translateX(-50%) scale(.45); } 18% { opacity: 1; transform: translateX(-50%) scale(1.18); } 100% { opacity: 0; transform: translateX(-50%) scale(.9); } }
+
 /* ============ FEEDBACK ESCALONADO (PERFEITO/BOM/ACERTOU) ============ */
 .feedback.perfect {
   font-size: 30px;

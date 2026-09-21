@@ -82,6 +82,10 @@ export function createGameHud() {
   damageVignette.className = 'hud-damage-vignette'
   root.appendChild(damageVignette)
 
+  const knockbackVignette = document.createElement('div')
+  knockbackVignette.className = 'hud-knockback-vignette'
+  root.appendChild(knockbackVignette)
+
   const bossTint = document.createElement('div')
   bossTint.className = 'hud-boss-tint'
   root.appendChild(bossTint)
@@ -1807,6 +1811,21 @@ export function createGameHud() {
       damageVignette.classList.remove('flash')
       void damageVignette.offsetWidth
       damageVignette.classList.add('flash')
+    },
+
+    showKnockbackFeedback(tier) {
+      const resolvedTier = Math.max(1, Math.min(4, Math.round(tier) || 1))
+      knockbackVignette.style.setProperty('--knockback-intensity', String(resolvedTier / 4))
+      knockbackVignette.classList.remove('active')
+      void knockbackVignette.offsetWidth
+      knockbackVignette.classList.add('active')
+      if (resolvedTier < 2) return
+      const indicator = document.createElement('div')
+      indicator.className = `hud-danger-indicator tier-${resolvedTier}`
+      indicator.innerHTML = '<span>⚠</span><b>PERIGO</b>'
+      root.appendChild(indicator)
+      const remove = () => indicator.remove()
+      indicator.addEventListener('animationend', remove, { once: true })
     },
 
     showTierIncrease(level) {

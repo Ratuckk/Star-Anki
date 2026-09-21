@@ -238,6 +238,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       targets.update(dt)
 
       let enemyHits = 0
+      // Separado de enemyHits porque contato físico já carrega seu próprio tier; só projéteis,
+      // lasers e molduras devem iniciar o knockback baseado em powerLevel.
+      let enemyProjectileHits = 0
       let enemyDamage = 1
       // Nível de poder do maior hit de PROJÉTIL/laser/moldura no frame (ver PROJECTILE_POWER_LEVEL
       // em enemies/shared.js) — toque físico direto (kamikaze/aríete) não conta aqui, tem seu
@@ -250,6 +253,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
       let bossCollisionWorldPos = null
+      let enemyCollisionWorldPos = null
+      let enemyCollisionTier = 0
       if (enemiesActive) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
@@ -262,8 +267,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         ramGoldenDefeated = enemyResult.ramGoldenDefeated
         ramGoldenWorldPos = enemyResult.ramGoldenWorldPos
         bossCollisionWorldPos = enemyResult.bossCollisionWorldPos || null
+        enemyCollisionWorldPos = enemyResult.enemyCollisionWorldPos || null
+        enemyCollisionTier = enemyResult.enemyCollisionTier || 0
         const projResult = enemies.updateProjectiles(dt, playerPosition, opts)
         enemyHits += projResult.hits
+        enemyProjectileHits += projResult.hits
         if (projResult.hits > 0) {
           enemyDamage = Math.max(enemyDamage, projResult.damage)
           enemyHitPowerLevel = Math.max(enemyHitPowerLevel, projResult.powerLevel)
@@ -302,6 +310,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyKillPoints: enemyKillPoints + ramKillPoints + (wingmanResult.enemyKillPoints || 0),
         bonusKillPoints,
         enemyHits,
+        enemyProjectileHits,
         enemyDamage,
         enemyHitPowerLevel,
         goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated || Boolean(wingmanResult.goldenSpecialHit),
@@ -314,6 +323,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         bossHitWorldPos: bossHitWorldPos || ramBossWorldPos || wingmanResult.bossHitWorldPos || null,
         bossOrbHit,
         bossCollisionWorldPos,
+        enemyCollisionWorldPos,
+        enemyCollisionTier,
         hitsLog,
         squadWipe: Boolean(squadWipe),
         squadWipeBonus: squadWipeBonus || 0,

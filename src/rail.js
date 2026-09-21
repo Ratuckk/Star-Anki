@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { aiValidator } from './ai-validator.js'
 
 const RAIL_SPEED = 22
 // v0.29.6: nave mais calma por padrão, mas ganha uma pequena aceleração ao manter a MESMA
@@ -371,13 +372,23 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let fullSpinT = 1
   let fullSpinDir = 0
 
-  // Perda de controle por colisão com boss / dourado / detrito (Star Fox tumble spin)
-  const TUMBLE_DURATION = 0.85
+  // ============ KNOCKBACK POR TIER DE AMEAÇA (QoL #6/#7) ============
+  // Tier 1..4: impactos leves → críticos. As durações já incluem o aumento de ~50% pedido no
+  // item 7; cancelar por giro/repulsão termina a entrada de controle em 0.2s, sem corte seco.
+  const TUMBLE_TIERS = {
+    1: { duration: 0.6, force: 42, spin: Math.PI * 5.5 },
+    2: { duration: 0.9, force: 72, spin: Math.PI * 7.0 },
+    3: { duration: 1.3, force: 105, spin: Math.PI * 8.5 },
+    4: { duration: 1.8, force: 140, spin: Math.PI * 9.5 },
+  }
+  const TUMBLE_CANCEL_RAMP_S = 0.2
   let tumbleTimer = 0
-  let tumbleDuration = TUMBLE_DURATION
+  let tumbleDuration = TUMBLE_TIERS[1].duration
   let tumbleAngle = 0
   let tumbleDir = 1
   let tumbleKnockbackVel = new THREE.Vector3()
+  let tumbleTier = 0
+  let tumbleCancelTimer = 0
 
   // ============ PERDA DE CONTROLE POR HIT DE PROJÉTIL DE ALTO-IMPACTO (nível 4 — ver ============
   // ============ PROJECTILE_POWER_LEVEL em enemies/shared.js: Chefe/Dourado/Horda) ============
@@ -586,12 +597,16 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   // railThrowVel) empurra a nave suavemente ao longo do tempo, com decaimento exponencial lento
   // (~4.2/s, o mesmo da arena), pra nave viajar uma distância real (≈8u) em vez de só tremelicar
   // no lugar.
-  function startTumble(duration, impactOrigin, { highImpact = false } = {}) {
-    tumbleTimer = duration
-    tumbleDuration = duration
+  function startTumble(tier, impactOrigin) {
+    const resolvedTier = THREE.MathUtils.clamp(Math.round(tier) || 1, 1, 4)
+    const spec = TUMBLE_TIERS[resolvedTier]
+    tumbleTimer = spec.duration
+    tumbleDuration = spec.duration
     tumbleAngle = 0
     tumbleDir = Math.random() < 0.5 ? -1 : 1
-    tumbleIsHighImpact = highImpact
+    tumbleTier = resolvedTier
+    tumbleCancelTimer = 0
+    tumbleIsHighImpact = resolvedTier >= 4
     redFlashTimer = 0
     redFlashOn = false
     triggerImpactSquash()
@@ -606,25 +621,42 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
       repelDir.normalize()
       // Sem teleporte: só a velocidade arremessa (updateArena integra tumbleKnockbackVel frame a
       // frame com decaimento 4.2). O clamp de raio da arena continua acontecendo no updateArena.
-      tumbleKnockbackVel.copy(repelDir).multiplyScalar(125)
+      tumbleKnockbackVel.copy(repelDir).multiplyScalar(spec.force)
     } else {
       // Trilho: mesma ideia — sem mexer em playerX direto. railThrowVel é uma via separada da
       // velocidade de input (velX/velY), com decaimento lento próprio (4.2), pra que o arremesso
       // sobreviva ao lerp rápido (rate 22) que a velocidade de input usa. Ver integração em update().
-      const pushX = Math.sign(playerX || (Math.random() < 0.5 ? -1 : 1)) * 14
-      railThrowVel.set(pushX * 4, 30)
-      recoilOffset += 7.5
+      const pushX = Math.sign(playerX || (Math.random() < 0.5 ? -1 : 1)) * (spec.force * 0.12)
+      railThrowVel.set(pushX * 4, spec.force * 0.24)
+      recoilOffset += spec.force * 0.06
     }
+    aiValidator.expect(
+      'Knockback sempre inicia com tier e duração válidos',
+      () => tumbleTier >= 1 && tumbleTier <= 4 && tumbleTimer > 0 && tumbleDuration > 0,
+      { tier: tumbleTier, timer: tumbleTimer, duration: tumbleDuration },
+    )
+    aiValidator.logMechanic('knockback-tier', 'iniciado', { tier: tumbleTier, duration: tumbleDuration })
   }
 
   // Colisão violenta com boss / dourado / detrito (Star Fox knockback + tumble spin)
   function triggerBossCollisionTumble(impactOrigin) {
-    startTumble(TUMBLE_DURATION, impactOrigin, { highImpact: false })
+    startTumble(4, impactOrigin)
   }
 
   // Hit de projétil nível 4 (Chefe/Dourado/Horda) — ver bloco de constantes HIGH_IMPACT_* acima.
   function triggerHighImpactTumble(impactOrigin) {
-    startTumble(HIGH_IMPACT_TUMBLE_DURATION_S, impactOrigin, { highImpact: true })
+    startTumble(4, impactOrigin)
+  }
+
+  function triggerEnemyCollisionTumble(tier, impactOrigin) {
+    startTumble(tier, impactOrigin)
+  }
+
+  function cancelTumble() {
+    if (tumbleTimer <= 0 || tumbleCancelTimer > 0) return false
+    tumbleCancelTimer = TUMBLE_CANCEL_RAMP_S
+    aiValidator.logMechanic('knockback-tier', 'cancelamento-iniciado', { tier: tumbleTier })
+    return true
   }
 
   function forwardFromYawPitch(yaw, pitch) {
@@ -777,7 +809,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     let tumbleYawWobble = 0
     if (tumbleTimer > 0) {
       const tNorm = tumbleTimer / tumbleDuration
-      const spinSpeedPeak = tumbleIsHighImpact ? HIGH_IMPACT_TUMBLE_SPIN_SPEED : Math.PI * 9.5
+      const spinSpeedPeak = TUMBLE_TIERS[tumbleTier]?.spin || Math.PI * 5.5
       const spinSpeed = spinSpeedPeak * tNorm * tumbleDir
       tumbleAngle += spinSpeed * dt
       tumbleSpin = tumbleAngle
@@ -802,7 +834,14 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
         }
       }
 
-      tumbleTimer -= dt
+      if (tumbleCancelTimer > 0) {
+        tumbleCancelTimer = Math.max(0, tumbleCancelTimer - dt)
+        const cancelFrac = tumbleCancelTimer / TUMBLE_CANCEL_RAMP_S
+        tumbleTimer = Math.min(tumbleTimer, TUMBLE_CANCEL_RAMP_S * cancelFrac)
+        tumbleKnockbackVel.multiplyScalar(Math.exp(-16 * dt))
+      } else {
+        tumbleTimer -= dt
+      }
       if (tumbleTimer <= 0) {
         wobbleVel += WOBBLE_KICK * 2.2 * tumbleDir
         if (tumbleIsHighImpact) {
@@ -814,6 +853,12 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
             shipAccentMaterial.emissiveIntensity = 0
           }
         }
+        aiValidator.expect(
+          'Knockback encerrado não mantém timer ou tier ativos',
+          () => tumbleTimer <= 0,
+          { tier: tumbleTier, timer: tumbleTimer, cancelled: tumbleCancelTimer > 0 },
+        )
+        tumbleTier = 0
       }
     }
     const tumbleState = { spin: tumbleSpin, pitch: tumblePitchWobble, yaw: tumbleYawWobble }
@@ -1042,6 +1087,8 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerArenaSummersault,
     triggerBossCollisionTumble,
     triggerHighImpactTumble,
+    triggerEnemyCollisionTumble,
+    cancelTumble,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
     triggerRecoil,
     triggerImpactSquash,

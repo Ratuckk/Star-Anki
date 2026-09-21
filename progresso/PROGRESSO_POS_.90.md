@@ -49,6 +49,33 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.97.0 — Knockback por tier de ameaça (pré-requisito do Peppy Rescue)
+
+Primeira parte da fase do Peppy, conforme a ordem do `Docs/# Documento de Implementação — Nova.md`:
+o pré-requisito QoL #6/#7 agora está fechado antes de criar a carta Rescue.
+
+- **Quatro tiers reais de impacto**: inimigos pequenos (Blaster, Mini-Swarm, Sussurro, Réplica,
+  Ímã) causam tier 1; médios (Tank, Time, Sentinela, Verme, Horda), tier 2; Fragata e Detrito,
+  tier 3; Chefe/Dourado, tier 4. Projéteis, lasers e molduras usam tier 2–4 pelo `powerLevel`.
+  A classificação só controla a reação da nave do jogador; não muda IA, movimento, HP, tiro ou
+  spawn de inimigos.
+- **Perda de controle calibrada e cancelável**: duração/força sobem de 0.6s/leve até 1.8s/máxima.
+  Um giro completo ou a repulsão encerram o tumble por uma rampa de 0.2s, em vez de cortar a
+  rotação/empurrão de um frame para o outro.
+- **Último escudo pesa mais**: se um impacto físico quebra a última carga, o tier é elevado no
+  mínimo para 3; o mesmo já vale para projéteis.
+- **Feedback de leitura imediata**: vignette vermelha proporcional ao tier em todos os impactos;
+  triângulo `PERIGO` nos tiers 2–4. Shake também escala com colisões físicas.
+- **Validação em playtest**: `aiValidator.expect()` registra que todo tumble nasce com tier e
+  duração válidos e que encerra sem timer pendente; a timeline registra início/cancelamento.
+
+**Validado**: `node --check` nos módulos alterados e `node src/selftest.mjs` passam.
+No próximo playtest real, testar uma colisão leve, uma com Fragata/Detrito, um projétil nível 4
+e o cancelamento por giro/repulsão; então colar o **Log de Validação IA** para confirmar que não
+houve expectativa falha.
+
+---
+
 ### v0.90.0 — Dash lateral: afterimage + speedlines; contador de cooldown do Swirl Blast na HUD
 
 Dois pedidos do usuário na mesma mensagem.

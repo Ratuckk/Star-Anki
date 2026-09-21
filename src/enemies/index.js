@@ -267,6 +267,29 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     }
   }
 
+  // ============ TIER DE IMPACTO POR CLASSE ============
+  // Só descreve o BAQUE que a nave do jogador recebe ao encostar; não muda IA, HP, tiro,
+  // spawn nem movimento de inimigo algum. Boss/dourado continuam no tier 4 por seus fluxos
+  // próprios; os demais seguem a tabela aprovada no QoL #6.
+  function collisionTierFor(enemy) {
+    switch (enemy.kind) {
+      case BLASTER_KIND:
+      case MINI_SWARM_KIND:
+      case SUSSURRO_KIND:
+      case REPLICA_KIND:
+      case IMA_KIND: return 1
+      case TANK_KIND:
+      case TIME_KIND:
+      case SENTINELA_KIND:
+      case VERME_KIND:
+      case HORDA_KIND: return 2
+      case FRAGATA_KIND:
+      case DETRITO_KIND: return 3
+      case BOSS_KIND: return 4
+      default: return 1
+    }
+  }
+
   function deathDurationFor(enemy) {
     switch (enemy.kind) {
       case BLASTER_KIND: return BLASTER_DEATH_DURATION
@@ -416,6 +439,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let ramBossDefeated = false
     let ramBossWorldPos = null
     let bossCollisionWorldPos = null
+    let enemyCollisionWorldPos = null
+    let enemyCollisionTier = 0
     const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
     for (const enemy of [...enemies]) {
       const hitRadius = hitRadiusFor(enemy)
@@ -449,9 +474,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         // contato prolongado reenviaria o evento a cada frame e reiniciaria o tumble antes do
         // impulso fazer efeito (mesmo bug do teleporte, versão "tremelique no lugar"). O reset
         // acontece no else (não-colidindo), então encostar de novo depois conta como novo arremesso.
-        if ((enemy.kind === BOSS_KIND || enemy.kind === DETRITO_KIND) && !enemy.thrownActive) {
+        if (!enemy.thrownActive) {
           enemy.thrownActive = true
-          bossCollisionWorldPos = enemy.mesh.position.clone()
+          const tier = collisionTierFor(enemy)
+          if (tier >= 4) bossCollisionWorldPos = enemy.mesh.position.clone()
+          else {
+            enemyCollisionWorldPos = enemy.mesh.position.clone()
+            enemyCollisionTier = Math.max(enemyCollisionTier, tier)
+          }
         }
         if (ramDamage > 0) {
           // BUG corrigido: aplicava `ramDamage` A CADA FRAME de sobreposição — pro chefe (hp
@@ -745,7 +775,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       if (enemy.kind === BOSS_KIND) updateBossLaser(scene, enemy, dt, playerPosition, effects, bossLaserCtx)
     }
-    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos }
+    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos, enemyCollisionWorldPos, enemyCollisionTier }
   }
 
   function updateEnemyProjectiles(dt, playerPosition, opts = {}) {
@@ -1215,6 +1245,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         ramGoldenDefeated: goldenRamResult?.ramGoldenDefeated || false,
         ramGoldenWorldPos: goldenRamResult?.ramGoldenWorldPos || null,
         bossCollisionWorldPos,
+        enemyCollisionWorldPos: result.enemyCollisionWorldPos || null,
+        enemyCollisionTier: result.enemyCollisionTier || 0,
       }
     },
 
