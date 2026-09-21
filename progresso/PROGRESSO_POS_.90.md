@@ -38,6 +38,19 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.11 — Intercept do Falco com confirmação visual forte
+
+Por autorização explícita do usuário, este visual foi integrado sem uma rodada de protótipos:
+
+- O feixe do Intercept ficou mais espesso e permanece por 0,58s, deixando clara a linha entre
+  Falco e o projétil bloqueado.
+- O ponto do bloqueio recebe clarão azul, explosão maior com anéis, shockwave ampla e faíscas de
+  ricochete azuis. O disparo hostil continua removido atomicamente antes do efeito; nada novo
+  causa dano em inimigos próximos.
+
+**Validado**: sintaxe, selftest e inspeção de whitespace. **Pendente de playtest**: conferir se
+o efeito continua legível contra chefe, fog e múltiplos projéteis, sem dominar a tela.
+
 ### v0.99.10 — Curva preditiva dos aliados contra detritos
 
 Implementada a **Opção 1** escolhida pelo usuário para navegação de obstáculos:

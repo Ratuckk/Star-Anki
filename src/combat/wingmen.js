@@ -569,7 +569,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const interceptBeams = []
   const interceptBeamGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 6)
   interceptBeamGeometry.rotateX(Math.PI / 2)
-  const FALCO_INTERCEPT_BEAM_LIFETIME = 0.32
+  // O bloqueio precisa ser lido à primeira vista: feixe mais espesso e persistente que um laser
+  // comum, seguido de clarão, onda e faíscas azuis no ponto exato do projétil cancelado.
+  const FALCO_INTERCEPT_BEAM_LIFETIME = 0.58
 
   function fireFalcoInterceptBeam(origin, targetPos) {
     const dir = targetPos.clone().sub(origin)
@@ -580,13 +582,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const mesh = new THREE.Mesh(interceptBeamGeometry, material)
     mesh.position.copy(origin).addScaledVector(dir, dist / 2)
     mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, dir)
-    mesh.scale.set(2.2, 2.2, dist)
+    mesh.scale.set(3.4, 3.4, dist)
     scene.add(mesh)
     interceptBeams.push({ mesh, material, life: FALCO_INTERCEPT_BEAM_LIFETIME })
     if (effects) {
       effects.muzzleFlash?.(origin, dir)
-      effects.explosion?.(targetPos, FALCO_INTERCEPT_COLOR, 0.38, { rings: true })
-      effects.shockwave?.(targetPos, FALCO_INTERCEPT_COLOR, 0.55)
+      effects.bloomSprite?.(origin, FALCO_INTERCEPT_COLOR, 1.35)
+      effects.explosion?.(targetPos, FALCO_INTERCEPT_COLOR, 0.92, { rings: true })
+      effects.shockwave?.(targetPos, FALCO_INTERCEPT_COLOR, 1.3)
+      effects.bloomSprite?.(targetPos, FALCO_INTERCEPT_COLOR, 2.2)
+      effects.ricochetSparks?.(targetPos, dir, FALCO_INTERCEPT_COLOR)
     }
   }
 
