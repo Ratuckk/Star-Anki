@@ -13,8 +13,8 @@
 // (hud-game.js: painel superior = ability, inferior = trivial — nunca as duas ao mesmo tempo pro
 // MESMO piloto). Um eventId de ability NUNCA dispara no painel trivial e vice-versa — garantido
 // por construção (quem chama já sabe qual eventId está disparando, não há ambiguidade em runtime).
-// Os 4 primeiros (ram/guard/repair/assist) já existem hoje; os demais pertencem a cartas ainda não
-// implementadas (Falco Intercept, Peppy Rescue/Auxílio, Slippy Morale/Impulsão, Miyu Boombuster,
+// Cinco eventos (ram/intercept/guard/repair/assist) já existem hoje; os demais pertencem a
+// cartas ainda não implementadas (Peppy Rescue/Auxílio, Slippy Morale/Impulsão, Miyu Boombuster,
 // foco com carta de upgrade) — cadastrados aqui de antemão pra já nascerem classificados certo
 // quando cada fase de personagem os disparar pela primeira vez.
 export const ABILITY_EVENT_IDS = new Set([
@@ -60,7 +60,12 @@ const LINES = {
     engage_boss: ["This one's dangerous — stay sharp!", 'Focus fire, everyone!'],
     engage_horda: ["Careful, they're swarming!"],
     engage_fragata: ['Watch its blind spot!'],
-    ability_guard: ["I'll cover you, Fox!", 'Standing by to defend!', 'Shields up!'],
+    ability_guard: ["I'll cover you, Fox!", 'Standing by to defend!', 'Shields up!', 'Defense grid online!', 'Nothing gets through me!'],
+    // As abilities futuras recebem o pool completo já na Etapa 1 do rádio. Assim, quando as
+    // cartas nascerem, não há risco de o evento de ability ficar sem fala no painel superior.
+    ability_rescue: ["Hang on, Fox — I'm coming in!", "I've got you, steady now.", 'Stay with me, Fox!', "You're not going down today.", 'Rescue run underway!'],
+    ability_aux_shield: ['Shield wall deployed!', 'Stay behind me, Fox.', "I'll take the heat.", 'Barrier holding.', "I've got the incoming fire."],
+    ability_focus_upgrade: ['Formation locked. Protecting the lead.', 'Auxiliary systems ready.', 'My shield is yours, Fox.', 'Command received. Defense first.', 'Cover pattern set.'],
     kill: ['Target down.'],
     boss_kill: ['Great shot, Fox!'],
     golden_kill: ['That was a clean hit!'],
@@ -78,7 +83,10 @@ const LINES = {
     engage_boss: ["Th-that thing's huge!!", 'Here we go, big one!'],
     engage_horda: ['So many of them!!'],
     engage_fragata: ['That armor looks tough...'],
-    ability_repair: ['Got a little something for you!', 'Got you covered, buddy!', 'Field repair incoming!'],
+    ability_repair: ['Got a little something for you!', 'Got you covered, buddy!', 'Field repair incoming!', 'Patch kit on the way!', "Don't worry, I can fix this!"],
+    ability_morale: ['Everybody, hit harder!', 'Boosting the whole squad!', 'Morale boost is live!', "Let's turn this around!", 'Damage link optimized!'],
+    ability_boost_dash: ["I'm boosting with you!", 'Turbo sync, go go go!', 'No one can touch us now!', 'Hold on, Fox!', 'Boost trail engaged!'],
+    ability_focus_upgrade: ['Morale systems ready!', 'Everyone gets the boost!', 'Focus command received!', 'I can make every shot count!', 'Squad link charged!'],
     kill: ['Yeah! Got one!'],
     boss_kill: ['We actually did it!!'],
     golden_kill: ['Whoa, nice shot!'],
@@ -91,12 +99,13 @@ const LINES = {
     focus_ready: ['R-ready when you are!'],
   },
   3: { // Miyu — Vanguarda Fantasma: cirúrgica, cool
-    engage_dogfight: ['Target acquired.'],
+    engage_dogfight: ['Target acquired.', 'Engaging with precision.', 'I have the angle.'],
     engage_focus: ['Moving to intercept.'],
     engage_boss: ['Priority target confirmed.', 'Engaging primary threat.'],
     engage_horda: ['Multiple contacts, staying sharp.'],
     engage_fragata: ['Scanning for a weak point.'],
-    ability_assist: ['Syncing targeting array.', 'Systems synced.', 'Uplink stable.'],
+    ability_assist: ['Syncing targeting array.', 'Systems synced.', 'Uplink stable.', 'Sharing target solution.', 'Additional locks available.'],
+    ability_boombuster: ['Heavy charge pattern armed.', 'Multiple targets, one solution.', 'Boombuster volley released.', 'Charged ordnance away.', 'Saturation strike confirmed.'],
     kill: ['Clean shot.'],
     boss_kill: ['Target eliminated.'],
     golden_kill: ['Precision strike, confirmed.'],
@@ -106,8 +115,15 @@ const LINES = {
     player_low_health: ["Stay sharp, I've got you."],
     return_formation: ['Regrouping.'],
     alone: ['...Just me and the silence now.'],
-    focus_ready: ['Awaiting your mark.'],
+    focus_ready: ['Awaiting your mark.', 'Command link ready.'],
   },
+}
+
+// Contagem usada pela validação automatizada do requisito de variedade do rádio. Mantém `LINES`
+// privada para o dispatcher, mas permite confirmar que nenhuma expansão futura derrubou um piloto
+// abaixo do mínimo de 30 falas preservadas.
+export function getWingmanRadioLineCount(pilotId) {
+  return Object.values(LINES[pilotId] || {}).reduce((total, pool) => total + pool.length, 0)
 }
 
 export function createWingmanRadio() {

@@ -304,6 +304,26 @@ export function createGameHud() {
 
   const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
   const wingmanRadioRegionAbility = createWingmanRadioRegion(wingmanAbilityPanel)
+  // Quando a mesma pessoa muda de canal (trivial ↔ ability), o painel anterior precisa terminar
+  // sua saída antes do novo entrar. Sem esta pequena serialização os dois ficavam visíveis pelos
+  // 190ms da animação de fade, contrariando a exclusão mútua por piloto do documento.
+  let radioChannelTransitionTimeout = null
+  function cancelRadioChannelTransition() {
+    if (radioChannelTransitionTimeout !== null) clearTimeout(radioChannelTransitionTimeout)
+    radioChannelTransitionTimeout = null
+  }
+  function showRadioAfterOtherRegion(payload, region, otherRegion) {
+    cancelRadioChannelTransition()
+    if (otherRegion.currentPilotId() !== payload.pilotId) {
+      region.show(payload)
+      return
+    }
+    otherRegion.forceHide()
+    radioChannelTransitionTimeout = setTimeout(() => {
+      radioChannelTransitionTimeout = null
+      region.show(payload)
+    }, WINGMAN_RADIO_LEAVE_MS)
+  }
 
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
   // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
@@ -2527,8 +2547,7 @@ export function createGameHud() {
     showWingmanRadio(payload) {
       const region = payload.isAbility ? wingmanRadioRegionAbility : wingmanRadioRegionTrivial
       const otherRegion = payload.isAbility ? wingmanRadioRegionTrivial : wingmanRadioRegionAbility
-      if (otherRegion.currentPilotId() === payload.pilotId) otherRegion.forceHide()
-      region.show(payload)
+      showRadioAfterOtherRegion(payload, region, otherRegion)
     },
 
     // Fila garantida — ex.: rajada de "prontidão" do comando de foco, onde os até 4 pilotos
@@ -2538,10 +2557,17 @@ export function createGameHud() {
     // ver combat/wingmen.js → toggleCommand() — então a fila sempre roda na região inferior.
     showWingmanRadioQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      for (const p of payloads) {
-        if (wingmanRadioRegionAbility.currentPilotId() === p.pilotId) wingmanRadioRegionAbility.forceHide()
+      cancelRadioChannelTransition()
+      const abilityPilotId = wingmanRadioRegionAbility.currentPilotId()
+      if (payloads.some((p) => p.pilotId === abilityPilotId)) {
+        wingmanRadioRegionAbility.forceHide()
+        radioChannelTransitionTimeout = setTimeout(() => {
+          radioChannelTransitionTimeout = null
+          wingmanRadioRegionTrivial.showQueue(payloads)
+        }, WINGMAN_RADIO_LEAVE_MS)
+      } else {
+        wingmanRadioRegionTrivial.showQueue(payloads)
       }
-      wingmanRadioRegionTrivial.showQueue(payloads)
     },
 
     updateSquadronNoticePosition(xFrac, yFrac) {
@@ -2641,6 +2667,7 @@ export function createGameHud() {
       stormWarning.classList.remove('active')
       wingmanRadioRegionTrivial.unmount()
       wingmanRadioRegionAbility.unmount()
+      cancelRadioChannelTransition()
       cancelTimeout(launchBannerHideTimeout)
       launchBannerHideTimeout = null
       for (const id of pendingTimeouts) clearTimeout(id)

@@ -29,9 +29,6 @@ sem prioridade definida — ficam só de referência:
 
 Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
-- [ ] Texto das ~54 falas triviais novas por piloto (30/piloto no total, 5 já cobertas por
-  ability) — o usuário pediu pra EU escrever, direto em inglês no tom de cada personagem (ver
-  v0.96.0). Falco já ganhou as dele; Peppy/Slippy/Miyu ainda faltam.
 - [ ] Regra 2.4 (foco vira ability quote se o piloto tem carta de upgrade sem cooldown) —
   `FOCUS_ABILITY_CARDS` já existe no código mas fica inerte até as cartas Slippy Morale e Peppy
   Auxílio nascerem.
@@ -46,6 +43,29 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.0 — Etapa 1 revisada: Rádio dos Aliados completo e exclusão de painéis
+
+Auditoria e conclusão da Etapa 1 solicitada no documento de implementação, sem iniciar as etapas
+de Falco, Peppy, Slippy, Miyu ou faíscas.
+
+- **Cobertura de falas**: cada piloto agora tem ao menos 30 falas (Falco 31, Peppy 39, Slippy 37,
+  Miyu 30). A exigência de “30 exatas” entrava em conflito com a regra explícita de nunca remover
+  falas já existentes; foi priorizada a preservação, e o teste protege o mínimo de 30.
+- **Pools de ability prontos**: todos os eventIds de ability do documento já têm cinco falas
+  próprias no piloto aplicável, inclusive Rescue, Auxílio, Morale, Impulsão, Boombuster e Focus
+  Upgrade, apesar de suas cartas ainda não existirem. Quando as próximas etapas ativarem esses
+  eventos, eles já vão obrigatoriamente para o painel superior com conteúdo próprio.
+- **Exclusão mútua corrigida**: ao trocar o mesmo piloto entre rádio trivial e ability, o HUD
+  aguarda os 190ms da saída do painel anterior antes de abrir o outro. Antes havia sobreposição
+  visual curta, contrariando a regra do documento. A posição superior de 18px foi preservada: é a
+  correção posterior que impede os quotes de cobrir a bandeja de buffs.
+- **Prevenção**: `getWingmanRadioLineCount()` e novos casos em `selftest.mjs` asseguram o mínimo
+  por piloto e verificam que cada ability catalogada tem uma fala retornável.
+
+**Validado**: `node --check src/combat/wingman-radio.js`, `node --check src/hud-game.js`,
+`node src/selftest.mjs` e `git diff --check` passam. A revisão visual deve ser confirmada no
+próximo playtest com uma fala trivial e uma ability do mesmo piloto em sequência.
 
 ### v0.98.0 — Correções visuais, cutscene Arcade e Carga Compartilhada
 

@@ -559,7 +559,7 @@ assert.deepStrictEqual(simulateBlasterHitOutcome(2, 2, false), { killed: true, w
 assert.deepStrictEqual(simulateBlasterHitOutcome(2, 1, true), { killed: false, wingBreaks: false }, 'asa já quebrada não quebra de novo')
 
 // ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
-import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS } from './combat/wingman-radio.js'
+import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingmanRadioLineCount } from './combat/wingman-radio.js'
 
 {
   const radio = createWingmanRadio()
@@ -583,6 +583,25 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS } from '.
   radio.reset()
   const afterReset = radio.trySpeak(2, 'kill', 100)
   assert.ok(typeof afterReset === 'string', 'reset() deve zerar o cooldown global')
+}
+
+{
+  // Etapa 1 do documento: cada piloto mantém pelo menos 30 falas; as existentes nunca são
+  // removidas só para bater uma contagem exata. Também garante que toda ability já catalogada
+  // possui pool próprio antes de sua carta correspondente ser implementada.
+  for (const pilotId of [0, 1, 2, 3]) {
+    assert.ok(getWingmanRadioLineCount(pilotId) >= 30, `piloto ${pilotId} deve ter ao menos 30 falas no rádio`)
+  }
+  const abilityPools = [
+    [0, 'ability_ram'], [0, 'ability_intercept'],
+    [1, 'ability_guard'], [1, 'ability_rescue'], [1, 'ability_aux_shield'], [1, 'ability_focus_upgrade'],
+    [2, 'ability_repair'], [2, 'ability_morale'], [2, 'ability_boost_dash'], [2, 'ability_focus_upgrade'],
+    [3, 'ability_assist'], [3, 'ability_boombuster'],
+  ]
+  const radio = createWingmanRadio()
+  for (const [pilotId, eventId] of abilityPools) {
+    assert.ok(typeof radio.getLine(pilotId, eventId) === 'string', `${eventId} do piloto ${pilotId} precisa ter fala própria`)
+  }
 }
 
 {
