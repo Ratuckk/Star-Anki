@@ -138,12 +138,12 @@ const ROLL_AFTERIMAGE_COLOR = 0xcfe9ff
 // Leque cônico de faíscas quando um tiro NORMAL acerta um alvo com HP restante (killed: false) —
 // o flashMesh/hitSpark padrão é sutil demais pra ler como "acertou, mas não matou" em alvos
 // grandes (chefe). Soma-se ao hitSpark existente, não substitui.
-const RICOCHET_SPARK_COUNT_MIN = 10
-const RICOCHET_SPARK_COUNT_MAX = 14
-const RICOCHET_SPARK_ANGLE = THREE.MathUtils.degToRad(35) // abertura do leque (±35°)
+const RICOCHET_SPARK_COUNT_MIN = 20
+const RICOCHET_SPARK_COUNT_MAX = 26
+const RICOCHET_SPARK_ANGLE = THREE.MathUtils.degToRad(55) // abertura do leque (±55°)
 const RICOCHET_SPARK_SPEED_MIN = 25
 const RICOCHET_SPARK_SPEED_MAX = 40
-const RICOCHET_SPARK_COLOR = 0xffd166 // branca-amarelada — contrasta com o tiro normal (azul)
+const RICOCHET_SPARK_COLOR = 0xffffff // branca — o Morale substitui por verde no chamador
 const RICOCHET_SPARK_DURATION = 0.35
 const RICOCHET_SPARK_DECAY_RATE = 6 // decaimento exponencial da velocidade — "rápido" por pedido do doc
 

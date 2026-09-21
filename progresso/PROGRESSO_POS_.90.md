@@ -29,13 +29,27 @@ sem prioridade definida — ficam só de referência:
 
 Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
-- [ ] Item 3 completo: faltam apenas as faíscas de hit não-letal mais espalhadas (item final,
-  independente). O item 0 (visuais da Miyu) foi fechado na v0.98.0.
-- [ ] **Miyu Boombuster depende de projétil homing pra wingmen** (sistema novo, ainda não existe).
+- [x] Documento concluído: o item final das faíscas foi entregue na v0.99.7. O item 0 (visuais
+  da Miyu) foi fechado na v0.98.0 e o Boombuster foi entregue na v0.99.5.
 
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.7 — Faíscas de impacto concluídas
+
+Etapa final independente do documento `Docs/# Documento de Implementação — Nova.md`:
+
+- As faíscas de ricochete de tiros normais não-letais agora geram **20–26** traços, em vez de
+  10–14, e o leque abriu de ±35° para **±55°**.
+- A cor normal agora é branca pura (`#ffffff`). O caminho já existente de Morale continua
+  sobrescrevendo explicitamente a cor para verde (`#39ff6a`) enquanto o buff estiver ativo.
+- Não foram alterados velocidade, duração, física de desaceleração nem os demais efeitos de hit.
+
+**Validado**: sintaxe dos módulos alterados, selftest e inspeção de whitespace passaram. Falta
+apenas o playtest visual para calibrar a leitura em tela cheia.
+
+---
 
 ### v0.99.6 — Correção de texto do Boombuster
 
