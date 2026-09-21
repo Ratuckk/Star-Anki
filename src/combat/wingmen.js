@@ -140,11 +140,13 @@ export const FORMATION_SLOTS = [
 // isso evita que os quatro convirjam para o mesmo ponto visual e pareçam uma única nave.
 const WINGMAN_MAX_DISTANCE_RAIL = 48
 const WINGMAN_MAX_DISTANCE_ARENA = 72
-const WINGMAN_REGROUP_ARRIVAL_RAIL = 8
-const WINGMAN_REGROUP_ARRIVAL_ARENA = 12
+const WINGMAN_REGROUP_ARRIVAL_RAIL = 4
+const WINGMAN_REGROUP_ARRIVAL_ARENA = 5
 const WINGMAN_REGROUP_SPEED_CAP = 64
-const WINGMAN_ATTACK_LANE_SPACING = 5
-const WINGMAN_ATTACK_LANE_VERTICAL = 1.6
+const WINGMAN_ATTACK_LANE_SPACING = 9
+const WINGMAN_ATTACK_LANE_VERTICAL = 3.5
+const WINGMAN_SEPARATION_DISTANCE = 7
+const WINGMAN_SEPARATION_SPEED = 48
 
 // Reutilizáveis de rotação e matriz ortonormal para cálculo de orientação sem piruetas
 const _rotMatrix = new THREE.Matrix4()
@@ -780,6 +782,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       collisionBumpCooldown: 0,
       obstacleAvoidanceId: null,
       obstacleAvoidanceSide: 0,
+      overlapWith: new Set(),
       chainCount: 0,
       escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
       auxShieldVisual,
@@ -1854,15 +1857,41 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // preservam a intenção original, mas nenhum aliado atravessa deliberadamente um detrito.
       steerAroundObstacle(w, _wmDesiredVelocity, frame)
 
-      // Repulsão suave e amortecida (nunca explosiva)
+      // Separação de ala: também resolve o caso degenerado de duas naves exatamente no mesmo
+      // ponto. Antes, `distBetween > 0.01` eliminava o vetor de separação justamente nesse caso.
       for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {
         if (otherIdx === idx) continue
         const other = activeWingmen[otherIdx]
+        if (other.state === 'retreating') {
+          w.overlapWith.delete(other.profile.id)
+          continue
+        }
         _wmDiff.copy(w.mesh.position).sub(other.mesh.position)
         const distBetween = _wmDiff.length()
-        if (distBetween > 0.01 && distBetween < 4.5) {
-          _wmPush.copy(_wmDiff).multiplyScalar((4.5 - distBetween) * 1.8 / distBetween)
-          _wmDesiredVelocity.add(_wmPush)
+        if (distBetween < WINGMAN_SEPARATION_DISTANCE) {
+          if (distBetween > 0.01) {
+            _wmPush.copy(_wmDiff).multiplyScalar(1 / distBetween)
+          } else {
+            // Ordem por piloto garante vetores opostos e estáveis para os dois membros.
+            const pairDirection = w.profile.id < other.profile.id ? -1 : 1
+            _wmPush.copy(frame.right).multiplyScalar(pairDirection)
+            _wmPush.addScaledVector(frame.up, (w.profile.id % 2 === 0 ? -1 : 1) * 0.28).normalize()
+          }
+          const overlapFrac = 1 - distBetween / WINGMAN_SEPARATION_DISTANCE
+          _wmDesiredVelocity.addScaledVector(_wmPush, WINGMAN_SEPARATION_SPEED * overlapFrac)
+          if (!w.overlapWith.has(other.profile.id)) {
+            w.overlapWith.add(other.profile.id)
+            aiValidator.expect(
+              'Separação de ala sempre resolve pares sobrepostos com um vetor finito',
+              () => Number.isFinite(_wmPush.x) && Number.isFinite(_wmPush.y) && Number.isFinite(_wmPush.z) && _wmPush.lengthSq() > 0,
+              { pilotId: w.profile.id, otherPilotId: other.profile.id, distance: distBetween },
+            )
+            aiValidator.logMechanic('wingman-formation-separation', 'separacao-iniciada', {
+              pilotId: w.profile.id, otherPilotId: other.profile.id, distance: distBetween,
+            })
+          }
+        } else {
+          w.overlapWith.delete(other.profile.id)
         }
       }
 

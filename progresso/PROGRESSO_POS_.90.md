@@ -38,6 +38,27 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.14 — Separação determinística da ala e retorno de formação mais preciso
+
+Correção específica para o relato de aliados fundidos entre si e longe do jogador:
+
+- O repulsor entre aliados não fazia nada quando a distância era praticamente zero, porque o
+  vetor de direção não existia. Cada par nessa condição agora recebe vetores opostos, estáveis e
+  determinísticos a partir da ordem dos pilotos, com uma pequena componente vertical; não há
+  teleporte nem sorteio que possa fazê-los escolher a mesma saída.
+- A distância mínima de separação subiu de 4,5u para 7u, e a força de recuperação acompanha a
+  profundidade da sobreposição. Um evento só é registrado quando o par entra na zona, sem poluir
+  o log a cada frame.
+- As linhas de aproximação de dogfight ficaram mais espaçadas (9u lateral/3,5u vertical) e o
+  `regroup` só termina a 4u no trilho ou 5u na arena da vaga própria (antes 8u/12u). Assim, o
+  retorno não solta dois pilotos longe demais de posições visualmente muito próximas.
+- `aiValidator` cobre a invariante nova: todo par sobreposto precisa receber um vetor de separação
+  finito e diferente de zero, registrado como `wingman-formation-separation`.
+
+**Validado**: sintaxe, selftest e `git diff --check`. **Pendente de playtest**: formar ala cheia,
+forçar Foco contra o mesmo alvo e passar por detritos; o Log de Validação IA deve mostrar início
+de separação sem expectativas falhas.
+
 ### Estudo visual — overhaul dos números de dano (21/09/2026)
 
 - Documento de seis páginas em `output/pdf/overhaul-numeros-de-dano.pdf`: três direções
