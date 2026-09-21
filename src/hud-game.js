@@ -1480,6 +1480,7 @@ export function createGameHud() {
   }
 
   const enemyBarPool = new Map()
+  const wingmanVitalPool = new Map()
   const lockMarkerPool = new Map()
 
   return {
@@ -2084,6 +2085,33 @@ export function createGameHud() {
       }
       for (const [id, el] of enemyBarPool) {
         if (!seen.has(id)) { el.remove(); enemyBarPool.delete(id) }
+      }
+    },
+
+    // Vida/escudo dos aliados: só ocupa a tela quando há dano ou recarga em andamento.
+    setWingmanVitals(list) {
+      const seen = new Set()
+      for (const item of list) {
+        seen.add(item.id)
+        let el = wingmanVitalPool.get(item.id)
+        if (!el) {
+          el = document.createElement('div')
+          el.className = 'wingman-vitals'
+          el.innerHTML = '<div class="wingman-vital-shield"><i></i></div><div class="wingman-vital-hp"><i></i></div><span></span>'
+          root.appendChild(el)
+          wingmanVitalPool.set(item.id, el)
+        }
+        el.style.left = `${item.xFrac * 100}%`
+        el.style.top = `${item.yFrac * 100}%`
+        el.style.setProperty('--wingman-color', typeof item.color === 'number' ? `#${item.color.toString(16).padStart(6, '0')}` : item.color)
+        el.querySelector('.wingman-vital-shield i').style.width = `${Math.max(0, Math.min(1, item.shield / item.maxShield)) * 100}%`
+        el.querySelector('.wingman-vital-hp i').style.width = `${Math.max(0, Math.min(1, item.hp / item.maxHp)) * 100}%`
+        el.querySelector('span').textContent = item.retreating ? `${item.name} // FORA` : item.name
+        el.classList.toggle('critical', !!item.lowHp)
+        el.classList.toggle('out', !!item.retreating)
+      }
+      for (const [id, el] of wingmanVitalPool) {
+        if (!seen.has(id)) { el.remove(); wingmanVitalPool.delete(id) }
       }
     },
 

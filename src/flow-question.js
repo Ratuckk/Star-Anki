@@ -27,7 +27,9 @@ export function createQuestionFlow(deps) {
   function applyRoguelikeCard(card) {
     player.applyCard(card)
     combat.setFireCooldown(player.config.fireCooldown)
-    combat.setWingmanCount(player.getWingmanCount())
+    const recoveredWingmanId = card.id === 'wingman' ? player.consumeRecoveredWingmanId?.() : null
+    if (recoveredWingmanId != null) combat.recoverSpecificWingman?.(recoveredWingmanId)
+    else combat.setWingmanCount(player.getWingmanCount())
     hud.setLives(session.lives, player.getMaxLives())
     if (deps.effects && deps.rail && deps.effects.cardAcquiredPulse) {
       deps.effects.cardAcquiredPulse(deps.rail.getPlayerPosition(), card.category)

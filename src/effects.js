@@ -429,6 +429,7 @@ export function createEffectsSystem(scene, opts = {}) {
     color: 0xbbf7d0, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, fog: false,
   })
   let healOrbesCollectedThisFrame = 0
+  let healOrbeCollectionPositions = []
   let contrailTimer = 0
   let ramRingTimer = 0
   let ramAfterimageTimer = 0
@@ -1167,7 +1168,7 @@ export function createEffectsSystem(scene, opts = {}) {
   // contrária à do tiro (ver chamador em game-loop.js). Cada faísca é uma esfera compartilhada
   // ESTICADA ao longo da própria velocidade (scale não-uniforme + quaternion alinhado à direção
   // de voo dela), pra ler como um traço fino em vez de um pontinho.
-  function ricochetSparks(position, normal) {
+  function ricochetSparks(position, normal, color = RICOCHET_SPARK_COLOR) {
     const norm = normal && normal.lengthSq() > 1e-6 ? normal.clone().normalize() : new THREE.Vector3(0, 0, 1)
     const count = RICOCHET_SPARK_COUNT_MIN + Math.floor(Math.random() * (RICOCHET_SPARK_COUNT_MAX - RICOCHET_SPARK_COUNT_MIN + 1))
     for (let i = 0; i < count; i += 1) {
@@ -1178,7 +1179,7 @@ export function createEffectsSystem(scene, opts = {}) {
       const speed = RICOCHET_SPARK_SPEED_MIN + Math.random() * (RICOCHET_SPARK_SPEED_MAX - RICOCHET_SPARK_SPEED_MIN)
 
       const material = new THREE.MeshBasicMaterial({
-        color: RICOCHET_SPARK_COLOR, transparent: true, opacity: 0.95,
+        color, transparent: true, opacity: 0.95,
         depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
       })
       const mesh = new THREE.Mesh(sharedSphereGeometry, material)
@@ -1218,6 +1219,7 @@ export function createEffectsSystem(scene, opts = {}) {
   function updateMicroOrbes(dt, playerPos) {
     microOrbesCollectedThisFrame = 0
     healOrbesCollectedThisFrame = 0
+    healOrbeCollectionPositions = []
     if (!playerPos) return
     for (let i = microOrbes.length - 1; i >= 0; i--) {
       const orb = microOrbes[i]
@@ -1232,7 +1234,10 @@ export function createEffectsSystem(scene, opts = {}) {
         orb.group.position.add(pull)
       }
       if (dist < 1.7) {
-        if (orb.kind === 'heal') healOrbesCollectedThisFrame++
+        if (orb.kind === 'heal') {
+          healOrbesCollectedThisFrame++
+          healOrbeCollectionPositions.push(orb.group.position.clone())
+        }
         else microOrbesCollectedThisFrame++
         cardAcquiredPulse(playerPos, orb.kind === 'heal' ? 'defensivo' : 'especial')
         bloomSprite(orb.group.position, orb.kind === 'heal' ? 0x4ade80 : 0x00f2fe, 1.4)
@@ -2160,6 +2165,7 @@ export function createEffectsSystem(scene, opts = {}) {
     update, updateMicroOrbes, explosion, muzzleFlash, enemyMuzzleFlare, enemyThrusterTrail, spawnMicroOrbe,
     getMicroOrbesCollected: () => microOrbesCollectedThisFrame,
     getHealOrbesCollected: () => healOrbesCollectedThisFrame,
+    getHealOrbeCollectionPositions: () => healOrbeCollectionPositions,
     setChargeGlow, smokeRing, homingAfterimage,
     swirlBlastFlash, swirlAfterimage, swirlBlastExplosion, swirlLockReticle,
     hitSpark, flashMesh, projectileTrail, shockwave, telegraph, chargeCircle,

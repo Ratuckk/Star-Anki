@@ -417,6 +417,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
 
   function update(dt, aimDirection, opts = {}) {
     const allowBossOrbHit = opts.allowBossOrbHit !== false
+    const globalDamageBonus = Math.max(0, opts.globalDamageBonus || 0)
     let enemyKills = 0
     let enemyKillPoints = 0
     let bonusKillPoints = 0
@@ -577,7 +578,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // resto do bloco abaixo (orbHit/hit único/bonusHit) é do tiro normal/teleguiado.
       if (projectile.isPiercing) {
         const pierceHits = enemies.resolvePiercingProjectileHits(_projPrevPos, projectile.mesh.position, {
-          damage: projectile.damage,
+            damage: projectile.damage + globalDamageBonus,
           piercedTargets: projectile.piercedTargets,
           goldenPiercedTargets: projectile.goldenPiercedTargets,
         })
@@ -593,7 +594,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             }
           } else {
             hitsLog.push({
-              worldPos: h.worldPos, damage: projectile.damage, killed: h.killed,
+              worldPos: h.worldPos, damage: projectile.damage + globalDamageBonus, killed: h.killed,
               isHoming: false, meshRef: h.meshRef, points: h.enemyKillPoints || 0,
             })
             if (h.killed) {
@@ -638,7 +639,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       }
 
       const hit = enemies.resolveProjectileHit(_projPrevPos, projectile.mesh.position, {
-        damage: projectile.damage ?? 1,
+          damage: (projectile.damage ?? 1) + globalDamageBonus,
         isHoming: !!projectile.isHoming,
         hitBuffer,
       })
@@ -672,7 +673,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         }
         if (hit.kind !== 'golden') {
           hitsLog.push({
-            worldPos: hit.worldPos, damage: projectile.damage ?? 1, killed: hit.killed,
+            worldPos: hit.worldPos, damage: (projectile.damage ?? 1) + globalDamageBonus, killed: hit.killed,
             isHoming: !!projectile.isHoming, meshRef: hit.meshRef, points: hit.enemyKillPoints || 0,
           })
           if (hit.killed) {

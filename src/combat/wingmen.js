@@ -210,6 +210,20 @@ const PEPPY_RESCUE_TRIGGER_RANGE = 5
 const PEPPY_AUX_SHIELD_INNER_RADIUS = 2.8
 const PEPPY_AUX_SHIELD_OUTER_RADIUS = 3.15
 
+// ============ INTEGRIDADE DOS ALIADOS ============
+// Todos começam com 4 HP e 3 de escudo; Peppy e Slippy recebem duas cargas extras. O escudo
+// segue o jogador: 1.5s sem dano e 0.4 carga/s. Casco da Ala soma até três HP máximos globais.
+const WINGMAN_BASE_HP = 4
+const WINGMAN_BASE_SHIELD = 3
+const WINGMAN_DEFENDER_SHIELD_BONUS = 2
+const WINGMAN_SHIELD_REGEN_DELAY_S = 1.5
+const WINGMAN_SHIELD_REGEN_PER_S = 0.4
+const WINGMAN_LOW_HP = 1
+const WINGMAN_RETREAT_DURATION_S = 5
+const WINGMAN_REPAIR_RADIUS_BASE = 15
+const WINGMAN_REPAIR_RADIUS_PER_STACK = 8
+const WINGMAN_CRITICAL_COLOR = new THREE.Color(0xff263d)
+
 const GUARD_ESCORT_S = 4.0
 const GUARD_TRIGGER_RANGE = 9
 
@@ -706,13 +720,23 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // investida, ver início do state 'ram' abaixo).
       interceptCooldown: 0,
       rescueCooldown: 0,
+      hp: WINGMAN_BASE_HP,
+      maxHp: WINGMAN_BASE_HP,
+      shieldMax: WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0),
+      shield: WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0),
+      shieldRegenDelay: 0,
+      retreatEffectTimer: 0,
+      collisionBumpCooldown: 0,
       chainCount: 0,
       escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
       auxShieldVisual,
+      damageMaterials: collectMaterials(mesh),
+      damageColors: null,
       // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
       miyuCloakTimer: 0, // Miyu: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
       miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
     }
+    wingman.damageColors = wingman.damageMaterials.map((material) => material.color ? material.color.clone() : null)
     if (wingman.miyuMaterials) {
       for (const m of wingman.miyuMaterials) m.transparent = true
     }
@@ -760,11 +784,66 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  function setWingmanCount(n) {
+  function recoverMember(profileId, hullStacks = 0) {
+    const wingman = spawnMember(profileId)
+    if (!wingman) return null
+    wingman.maxHp = WINGMAN_BASE_HP + Math.max(0, hullStacks)
+    wingman.hp = wingman.maxHp
+    wingman.shield = wingman.shieldMax
+    telemetry.recordEvent(wingman.profile.name, 'flight', `Caça ${wingman.profile.name} retornou à ala após recuperação`, { elapsed })
+    return wingman
+  }
+
+  function applyDamageToWingman(profileId) {
+    const w = activeWingmen.find((member) => member.profile.id === profileId)
+    if (!w || w.state === 'retreating') return { applied: false }
+    w.shieldRegenDelay = WINGMAN_SHIELD_REGEN_DELAY_S
+    if (w.shield > 0) w.shield = Math.max(0, w.shield - 1)
+    else w.hp = Math.max(0, w.hp - 1)
+    const retreating = w.hp <= 0
+    if (retreating) {
+      w.state = 'retreating'
+      w.stateTimer = 0
+      w.abilityActive = false
+      w.escortKind = null
+      w.targetEnemy = null
+      const text = wingmanRadio.getLine(w.profile.id, 'retreat')
+      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'retreat')
+    } else if (w.hp <= WINGMAN_LOW_HP) {
+      w.state = 'damaged-passive'
+      w.abilityActive = false
+      w.escortKind = null
+      w.targetEnemy = null
+    }
+    aiValidator.expect(
+      'Integridade de aliado fica dentro dos limites após hit',
+      () => w.hp >= 0 && w.hp <= w.maxHp && w.shield >= 0 && w.shield <= w.shieldMax,
+      { pilotId: profileId, hp: w.hp, maxHp: w.maxHp, shield: w.shield, shieldMax: w.shieldMax },
+    )
+    return { applied: true, retreating, hp: w.hp, shield: w.shield }
+  }
+
+  function repairNearbyWingmen(position, stacks = 0) {
+    const radius = WINGMAN_REPAIR_RADIUS_BASE + Math.max(0, stacks - 1) * WINGMAN_REPAIR_RADIUS_PER_STACK
+    let repaired = 0
+    for (const w of activeWingmen) {
+      if (w.state === 'retreating' || w.mesh.position.distanceTo(position) > radius || w.hp >= w.maxHp) continue
+      w.hp = Math.min(w.maxHp, w.hp + 1)
+      if (w.hp > WINGMAN_LOW_HP && w.state === 'damaged-passive') w.state = 'patrol'
+      repaired += 1
+    }
+    return repaired
+  }
+
+  function setWingmanCount(n, hullStacks = 0) {
     const targetCount = Math.max(0, Math.min(4, n))
     for (let i = 0; i < targetCount; i += 1) {
       if (!activeWingmen.some((w) => w.profile.id === i)) {
-        spawnMember(i)
+        const spawned = spawnMember(i)
+        if (spawned) {
+          spawned.maxHp = WINGMAN_BASE_HP + Math.max(0, hullStacks)
+          spawned.hp = spawned.maxHp
+        }
       }
     }
     while (activeWingmen.length > targetCount) {
@@ -777,6 +856,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   let squadronFocusTargets = []
   let squadronCommandDurationTimer = 0 // conta pra baixo enquanto em 'focus' — ver update()
   let squadronCommandCooldownTimer = 0 // conta pra baixo depois que 'focus' termina
+  let moraleDamageBonus = 0
 
   function getAliveEnemies() {
     const alive = []
@@ -796,6 +876,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     squadronFocusTargets = []
     squadronCommandDurationTimer = 0
     squadronCommandCooldownTimer = SQUADRON_COMMAND_COOLDOWN_S
+    moraleDamageBonus = 0
     for (const w of activeWingmen) {
       if (w.abilityActive) continue // mesmo cuidado do bloco de foco abaixo
       w.state = 'patrol'
@@ -805,13 +886,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }
   }
 
-  function toggleCommand(lockedTargets = [], playerPos) {
+  function toggleCommand(lockedTargets = [], playerPos, slippyMoraleStacks = 0) {
     if (squadronCommandMode === 'free') {
       if (squadronCommandCooldownTimer > 0) {
         return { mode: 'cooldown', remaining: squadronCommandCooldownTimer }
       }
       squadronCommandMode = 'focus'
       squadronCommandDurationTimer = SQUADRON_COMMAND_DURATION_S
+      const slippy = activeWingmen.find((w) => w.profile.id === 2 && w.state !== 'damaged-passive' && w.state !== 'retreating')
+      moraleDamageBonus = slippy && slippyMoraleStacks > 0 ? slippyMoraleStacks : 0
       const validLocked = Array.isArray(lockedTargets) ? lockedTargets.filter((e) => e && !e.dying && e.mesh) : []
 
       if (validLocked.length > 0) {
@@ -858,8 +941,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       const readyQueue = []
       for (const w of activeWingmen) {
         if (w.abilityActive) continue
-        const text = wingmanRadio.getLine(w.profile.id, 'focus_ready')
-        if (text) readyQueue.push(buildRadioPayload(w.profile, text, 'focus_ready'))
+        const upgradedFocus = w.profile.id === 2 && moraleDamageBonus > 0
+        const eventId = upgradedFocus ? 'ability_morale' : 'focus_ready'
+        const text = wingmanRadio.getLine(w.profile.id, eventId)
+        if (text) readyQueue.push(buildRadioPayload(w.profile, text, eventId))
       }
       if (readyQueue.length > 0) pendingRadioQueue = readyQueue
 
@@ -1003,6 +1088,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     let rescueShieldGrants = 0
     let rescueCancels = 0
     const healOrbSpawns = []
+    const completedRetreatIds = []
     // Rádio (Ideia 3): consome qualquer mensagem disparada fora deste laço (dano externo, dismiss
     // — ver pendingRadioMessage acima) antes de tentar os eventos do próprio frame.
     let radioMessage = pendingRadioMessage
@@ -1022,8 +1108,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // boost_used / charged_shot_used — mesmo padrão: sorteia 1 piloto ativo, respeita o cooldown
     // global do dispatcher (speak() já checa) e o "só 1 por frame" (!radioMessage).
     if (justStartedBoost && !radioMessage && activeWingmen.length > 0) {
-      const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
-      radioMessage = speak(w.profile, 'boost_used')
+      const slippy = activeWingmen.find((w) => w.profile.id === 2 && w.state !== 'damaged-passive' && w.state !== 'retreating')
+      if (slippy && (opts.slippyBoostStacks || 0) > 0) {
+        radioMessage = speak(slippy.profile, 'ability_boost_dash')
+        effects?.propulsionBurst?.(slippy.mesh.position, frame.forward)
+      } else {
+        const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
+        radioMessage = speak(w.profile, 'boost_used')
+      }
     }
     if (justReleasedCharge && !radioMessage && activeWingmen.length > 0) {
       const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
@@ -1038,6 +1130,25 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
       if (w.interceptCooldown > 0) w.interceptCooldown -= dt
       if (w.rescueCooldown > 0) w.rescueCooldown -= dt
+      if (w.collisionBumpCooldown > 0) w.collisionBumpCooldown -= dt
+      const desiredMaxHp = WINGMAN_BASE_HP + Math.max(0, opts.wingmanHullStacks || 0)
+      if (w.maxHp !== desiredMaxHp) w.maxHp = desiredMaxHp
+      if (w.shieldRegenDelay > 0) w.shieldRegenDelay = Math.max(0, w.shieldRegenDelay - dt)
+      else if (w.shield < w.shieldMax) w.shield = Math.min(w.shieldMax, w.shield + WINGMAN_SHIELD_REGEN_PER_S * dt)
+      if (w.state === 'retreating') {
+        w.abilityActive = false
+        w.retreatEffectTimer -= dt
+        if (w.retreatEffectTimer <= 0) {
+          w.retreatEffectTimer = 0.38
+          effects?.smokeRing?.(w.mesh.position, frame.forward)
+          effects?.bloomSprite?.(w.mesh.position, 0xff5a24, 0.7)
+        }
+        w.mesh.position.addScaledVector(frame.forward, 42 * dt)
+        w.mesh.position.addScaledVector(frame.right, w.profile.homeSide * 25 * dt)
+        w.mesh.position.addScaledVector(frame.up, 8 * dt)
+        if (w.stateTimer >= WINGMAN_RETREAT_DURATION_S) completedRetreatIds.push(w.profile.id)
+        continue
+      }
       if (w.auxShieldVisual) {
         const active = w.abilityActive && w.escortKind === 'auxShield'
         w.auxShieldVisual.visible = active
@@ -1046,12 +1157,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.auxShieldVisual.material.opacity = 0.58 + Math.sin(elapsed * 5) * 0.16
         }
       }
+      const criticalFlash = w.hp <= WINGMAN_LOW_HP && Math.floor(elapsed * 7) % 2 === 0
+      w.damageMaterials.forEach((material, materialIndex) => {
+        const original = w.damageColors[materialIndex]
+        if (material.color && original) material.color.copy(criticalFlash ? WINGMAN_CRITICAL_COLOR : original)
+      })
 
       // Carta "Falco Intercept" — roda em QUALQUER state (não só dogfight/ram): Falco protege o
       // jogador proativamente, mesmo em formação. Independente do abilityCooldown da Investida
       // Aríete (timers separados, ver criação do wingman).
       const falcoInterceptStacks = opts.falcoInterceptStacks || 0
-      if (w.profile.id === 0 && falcoInterceptStacks > 0 && w.interceptCooldown <= 0 &&
+      if (w.state !== 'damaged-passive' && w.profile.id === 0 && falcoInterceptStacks > 0 && w.interceptCooldown <= 0 &&
           enemies && enemies.interceptThreateningProjectile) {
         const threat = enemies.interceptThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
         if (threat) {
@@ -1068,7 +1184,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       const peppyRescueStacks = opts.peppyRescueStacks || 0
-      if (w.profile.id === 1 && peppyRescueStacks > 0 && w.rescueCooldown <= 0 &&
+      if (w.state !== 'damaged-passive' && w.profile.id === 1 && peppyRescueStacks > 0 && w.rescueCooldown <= 0 &&
           opts.playerTumbling && !w.abilityActive) {
         w.state = 'rescue'
         w.stateTimer = 0
@@ -1078,7 +1194,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (!radioMessage) radioMessage = speak(w.profile, 'ability_rescue')
       }
 
-      const peppyAuxActive = w.profile.id === 1 && (opts.peppyAuxShieldStacks || 0) > 0 && !!opts.repulsionActive
+      const peppyAuxActive = w.state !== 'damaged-passive' && w.profile.id === 1 && (opts.peppyAuxShieldStacks || 0) > 0 && !!opts.repulsionActive
       if (peppyAuxActive && !w.abilityActive) {
         w.state = 'escort'
         w.escortKind = 'auxShield'
@@ -1096,6 +1212,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
 
       const distToPlayer = w.mesh.position.distanceTo(playerPos)
+      // Colisões corpo-a-corpo não causam dano (decisão de balanceamento), mas têm um tranco
+      // curto e legível para que naves não pareçam atravessar umas às outras sem reação.
+      if (w.collisionBumpCooldown <= 0) {
+        const contact = getAliveEnemies().find((enemy) => enemy.mesh && enemy.mesh.position.distanceTo(w.mesh.position) < 3)
+        if (contact) {
+          _wmToEnemy.copy(w.mesh.position).sub(contact.mesh.position)
+          if (_wmToEnemy.lengthSq() > 0.001) w.velocity.addScaledVector(_wmToEnemy.normalize(), 14)
+          w.collisionBumpCooldown = 0.5
+          effects?.hitSpark?.(w.mesh.position, w.profile.color)
+        }
+      }
 
       // ============ FORMAÇÃO TÁTICA STAR FOX 64 (CALMA E CINEMATOGRÁFICA) ============
       // Vaga dedicada de cada piloto em relação à nave do jogador
@@ -1171,6 +1298,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.state = 'patrol'
           w.stateTimer = 0
         }
+      } else if (w.state === 'damaged-passive') {
+        // Um aliado a 1 HP não inicia dogfight nem habilidade: só tenta manter a formação até
+        // receber um Repair de Slippy. O escudo ainda regenera normalmente acima.
+        w.patrolTarget.copy(_wmSlotPos)
       } else if (w.state === 'patrol') {
         // Pedido do usuário (v0.73.2): ao sair de dogfight/ram/escolta, o alvo de voo pulava
         // instantaneamente do inimigo perseguido pra vaga de formação — o salto brusco de
@@ -1650,7 +1781,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // Checa colisão com inimigos
       if (enemies && enemies.resolveProjectileHit) {
         const hit = enemies.resolveProjectileHit(_wlPrevPos, laser.mesh.position, {
-          damage: laser.damage,
+          damage: laser.damage + (opts.moraleDamageBonus || 0),
           isHoming: false,
           hitBuffer: 0.8,
         })
@@ -1710,6 +1841,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       beam.material.opacity = Math.max(0, beam.life / FALCO_INTERCEPT_BEAM_LIFETIME)
     }
 
+    for (const profileId of completedRetreatIds) removeMember(profileId)
     telemetry.update(activeWingmen, playerPos, frame, squadronCommandMode, elapsed)
 
     return {
@@ -1724,6 +1856,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       rescueShieldGrants,
       rescueCancels,
       healOrbSpawns,
+      completedRetreatIds,
       radioMessage,
       radioQueue,
     }
@@ -1790,9 +1923,22 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       cooldownRemaining: Math.max(0, squadronCommandCooldownTimer),
       cooldownMax: SQUADRON_COMMAND_COOLDOWN_S,
     }),
-    getWingmanPositions: () => activeWingmen.map((w) => w.mesh.position.clone()),
+    getMoraleDamageBonus: () => moraleDamageBonus,
+    getWingmanPositions: () => activeWingmen.filter((w) => w.state !== 'retreating').map((w) => w.mesh.position.clone()),
     getWingmanCount: () => activeWingmen.length,
-    getActiveMembers: () => activeWingmen.map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
+    getActiveMembers: () => activeWingmen.filter((w) => w.state !== 'retreating').map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
+    getDamageTargets: (opts = {}) => activeWingmen
+      .filter((w) => w.state !== 'retreating' && !(w.profile.id === 2 && opts.slippyBoostActive))
+      .map((w) => ({ id: w.profile.id, worldPos: w.mesh.position, radius: 1.25 })),
+    getVitalSnapshots: () => activeWingmen.map((w) => ({
+      id: w.profile.id, name: w.profile.name, color: w.profile.color, worldPos: w.mesh.position,
+      hp: w.hp, maxHp: w.maxHp, shield: w.shield, maxShield: w.shieldMax,
+      lowHp: w.hp <= WINGMAN_LOW_HP,
+      retreating: w.state === 'retreating',
+    })),
+    applyDamageToWingman,
+    repairNearbyWingmen,
+    recoverMember,
     getAbilityStates,
     getSubAbilityStates,
     getAuxShieldState: () => {

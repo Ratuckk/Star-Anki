@@ -796,6 +796,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let hits = 0
     let damage = 1
     let powerLevel = POWER_LEVEL_BASIC
+    const wingmanHitIds = []
+    const wingmanTargets = opts.wingmanTargets || []
     for (const projectile of [...enemyProjectiles]) {
       if (projectile.homing) {
         _epToPlayer.copy(playerPosition).sub(projectile.mesh.position)
@@ -828,6 +830,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const maxRange = projectile.maxRange ?? ENEMY_PROJECTILE_MAX_RANGE
       const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
 
+      const wingmanHit = wingmanTargets.find((target) => target.worldPos.distanceTo(projectile.mesh.position) <= hitRadius + target.radius)
+      if (wingmanHit) {
+        wingmanHitIds.push(wingmanHit.id)
+        removeEnemyProjectile(projectile)
+        continue
+      }
+
       const projHit = shipPoints.some((pt) => pt.worldPos.distanceTo(projectile.mesh.position) <= hitRadius + pt.radius)
       if (projHit) {
         hits += 1
@@ -838,7 +847,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
       if (projectile.traveled > maxRange) removeEnemyProjectile(projectile)
     }
-    return { hits, damage, powerLevel }
+    return { hits, damage, powerLevel, wingmanHitIds }
   }
 
   function updateEnemyLasers(dt, playerPosition, opts = {}) {
@@ -846,6 +855,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let damage = 1
     let powerLevel = POWER_LEVEL_BASIC
     const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
+    const wingmanHitIds = []
+    const wingmanTargets = opts.wingmanTargets || []
     for (const laser of [...enemyLasers]) {
       _elStep.copy(laser.velocity).multiplyScalar(dt)
       _elPrevPos.copy(laser.mesh.position)
@@ -861,6 +872,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (laser.outerMat) laser.outerMat.opacity = Math.max(0.2, (1 - prog * 0.6) * 0.85)
 
       const hitRadius = (laser.hitRadius ?? BOSS_LASER_HIT_RADIUS) * Math.max(0.5, beamScale)
+      const wingmanHit = wingmanTargets.find((target) => distanceToSegment(target.worldPos, _elPrevPos, laser.mesh.position) <= hitRadius + target.radius)
+      if (wingmanHit) {
+        wingmanHitIds.push(wingmanHit.id)
+        removeEnemyLaser(laser)
+        continue
+      }
       const laserHit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, _elPrevPos, laser.mesh.position) <= hitRadius + pt.radius)
       if (laserHit) {
         hits += 1
@@ -871,7 +888,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
       if (laser.traveled > maxR) removeEnemyLaser(laser)
     }
-    return { hits, damage, powerLevel }
+    return { hits, damage, powerLevel, wingmanHitIds }
   }
 
   // ao cruzar o plano do jogador resolve o dano uma única vez, mas deixa a moldura continuar voando
@@ -1272,6 +1289,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         hits: p.hits + l.hits + g.hits,
         damage: Math.max(p.damage, l.damage, g.damage),
         powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
+        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || [])],
       }
     },
 

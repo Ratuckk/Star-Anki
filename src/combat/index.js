@@ -87,7 +87,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       return count
     },
 
-    setWingmanCount: (n) => squadron.setWingmanCount(n),
+    setWingmanCount: (n) => squadron.setWingmanCount(n, player.getWingmanHullStacks?.() || 0),
+    recoverSpecificWingman: (id) => squadron.recoverMember(id, player.getWingmanHullStacks?.() || 0),
     getWingmanCount: () => squadron.getWingmanCount(),
     spawnSpecificWingman: (id) => squadron.spawnMember(id),
     removeSpecificWingman: (id) => squadron.removeMember(id),
@@ -97,14 +98,16 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     notifyPlayerDamaged: () => squadron.triggerPlayerTookDamage?.(),
     getWingmanPositions: () => squadron.getWingmanPositions(),
     getActiveWingmen: () => squadron.getActiveMembers(),
+    getWingmanVitals: () => squadron.getVitalSnapshots?.() || [],
     getSquadronCommandMode: () => squadron.getCommandMode ? squadron.getCommandMode() : 'free',
     getSquadronCommandState: () => squadron.getCommandState ? squadron.getCommandState() : { mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 },
-    toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos),
+    toggleSquadronCommand: (playerPos) => squadron.toggleCommand(lockon.getLockedEntities ? lockon.getLockedEntities() : [], playerPos, player.getSlippyMoraleStacks?.() || 0),
     getAbilityStates: () => squadron.getAbilityStates(),
     getSubAbilityStates: (cardStacks) => squadron.getSubAbilityStates(cardStacks),
     applyWingmanAbilityCard: (profileId) => squadron.applyAbilityCooldownCard(profileId),
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
     getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets() : 0,
+    getMoraleDamageBonus: () => squadron.getMoraleDamageBonus?.() || 0,
 
     // Telemetria da Esquadrilha
     getWingmanTelemetry: () => (squadron.getTelemetry ? squadron.getTelemetry() : null),
@@ -236,7 +239,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
         timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
         squadWipe, squadWipeBonus,
-      } = projectiles.update(dt, aimDirection, { allowBossOrbHit: opts.allowBossOrbHit !== false })
+      } = projectiles.update(dt, aimDirection, {
+        allowBossOrbHit: opts.allowBossOrbHit !== false,
+        globalDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
+        hitSparkColor: (squadron.getMoraleDamageBonus?.() || 0) > 0 ? 0x39ff6a : undefined,
+      })
       targets.update(dt)
 
       let enemyHits = 0
@@ -260,7 +267,8 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       if (enemiesActive) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
-        const enemyResult = enemies.update(dt, playerPosition, { ...opts, ramDamage: opts.ramDamage || 0 })
+        const moraleDamageBonus = squadron.getMoraleDamageBonus?.() || 0
+        const enemyResult = enemies.update(dt, playerPosition, { ...opts, ramDamage: (opts.ramDamage || 0) + moraleDamageBonus })
         enemyHits += enemyResult.hits
         ramKills = enemyResult.ramKills
         ramKillPoints = enemyResult.ramKillPoints
@@ -278,7 +286,13 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
           const blocked = enemies.removeProjectilesNear(auxShield.worldPos, auxShield.radius)
           for (const pos of blocked) effects?.shockwave?.(pos, 0x7be7ff, 0.4)
         }
-        const projResult = enemies.updateProjectiles(dt, playerPosition, opts)
+        const slippyBoostActive = !!opts.boostActive && (player.getSlippyBoostStacks?.() || 0) > 0
+        const wingmanTargets = squadron.getDamageTargets?.({ slippyBoostActive }) || []
+        const projResult = enemies.updateProjectiles(dt, playerPosition, { ...opts, wingmanTargets })
+        for (const profileId of projResult.wingmanHitIds || []) {
+          const hit = squadron.applyDamageToWingman?.(profileId)
+          if (hit?.applied) effects?.hitSpark?.(wingmanTargets.find((target) => target.id === profileId)?.worldPos || playerPosition, 0xff5a24)
+        }
         enemyHits += projResult.hits
         enemyProjectileHits += projResult.hits
         if (projResult.hits > 0) {
@@ -300,6 +314,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         peppyRescueStacks: player.getPeppyRescueStacks?.() || 0,
         peppyGuardExtraStacks: player.getPeppyGuardExtraStacks?.() || 0,
         peppyAuxShieldStacks: player.getPeppyAuxShieldStacks?.() || 0,
+        slippyRepairStacks: player.getSlippyRepairStacks?.() || 0,
+        slippyMoraleStacks: player.getSlippyMoraleStacks?.() || 0,
+        slippyBoostStacks: player.getSlippyBoostStacks?.() || 0,
+        wingmanHullStacks: player.getWingmanHullStacks?.() || 0,
+        moraleDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
         repulsionActive: opts.repulsionActive,
         playerTumbling: rail.isTumbling?.() || false,
       }) || {}
@@ -321,8 +340,13 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         for (const pos of wingmanResult.healOrbSpawns) effects.spawnMicroOrbe(pos, { kind: 'heal' })
       }
 
-      const healOrbesCollected = effects && effects.getHealOrbesCollected ? effects.getHealOrbesCollected() : 0
+      for (const profileId of wingmanResult.completedRetreatIds || []) player.markWingmanDown?.(profileId)
+      const healOrbePositions = effects?.getHealOrbeCollectionPositions?.() || []
+      const healOrbesCollected = healOrbePositions.length || (effects && effects.getHealOrbesCollected ? effects.getHealOrbesCollected() : 0)
       if (healOrbesCollected > 0 && player.heal) player.heal(healOrbesCollected)
+      if ((player.getSlippyRepairStacks?.() || 0) > 0) {
+        for (const pos of healOrbePositions) squadron.repairNearbyWingmen?.(pos, player.getSlippyRepairStacks())
+      }
 
       if (showHitboxes) refreshHitboxes()
 

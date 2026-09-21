@@ -927,6 +927,21 @@
   }
   .enemy-health-bar-fill { height: 100%; background: #ff9d4d; }
 
+  /* Integridade da ala (Opção 1 escolhida): duas barras discretas acima do caça, ocultas
+     enquanto ambas cheias. Escudo sempre azul; casco herda a cor de cada piloto. */
+  .wingman-vitals { position:absolute; width:54px; transform:translate(-50%,-120%); pointer-events:none; text-align:center; }
+  .wingman-vitals > div { height:4px; margin:2px 0; background:rgba(5,10,18,.78); border:1px solid rgba(170,205,240,.36); overflow:hidden; }
+  .wingman-vitals i { display:block; height:100%; transition:width .16s ease; }
+  .wingman-vital-shield i { background:#3ea6ff; box-shadow:0 0 6px #3ea6ff; }
+  .wingman-vital-hp i { background:var(--wingman-color,#fff); box-shadow:0 0 6px var(--wingman-color,#fff); }
+  .wingman-vitals span { font:700 8px/1 monospace; letter-spacing:.6px; color:#dcecff; text-shadow:0 1px 3px #000; }
+  .wingman-vitals.critical { animation:wingman-vital-critical .55s steps(2,end) infinite; }
+  .wingman-vitals.out { filter:drop-shadow(0 0 5px #ff263d); }
+  .wingman-vitals.out > div { border-color:#ff263d; }
+  .wingman-vitals.out i { width:0 !important; background:#ff263d; }
+  .wingman-vitals.out span { color:#ff6674; }
+  @keyframes wingman-vital-critical { 50% { filter:drop-shadow(0 0 5px #ff263d); opacity:.45; } }
+
   /* mira do tiro carregado (lock-on por alvo): em vez do círculo pulsante de antes, 3 quadrados
      verdes de tamanhos diferentes surgem em sequência e convergem (maior → menor, cada um
      encolhendo e sumindo) até sobrar só 1, que aí gira continuamente sobre o inimigo travado —

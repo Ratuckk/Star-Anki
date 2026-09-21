@@ -547,8 +547,9 @@ export function createGameLoop(deps) {
 
     // ============ FAÍSCAS + FLASH NO MESH + SHAKE DE KILL ============
     if (events.hitsLog && events.hitsLog.length > 0) {
+      const moraleActive = (combat.getMoraleDamageBonus?.() || 0) > 0
       for (const h of events.hitsLog) {
-        effects.hitSpark(h.worldPos, h.isHoming ? 0x2bff88 : 0xffb066)
+        effects.hitSpark(h.worldPos, moraleActive ? 0x39ff6a : (h.isHoming ? 0x2bff88 : 0xffb066))
         if (h.meshRef) effects.flashMesh(h.meshRef)
         // QoL item 5: hit de tiro NORMAL "não-letal" (acertou, alvo sobreviveu) ganha um leque de
         // faíscas extra além do flash/hitSpark padrão — o teleguiado (isHoming) já tem sua própria
@@ -556,7 +557,7 @@ export function createGameLoop(deps) {
         // normal = direção contrária à mira atual (hitsLog não carrega a velocidade exata do
         // projétil que causou cada hit, então usamos a mira do frame como aproximação razoável).
         if (!h.killed && !h.isHoming && effects.ricochetSparks) {
-          effects.ricochetSparks(h.worldPos, _fireDirection.clone().negate())
+          effects.ricochetSparks(h.worldPos, _fireDirection.clone().negate(), moraleActive ? 0x39ff6a : undefined)
         }
       }
     }
@@ -656,6 +657,20 @@ export function createGameLoop(deps) {
         }
       })
       hud.setEnemyHealthBars(bars)
+    }
+
+    if (hud.setWingmanVitals && combat.getWingmanVitals) {
+      const vitals = combat.getWingmanVitals()
+        .filter((v) => v.retreating || v.hp < v.maxHp || v.shield < v.maxShield)
+        .map((v) => {
+          const ndcW = v.worldPos.project(camera)
+          return {
+            ...v,
+            xFrac: THREE.MathUtils.clamp((ndcW.x + 1) / 2, 0, 1),
+            yFrac: THREE.MathUtils.clamp((1 - ndcW.y) / 2, 0, 1),
+          }
+        })
+      hud.setWingmanVitals(vitals)
     }
 
     effects.update(dt, playerPos, noseFrame.forward, {

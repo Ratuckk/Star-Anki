@@ -29,20 +29,35 @@ sem prioridade definida — ficam só de referência:
 
 Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
 personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
-- [ ] Regra 2.4 (foco vira ability quote se o piloto tem carta de upgrade sem cooldown) —
-  `FOCUS_ABILITY_CARDS` já existe no código mas fica inerte até as cartas Slippy Morale e Peppy
-  Auxílio nascerem.
-- [ ] Item 3 completo: 6 cartas restantes (Slippy Repair Aliados/Morale Boost/Impulsão Conjunta,
-  Miyu Assist+1/Boombuster/Status) + faíscas de hit
+- [ ] Item 3 completo: 3 cartas restantes (Miyu Assist+1/Boombuster/Status) + faíscas de hit
   não-letal mais espalhadas (item final, independente). O item 0 (visuais da Miyu) foi fechado
   na v0.98.0.
-- [ ] **Slippy Repair Aliados depende de wingmen com HP** (Checklist item 3, ainda não
-  implementado) — vem antes na ordem de entrega.
 - [ ] **Miyu Boombuster depende de projétil homing pra wingmen** (sistema novo, ainda não existe).
 
 ---
 
 ## Histórico de Entregas pós-v0.90.0
+
+### v0.99.3 — Etapa 4: Slippy e integridade da ala
+
+- **Integridade dos aliados**: cada piloto começa com 4 HP e 3 de escudo; Peppy e Slippy têm 5
+  de escudo. O escudo absorve hits antes do casco e recarrega pela mesma regra do jogador (1,5s
+  de espera, 0,4 por segundo). Barras de escudo azul e casco na cor do piloto só aparecem quando
+  desgastadas; a 1 HP, barra e nave piscam em vermelho.
+- **Retirada**: a 0 HP, o piloto entra em `retreating`, fica invulnerável/não-alvejável, não usa
+  ataques ou habilidades, fala uma nova linha de rádio e sai em cinco segundos com fumaça e fogo.
+  O HUD mostra `FORA`. A próxima carta de Companhia o recupera com vida/escudo completos; cartas
+  pessoais são removidas, enquanto **Casco da Ala** permanece.
+- **Slippy**: Repair Aliados (0/2) cura +1 HP dos aliados ativos próximos ao orbe; Morale Boost
+  (0/3) liga no Foco [D], dá +1 dano por stack a tiros/ram/aliados e torna as faíscas verdes;
+  Impulsão Conjunta (0/2) deixa Slippy invulnerável durante os 950ms do propulsor e soma +4 dano
+  por stack ao aríete. O foco de Slippy com Morale usa quote de ability no painel superior.
+- **Suporte — Casco da Ala (0/3)**: cada stack adiciona +1 HP máximo a todos e persiste após a
+  retirada de um piloto. Colisões físicas não removem HP, conforme decisão do usuário.
+
+**Validado**: verificações sintáticas dos módulos alterados, `node src/selftest.mjs` e
+`git diff --check` passaram. Próximo playtest: absorver hits no escudo de Slippy, deixá-lo a 1 HP,
+confirmar retirada/retorno por carta e testar Morale + Impulsão.
 
 ### v0.99.2 — Etapa 3: Peppy (Guarda Extra, Rescue e Auxílio)
 

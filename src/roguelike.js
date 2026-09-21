@@ -52,6 +52,13 @@ export const ROGUELIKE_CARDS = [
   { id: 'peppy-guard-extra', category: 'defensivo', label: 'Peppy — Guarda Extra', icon: '🟢', description: 'A Guarda concede até +3 cargas temporárias verdes acima do escudo normal, por 10s. Elas absorvem dano primeiro.' },
   { id: 'peppy-rescue', category: 'defensivo', label: 'Peppy — Rescue', icon: '🛟', description: 'Ao detectar knockback, Peppy cancela a cambalhota e concede +1 escudo. Cooldown: 20s, 16s ou 12s.' },
   { id: 'peppy-aux-shield', category: 'defensivo', label: 'Peppy — Auxílio', icon: '🛡️', description: 'Durante a repulsão, Peppy assume a frente e bloqueia projéteis sem custo extra de boost.' },
+
+  // Etapa 4 — Slippy. Repair precisa da vida/escudo dos aliados; Morale é ativado pelo comando
+  // [D] e Impulsão acompanha exatamente os 950ms do propulsor do jogador.
+  { id: 'slippy-repair-allies', category: 'defensivo', label: 'Slippy — Repair Aliados', icon: '🔧', description: 'O Orbe de Reparo também recupera +1 de vida de aliados ativos próximos. Até 2 stacks ampliam o raio.' },
+  { id: 'slippy-morale-boost', category: 'ofensivo', label: 'Slippy — Morale Boost', icon: '💚', description: 'Ao usar Foco [D], todas as fontes causam +1 dano por stack durante a ordem. Até 3 stacks.' },
+  { id: 'slippy-joint-boost', category: 'utilitario', label: 'Slippy — Impulsão Conjunta', icon: '💨', description: 'Durante o propulsor, Slippy acompanha invulnerável. Impulso aríete recebe +4 dano por stack (até 2).' },
+  { id: 'wingman-hull-support', category: 'defensivo', label: 'Suporte — Casco da Ala', icon: '🧰', description: '+1 vida máxima para todos os aliados. Até 3 stacks; persiste se um aliado for abatido.' },
 ]
 
 export function pickRandomCards(count, exclude = new Set()) {

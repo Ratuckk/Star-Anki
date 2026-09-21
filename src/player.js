@@ -49,6 +49,14 @@ const PEPPY_RESCUE_STACKS_CAP = 3
 const PEPPY_AUX_SHIELD_STACKS_CAP = 1
 const PEPPY_GUARD_EXTRA_DURATION_MS = 10000
 
+// ============ CARTAS DO SLIPPY E SUPORTE À ALA ============
+// Repair cura aliados próximos; Morale reforça todo o dano enquanto o foco dura; Impulsão
+// acompanha os 950ms do propulsor. Casco Reforçado é o suporte global pedido pelo usuário.
+const SLIPPY_REPAIR_STACKS_CAP = 2
+const SLIPPY_MORALE_STACKS_CAP = 3
+const SLIPPY_BOOST_STACKS_CAP = 2
+const WINGMAN_HULL_STACKS_CAP = 3
+
 // giro completo (Z/C, 2 toques): cooldown global (não importa o lado) pra não spammar
 // invencibilidade, e quanto de i-frame cada giro concede (cartas somam em cima)
 const FULL_SPIN_COOLDOWN_MS = 3000
@@ -110,6 +118,12 @@ export function createPlayerSystem(session) {
   let peppyGuardExtraStacks = 0
   let peppyRescueStacks = 0
   let peppyAuxShieldStacks = 0
+  let slippyRepairStacks = 0
+  let slippyMoraleStacks = 0
+  let slippyBoostStacks = 0
+  let wingmanHullStacks = 0
+  const downedWingmanIds = new Set()
+  let recoveredWingmanId = null
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
   let fullSpinCooldownTimer = 0
 
@@ -246,6 +260,7 @@ export function createPlayerSystem(session) {
     // main.js não tinha como saber que uma carta no cap foi ignorada (ex: bug de excludeSet).
     applyCard(card) {
       if (!card || typeof card.id !== 'string') return false
+      let restoredWingman = false
 
       switch (card.id) {
         case 'extra-projectile':
@@ -254,9 +269,19 @@ export function createPlayerSystem(session) {
         case 'faster-fire':
           fireCooldown = Math.max(FIRE_COOLDOWN_FLOOR, fireCooldown * FIRE_COOLDOWN_MULT_PER_CORRECT)
           break
-        case 'wingman':
-          wingmanCount = Math.min(WINGMAN_CAP, wingmanCount + 1)
+        case 'wingman': {
+          // Uma nova carta de companhia primeiro resgata um piloto abatido; só aumenta o tamanho
+          // da ala se não houver ninguém aguardando retorno.
+          const [downedId] = [...downedWingmanIds].sort((a, b) => a - b)
+          if (downedId != null) {
+            downedWingmanIds.delete(downedId)
+            recoveredWingmanId = downedId
+            restoredWingman = true
+          } else {
+            wingmanCount = Math.min(WINGMAN_CAP, wingmanCount + 1)
+          }
           break
+        }
         case 'more-homing-targets':
           homingMaxTargets = Math.min(HOMING_MAX_TARGETS_CAP, homingMaxTargets + 1)
           break
@@ -303,6 +328,18 @@ export function createPlayerSystem(session) {
         case 'peppy-aux-shield':
           peppyAuxShieldStacks = PEPPY_AUX_SHIELD_STACKS_CAP
           break
+        case 'slippy-repair-allies':
+          slippyRepairStacks = Math.min(SLIPPY_REPAIR_STACKS_CAP, slippyRepairStacks + 1)
+          break
+        case 'slippy-morale-boost':
+          slippyMoraleStacks = Math.min(SLIPPY_MORALE_STACKS_CAP, slippyMoraleStacks + 1)
+          break
+        case 'slippy-joint-boost':
+          slippyBoostStacks = Math.min(SLIPPY_BOOST_STACKS_CAP, slippyBoostStacks + 1)
+          break
+        case 'wingman-hull-support':
+          wingmanHullStacks = Math.min(WINGMAN_HULL_STACKS_CAP, wingmanHullStacks + 1)
+          break
         case 'swirl-blast-cooldown':
           swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
           break
@@ -325,7 +362,7 @@ export function createPlayerSystem(session) {
         default:
           return false
       }
-      collectedCards.set(card.id, (collectedCards.get(card.id) || 0) + 1)
+      if (!restoredWingman) collectedCards.set(card.id, (collectedCards.get(card.id) || 0) + 1)
       telemetry?.recordEvent('card', `Carta adquirida: ${card.title || card.id} (total: ${collectedCards.get(card.id)}x)`, { cardId: card.id, count: collectedCards.get(card.id) })
       return true
     },
@@ -339,6 +376,30 @@ export function createPlayerSystem(session) {
     getPeppyGuardExtraStacks: () => peppyGuardExtraStacks,
     getPeppyRescueStacks: () => peppyRescueStacks,
     getPeppyAuxShieldStacks: () => peppyAuxShieldStacks,
+    getSlippyRepairStacks: () => slippyRepairStacks,
+    getSlippyMoraleStacks: () => slippyMoraleStacks,
+    getSlippyBoostStacks: () => slippyBoostStacks,
+    getWingmanHullStacks: () => wingmanHullStacks,
+    consumeRecoveredWingmanId() {
+      const id = recoveredWingmanId
+      recoveredWingmanId = null
+      return id
+    },
+    markWingmanDown(profileId) {
+      if (!Number.isInteger(profileId)) return
+      downedWingmanIds.add(profileId)
+      // Buffs específicos do piloto não sobrevivem à retirada; Casco Reforçado é global e fica.
+      const cardsByPilot = [
+        ['falco-combat-chain', 'falco-intercept', 'falco-status'],
+        ['peppy-guard-extra', 'peppy-rescue', 'peppy-aux-shield'],
+        ['slippy-repair-allies', 'slippy-morale-boost', 'slippy-joint-boost'],
+        ['miyu-assist-target', 'miyu-boombuster', 'miyu-status'],
+      ]
+      for (const id of cardsByPilot[profileId] || []) collectedCards.delete(id)
+      if (profileId === 0) { falcoChainStacks = 0; falcoInterceptStacks = 0; falcoStatusStacks = 0 }
+      if (profileId === 1) { peppyGuardExtraStacks = 0; peppyRescueStacks = 0; peppyAuxShieldStacks = 0 }
+      if (profileId === 2) { slippyRepairStacks = 0; slippyMoraleStacks = 0; slippyBoostStacks = 0 }
+    },
 
     resetCards() {
       collectedCards.clear()
@@ -360,6 +421,12 @@ export function createPlayerSystem(session) {
       peppyGuardExtraStacks = 0
       peppyRescueStacks = 0
       peppyAuxShieldStacks = 0
+      slippyRepairStacks = 0
+      slippyMoraleStacks = 0
+      slippyBoostStacks = 0
+      wingmanHullStacks = 0
+      downedWingmanIds.clear()
+      recoveredWingmanId = null
       temporaryShieldValue = 0
       temporaryShieldTimerMs = 0
       fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
@@ -401,6 +468,14 @@ export function createPlayerSystem(session) {
       if (peppyGuardExtraStacks >= PEPPY_GUARD_EXTRA_STACKS_CAP) exclude.add('peppy-guard-extra')
       if (peppyRescueStacks >= PEPPY_RESCUE_STACKS_CAP) exclude.add('peppy-rescue')
       if (peppyAuxShieldStacks >= PEPPY_AUX_SHIELD_STACKS_CAP) exclude.add('peppy-aux-shield')
+      const hasPilot = (id) => wingmanCount > id && !downedWingmanIds.has(id)
+      if (!hasPilot(2)) { exclude.add('slippy-repair-allies'); exclude.add('slippy-morale-boost'); exclude.add('slippy-joint-boost') }
+      if (slippyRepairStacks >= SLIPPY_REPAIR_STACKS_CAP) exclude.add('slippy-repair-allies')
+      if (slippyMoraleStacks >= SLIPPY_MORALE_STACKS_CAP) exclude.add('slippy-morale-boost')
+      if (slippyBoostStacks >= SLIPPY_BOOST_STACKS_CAP) exclude.add('slippy-joint-boost')
+      if (wingmanHullStacks >= WINGMAN_HULL_STACKS_CAP) exclude.add('wingman-hull-support')
+      // Mesmo no teto de quatro, a carta volta ao pool se existe piloto abatido para resgatar.
+      if (downedWingmanIds.size > 0) exclude.delete('wingman')
       return exclude
     },
 
