@@ -122,8 +122,8 @@ export const WINGMAN_PROFILES = [
     modelType: 'stealth',
     abilityId: 'assist',
     abilityLabel: 'Carga Compartilhada',
-    abilityCooldownBase: 16,
-    abilityCooldownFloor: 8,
+    abilityCooldownBase: 6,
+    abilityCooldownFloor: 3,
   },
 ]
 
@@ -1405,7 +1405,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           aiValidator.expect('Call & Response nunca usa o mesmo piloto como chamador e respondente', () => reply.pilotId !== reply.openerPilotId, { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
           aiValidator.logMechanic('wingman-radio-call-response', 'reply-delivered', { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
           telemetry.recordEvent(responder.profile.name, 'radio', 'Resposta de rádio para ' + reply.triggerEventId, { elapsed, threadId: reply.threadId, openerPilotId: reply.openerPilotId, triggerEventId: reply.triggerEventId })
-          radioMessage = buildRadioPayload(responder.profile, reply.text, 'radio_response', { threadId: reply.threadId, inReplyTo: reply.triggerEventId, openerPilotId: reply.openerPilotId })
+          const opener = WINGMAN_PROFILES[reply.openerPilotId]
+          const replyText = opener ? `↳ ${opener.name}: ${reply.text}` : `↳ ${reply.text}`
+          radioMessage = buildRadioPayload(responder.profile, replyText, 'radio_response', { threadId: reply.threadId, inReplyTo: reply.triggerEventId, openerPilotId: reply.openerPilotId, isCallResponse: true })
         }
       }
     }
@@ -1628,14 +1630,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           source: 'distance-safety', event: WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN,
         })
         if (transition.decision === 'accepted') {
-          w.obstacleAvoidanceId = null
-          w.obstacleAvoidanceSide = 0
+          // A vaga acompanha o jogador em todos os frames, mas o "kick" de 140u/s só pertence
+          // à ENTRADA no emergency regroup. Reaplicá-lo em cada noop apagava a separação de ala
+          // calculada no prepass e fazia dois pilotos distantes seguirem praticamente a mesma reta.
           w.patrolTarget.copy(_wmSlotPos)
-          _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
-          if (_wmToTarget.lengthSq() > 1e-4) {
-            w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
-          }
           if (!wasEmergency) {
+            w.obstacleAvoidanceId = null
+            w.obstacleAvoidanceSide = 0
+            _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
+            if (_wmToTarget.lengthSq() > 1e-4) {
+              w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
+            }
             aiValidator.expect(
               'Aliado perdido entra em regroup de emergência com vaga e velocidade válidas',
               () => w.state === 'regroup' && w.patrolTarget.distanceTo(_wmSlotPos) < 0.001 && Number.isFinite(w.velocity.x) && Number.isFinite(w.velocity.y) && Number.isFinite(w.velocity.z),

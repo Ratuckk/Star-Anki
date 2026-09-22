@@ -38,6 +38,17 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.25 — Polimento pós-playtest: órbita, áudio, rádio e retorno de emergência
+
+- **Buraco negro / números de dano:** todos os números ficaram 20% menores. No modo orbital, os cinco autores (jogador + quatro Wingmen) recebem posições igualmente espaçadas e giram uma volta completa no sentido horário durante a vida do feedback. O arco deixa de viajar preso ao número e vira um segmento central fixo; os cinco segmentos juntos formam o círculo orbital ao redor do alvo, usando a mesma implementação na prévia das Configurações e no combate.
+- **Som de carga:** o cue de carregamento entra 180ms depois do limiar de carga, toca 15% mais baixo e, ao chegar ao fim do arquivo, repete somente os 360ms finais em vez de reiniciar toda a introdução.
+- **Rádio Call & Response:** respostas agora aparecem explicitamente com o marcador “↳ Nome do chamador: …”, e Intercept/Aux Shield também podem abrir microconversas. O log de playtest confirmou que a feature já entregava respostas; a mudança torna a relação chamada→resposta perceptível no HUD existente.
+- **Miyu:** Carga Compartilhada passa de 16s para 6s de cooldown base; o piso proporcional do Vínculo passa de 8s para 3s. Boombuster permanece em seu cooldown independente.
+- **Retorno de emergência:** o kick inicial de 140u/s agora é aplicado somente ao entrar em emergency regroup. Frames seguintes atualizam a vaga móvel normalmente, mas não sobrescrevem a velocidade/deconflição. O controller foi reconfirmado: escudo baixo nunca inicia retreat; HP zero é a única origem de retreat, e HP crítico apenas bloqueia ofensiva.
+- Novo playtest-polish.test.mjs cobre a volta orbital, segmentos por autor, volume/cauda do áudio, cooldown da Miyu, Call & Response do Intercept, contrato de escudo e guarda estrutural contra reintroduzir o kick de emergência a cada frame.
+
+**Validado:** sintaxe dos módulos alterados, suítes de Wingman/rádio/formação, node src/playtest-polish.test.mjs, node src/selftest.mjs e git diff --check.
+
 ### v0.99.24 — Deconflição simétrica e detector de clump dos Wingmen
 
 - Playtest real revelou que os quatro Wingmen ainda podiam convergir para praticamente o mesmo ponto durante retorno de emergência. O log do `aiValidator` mostrou pares a 0.0002–2.4u e 200 eventos de separação em ~267ms, embora todas as expectativas anteriores passassem.

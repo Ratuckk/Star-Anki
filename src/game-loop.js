@@ -296,7 +296,8 @@ export function createGameLoop(deps) {
       const assistMult = combat.getAssistChargeMult ? combat.getAssistChargeMult() : 1
       state.fireHeldMs += dt * 1000 * assistMult
       if (isCharging) {
-        if (!state.chargeLoopSignaled) {
+        const chargeAudioReadyAt = player.config.homingChargeMinMs + (PLAYER_SOUND_CUES.charge_loop.startAfterChargeMs || 0)
+        if (!state.chargeLoopSignaled && state.fireHeldMs >= chargeAudioReadyAt) {
           state.chargeLoopSignaled = true
           triggerSoundCue(PLAYER_SOUND_CUES.charge_loop)
         }
