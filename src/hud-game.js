@@ -6,6 +6,7 @@ import { buildPauseOverlay } from './hud-pause.js'
 import { injectHudExtraStyles } from './hud-styles.js'
 import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 import { getSettings } from './settings.js'
+import { WINGMAN_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 import { createDamageNumbers } from './hud-damage.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
@@ -227,6 +228,9 @@ export function createGameHud() {
       // Painel "corta" pra dentro (glitch de steps) ao mesmo tempo em que o retrato passa pelos
       // frames de estática — as duas animações rodam juntas, não uma depois da outra. Os frames já
       // estão decodificados (pré-carregados no mount, `src` nunca reatribuído) — "tocar" é só
+      // A abertura sonora pertence à transmissão em si, não ao comando [D]. Assim qualquer
+      // quote — trivial ou de habilidade — sincroniza com os frames de estática do retrato.
+      triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId })
       // alternar a classe `visible`, sem nenhum load no meio do caminho.
       panelEl.classList.add('active', 'entering')
       let frameIdx = 0
@@ -249,6 +253,7 @@ export function createGameHud() {
         panelEl.classList.remove('entering')
       }, enterMs)
       timers.push({ type: 'timeout', id: enterDoneId })
+        triggerSoundCue(WINGMAN_SOUND_CUES.radio_disconnect, { pilotId: currentPilotId })
 
       const leaveStartId = setTimeout(() => {
         panelEl.classList.add('leaving')
@@ -270,6 +275,7 @@ export function createGameHud() {
     // nas 2 regiões ao mesmo tempo pro mesmo piloto" (Documento de Implementação, item 2.1-2.3).
     function forceHide() {
       if (!playing) return
+      triggerSoundCue(WINGMAN_SOUND_CUES.radio_disconnect, { pilotId: currentPilotId })
       clearTimers()
       panelEl.classList.remove('entering')
       panelEl.classList.add('leaving')

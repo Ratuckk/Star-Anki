@@ -19,10 +19,10 @@ Arquivos cujo nome deixa a função clara e já foram conectados:
 | `ricochete carta contato pulo.mp3` | carta Ricochete |
 | `som disparo swirl.mp3` | Swirl Blast |
 | `inimigo disparo generico.mp3` | disparo de Blaster, Tank e inimigos genéricos |
-| `Laser boss.mp3` | laser contínuo do chefe normal |
-| `som mira disparo laser boss dourado.mp3` | laser da Anomalia Dourada |
+| `Laser boss.mp3` | carregamento/telegraph dos lasers normal e dourado, junto dos círculos de mira |
+| `som mira disparo laser boss dourado.mp3` | disparo liberado dos lasers normal e dourado, após o telegraph |
 | `Teleporte dourado.mp3` | sumiço/aparição da Anomalia Dourada |
-| `Radio connect.mp3` / `Radio disconnect.mp3` | entrar/sair do comando de foco da ala |
+| `Radio connect.mp3` / `Radio disconnect.mp3` | abertura/saída de toda transmissão de rádio dos aliados |
 
 Arquivos mantidos propositalmente sem atribuição até que você diga o que são: `angry-birds-space-
 bomb-explosion-sound.mp3`, `explode_WHu7g6E.mp3`, `numbers-lore-explosion-sound-effect.mp3`,

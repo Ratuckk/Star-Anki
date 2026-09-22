@@ -300,6 +300,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         } else {
           g.laserCooldown -= dt
           if (g.laserCooldown <= 0) {
+            triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_charge, { worldPos: g.mesh.position, targetPos: g.laserTargetPos })
             g.laserTargetPos = playerPosition.clone()
             g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
             if (effects) effects.chargeCircle(() => g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)

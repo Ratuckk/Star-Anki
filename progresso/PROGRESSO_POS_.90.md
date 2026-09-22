@@ -58,6 +58,20 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
   agregação/limite/cleanup do HUD, layout desktop/360px e playtest automatizado dentro do jogo
   com tanque real, abate e pontos separados nos dois estilos. Nenhum erro JavaScript.
 
+### v0.99.17 — Sincronia dos sons de rádio e telegraph dos lasers de chefe
+
+- Corrigida a associação dos sons `Radio connect`/`Radio disconnect`: antes eles só eram
+  disparados ao alternar o comando [D], em vez de na transmissão mostrada na tela. Agora o som de
+  conexão toca junto do primeiro frame de estática de qualquer quote (trivial ou habilidade) e o
+  de desconexão começa junto da animação de saída; filas mantêm o ciclo completo por mensagem.
+- `Laser boss.mp3` foi movido do tiro para o **telegraph** do chefe normal. O mesmo som agora é
+  disparado no início dos círculos de mira do dourado, que antes não tinham cue de carga. O som de
+  tiro (`som mira disparo laser boss dourado.mp3`) toca somente quando o laser normal ou dourado
+  é realmente criado, depois de os círculos terminarem.
+
+**Validar em playtest**: cada quote deve ter um connect/um disconnect, e ambos os tipos de chefe
+devem tocar a carga ANTES do laser, nunca no instante posterior de disparo.
+
 ### v0.99.16 — Reprodução real de efeitos sonoros e catálogo operacional
 
 - Implementado `src/audio.js`, conectado no ciclo de vida da partida: o primeiro gesto que inicia

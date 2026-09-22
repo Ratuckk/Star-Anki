@@ -358,7 +358,7 @@ export const WINGMAN_SOUND_CUES = {
   },
   command_focus_toggle: {
     id: 'wingman_command_focus_toggle',
-    file: 'sons/Radio connect.mp3',
+    file: null,
     durationMs: 400,
     delayMs: 0,
     cooldownMs: 300,
@@ -370,7 +370,7 @@ export const WINGMAN_SOUND_CUES = {
   },
   command_free_toggle: {
     id: 'wingman_command_free_toggle',
-    file: 'sons/Radio disconnect.mp3',
+    file: null,
     durationMs: 350,
     delayMs: 0,
     cooldownMs: 300,
@@ -391,6 +391,30 @@ export const WINGMAN_SOUND_CUES = {
     spatial: true,
     loop: false,
     triggerLogic: 'Disparado quando um caça aliado corta a tela rente à câmera em manobra de retorno.'
+  },
+  radio_connect: {
+    id: 'wingman_radio_connect',
+    file: 'sons/Radio connect.mp3',
+    durationMs: 400,
+    delayMs: 0,
+    cooldownMs: 80,
+    volume: 0.85,
+    category: 'sfx',
+    spatial: false,
+    loop: false,
+    triggerLogic: 'Disparado no primeiro frame de estática quando uma transmissão de rádio de aliado abre.'
+  },
+  radio_disconnect: {
+    id: 'wingman_radio_disconnect',
+    file: 'sons/Radio disconnect.mp3',
+    durationMs: 350,
+    delayMs: 0,
+    cooldownMs: 80,
+    volume: 0.75,
+    category: 'sfx',
+    spatial: false,
+    loop: false,
+    triggerLogic: 'Disparado quando uma transmissão de rádio inicia sua animação de saída.'
   },
   pilot_hit: {
     id: 'wingman_pilot_hit',
@@ -549,7 +573,7 @@ export const ENEMY_SOUND_CUES = {
   },
   boss_laser_charge: {
     id: 'boss_laser_charge',
-    file: null,
+    file: 'sons/Laser boss.mp3',
     durationMs: 1400,
     delayMs: 0,
     cooldownMs: 1000,
@@ -561,7 +585,7 @@ export const ENEMY_SOUND_CUES = {
   },
   boss_laser_fire: {
     id: 'boss_laser_fire',
-    file: 'sons/Laser boss.mp3',
+    file: 'sons/som mira disparo laser boss dourado.mp3',
     durationMs: 2200,
     delayMs: 0,
     cooldownMs: 1000,
@@ -680,6 +704,18 @@ export const ENEMY_SOUND_CUES = {
     spatial: true,
     loop: false,
     triggerLogic: 'Disparo do laser dourado colossal que varre transversalmente o campo de visão.'
+  },
+  golden_laser_charge: {
+    id: 'golden_laser_charge',
+    file: 'sons/Laser boss.mp3',
+    durationMs: 1400,
+    delayMs: 0,
+    cooldownMs: 1000,
+    volume: 0.90,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Disparado quando os círculos de mira dourados começam a fechar sobre a posição do jogador.'
   },
   golden_teleport: {
     id: 'golden_teleport',

@@ -425,6 +425,11 @@ assert.strictEqual(afterCooldownElapsed, 'dogfight', 'Companheiro descansado com
 import { getAllRegisteredCues, triggerSoundCue, stopSoundCueLoop, registerAudioHandler } from './audio-cues.js'
 
 const allCues = getAllRegisteredCues()
+assert.equal(allCues.wingmen.radio_connect.file, 'sons/Radio connect.mp3')
+assert.equal(allCues.wingmen.radio_disconnect.file, 'sons/Radio disconnect.mp3')
+assert.equal(allCues.enemies.boss_laser_charge.file, 'sons/Laser boss.mp3')
+assert.equal(allCues.enemies.boss_laser_fire.file, 'sons/som mira disparo laser boss dourado.mp3')
+assert.equal(allCues.enemies.golden_laser_charge.file, 'sons/Laser boss.mp3')
 assert.ok(allCues.player, 'Sound cues do jogador devem estar registradas')
 assert.ok(allCues.wingmen, 'Sound cues dos wingmen devem estar registradas')
 assert.ok(allCues.enemies, 'Sound cues dos inimigos/chefes devem estar registradas')
