@@ -966,3 +966,15 @@ Peppy (rádio + cartas, incluindo knockback por tier como pré-requisito de Resc
 **Validado**: `node src/damage-feedback.test.mjs` e `node src/selftest.mjs` passam; teste ao vivo
 em `127.0.0.1:8420` confirmou troca animada Clássico → Mangá → Buraco Negro, navegação pelas
 categorias, layout em 390×844 e ausência de erros/avisos no console do navegador.
+
+---
+
+### Contadores de dano sem nomes (22/09/2026)
+
+- **`hud-damage.js`**: removidos `VOCÊ`, `FALCO`, `PEPPY`, `SLIPPY` e `MIYU` dos contadores em
+  todos os estilos (`Clássico`, `Mangá`, `Buraco Negro`). As cores e formas continuam distinguindo
+  a autoria sem ocupar espaço com texto. Rajadas somadas mostram somente `N hits`.
+
+**Validado**: `node src/damage-feedback.test.mjs` passa. O `selftest.mjs` completo está bloqueado
+por uma asserção de áudio alheia a esta alteração (`BOSS_LASER` esperado como `Laser boss.mp3`,
+mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss dourado.mp3`).

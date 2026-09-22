@@ -1,11 +1,11 @@
 import { getSettings } from './settings.js'
 
 const AUTHORS = [
-  { name: 'VOCÊ', color: '#f3f6ff', shape: 'burst' },
-  { name: 'FALCO', color: '#76ceff', shape: 'slash' },
-  { name: 'PEPPY', color: '#ffc96e', shape: 'seal' },
-  { name: 'SLIPPY', color: '#a4f57a', shape: 'bubble' },
-  { name: 'MIYU', color: '#d795ff', shape: 'burst' },
+  { color: '#f3f6ff', shape: 'burst' },
+  { color: '#76ceff', shape: 'slash' },
+  { color: '#ffc96e', shape: 'seal' },
+  { color: '#a4f57a', shape: 'bubble' },
+  { color: '#d795ff', shape: 'burst' },
 ]
 const OFFSETS = [[-55, -60], [-94, 0], [-55, 57], [55, 57], [94, 0]]
 const ANGLES = [-2.1, -3.1, 2.15, .95, -.22]
@@ -93,7 +93,7 @@ export function createDamageNumbers(root) {
         existing.killed ||= !!opts.killed
         existing.el.classList.toggle('charged', existing.el.classList.contains('charged') || !!opts.homing)
         existing.el.querySelector('strong').textContent = String(Math.round(existing.value * 100) / 100)
-        existing.el.querySelector('small').textContent = `${author.name} · ${existing.hits} hits`
+        existing.el.querySelector('small').textContent = `${existing.hits} hits`
         animate(existing)
         return
       }
@@ -104,7 +104,7 @@ export function createDamageNumbers(root) {
       const number = document.createElement('strong')
       number.textContent = typeof value === 'number' ? String(Math.round(value * 100) / 100) : value
       const label = document.createElement('small')
-      label.textContent = author.name
+      label.textContent = ''
       el.append(number, label)
       // Reservar a excursão completa da animação para não cortar números nas bordas.
       const width = root.clientWidth, height = root.clientHeight
