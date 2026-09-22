@@ -1,0 +1,62 @@
+name: Validate orbit and clump v0.99.26
+
+on:
+  push:
+    branches:
+      - validation/orbit-clump-v09926
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply migration
+        run: |
+          python3 tools/apply-orbit-clump-v09926.py
+          rm tools/apply-orbit-clump-v09926.py
+          rm .github/workflows/validate-orbit-clump-v09926.yml
+      - name: Syntax checks
+        run: |
+          node --check src/combat/damage-orbit-tracker.js
+          node --check src/combat/wingman-formation-separation.js
+          node --check src/combat/wingmen.js
+          node --check src/combat/damage-feedback.js
+          node --check src/enemies/index.js
+          node --check src/hud-damage.js
+          node --check src/hud-settings.js
+          node --check src/game-loop.js
+          node --check src/settings.js
+          node --check src/damage-orbit-tracker.test.mjs
+          node --check src/wingman-formation-separation.test.mjs
+          node --check src/damage-feedback.test.mjs
+          node --check src/selftest.mjs
+      - name: Deterministic tests
+        run: |
+          node src/damage-orbit-tracker.test.mjs
+          node src/damage-feedback.test.mjs
+          node src/wingman-formation-separation.test.mjs
+          node src/wingman-state-controller.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+          node src/playtest-polish.test.mjs
+          node src/selftest.mjs
+      - name: Diff validation
+        run: |
+          git diff --check
+          test ! -e tools/apply-orbit-clump-v09926.py
+          test ! -e .github/workflows/validate-orbit-clump-v09926.yml
+      - name: Commit validated tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: contextualiza orbita e resolve clump fisico"
+          git push origin HEAD:validation/orbit-clump-v09926
