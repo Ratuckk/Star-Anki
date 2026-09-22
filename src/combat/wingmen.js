@@ -143,6 +143,10 @@ const WINGMAN_MAX_DISTANCE_ARENA = 72
 const WINGMAN_REGROUP_ARRIVAL_RAIL = 4
 const WINGMAN_REGROUP_ARRIVAL_ARENA = 5
 const WINGMAN_REGROUP_SPEED_CAP = 64
+// Última rede de segurança: estados ofensivos podem se afastar temporariamente, mas nunca podem
+// manter um aliado perdido fora do espaço de jogo. É um retorno em voo, não teleporte.
+const WINGMAN_EMERGENCY_REGROUP_MULTIPLIER = 1.5
+const WINGMAN_EMERGENCY_REGROUP_SPEED = 140
 const WINGMAN_ATTACK_LANE_SPACING = 9
 const WINGMAN_ATTACK_LANE_VERTICAL = 3.5
 const WINGMAN_SEPARATION_DISTANCE = 7
@@ -783,6 +787,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       obstacleAvoidanceId: null,
       obstacleAvoidanceSide: 0,
       overlapWith: new Set(),
+      emergencyRegroup: false,
       chainCount: 0,
       escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
       auxShieldVisual,
@@ -1455,6 +1460,40 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // os anteriores (130/65): aquela folga fazia aliados distantes continuarem visíveis como
       // pontos isolados, principalmente na arena.
       const maxDistance = inArena ? WINGMAN_MAX_DISTANCE_ARENA : WINGMAN_MAX_DISTANCE_RAIL
+      const emergencyDistance = maxDistance * WINGMAN_EMERGENCY_REGROUP_MULTIPLIER
+      // Uma habilidade em curso pode passar do limite normal (ex.: investida), mas não pode
+      // prender toda a esquadra fora da arena. Nesse caso cancelamos a intenção antiga e cada
+      // piloto volta imediatamente para a SUA vaga — inclusive se a origem foi um estado preso.
+      if (distToPlayer > emergencyDistance && w.state !== 'retreating') {
+        const stateBefore = w.state
+        const wasEmergency = w.state === 'regroup' && w.emergencyRegroup
+        w.state = 'regroup'
+        w.stateTimer = 0
+        w.targetEnemy = null
+        w.abilityActive = false
+        w.abilityTimer = 0
+        w.abilityApplied = false
+        w.escortKind = null
+        w.obstacleAvoidanceId = null
+        w.obstacleAvoidanceSide = 0
+        w.overlapWith.clear()
+        w.emergencyRegroup = true
+        w.patrolTarget.copy(_wmSlotPos)
+        _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
+        if (_wmToTarget.lengthSq() > 1e-4) {
+          w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
+        }
+        if (!wasEmergency) {
+          aiValidator.expect(
+            'Aliado perdido entra em regroup de emergência com vaga e velocidade válidas',
+            () => w.state === 'regroup' && w.patrolTarget.distanceTo(_wmSlotPos) < 0.001 && Number.isFinite(w.velocity.x) && Number.isFinite(w.velocity.y) && Number.isFinite(w.velocity.z),
+            { pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, inArena },
+          )
+          aiValidator.logMechanic('wingman-emergency-regroup', 'recuperacao-iniciada', {
+            pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, stateBefore,
+          })
+        }
+      }
       if (distToPlayer > maxDistance && w.state !== 'regroup' && !w.abilityActive) {
         telemetry.recordEvent(w.profile.name, 'state', `Regroup acionado: caça a ${distToPlayer.toFixed(1)}u da nave (máx: ${maxDistance}u)`, { elapsed })
         w.state = 'regroup'
@@ -1475,6 +1514,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           telemetry.recordEvent(w.profile.name, 'state', 'Retornou à própria vaga de formação após regroup', { elapsed })
           w.state = 'patrol'
           w.stateTimer = 0
+          w.emergencyRegroup = false
         }
       } else if (w.state === 'damaged-passive') {
         // Um aliado a 1 HP não inicia dogfight nem habilidade: só tenta manter a formação até

@@ -373,17 +373,20 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   let fullSpinDir = 0
 
   // ============ KNOCKBACK POR TIER DE AMEAÇA (QoL #6/#7) ============
-  // Tier 1..4: impactos leves → críticos. Duração dobrada para todas as origens de knockback;
-  // giro completo, propulsão e repulsão continuam sendo as únicas saídas ativas da cambalhota.
+  // Tier 1..4: impactos leves → críticos. A cambalhota preserva sua duração original; só os
+  // primeiros 35% travam totalmente os controles. Depois disso o giro continua visível, mas o
+  // jogador já retoma a direção normal da nave.
   const TUMBLE_TIERS = {
-    1: { duration: 2.4, force: 42, spin: Math.PI * 5.5 },
-    2: { duration: 3.6, force: 72, spin: Math.PI * 7.0 },
-    3: { duration: 5.2, force: 105, spin: Math.PI * 8.5 },
-    4: { duration: 7.2, force: 140, spin: Math.PI * 9.5 },
+    1: { duration: 1.2, force: 42, spin: Math.PI * 5.5 },
+    2: { duration: 1.8, force: 72, spin: Math.PI * 7.0 },
+    3: { duration: 2.6, force: 105, spin: Math.PI * 8.5 },
+    4: { duration: 3.6, force: 140, spin: Math.PI * 9.5 },
   }
+  const TUMBLE_CONTROL_LOCK_FRACTION = 0.35
   const TUMBLE_CANCEL_RAMP_S = 0.2
   let tumbleTimer = 0
   let tumbleDuration = TUMBLE_TIERS[1].duration
+  let tumbleControlLockTimer = 0
   let tumbleAngle = 0
   let tumbleDir = 1
   let tumbleKnockbackVel = new THREE.Vector3()
@@ -602,6 +605,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     const spec = TUMBLE_TIERS[resolvedTier]
     tumbleTimer = spec.duration
     tumbleDuration = spec.duration
+    tumbleControlLockTimer = spec.duration * TUMBLE_CONTROL_LOCK_FRACTION
     tumbleAngle = 0
     tumbleDir = Math.random() < 0.5 ? -1 : 1
     tumbleTier = resolvedTier
@@ -632,10 +636,10 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     }
     aiValidator.expect(
       'Knockback sempre inicia com tier e duração válidos',
-      () => tumbleTier >= 1 && tumbleTier <= 4 && tumbleTimer === TUMBLE_TIERS[resolvedTier].duration && tumbleDuration === TUMBLE_TIERS[resolvedTier].duration,
-      { tier: tumbleTier, timer: tumbleTimer, duration: tumbleDuration },
+      () => tumbleTier >= 1 && tumbleTier <= 4 && tumbleTimer === TUMBLE_TIERS[resolvedTier].duration && tumbleDuration === TUMBLE_TIERS[resolvedTier].duration && tumbleControlLockTimer === TUMBLE_TIERS[resolvedTier].duration * TUMBLE_CONTROL_LOCK_FRACTION,
+      { tier: tumbleTier, timer: tumbleTimer, duration: tumbleDuration, controlLock: tumbleControlLockTimer },
     )
-    aiValidator.logMechanic('knockback-tier', 'iniciado', { tier: tumbleTier, duration: tumbleDuration })
+    aiValidator.logMechanic('knockback-tier', 'iniciado', { tier: tumbleTier, duration: tumbleDuration, controlLock: tumbleControlLockTimer })
   }
 
   // Colisão violenta com boss / dourado / detrito (Star Fox knockback + tumble spin)
@@ -655,6 +659,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
   function cancelTumble() {
     if (tumbleTimer <= 0 || tumbleCancelTimer > 0) return false
     tumbleCancelTimer = TUMBLE_CANCEL_RAMP_S
+    tumbleControlLockTimer = 0
     aiValidator.logMechanic('knockback-tier', 'cancelamento-iniciado', { tier: tumbleTier })
     return true
   }
@@ -808,6 +813,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     let tumblePitchWobble = 0
     let tumbleYawWobble = 0
     if (tumbleTimer > 0) {
+      tumbleControlLockTimer = Math.max(0, tumbleControlLockTimer - dt)
       const tNorm = tumbleTimer / tumbleDuration
       const spinSpeedPeak = TUMBLE_TIERS[tumbleTier]?.spin || Math.PI * 5.5
       const spinSpeed = spinSpeedPeak * tNorm * tumbleDir
@@ -1090,6 +1096,7 @@ export function createRailController(camera, scene, shipVisual = SHIP_VISUAL_DEF
     triggerEnemyCollisionTumble,
     cancelTumble,
     isTumbling: () => tumbleTimer > 0,
+    isTumbleControlLocked: () => tumbleControlLockTimer > 0,
     // animações de "peso físico" (pedido do usuário) — chamadas por main.js nos eventos certos
     triggerRecoil,
     triggerImpactSquash,

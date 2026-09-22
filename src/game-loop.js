@@ -195,12 +195,14 @@ export function createGameLoop(deps) {
     state.hitShakeTimer = Math.max(0, state.hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(state.hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (state.hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
 
-    const tumbleLocked = rail.isTumbling()
+    // A nave continua girando até o fim da cambalhota, mas o bloqueio completo dos controles
+    // vale só no impacto inicial (35% da duração do tier).
+    const tumbleLocked = rail.isTumbleControlLocked?.() ?? rail.isTumbling()
     player.update(dt, inputState.repulsionHeld)
 
-    // Durante knockback só o tiro e as manobras de recuperação são aceitos. O motor de trilho
-    // recebe direção neutra, mas propulsão/repulsão continuam passando ao player e o giro segue
-    // sendo tratado abaixo para poder cancelar a cambalhota.
+    // Durante a janela inicial do knockback só o tiro e as manobras de recuperação são aceitos.
+    // O motor de trilho recebe direção neutra nesse intervalo, mas propulsão/repulsão continuam
+    // passando ao player e o giro segue sendo tratado abaixo para poder cancelar a cambalhota.
     rail.update(dt, tumbleLocked ? TUMBLE_LOCKED_INPUT : inputState)
 
     // Swirl Blast (§4.5) — FOV bump + "punch" de câmera por cima do que rail.update() acabou de

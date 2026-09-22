@@ -327,7 +327,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         miyuStatusStacks: player.getMiyuStatusStacks?.() || 0,
         moraleDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
         repulsionActive: opts.repulsionActive,
-        playerTumbling: rail.isTumbling?.() || false,
+        // Rescue responde ao período em que o jogador realmente perdeu o controle; a animação
+        // residual da cambalhota não deve gastar a habilidade de Peppy.
+        playerTumbling: rail.isTumbleControlLocked?.() ?? rail.isTumbling?.() ?? false,
       }) || {}
 
       // Habilidades únicas do esquadrão que afetam o jogador diretamente (Peppy: Guarda / Slippy:

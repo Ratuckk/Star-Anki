@@ -38,6 +38,31 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.15 — Knockback com janela de controle e recuperação de esquadra perdida
+
+Correção do feedback da v0.99.13/v0.99.14:
+
+- As durações do knockback voltaram aos valores originais por tier: **1,2 / 1,8 / 2,6 / 3,6s**.
+  A animação de cambalhota continua até o fim de cada uma delas, mas a perda total de controles
+  agora dura apenas os primeiros **35%**. Tiro, giro, propulsão e repulsão seguem disponíveis
+  durante essa janela; passado o marco de 35%, direção e comando de esquadrão voltam mesmo com a
+  nave ainda girando. O Rescue de Peppy também só considera essa janela de perda real de controle,
+  para não gastar a habilidade no trecho apenas visual.
+- A causa que a separação local da v0.99.14 não cobria era um aliado em `ram`, `rescue` ou
+  `escort` com `abilityActive`: esse estado podia ignorar indefinidamente o limite normal de
+  distância e manter pilotos convergindo para fora da área. Foi acrescentado um **regroup de
+  emergência** a 1,5× do limite de alcance (72u no trilho; 108u na arena). Ele interrompe o
+  estado preso, limpa alvo/desvio antigo e conduz cada piloto em voo para sua vaga individual de
+  formação a 140u/s — sem teleporte. A bandeira evita registrar o mesmo resgate a cada frame.
+- `aiValidator` agora registra `wingman-emergency-regroup` e confere vaga/velocidade finitas no
+  instante da recuperação; a validação de knockback também confere a janela de 35%.
+
+**Validado**: `node --check` nos quatro módulos alterados, `node src/selftest.mjs` e
+`git diff --check` passaram. O jogo abriu localmente com Esquadrão completo, sem erro de
+carregamento. **Pendente de playtest direcionado**: deixe uma Investida/Rescue passar longe ou
+force um aliado fora da área; o log precisa trazer `wingman-emergency-regroup` e cada membro deve
+retornar à própria vaga, sem ficar fundido aos outros.
+
 ### Protótipos HTML animados — números de dano (21/09/2026)
 
 - Correção de formato solicitada pelo usuário: precisa decidir vendo animações HTML, não
