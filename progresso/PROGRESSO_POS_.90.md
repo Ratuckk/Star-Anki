@@ -58,6 +58,13 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
   agregação/limite/cleanup do HUD, layout desktop/360px e playtest automatizado dentro do jogo
   com tanque real, abate e pontos separados nos dois estilos. Nenhum erro JavaScript.
 
+### v0.99.18 — Ordem definitiva das cues de rádio e telegraph
+
+- Garantida a ordem temporal: o painel de rádio torna-se visível antes do `Radio connect`, e o
+  `Radio disconnect` começa somente após a classe visual de saída.
+- No dourado, a posição atual do jogador é copiada antes de emitir `golden_laser_charge`; assim o
+  efeito espacial de carga e os círculos usam o mesmo alvo, nunca uma posição anterior ou nula.
+
 ### v0.99.17 — Sincronia dos sons de rádio e telegraph dos lasers de chefe
 
 - Corrigida a associação dos sons `Radio connect`/`Radio disconnect`: antes eles só eram
