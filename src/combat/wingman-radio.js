@@ -1,3 +1,6 @@
+import { createWingmanRadioConversationManager } from './wingman-radio-callresponse.js'
+export { CALL_RESPONSE_DELAY_MIN_MS, CALL_RESPONSE_DELAY_MAX_MS, CALL_RESPONSE_TTL_AFTER_DUE_MS, CALL_RESPONSE_THREAD_COOLDOWN_MS, classifyWingmanTransitionForRadio } from './wingman-radio-callresponse.js'
+
 // Rádio dos aliados (Overhaul de Personalidade, Ideia 3 — Docs/# Overhaul de Personalidade e
 // Vida.md §3). Dispatcher puramente lógico: não conhece o DOM, só decide QUAL frase (se alguma)
 // deve aparecer, com um cooldown global pra não virar fadiga (§8.4 do doc, "no máximo 1 frase a
@@ -54,6 +57,10 @@ const LINES = {
     retreat: ["I'm hit! Pulling out!", "Can't stay in this fight — breaking off!"],
     alone: ["Guess it's just me now."],
     focus_ready: ['Locked and loaded!'],
+    state_critical: ["I'm taking a beating!", 'Systems are getting ugly!'],
+    state_emergency_return: ['Too far out — circling back.', 'Breaking off. Rejoining formation.'],
+    state_recovered: ["That's more like it.", "I'm back in business."],
+    action_interrupted: ['Tch. Move is off.', 'Abort that run.'],
   },
   1: { // Peppy — Defensor Blindado: firme, protetor
     engage_dogfight: ["I'll handle this one.", 'Standing my ground.'],
@@ -78,6 +85,10 @@ const LINES = {
     retreat: ['Systems failing! I have to pull out!', "I'm burning up — cover yourself!"],
     alone: ['Keep your guard up out there.'],
     focus_ready: ['Standing by.'],
+    state_critical: ["Hull's in bad shape!", "I'm taking serious damage!"],
+    state_emergency_return: ["I'm outside the line — regrouping.", 'Returning to formation.'],
+    state_recovered: ['Systems stable again.', "I'm holding together."],
+    action_interrupted: ['Breaking off the maneuver.', 'Action canceled. Resetting.'],
   },
   2: { // Slippy — Batedor Solar: nervoso mas dedicado
     engage_dogfight: ['Here goes nothing!'],
@@ -100,6 +111,10 @@ const LINES = {
     retreat: ["I'm hit bad! Retreating!", 'My ship is on fire! I need to bail out!'],
     alone: ["Where'd everyone go? Help me, Fox!"],
     focus_ready: ['R-ready when you are!'],
+    state_critical: ["Uh-oh! My hull's critical!", 'I-I need some breathing room!'],
+    state_emergency_return: ["I'm too far out! Coming back!", 'Rejoining you now!'],
+    state_recovered: ['Whew! Systems are green again!', "Okay! I'm good!"],
+    action_interrupted: ['Ah! I have to abort!', 'Canceling that move!'],
   },
   3: { // Miyu — Vanguarda Fantasma: cirúrgica, cool
     engage_dogfight: ['Target acquired.', 'Engaging with precision.', 'I have the angle.'],
@@ -120,6 +135,10 @@ const LINES = {
     retreat: ['Critical damage. Disengaging.', 'Hull compromised. I am leaving combat.'],
     alone: ['...Just me and the silence now.'],
     focus_ready: ['Awaiting your mark.', 'Command link ready.'],
+    state_critical: ['Hull integrity critical.', 'Damage threshold exceeded.'],
+    state_emergency_return: ['Formation distance exceeded. Correcting.', 'Returning to formation vector.'],
+    state_recovered: ['Integrity restored.', 'Systems stable. Resuming.'],
+    action_interrupted: ['Maneuver aborted.', 'Action interrupted. Reassessing.'],
   },
 }
 
@@ -130,46 +149,63 @@ export function getWingmanRadioLineCount(pilotId) {
   return Object.values(LINES[pilotId] || {}).reduce((total, pool) => total + pool.length, 0)
 }
 
-export function createWingmanRadio() {
-  // Guarda o PRÓXIMO instante liberado (não o último em que alguém falou) — cada fala sorteia um
-  // novo intervalo entre GLOBAL_COOLDOWN_MIN_MS e GLOBAL_COOLDOWN_MAX_MS, evitando cadência
-  // robótica de cooldown fixo.
+export function createWingmanRadio({ random = Math.random } = {}) {
   let nextAllowedAt = -Infinity
   let hasSaidAlone = false
+  const conversations = createWingmanRadioConversationManager({ random })
 
-  function pick(pilotId, eventId, now) {
-    if (now < nextAllowedAt) return null
+  function scheduleNextNormalLine(now) {
+    nextAllowedAt = now + GLOBAL_COOLDOWN_MIN_MS + random() * (GLOBAL_COOLDOWN_MAX_MS - GLOBAL_COOLDOWN_MIN_MS)
+  }
+
+  function emit(pilotId, eventId, now, context = {}, force = false) {
+    if (!force && now < nextAllowedAt) return null
     const pool = LINES[pilotId]?.[eventId]
     if (!pool || pool.length === 0) return null
-    nextAllowedAt = now + GLOBAL_COOLDOWN_MIN_MS + Math.random() * (GLOBAL_COOLDOWN_MAX_MS - GLOBAL_COOLDOWN_MIN_MS)
-    return pool[Math.floor(Math.random() * pool.length)]
+    if (force) conversations.cancelPendingResponse('priority-interrupt')
+    const line = pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
+    scheduleNextNormalLine(now)
+    conversations.openFromEvent({
+      openerPilotId: pilotId,
+      triggerEventId: eventId,
+      now,
+      activePilotIds: context.activePilotIds || [],
+      force,
+    })
+    return line
   }
 
   return {
-    // Chamado pelos pontos de disparo em wingmen.js. Retorna a string OU null (cooldown/sem fala
-    // cadastrada pra esse par piloto+evento).
-    trySpeak(pilotId, eventId, now = performance.now()) {
-      return pick(pilotId, eventId, now)
+    trySpeak(pilotId, eventId, now = performance.now(), context = {}) {
+      return emit(pilotId, eventId, now, context, false)
     },
-    // "alone" só pode disparar 1x por partida (§3.3 do doc) — o dispatcher guarda esse estado
-    // porque é o único evento com essa regra especial; os demais só têm o cooldown global.
+    forceSpeak(pilotId, eventId, now = performance.now(), context = {}) {
+      return emit(pilotId, eventId, now, context, true)
+    },
     trySpeakAlone(pilotId, now = performance.now()) {
       if (hasSaidAlone) return null
-      const line = pick(pilotId, 'alone', now)
+      const line = emit(pilotId, 'alone', now, {}, false)
       if (line) hasSaidAlone = true
       return line
     },
-    // Lookup SEM cooldown — usado só pela rajada de "prontidão" do comando de foco ([D]), onde os
-    // até 4 pilotos precisam falar em sequência garantida (fila no HUD), não competindo pelo
-    // cooldown global de 6s que existe pra evitar fadiga no uso normal.
     getLine(pilotId, eventId) {
       const pool = LINES[pilotId]?.[eventId]
       if (!pool || pool.length === 0) return null
-      return pool[Math.floor(Math.random() * pool.length)]
+      return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
+    },
+    takeDueResponse(now = performance.now(), eligibleResponderIds = []) {
+      return conversations.takeDueResponse(now, eligibleResponderIds)
+    },
+    cancelPendingResponse(reason) {
+      return conversations.cancelPendingResponse(reason)
+    },
+    getConversationDebug() {
+      return conversations.getDebugSnapshot()
     },
     reset() {
       nextAllowedAt = -Infinity
       hasSaidAlone = false
+      conversations.reset()
     },
   }
 }

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import './wingman-state-controller.test.mjs'
+import './wingman-radio-callresponse.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'

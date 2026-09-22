@@ -38,6 +38,17 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.23 — Rádio Call & Response dos Wingmen
+
+- O rádio deixa de ser apenas uma coleção de falas isoladas: eventos selecionados agora podem abrir uma **thread Call & Response** com outro piloto ativo. A réplica é escolhida por personalidade, nunca pelo mesmo piloto que abriu a conversa, e só aparece depois que a transmissão inicial teve tempo visual para terminar.
+- Threads têm janela própria de 3,0–4,2s, expiração, cooldown narrativo de 10s e cancelamento determinístico. Respostas são descartadas se o piloto que responderia ficar indisponível; eventos urgentes ou a rajada do comando Focus cancelam conversas antigas para impedir diálogos fora de contexto.
+- A nova máquina de estados passa a alimentar semanticamente o rádio: entrada em `critical`, `emergency return`, recuperação de `critical` e interrupção real de Action recebem eventos próprios. `retreat` continua prioritário e agora também pode abrir uma resposta contextual.
+- Ram, Guard, Rescue, Repair, Assist e Boombuster podem iniciar microconversas curtas entre os pilotos sem transformar todo evento em diálogo. O cooldown global de falas avulsas continua valendo; a resposta é tratada como continuação da mesma transmissão.
+- `aiValidator` registra a classificação semântica e cada resposta efetivamente entregue, além de validar que Call & Response nunca usa o mesmo piloto como chamador e respondente. `clearSquadron()` também limpa threads para impedir resposta fantasma entre resets.
+- Adicionado `src/combat/wingman-radio-callresponse.js` como núcleo puro/testável e `src/wingman-radio-callresponse.test.mjs` cobrindo timing, cooldown narrativo, cancelamento, indisponibilidade do respondente e classificação das novas transições.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-radio-callresponse.test.mjs`, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
 ### v0.99.22 — Autoridade única de estados dos Wingmen
 
 - Criado `src/combat/wingman-state-controller.js`, independente de Three.js/DOM, como rota única para Integridade, Behavior, Actions persistentes, cooldowns e rejeições atômicas. Campos legados do Wingman viraram seletores somente-leitura derivados do novo `control`; writers diretos são bloqueados por teste estrutural.
