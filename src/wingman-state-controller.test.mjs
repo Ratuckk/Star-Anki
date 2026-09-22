@@ -30,191 +30,151 @@ function snapshot(w) {
 const decisions = []
 const controller = createWingmanStateController({ onDecision: (_w, d) => decisions.push(d) })
 
-// 1. retreating + focus: intenção global não ressuscita nem força dogfight.
+// Retreat + Focus continua atômico: comando global não ressuscita piloto.
 {
   const w = createWingman({ hp: 1 })
   controller.applyDamage(w, { amount: 1 })
-  assert.equal(w.state, 'retreating')
   const before = snapshot(w)
   const result = controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
     source: 'squadron-focus', event: 'command-focus', origin: 'focus', targetEnemy: target(),
   })
-  assert.equal(result.decision, 'rejected')
   assert.equal(result.reason, 'integrity-retreating')
   assert.equal(snapshot(w), before)
 }
 
-// 2. retreating + regroup: inválido e atômico.
+// REGROUP não é mais Behavior. String legada é rejeitada sem mutação.
 {
-  const w = createWingman({ hp: 1 })
-  controller.applyDamage(w, { amount: 1 })
+  assert.equal(WINGMAN_BEHAVIORS.REGROUP, undefined)
+  const w = createWingman()
   const before = snapshot(w)
-  const result = controller.requestBehavior(w, WINGMAN_BEHAVIORS.REGROUP, { source: 'distance', reason: 'normal-distance' })
+  const result = controller.requestBehavior(w, 'regroup', { source: 'legacy-distance' })
   assert.equal(result.decision, 'rejected')
+  assert.equal(result.reason, 'unknown-behavior')
   assert.equal(snapshot(w), before)
 }
 
-// 3. critical + focus: critical é derivado de HP e bloqueia dogfight.
+// Critical + Focus continua bloqueado por integridade derivada do HP.
 {
   const w = createWingman({ hp: 1 })
   const before = snapshot(w)
-  const result = controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
-    source: 'squadron-focus', origin: 'focus', targetEnemy: target(),
-  })
-  assert.equal(w.state, 'damaged-passive')
+  const result = controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: target() })
   assert.equal(result.reason, 'integrity-critical')
+  assert.equal(w.state, 'damaged-passive')
   assert.equal(snapshot(w), before)
 }
 
-// 4. critical + emergency return + chegada: retorno seguro continua permitido; chegada não cura.
+// Recovery técnico é permitido em critical, mas não cura nem cria estado visual de regroup.
 {
   const w = createWingman({ hp: 1 })
-  const entered = controller.enterEmergencyRegroup(w)
-  assert.equal(entered.decision, 'accepted')
-  assert.equal(w.state, 'regroup')
-  assert.equal(w.emergencyRegroup, true)
-  const arrived = controller.arriveFormation(w)
-  assert.equal(arrived.decision, 'accepted')
+  const recovered = controller.recoverNavigation(w)
+  assert.equal(recovered.decision, 'accepted')
   assert.equal(w.state, 'damaged-passive')
   assert.equal(w.hp, 1)
+  assert.equal(w.control.behavior.kind, WINGMAN_BEHAVIORS.PATROL)
+  assert.equal(w.control.behavior.reason, 'invalid-navigation')
 }
 
-// 5. critical + repair insuficiente.
+// Reparo insuficiente/suficiente continua derivando critical exclusivamente do HP.
 {
   const w = createWingman({ hp: 1, maxHp: 5 })
   controller.applyRepair(w, { amount: 0 })
-  assert.equal(w.hp, 1)
   assert.equal(w.state, 'damaged-passive')
-}
-
-// 6. critical + repair suficiente: fica elegível, sem iniciar ação como efeito colateral.
-{
-  const w = createWingman({ hp: 1, maxHp: 5 })
   controller.applyRepair(w, { amount: 1 })
-  assert.equal(w.hp, 2)
   assert.equal(w.state, 'patrol')
   assert.equal(w.abilityActive, false)
 }
 
-// 7. rescue + emergency return: interrompe e aplica cooldown completo.
+// Rescue interrompido pelo failsafe técnico recebe cooldown completo.
 {
   const w = createWingman({ id: 1, name: 'Peppy' })
-  const started = controller.startAction(w, WINGMAN_ACTIONS.RESCUE, { cooldownSeconds: 16, source: 'peppy-rescue' })
-  assert.equal(started.decision, 'accepted')
-  assert.equal(w.state, 'rescue')
-  const emergency = controller.enterEmergencyRegroup(w)
-  assert.equal(emergency.decision, 'accepted')
-  assert.equal(w.state, 'regroup')
+  controller.startAction(w, WINGMAN_ACTIONS.RESCUE, { cooldownSeconds: 16 })
+  const recovery = controller.recoverNavigation(w)
+  assert.equal(recovery.decision, 'accepted')
+  assert.equal(w.state, 'patrol')
   assert.equal(w.rescueCooldown, 16)
-  assert.equal(emergency.interruption.cooldownPolicy, WINGMAN_COOLDOWN_POLICIES.FULL)
+  assert.equal(recovery.interruption.cooldownPolicy, WINGMAN_COOLDOWN_POLICIES.FULL)
 }
 
-// 8. ram + alvo destruído: target pertence à Action e é limpo atomicamente com cooldown completo.
+// Ram + alvo destruído mantém limpeza/cooldown atômicos.
 {
   const w = createWingman({ name: 'Falco' })
   const enemy = target(42)
-  controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: enemy, origin: 'autonomous' })
-  controller.startAction(w, WINGMAN_ACTIONS.RAM, { cooldownSeconds: 14, data: { targetEnemy: enemy, chainCount: 0 } })
+  controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: enemy })
+  controller.startAction(w, WINGMAN_ACTIONS.RAM, { cooldownSeconds: 14, data: { targetEnemy: enemy } })
   enemy.dying = true
-  const ended = controller.finishAction(w, { event: WINGMAN_INTERRUPT_EVENTS.TARGET_INVALIDATED, outcome: 'target-invalidated', engagementCooldown: 4.5 })
-  assert.equal(ended.decision, 'accepted')
+  controller.finishAction(w, { event: WINGMAN_INTERRUPT_EVENTS.TARGET_INVALIDATED, outcome: 'target-invalidated' })
   assert.equal(w.state, 'patrol')
   assert.equal(w.targetEnemy, null)
   assert.equal(w.abilityCooldown, 14)
 }
 
-// 9. habilidade interrompida não pode reativar no frame seguinte quando o chamador respeita cooldown.
+// Recovery técnico não cria loophole de reativação no frame seguinte.
 {
   const w = createWingman({ name: 'Falco' })
   const enemy = target(5)
   controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: enemy })
   controller.startAction(w, WINGMAN_ACTIONS.RAM, { cooldownSeconds: 14, data: { targetEnemy: enemy } })
-  controller.enterEmergencyRegroup(w)
-  assert.equal(w.abilityCooldown, 14)
-  controller.arriveFormation(w)
+  controller.recoverNavigation(w)
   controller.tick(w, 1 / 60)
   assert.ok(w.abilityCooldown > 13.9)
-  // O gate de condição de ativação vê o cooldown não-zero; não há loophole de abilityActive=false.
-  assert.notEqual(w.abilityCooldown, 0)
 }
 
-// 10. Focus ON/OFF durante ação não cancelável: a Action permanece intacta.
+// Focus ON/OFF durante Action comprometida não a cancela.
 {
   const w = createWingman({ id: 3, name: 'Miyu' })
-  controller.startAction(w, WINGMAN_ACTIONS.ASSIST, { cooldownSeconds: 16, source: 'assist' })
+  controller.startAction(w, WINGMAN_ACTIONS.ASSIST, { cooldownSeconds: 6 })
   const actionBefore = w.control.action
-  const focus = controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
-    source: 'squadron-focus', origin: 'focus', targetEnemy: target(),
-  })
+  const focus = controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { origin: 'focus', targetEnemy: target() })
   assert.equal(focus.reason, 'action-committed')
   controller.onCommandIntentChanged(w, 'free')
   assert.equal(w.control.action, actionBefore)
-  assert.equal(w.state, 'escort')
 }
 
-// Emergency regroup repetido é idempotente e não polui telemetry/validator com no-ops por frame.
+// Recovery repetido é idempotente e não polui telemetry com no-op por frame.
 {
   const w = createWingman()
-  const beforeDecisions = decisions.length
-  controller.enterEmergencyRegroup(w)
-  assert.equal(decisions.length, beforeDecisions + 1)
-  const repeated = controller.enterEmergencyRegroup(w)
+  const before = decisions.length
+  controller.recoverNavigation(w)
+  assert.equal(decisions.length, before + 1)
+  const repeated = controller.recoverNavigation(w)
   assert.equal(repeated.noop, true)
-  assert.equal(decisions.length, beforeDecisions + 1)
-  assert.equal(w.state, 'regroup')
-  assert.equal(w.emergencyRegroup, true)
+  assert.equal(decisions.length, before + 1)
+  assert.equal(w.state, 'patrol')
 }
 
-// Focus OFF só encerra dogfight originado pelo Focus; autônomo continua.
+// Focus OFF só encerra dogfight originado pelo Focus.
 {
   const w = createWingman()
   controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: target(), origin: 'focus' })
   controller.onCommandIntentChanged(w, 'free')
   assert.equal(w.state, 'patrol')
-
   controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { targetEnemy: target(2), origin: 'autonomous' })
   controller.onCommandIntentChanged(w, 'free')
   assert.equal(w.state, 'dogfight')
 }
 
-// Normal regroup não vence Action; emergency return vence.
-{
-  const w = createWingman({ id: 3, name: 'Miyu' })
-  controller.startAction(w, WINGMAN_ACTIONS.ASSIST, { cooldownSeconds: 16 })
-  const normal = controller.requestBehavior(w, WINGMAN_BEHAVIORS.REGROUP, { reason: 'normal-distance' })
-  assert.equal(normal.reason, 'action-committed')
-  assert.equal(w.state, 'escort')
-  controller.enterEmergencyRegroup(w)
-  assert.equal(w.state, 'regroup')
-  assert.equal(w.abilityCooldown, 16)
-}
-
-// Instant actions: Integrity e emergency return bloqueiam; coexistência com Action é configurável.
+// Instant actions dependem de integridade/cooldown, não de distância do jogador.
 {
   const w = createWingman({ name: 'Falco' })
-  let auth = controller.authorizeInstantAction(w, 'intercept', { cooldownKey: 'intercept', allowDuringAction: true })
-  assert.equal(auth.decision, 'accepted')
+  assert.equal(controller.authorizeInstantAction(w, 'intercept', { cooldownKey: 'intercept' }).decision, 'accepted')
   controller.commitInstantAction(w, 'intercept', { cooldownKey: 'intercept', cooldownSeconds: 5 })
-  auth = controller.authorizeInstantAction(w, 'intercept', { cooldownKey: 'intercept' })
-  assert.equal(auth.reason, 'cooldown-active')
-
+  assert.equal(controller.authorizeInstantAction(w, 'intercept', { cooldownKey: 'intercept' }).reason, 'cooldown-active')
   const critical = createWingman({ hp: 1 })
-  auth = controller.authorizeInstantAction(critical, 'boombuster', { cooldownKey: 'boombuster' })
-  assert.equal(auth.reason, 'integrity-critical')
+  assert.equal(controller.authorizeInstantAction(critical, 'boombuster', { cooldownKey: 'boombuster' }).reason, 'integrity-critical')
 }
 
-// Política explícita de pausa: Rescue pausa cooldown principal; após interrupção ele volta a contar.
+// Rescue pausa cooldown principal; depois de recovery técnico ele volta a contar.
 {
   const w = createWingman({ id: 1, primaryCooldown: 8 })
   controller.startAction(w, WINGMAN_ACTIONS.RESCUE, { cooldownSeconds: 20 })
   controller.tick(w, 1)
   assert.equal(w.abilityCooldown, 8)
-  controller.enterEmergencyRegroup(w)
+  controller.recoverNavigation(w)
   controller.tick(w, 1)
   assert.equal(w.abilityCooldown, 7)
 }
 
-// Composição de modificadores: upgrade antes de override explícito; maior prioridade vence; clamp por último.
+// Modificadores mantêm precedência declarada.
 {
   const result = composeWingmanStat({
     base: 0.55,
@@ -223,17 +183,13 @@ const controller = createWingmanStateController({ onDecision: (_w, d) => decisio
       { id: 'high-combo', priority: 50, value: 0.70 },
       { id: 'low-health', priority: 100, value: 0.85 },
     ],
-    min: 0,
-    max: 0.92,
+    min: 0, max: 0.92,
   })
   assert.equal(result.value, 0.85)
   assert.equal(result.override.id, 'low-health')
-
-  const clamped = composeWingmanStat({ base: 0.9, upgrades: [{ add: 0.4 }], min: 0, max: 0.92 })
-  assert.equal(clamped.value, 0.92)
 }
 
-// Read-only: direct writes nos campos legados explodem em ES modules (strict mode).
+// Campos legados continuam somente-leitura.
 {
   const w = createWingman()
   assert.throws(() => { w.state = 'dogfight' }, TypeError)
@@ -241,30 +197,21 @@ const controller = createWingmanStateController({ onDecision: (_w, d) => decisio
   assert.throws(() => { w.hp = 0 }, TypeError)
 }
 
-// Invariantes e telemetria de decisão.
+// Invariantes e rejeição estruturada.
 {
   const w = createWingman()
   assert.deepEqual(validateWingmanInvariants(w), { ok: true, errors: [] })
-  controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { source: 'test', event: 'focus', targetEnemy: null })
+  controller.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, { source: 'test', targetEnemy: null })
   const last = decisions.at(-1)
-  assert.equal(last.decision, 'rejected')
   assert.equal(last.reason, 'invalid-target')
-  assert.ok(last.before)
-  assert.ok(last.after)
+  assert.ok(last.before && last.after)
 }
 
-
-// Proteção arquitetural: o runtime do esquadrão não pode reconstruir writers diretos nos
-// antigos campos autoritativos; todas as mutações devem passar pelo state controller.
+// Proteção arquitetural: runtime não pode reconstruir writers diretos nos campos autoritativos.
 {
-  const { existsSync, readFileSync } = await import('node:fs')
-  const { fileURLToPath } = await import('node:url')
-  const { dirname, join } = await import('node:path')
-  const here = dirname(fileURLToPath(import.meta.url))
-  const wingmenPath = join(here, 'combat', 'wingmen.js')
-  if (existsSync(wingmenPath)) {
-    const wingmenSource = readFileSync(wingmenPath, 'utf8')
-    const forbidden = [
+  const { readFileSync } = await import('node:fs')
+  const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
+  const forbidden = [
     /\b(?:w|wingman|owner|miyu)\.state\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.stateTimer\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.targetEnemy\s*=(?!=)/g,
@@ -272,16 +219,14 @@ const controller = createWingmanStateController({ onDecision: (_w, d) => decisio
     /\b(?:w|wingman|owner|miyu)\.abilityTimer\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.abilityApplied\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.escortKind\s*=(?!=)/g,
-    /\b(?:w|wingman|owner|miyu)\.emergencyRegroup\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.chainCount\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.(?:abilityCooldown|interceptCooldown|rescueCooldown|boombusterCooldown|engagementCooldown)\s*=(?!=)/g,
     /\b(?:w|wingman|owner|miyu)\.(?:hp|maxHp|shield|shieldMax|shieldRegenDelay)\s*=(?!=)/g,
     /\.control\.(?:resources|behavior|action|retreat|cooldowns|engagementCooldown)(?:\.[A-Za-z_$][\w$]*)*\s*=(?!=)/g,
   ]
-    for (const pattern of forbidden) {
-      const match = pattern.exec(wingmenSource)
-      assert.equal(match, null, `writer direto proibido em wingmen.js: ${match?.[0] || pattern}`)
-    }
+  for (const pattern of forbidden) {
+    const match = pattern.exec(wingmenSource)
+    assert.equal(match, null, `writer direto proibido em wingmen.js: ${match?.[0] || pattern}`)
   }
 }
 

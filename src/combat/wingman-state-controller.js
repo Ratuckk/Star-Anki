@@ -1,7 +1,6 @@
 export const WINGMAN_BEHAVIORS = Object.freeze({
   PATROL: 'patrol',
   DOGFIGHT: 'dogfight',
-  REGROUP: 'regroup',
 })
 
 export const WINGMAN_ACTIONS = Object.freeze({
@@ -28,7 +27,7 @@ export const WINGMAN_COOLDOWN_POLICIES = Object.freeze({
 export const WINGMAN_INTERRUPT_EVENTS = Object.freeze({
   INTEGRITY_CRITICAL: 'integrity-critical',
   INTEGRITY_RETREAT: 'integrity-retreat',
-  EMERGENCY_RETURN: 'emergency-return',
+  NAVIGATION_RECOVERY: 'navigation-recovery',
   TARGET_INVALIDATED: 'target-invalidated',
 })
 
@@ -41,7 +40,7 @@ const ACTION_DEFINITIONS = Object.freeze({
     interruptions: Object.freeze({
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_CRITICAL]: WINGMAN_COOLDOWN_POLICIES.FULL,
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_RETREAT]: WINGMAN_COOLDOWN_POLICIES.FULL,
-      [WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN]: WINGMAN_COOLDOWN_POLICIES.FULL,
+      [WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY]: WINGMAN_COOLDOWN_POLICIES.FULL,
       [WINGMAN_INTERRUPT_EVENTS.TARGET_INVALIDATED]: WINGMAN_COOLDOWN_POLICIES.FULL,
     }),
   }),
@@ -53,11 +52,11 @@ const ACTION_DEFINITIONS = Object.freeze({
     interruptions: Object.freeze({
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_CRITICAL]: WINGMAN_COOLDOWN_POLICIES.FULL,
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_RETREAT]: WINGMAN_COOLDOWN_POLICIES.FULL,
-      [WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN]: WINGMAN_COOLDOWN_POLICIES.FULL,
+      [WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY]: WINGMAN_COOLDOWN_POLICIES.FULL,
     }),
   }),
   [WINGMAN_ACTIONS.RESCUE]: Object.freeze({
-    allowedBehaviors: [WINGMAN_BEHAVIORS.PATROL, WINGMAN_BEHAVIORS.DOGFIGHT, WINGMAN_BEHAVIORS.REGROUP],
+    allowedBehaviors: [WINGMAN_BEHAVIORS.PATROL, WINGMAN_BEHAVIORS.DOGFIGHT],
     cooldownKey: 'rescue',
     // Comportamento legado: qualquer abilityActive pausava o cooldown principal. Agora isso é
     // uma política declarada, não um efeito colateral de um booleano genérico.
@@ -66,7 +65,7 @@ const ACTION_DEFINITIONS = Object.freeze({
     interruptions: Object.freeze({
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_CRITICAL]: WINGMAN_COOLDOWN_POLICIES.FULL,
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_RETREAT]: WINGMAN_COOLDOWN_POLICIES.FULL,
-      [WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN]: WINGMAN_COOLDOWN_POLICIES.FULL,
+      [WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY]: WINGMAN_COOLDOWN_POLICIES.FULL,
     }),
   }),
   [WINGMAN_ACTIONS.ASSIST]: Object.freeze({
@@ -77,18 +76,18 @@ const ACTION_DEFINITIONS = Object.freeze({
     interruptions: Object.freeze({
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_CRITICAL]: WINGMAN_COOLDOWN_POLICIES.FULL,
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_RETREAT]: WINGMAN_COOLDOWN_POLICIES.FULL,
-      [WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN]: WINGMAN_COOLDOWN_POLICIES.FULL,
+      [WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY]: WINGMAN_COOLDOWN_POLICIES.FULL,
     }),
   }),
   [WINGMAN_ACTIONS.AUX_SHIELD]: Object.freeze({
-    allowedBehaviors: [WINGMAN_BEHAVIORS.PATROL, WINGMAN_BEHAVIORS.DOGFIGHT, WINGMAN_BEHAVIORS.REGROUP],
+    allowedBehaviors: [WINGMAN_BEHAVIORS.PATROL, WINGMAN_BEHAVIORS.DOGFIGHT],
     cooldownKey: null,
     pausesCooldownKeys: ['primary'],
     completionPolicy: WINGMAN_COOLDOWN_POLICIES.NONE,
     interruptions: Object.freeze({
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_CRITICAL]: WINGMAN_COOLDOWN_POLICIES.NONE,
       [WINGMAN_INTERRUPT_EVENTS.INTEGRITY_RETREAT]: WINGMAN_COOLDOWN_POLICIES.NONE,
-      [WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN]: WINGMAN_COOLDOWN_POLICIES.NONE,
+      [WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY]: WINGMAN_COOLDOWN_POLICIES.NONE,
     }),
   }),
 })
@@ -149,7 +148,6 @@ export function getWingmanLegacyState(wingman, lowHpThreshold = 1) {
   const control = wingman.control
   if (control.retreat) return 'retreating'
   if (control.action) return LEGACY_ACTION_STATE[control.action.kind] || control.behavior.kind
-  if (control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP) return 'regroup'
   if (isWingmanCritical(wingman, lowHpThreshold)) return 'damaged-passive'
   return control.behavior.kind
 }
@@ -185,9 +183,6 @@ export function validateWingmanInvariants(wingman, lowHpThreshold = 1) {
   if (r.hp === 0 && !control.retreat) errors.push('zero-hp-without-retreat')
   if (control.retreat && control.action) errors.push('retreat-with-action')
   if (isWingmanCritical(wingman, lowHpThreshold) && control.action) errors.push('critical-with-action')
-  if (control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && control.behavior.reason === 'emergency-distance' && control.action) {
-    errors.push('emergency-regroup-with-action')
-  }
   if (control.behavior.kind === WINGMAN_BEHAVIORS.DOGFIGHT && !control.behavior.targetEnemy) errors.push('dogfight-without-target')
   if (control.action?.kind === WINGMAN_ACTIONS.RAM && !control.action.data?.targetEnemy) errors.push('ram-without-target')
   for (const key of COOLDOWN_KEYS) {
@@ -281,7 +276,6 @@ export function initializeWingmanControl(wingman, {
     const kind = wingman.control.action?.kind
     return kind === WINGMAN_ACTIONS.GUARD || kind === WINGMAN_ACTIONS.ASSIST || kind === WINGMAN_ACTIONS.AUX_SHIELD ? kind : null
   })
-  getter('emergencyRegroup', () => wingman.control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && wingman.control.behavior.reason === 'emergency-distance')
   getter('chainCount', () => wingman.control.action?.kind === WINGMAN_ACTIONS.RAM ? (wingman.control.action.data.chainCount || 0) : 0)
   getter('abilityCooldown', () => wingman.control.cooldowns.primary)
   getter('interceptCooldown', () => wingman.control.cooldowns.intercept)
@@ -378,15 +372,9 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     const control = wingman.control
     if (control.retreat) return reject(wingman, request, 'integrity-retreating', before)
     if (control.action) return reject(wingman, request, 'action-committed', before)
-    if (control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && control.behavior.reason === 'emergency-distance' && kind !== WINGMAN_BEHAVIORS.REGROUP) {
-      return reject(wingman, request, 'emergency-return-lock', before)
-    }
     if (kind === WINGMAN_BEHAVIORS.DOGFIGHT) {
       if (isWingmanCritical(wingman, lowHpThreshold)) return reject(wingman, request, 'integrity-critical', before)
       if (!targetEnemy || targetEnemy.dying || !targetEnemy.mesh) return reject(wingman, request, 'invalid-target', before)
-    }
-    if (kind === WINGMAN_BEHAVIORS.REGROUP && reason !== 'emergency-distance' && control.action) {
-      return reject(wingman, request, 'action-committed', before)
     }
     if (!Object.values(WINGMAN_BEHAVIORS).includes(kind)) return reject(wingman, request, 'unknown-behavior', before)
     control.behavior = freshBehavior(kind, { origin, reason, targetEnemy: kind === WINGMAN_BEHAVIORS.DOGFIGHT ? targetEnemy : null })
@@ -413,9 +401,6 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     if (control.retreat) return reject(wingman, request, 'integrity-retreating', before)
     if (isWingmanCritical(wingman, lowHpThreshold)) return reject(wingman, request, 'integrity-critical', before)
     if (control.action) return reject(wingman, request, 'action-already-active', before)
-    if (control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && control.behavior.reason === 'emergency-distance') {
-      return reject(wingman, request, 'emergency-return-lock', before)
-    }
     if (!def.allowedBehaviors.includes(control.behavior.kind)) return reject(wingman, request, 'behavior-incompatible', before)
     if (def.cooldownKey && control.cooldowns[def.cooldownKey] > 0) return reject(wingman, request, 'cooldown-active', before)
     if (kind === WINGMAN_ACTIONS.RAM && (!data.targetEnemy || data.targetEnemy.dying || !data.targetEnemy.mesh)) {
@@ -508,11 +493,11 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     })
   }
 
-  function enterEmergencyRegroup(wingman, { source = 'distance-safety', event = WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN } = {}) {
+  function recoverNavigation(wingman, { source = 'navigation-safety', event = WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY } = {}) {
     const before = snapshotWingmanAuthority(wingman, lowHpThreshold)
-    const request = { region: 'behavior', requested: WINGMAN_BEHAVIORS.REGROUP, event, source }
+    const request = { region: 'navigation', requested: 'recovery', event, source }
     if (wingman.control.retreat) return reject(wingman, request, 'integrity-retreating', before)
-    if (!wingman.control.action && wingman.control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && wingman.control.behavior.reason === 'emergency-distance') {
+    if (!wingman.control.action && wingman.control.behavior.kind === WINGMAN_BEHAVIORS.PATROL && wingman.control.behavior.reason === 'invalid-navigation') {
       return {
         pilotId: wingman.profile?.id ?? null,
         pilot: wingman.profile?.name ?? null,
@@ -528,27 +513,17 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     let interruption = null
     if (wingman.control.action) {
       const action = wingman.control.action
-      const policy = getWingmanInterruptionPolicy(action.kind, WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN, action.phase)
-      if (!policy) return reject(wingman, request, 'action-not-interruptible-by-emergency', before)
+      const policy = getWingmanInterruptionPolicy(action.kind, WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY, action.phase)
+      if (!policy) return reject(wingman, request, 'action-not-interruptible-by-recovery', before)
       const cooldown = applyActionCooldown(wingman, action, policy)
       interruption = { action: action.kind, phase: action.phase, cooldownPolicy: policy, cooldown }
       wingman.control.action = null
     }
-    wingman.control.behavior = freshBehavior(WINGMAN_BEHAVIORS.REGROUP, {
-      origin: source,
-      reason: 'emergency-distance',
+    wingman.control.behavior = freshBehavior(WINGMAN_BEHAVIORS.PATROL, {
+      origin: `recovery:${source}`,
+      reason: 'invalid-navigation',
     })
     return decision(wingman, { ...request, accepted: true, before, meta: { interruption } })
-  }
-
-  function arriveFormation(wingman, { source = 'formation', event = 'formation-reached' } = {}) {
-    const before = snapshotWingmanAuthority(wingman, lowHpThreshold)
-    const request = { region: 'behavior', requested: WINGMAN_BEHAVIORS.PATROL, event, source }
-    if (wingman.control.retreat) return reject(wingman, request, 'integrity-retreating', before)
-    if (wingman.control.action) return reject(wingman, request, 'action-committed', before)
-    if (wingman.control.behavior.kind !== WINGMAN_BEHAVIORS.REGROUP) return reject(wingman, request, 'not-regrouping', before)
-    wingman.control.behavior = freshBehavior(WINGMAN_BEHAVIORS.PATROL, { origin: 'formation-reached' })
-    return decision(wingman, { ...request, accepted: true, before })
   }
 
   function applyDamage(wingman, { amount = 1, shieldRegenDelay = 0, source = 'combat', event = 'damage-received' } = {}) {
@@ -589,7 +564,7 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
       if (control.behavior.kind === WINGMAN_BEHAVIORS.DOGFIGHT) {
         control.behavior = freshBehavior(WINGMAN_BEHAVIORS.PATROL, { origin: 'integrity-critical' })
       }
-      // regroup (inclusive emergência) é preservado: integridade bloqueia combate, não o retorno seguro.
+      // Patrol é preservado: integridade bloqueia combate, mas não inventa uma retirada por distância.
     }
     return decision(wingman, {
       ...request, accepted: true, before,
@@ -613,7 +588,6 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
   function authorizeInstantAction(wingman, kind, {
     cooldownKey = null,
     allowDuringAction = true,
-    allowDuringEmergency = false,
     source = 'system',
     event = 'instant-action-requested',
     recordDecision = true,
@@ -633,9 +607,6 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     if (wingman.control.retreat) return deny('integrity-retreating')
     if (isWingmanCritical(wingman, lowHpThreshold)) return deny('integrity-critical')
     if (!allowDuringAction && wingman.control.action) return deny('action-committed')
-    if (!allowDuringEmergency && wingman.control.behavior.kind === WINGMAN_BEHAVIORS.REGROUP && wingman.control.behavior.reason === 'emergency-distance') {
-      return deny('emergency-return-lock')
-    }
     if (cooldownKey && wingman.control.cooldowns[cooldownKey] > 0) return deny('cooldown-active')
     if (!recordDecision) return silentResult(true)
     return decision(wingman, { ...request, accepted: true, before })
@@ -662,8 +633,7 @@ export function createWingmanStateController({ lowHpThreshold = 1, onDecision = 
     retargetAction,
     finishAction,
     interruptAction,
-    enterEmergencyRegroup,
-    arriveFormation,
+    recoverNavigation,
     applyDamage,
     applyRepair,
     authorizeInstantAction,

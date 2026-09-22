@@ -70,13 +70,13 @@ function member(id, x, y, z, slot) {
 assert.ok(WINGMAN_CLUMP_DISTANCE > 0 && WINGMAN_CLUMP_DISTANCE < 7)
 assert.ok(WINGMAN_CLUMP_GRACE_S >= 0.4 && WINGMAN_CLUMP_GRACE_S <= 1)
 
-// 6. Proteção estrutural: a integração deve calcular cada par uma vez (j = i + 1), somar
-//    impulsos opostos e não limpar overlapWith em todo tick de emergency regroup.
+// 6. Proteção estrutural: a integração calcula cada par uma vez e mantém a separação como
+//    proteção local, não como remendo de um estado global de regroup.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const wingmenSource = readFileSync(path.join(__dirname, 'combat', 'wingmen.js'), 'utf8')
 assert.ok(wingmenSource.includes('otherIdx = idx + 1'), 'separação precisa iterar pares não ordenados apenas uma vez')
 assert.ok(wingmenSource.includes('separationPush.addScaledVector'), 'integração precisa aplicar contribuição simétrica pré-calculada')
 assert.ok(wingmenSource.includes('separationCorrection') && wingmenSource.includes('WINGMAN_SEPARATION_POSITION_STEP_CAP'), 'integração precisa corrigir penetracao fisica com passo limitado')
-assert.ok(!/if \(transition\.decision === 'accepted'\)[\s\S]{0,220}w\.overlapWith\.clear\(\)/.test(wingmenSource), 'emergency regroup não pode apagar memória de overlap a cada frame')
+assert.ok(!wingmenSource.includes('emergencyRegroup'), 'separação não pode depender de emergency regroup')
 
 console.log('wingman-formation-separation.test.mjs: OK')

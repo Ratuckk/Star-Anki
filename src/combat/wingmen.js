@@ -22,6 +22,13 @@ import {
   WINGMAN_CLUMP_GRACE_S,
   computeWingmanPairSeparation,
 } from './wingman-formation-separation.js'
+import {
+  WINGMAN_NAVIGATION_INTENTS,
+  computeRailCatchupBoost,
+  computeRailLongitudinalLag,
+  isFiniteWingmanPosition,
+  navigationIntentForWingman,
+} from './wingman-navigation.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -148,19 +155,10 @@ export const FORMATION_SLOTS = [
   { side: 11.0, up: 2.2, forward: 16.0 },
 ]
 
-// ============ REAGRUPAMENTO E LINHAS DE ATAQUE ============
-// Um aliado só sai de `regroup` quando realmente retorna à sua própria vaga, nunca por um
-// timeout. Durante foco, cada piloto usa uma linha de aproximação exclusiva no mesmo alvo;
-// isso evita que os quatro convirjam para o mesmo ponto visual e pareçam uma única nave.
-const WINGMAN_MAX_DISTANCE_RAIL = 48
-const WINGMAN_MAX_DISTANCE_ARENA = 72
-const WINGMAN_REGROUP_ARRIVAL_RAIL = 4
-const WINGMAN_REGROUP_ARRIVAL_ARENA = 5
-const WINGMAN_REGROUP_SPEED_CAP = 64
-// Última rede de segurança: estados ofensivos podem se afastar temporariamente, mas nunca podem
-// manter um aliado perdido fora do espaço de jogo. É um retorno em voo, não teleporte.
-const WINGMAN_EMERGENCY_REGROUP_MULTIPLIER = 1.5
-const WINGMAN_EMERGENCY_REGROUP_SPEED = 140
+// ============ LIBERDADE TÁTICA E LINHAS DE ATAQUE ============
+// Formação é uma âncora de navegação quando o piloto está livre, não uma coleira. Distância
+// euclidiana do jogador nunca muda Behavior/Action. No All-Range não há catch-up automático;
+// no Rail, apenas atraso longitudinal adiciona uma correção suave de velocidade.
 const WINGMAN_ATTACK_LANE_SPACING = 9
 const WINGMAN_ATTACK_LANE_VERTICAL = 3.5
 const WINGMAN_SEPARATION_DISTANCE = 7
@@ -836,6 +834,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       obstacleAvoidanceSide: 0,
       separationPush: new THREE.Vector3(),
       separationCorrection: new THREE.Vector3(),
+      navigationIntent: WINGMAN_NAVIGATION_INTENTS.FORMATION,
+      railCatchupActive: false,
       auxShieldVisual,
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
@@ -1327,7 +1327,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           )
           aiValidator.logMechanic('wingman-formation-separation', 'separacao-iniciada', {
             pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance,
-            stateA: a.state, stateB: b.state, emergencyA: a.emergencyRegroup, emergencyB: b.emergencyRegroup,
+            stateA: a.state, stateB: b.state, navigationA: a.navigationIntent, navigationB: b.navigationIntent,
           })
         }
 
@@ -1341,7 +1341,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               () => false,
               {
                 pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance, closeFor,
-                stateA: a.state, stateB: b.state, emergencyA: a.emergencyRegroup, emergencyB: b.emergencyRegroup,
+                stateA: a.state, stateB: b.state, navigationA: a.navigationIntent, navigationB: b.navigationIntent,
                 distanceAPlayer: a.mesh.position.distanceTo(playerPos), distanceBPlayer: b.mesh.position.distanceTo(playerPos),
               },
             )
@@ -1456,6 +1456,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
     for (let idx = 0; idx < activeWingmen.length; idx++) {
       const w = activeWingmen[idx]
+      let navigationRecoveryThisFrame = false
       w.fireCooldown -= dt
       if (w.collisionBumpCooldown > 0) w.collisionBumpCooldown -= dt
       const desiredMaxHp = WINGMAN_BASE_HP + Math.max(0, opts.wingmanHullStacks || 0)
@@ -1560,7 +1561,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         t.scale.set(isThrusting ? 1.15 : 1.0, isThrusting ? 1.15 : 1.0, boostScale)
       }
 
-      const distToPlayer = w.mesh.position.distanceTo(playerPos)
       // Colisões corpo-a-corpo não causam dano (decisão de balanceamento), mas têm um tranco
       // curto e legível para que naves não pareçam atravessar umas às outras sem reação.
       if (w.collisionBumpCooldown <= 0) {
@@ -1633,69 +1633,35 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // 1. Regroup se ficou longe demais do jogador. Os limites são deliberadamente menores que
-      // os anteriores (130/65): aquela folga fazia aliados distantes continuarem visíveis como
-      // pontos isolados, principalmente na arena.
-      const maxDistance = inArena ? WINGMAN_MAX_DISTANCE_ARENA : WINGMAN_MAX_DISTANCE_RAIL
-      const emergencyDistance = maxDistance * WINGMAN_EMERGENCY_REGROUP_MULTIPLIER
-      // Uma habilidade em curso pode passar do limite normal (ex.: investida), mas não pode
-      // prender toda a esquadra fora da arena. Nesse caso cancelamos a intenção antiga e cada
-      // piloto volta imediatamente para a SUA vaga — inclusive se a origem foi um estado preso.
-      if (distToPlayer > emergencyDistance && w.state !== 'retreating') {
-        const stateBefore = w.state
-        const wasEmergency = w.emergencyRegroup
-        const transition = stateController.enterEmergencyRegroup(w, {
-          source: 'distance-safety', event: WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN,
+      // Recovery técnico: distância NUNCA entra aqui. Só dados de navegação inválidos
+      // (NaN/Infinity) podem resetar uma nave, e nesse caso ela já não tem posição renderizável.
+      const invalidPosition = !isFiniteWingmanPosition(w.mesh.position)
+      const invalidVelocity = !isFiniteWingmanPosition(w.velocity)
+      if (invalidPosition || invalidVelocity) {
+        const stateBeforeRecovery = w.state
+        const transition = stateController.recoverNavigation(w, {
+          source: 'invalid-kinematics', event: WINGMAN_INTERRUPT_EVENTS.NAVIGATION_RECOVERY,
         })
         if (transition.decision === 'accepted') {
-          // A vaga acompanha o jogador em todos os frames, mas o "kick" de 140u/s só pertence
-          // à ENTRADA no emergency regroup. Reaplicá-lo em cada noop apagava a separação de ala
-          // calculada no prepass e fazia dois pilotos distantes seguirem praticamente a mesma reta.
+          navigationRecoveryThisFrame = true
+          w.mesh.position.copy(_wmSlotPos)
           w.patrolTarget.copy(_wmSlotPos)
-          if (!wasEmergency) {
-            w.obstacleAvoidanceId = null
-            w.obstacleAvoidanceSide = 0
-            _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
-            if (_wmToTarget.lengthSq() > 1e-4) {
-              w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
-            }
-            aiValidator.expect(
-              'Aliado perdido entra em regroup de emergência com vaga e velocidade válidas',
-              () => w.state === 'regroup' && w.patrolTarget.distanceTo(_wmSlotPos) < 0.001 && Number.isFinite(w.velocity.x) && Number.isFinite(w.velocity.y) && Number.isFinite(w.velocity.z),
-              { pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, inArena },
-            )
-            aiValidator.logMechanic('wingman-emergency-regroup', 'recuperacao-iniciada', {
-              pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, stateBefore,
-              cooldownPolicy: transition.interruption?.cooldownPolicy || null,
-            })
-          }
-        }
-      }
-      if (distToPlayer > maxDistance && w.state !== 'regroup' && !w.abilityActive) {
-        const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.REGROUP, {
-          source: 'distance-safety', event: 'regroup-distance-exceeded', origin: 'distance-safety', reason: 'normal-distance',
-        })
-        if (transition.decision === 'accepted') {
-          telemetry.recordEvent(w.profile.name, 'state', `Regroup acionado: caça a ${distToPlayer.toFixed(1)}u da nave (máx: ${maxDistance}u)`, { elapsed })
+          w.velocity.copy(frame.forward).multiplyScalar(w.profile.flightProfile.cruiseSpeed)
+          w.obstacleAvoidanceId = null
+          w.obstacleAvoidanceSide = 0
+          aiValidator.expect(
+            'Recovery técnico restaura posição e velocidade finitas sem depender de distância ao jogador',
+            () => isFiniteWingmanPosition(w.mesh.position) && isFiniteWingmanPosition(w.velocity),
+            { pilotId: w.profile.id, invalidPosition, invalidVelocity, stateBeforeRecovery },
+          )
+          aiValidator.logMechanic('wingman-navigation-recovery', 'invalid-kinematics-reset', {
+            pilotId: w.profile.id, invalidPosition, invalidVelocity, stateBeforeRecovery,
+            interruptedAction: transition.interruption?.action || null,
+          })
         }
       }
 
-      if (w.state === 'regroup') {
-        w.patrolTarget.copy(_wmSlotPos)
-        const distanceToSlot = w.mesh.position.distanceTo(_wmSlotPos)
-        const arrivalDistance = inArena ? WINGMAN_REGROUP_ARRIVAL_ARENA : WINGMAN_REGROUP_ARRIVAL_RAIL
-        if (distanceToSlot <= arrivalDistance) {
-          aiValidator.expect(
-            'Aliado só encerra regroup ao alcançar a própria vaga de formação',
-            () => distanceToSlot <= arrivalDistance,
-            { pilotId: w.profile.id, distanceToSlot, arrivalDistance, inArena },
-          )
-          const transition = stateController.arriveFormation(w, { source: 'formation', event: 'formation-reached' })
-          if (transition.decision === 'accepted') {
-            telemetry.recordEvent(w.profile.name, 'state', 'Retornou à própria vaga de formação após regroup', { elapsed })
-          }
-        }
-      } else if (w.state === 'damaged-passive') {
+      if (w.state === 'damaged-passive') {
         // Um aliado a 1 HP não inicia dogfight nem habilidade: só tenta manter a formação até
         // receber um Repair de Slippy. O escudo ainda regenera normalmente acima.
         w.patrolTarget.copy(_wmSlotPos)
@@ -2036,6 +2002,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
+      // Navigation Intent é derivada do estado de gameplay, mas não o controla. Um piloto
+      // pode estar longe no All-Range sem qualquer transição ou cancelamento.
+      w.navigationIntent = navigationRecoveryThisFrame
+        ? WINGMAN_NAVIGATION_INTENTS.RECOVERY
+        : navigationIntentForWingman({ state: w.state, escortKind: w.escortKind })
+
       // ============ FÍSICA DE VOO DISCIPLINADA E SUAVE ============
       _wmToTarget.copy(w.patrolTarget).sub(w.mesh.position)
       const targetDist = _wmToTarget.length()
@@ -2043,11 +2015,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       else _wmAimDir.copy(frame.forward)
 
       let cruiseSpeed = w.profile.flightProfile.cruiseSpeed
-      if (w.state === 'regroup') {
-        // Recuperação proporcional à distância restante, com teto: retorna rápido o suficiente
-        // para não ficar perdido fora da tela, sem teleporte ou mudança brusca de direção.
-        cruiseSpeed += Math.min(WINGMAN_REGROUP_SPEED_CAP, targetDist * 1.25)
-      }
       if (!inArena) {
         // No rail, compensa a velocidade do mundo (+48u/s)
         cruiseSpeed += 48
@@ -2066,6 +2033,25 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       else if (w.state === 'escort') cruiseSpeed *= 1.25
 
       _wmDesiredVelocity.copy(_wmAimDir).multiplyScalar(cruiseSpeed)
+
+      // Catch-up existe SOMENTE no Rail e mede atraso longitudinal no frame do trilho. Ficar
+      // longe lateral/verticalmente não conta; Behavior/Action não são tocados. No All-Range,
+      // nem este vetor existe: liberdade espacial total dentro das regras normais de combate.
+      if (!inArena) {
+        const longitudinalLag = computeRailLongitudinalLag(w.mesh.position, playerPos, frame)
+        const catchupBoost = computeRailCatchupBoost(longitudinalLag)
+        if (catchupBoost > 0) _wmDesiredVelocity.addScaledVector(frame.forward, catchupBoost)
+        const catchupNow = catchupBoost > 0.01
+        if (catchupNow !== w.railCatchupActive) {
+          w.railCatchupActive = catchupNow
+          aiValidator.logMechanic('wingman-rail-catchup', catchupNow ? 'catchup-started' : 'catchup-ended', {
+            pilotId: w.profile.id, longitudinalLag, catchupBoost, state: w.state, navigationIntent: w.navigationIntent,
+          })
+        }
+      } else if (w.railCatchupActive) {
+        w.railCatchupActive = false
+        aiValidator.logMechanic('wingman-rail-catchup', 'catchup-ended-all-range', { pilotId: w.profile.id })
+      }
 
       // O desvio é aditivo e não troca o state: formação, escolta, ataque, Investida e Rescue
       // preservam a intenção original, mas nenhum aliado atravessa deliberadamente um detrito.

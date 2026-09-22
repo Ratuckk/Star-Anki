@@ -45,13 +45,6 @@ assert.deepEqual(classifyWingmanTransitionForRadio({
 
 assert.deepEqual(classifyWingmanTransitionForRadio({
   decision: 'accepted',
-  before: { integrity: { critical: false, retreating: false }, behavior: { kind: 'dogfight', reason: null }, action: { kind: 'ram' } },
-  after: { integrity: { critical: false, retreating: false }, behavior: { kind: 'regroup', reason: 'emergency-distance' }, action: null },
-  interruption: { cooldownPolicy: 'FULL' },
-}), { eventId: 'state_emergency_return', urgent: true })
-
-assert.deepEqual(classifyWingmanTransitionForRadio({
-  decision: 'accepted',
   before: { integrity: { critical: true, retreating: false }, behavior: { kind: 'patrol', reason: null }, action: null },
   after: { integrity: { critical: false, retreating: false }, behavior: { kind: 'patrol', reason: null }, action: null },
 }), { eventId: 'state_recovered', urgent: false })
@@ -64,10 +57,12 @@ assert.deepEqual(classifyWingmanTransitionForRadio({
 }), { eventId: 'action_interrupted', urgent: false })
 
 assert.equal(classifyWingmanTransitionForRadio({ decision: 'rejected' }), null)
+// Failsafe técnico de navegação é deliberadamente silencioso, mesmo se interromper Action.
 assert.equal(classifyWingmanTransitionForRadio({
-  decision: 'accepted',
-  before: { integrity: { critical: false, retreating: false }, behavior: { kind: 'regroup', reason: 'emergency-distance' }, action: null },
-  after: { integrity: { critical: false, retreating: false }, behavior: { kind: 'regroup', reason: 'emergency-distance' }, action: null },
+  decision: 'accepted', event: 'navigation-recovery',
+  before: { integrity: { critical: false, retreating: false }, behavior: { kind: 'dogfight', reason: null }, action: { kind: 'ram' } },
+  after: { integrity: { critical: false, retreating: false }, behavior: { kind: 'patrol', reason: 'invalid-navigation' }, action: null },
+  interruption: { cooldownPolicy: 'full' },
 }), null)
 
 const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')

@@ -38,6 +38,18 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.27 — Tactical Freedom: formação sem coleira e recovery técnico
+
+- **Regroup por distância removido:** `regroup` deixa de existir como Behavior autoritativo. Distância euclidiana do jogador não muda estado, não cancela Action e não força retorno à formação.
+- **All-Range livre:** no modo arena não há qualquer catch-up ou recovery por distância. Wingmen podem operar longe do jogador enquanto seu Behavior/Action continuar válido.
+- **Rail por progresso:** o trilho usa somente atraso longitudinal no `frame.forward`; após 32u de atraso entra um boost suave de catch-up, saturando em +72u/s aos 120u. Distância lateral/vertical é ignorada e nenhuma transição de gameplay ocorre.
+- **Navigation Intent:** formação, attack-lane, support-player e recovery passam a descrever o destino de navegação sem disputar autoridade com Behavior/Action.
+- **Recovery raro e técnico:** somente posição/velocidade não finitas (NaN/Infinity) podem acionar reset para uma vaga válida. O failsafe é silencioso no rádio e mantém a política de cooldown caso precise interromper uma Action.
+- **Deconflição local preservada:** separação simétrica e correção física continuam como proteção contra contato ocasional, mas não precisam mais desfazer convergência criada por emergency regroup.
+- **Rádio:** removidas falas de “você está longe, volte”; a distância deixou de ser evento narrativo.
+
+**Validado:** suíte de navegação, state controller, Call & Response, separação, polimento, selftest completo, sintaxe e git diff --check.
+
 ### v0.99.26 — Deconflição física e órbita cooperativa contextual
 
 - **Clump dos Wingmen:** o log real ainda mostrou pares em emergency regroup a 0.003–0.01u por mais de 0.5s. A deconflição mantém o steering simétrico da v0.99.24, mas agora também resolve penetração com correção posicional simétrica, limitada a 1.25u por par e 1.5u por nave/frame. Assim duas naves não conseguem continuar fisicamente fundidas enquanto a inércia de regroup vence o steering.
