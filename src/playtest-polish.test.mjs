@@ -33,7 +33,8 @@ assert.ok(interceptThread && interceptThread.responderPilotId !== 0, 'Intercept 
 
 const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
 assert.match(wingmenSource, /abilityLabel: 'Carga Compartilhada',[\s\S]{0,100}abilityCooldownBase: 6,[\s\S]{0,80}abilityCooldownFloor: 3/, 'Carga Compartilhada deve ter cooldown base de 6s')
-assert.match(wingmenSource, /w\.patrolTarget\.copy\(_wmSlotPos\)[\s\S]{0,180}if \(!wasEmergency\) \{[\s\S]{0,260}w\.velocity\.copy/, 'kick de emergency regroup deve ocorrer apenas na entrada')
+assert.ok(!wingmenSource.includes('enterEmergencyRegroup') && !wingmenSource.includes('WINGMAN_MAX_DISTANCE_ARENA'), 'distância não pode mais acionar regroup/reset')
+assert.ok(wingmenSource.includes('computeRailLongitudinalLag') && wingmenSource.includes('computeRailCatchupBoost'), 'Rail deve usar catch-up longitudinal suave')
 assert.ok(wingmenSource.includes('isCallResponse: true') && wingmenSource.includes('replyText'), 'resposta Call & Response precisa ser visualmente identificável')
 
 console.log('playtest-polish.test.mjs: OK')

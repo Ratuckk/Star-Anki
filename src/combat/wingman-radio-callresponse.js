@@ -50,12 +50,6 @@ const RESPONSE_LINES = Object.freeze({
     2: ['Hold on! I can help!', 'Stay with us, okay?!'],
     3: ['Damage confirmed. Disengage.', 'Critical telemetry received.'],
   },
-  state_emergency_return: {
-    0: ['Yeah, yeah. Get back in formation.', "Don't get lost out there."],
-    1: ["Regroup. We'll cover the gap.", 'Return to the line.'],
-    2: ['Come back in! Way too far out!', "Don't drift off on us!"],
-    3: ['Formation vector restored.', 'Correcting the squadron gap.'],
-  },
   state_recovered: {
     0: ['Back in the fight? Good.', 'There you go.'],
     1: ['Systems look stable. Stay sharp.', 'Good. Keep it together.'],
@@ -64,7 +58,7 @@ const RESPONSE_LINES = Object.freeze({
   },
   action_interrupted: {
     0: ['Reset and take another angle.', "Tch. We'll get the next one."],
-    1: ['Break clean and reform.', 'Abort confirmed. Regroup safely.'],
+    1: ['Break clean and reset.', 'Abort confirmed. Reset safely.'],
     2: ['You okay? Reset the maneuver!', 'No worries, try again!'],
     3: ['Abort acknowledged.', 'Recomputing the approach.'],
   },
@@ -88,22 +82,16 @@ export function classifyWingmanTransitionForRadio(transition) {
   const after = transition.after || {}
   const beforeIntegrity = before.integrity || {}
   const afterIntegrity = after.integrity || {}
-  const beforeBehavior = before.behavior || {}
-  const afterBehavior = after.behavior || {}
-
   if (!beforeIntegrity.critical && afterIntegrity.critical && !afterIntegrity.retreating) {
     return { eventId: 'state_critical', urgent: true }
-  }
-
-  const wasEmergency = beforeBehavior.kind === 'regroup' && beforeBehavior.reason === 'emergency-distance'
-  const isEmergency = afterBehavior.kind === 'regroup' && afterBehavior.reason === 'emergency-distance'
-  if (!wasEmergency && isEmergency) {
-    return { eventId: 'state_emergency_return', urgent: true }
   }
 
   if (beforeIntegrity.critical && !afterIntegrity.critical) {
     return { eventId: 'state_recovered', urgent: false }
   }
+
+  // Recovery de kinematics é um failsafe técnico e deve ser invisível ao jogador.
+  if (transition.event === 'navigation-recovery') return null
 
   if (!afterIntegrity.retreating && transition.interruption && before.action && !after.action) {
     return { eventId: 'action_interrupted', urgent: false }
