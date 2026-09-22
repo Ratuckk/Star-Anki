@@ -38,6 +38,20 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### Protótipos HTML animados — números de dano (21/09/2026)
+
+- Correção de formato solicitada pelo usuário: precisa decidir vendo animações HTML, não
+  slides/PDF. Entregue `output/html/dano-animado.html`, autônomo e sem dependências de rede,
+  além da visualização interativa na conversa.
+- Três alternativas na mesma cena: Mangá de colisão, Buraco negro e Coral de guerra.
+  Incluem jogador e quatro aliados com autoria, tiro normal, carregado, ataque conjunto e
+  golpe letal com pontuação separada. Valores são ilustrativos; combate real não foi alterado.
+- Controles de repetição, pausa, seleção de cenário, velocidade 1×/0,5×/0,25× e busca temporal.
+  Sequência finita, modo de movimento reduzido e controles responsivos para telas estreitas.
+- **Validado**: execução em navegador, três estilos, quatro cenários individuais, reprodução,
+  pausa, busca temporal, velocidade, layout a 360px e HTML autônomo com movimento reduzido;
+  nenhum erro JavaScript. Capturas revisadas; status reposicionado para não cruzar as notas.
+
 ### v0.99.14 — Separação determinística da ala e retorno de formação mais preciso
 
 Correção específica para o relato de aliados fundidos entre si e longe do jogador:
