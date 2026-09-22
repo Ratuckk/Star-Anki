@@ -1,5 +1,6 @@
 export const WINGMAN_CLUMP_DISTANCE = 1
 export const WINGMAN_CLUMP_GRACE_S = 0.5
+export const WINGMAN_SEPARATION_PAIR_CORRECTION_CAP = 1.25
 
 function finiteVector(v) {
   return v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
@@ -50,9 +51,21 @@ export function computeWingmanPairSeparation(a, b, frame, minDistance, separatio
     y: direction.y * magnitude,
     z: direction.z * magnitude,
   }
+  // Steering sozinho pode ser vencido pela inercia de dois pilotos em emergency regroup.
+  // Uma correcao posicional curta resolve a penetracao real sem teletransportar a formacao:
+  // cada corpo recebe no maximo 1.25u por par e os vetores continuam perfeitamente opostos.
+  const penetration = Math.max(0, minDistance - distance)
+  const correctionMagnitude = Math.min(WINGMAN_SEPARATION_PAIR_CORRECTION_CAP, penetration * 0.5)
+  const correctionA = {
+    x: direction.x * correctionMagnitude,
+    y: direction.y * correctionMagnitude,
+    z: direction.z * correctionMagnitude,
+  }
   return {
     distance,
     pushA,
     pushB: { x: -pushA.x, y: -pushA.y, z: -pushA.z },
+    correctionA,
+    correctionB: { x: -correctionA.x, y: -correctionA.y, z: -correctionA.z },
   }
 }

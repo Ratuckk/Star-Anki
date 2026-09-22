@@ -12,7 +12,8 @@ const ORBIT_START_ANGLE = -Math.PI / 2
 const ANGLES = Array.from({ length: AUTHORS.length }, (_, slot) => ORBIT_START_ANGLE + slot * (Math.PI * 2 / AUTHORS.length))
 const MAX_LABELS = 36
 export const DAMAGE_NUMBER_SCALE = 0.8
-export const ORBIT_DURATION_MS = 1700
+export const ORBIT_IDLE_DURATION_MS = 500
+export const ORBIT_ACTIVE_DURATION_MS = 850
 export const ORBIT_ARC_SEGMENT = 16
 export const ORBIT_ARC_STEP = 20
 
@@ -103,7 +104,8 @@ export function createDamageNumbers(root) {
     entry.ringAnimation?.cancel()
     const { el, style, slot, killed } = entry
     const calm = reduced?.matches
-    const duration = style === 'orbit' ? ORBIT_DURATION_MS : 1100
+    const isOrbiting = style === 'orbit' && entry.orbitActive && !killed
+    const duration = style === 'orbit' ? (isOrbiting ? ORBIT_ACTIVE_DURATION_MS : ORBIT_IDLE_DURATION_MS) : 1100
     const frames = []
     for (let i = 0; i <= 32; i++) {
       const t = i / 32
@@ -119,10 +121,17 @@ export function createDamageNumbers(root) {
           y -= exit * 22
         }
       } else if (style === 'orbit') {
-        const orbit = orbitFrame(slot, t, { calm, killed })
-        x = orbit.x
-        y = orbit.y
-        opacity = orbit.opacity
+        if (isOrbiting) {
+          const orbit = orbitFrame(slot, t, { calm, killed })
+          x = orbit.x
+          y = orbit.y
+          opacity = orbit.opacity
+        } else {
+          // Buraco negro sem cooperacao: numero curto e estatico, sem arco/circulo.
+          y = -12 - (calm ? 0 : t * 8)
+          scale = t < .15 ? .8 + (t / .15) * .2 : 1
+          opacity = 1 - Math.max(0, (t - .55) / .45)
+        }
       } else if (!calm) y = -16 - t * 48
       frames.push({ offset: t, opacity, transform: `translate(calc(-50% + ${x}px),calc(-50% + ${y}px)) rotate(${rotation}deg) scale(${scale})` })
     }
@@ -139,12 +148,40 @@ export function createDamageNumbers(root) {
     clearTimeout(entry.timeout)
     entry.timeout = setTimeout(() => remove(entry), duration)
   }
+
+  function ensureOrbitRing(entry) {
+    if (entry.ringEl || entry.style !== 'orbit') return
+    entry.ringEl = createOrbitRing(entry.slot, entry.color)
+    entry.el.insertBefore(entry.ringEl, entry.motionEl)
+  }
+
+  function activateOrbitForTarget(targetId) {
+    if (!targetId) return
+    for (const entry of active) {
+      if (entry.targetId !== targetId || entry.style !== 'orbit' || entry.killed) continue
+      entry.orbitActive = true
+      ensureOrbitRing(entry)
+      animate(entry)
+    }
+  }
+
+  function clearTarget(targetId) {
+    if (!targetId) return
+    for (const entry of [...active]) if (entry.targetId === targetId) remove(entry)
+  }
+
   return {
     spawn(xFrac, yFrac, value, opts = {}) {
-      const style = getSettings().damageNumberStyle
+      const settings = getSettings()
+      const style = settings.damageNumberStyle
       const slot = Number.isInteger(opts.pilotId) && opts.pilotId >= 0 && opts.pilotId <= 3 ? opts.pilotId + 1 : 0
       const author = AUTHORS[slot]
       const now = performance.now()
+      const orbitActive = style === 'orbit' && settings.damageOrbitEnabled !== false && !!opts.orbitActive && !opts.killed
+      // Morte encerra imediatamente qualquer arco/numero orbital anterior desse alvo; o numero
+      // do golpe letal ainda pode aparecer por 0.5s, mas ja sem orbita.
+      if (opts.targetId && opts.killed) clearTarget(opts.targetId)
+      if (orbitActive && opts.targetId) activateOrbitForTarget(opts.targetId)
       // Mesmo alvo/autor em uma rajada curta vira uma soma, sem misturar pilotos.
       const existing = opts.targetId && typeof value === 'number' && [...active].find(e =>
         e.targetId === opts.targetId && e.slot === slot && e.style === style && typeof e.value === 'number' && now - e.started < 120)
@@ -169,11 +206,15 @@ export function createDamageNumbers(root) {
       let motionEl = el
       let ringEl = null
       if (style === 'orbit') {
-        ringEl = createOrbitRing(slot, author.color)
         const content = document.createElement('span')
         content.className = 'damage-feedback-orbit-content'
         content.append(number, label)
-        el.append(ringEl, content)
+        if (orbitActive) {
+          ringEl = createOrbitRing(slot, author.color)
+          el.append(ringEl, content)
+        } else {
+          el.append(content)
+        }
         motionEl = content
       } else {
         el.append(number, label)
@@ -184,7 +225,7 @@ export function createDamageNumbers(root) {
       el.style.left = `${Math.min(width - mx, Math.max(mx, xFrac * width))}px`
       el.style.top = `${Math.min(height - my, Math.max(my, yFrac * height))}px`
       root.appendChild(el)
-      const entry = { el, motionEl, ringEl, value, hits: 1, style, slot, targetId: opts.targetId, started: now, killed: !!opts.killed }
+      const entry = { el, motionEl, ringEl, value, hits: 1, style, slot, targetId: opts.targetId, started: now, killed: !!opts.killed, orbitActive, color: author.color }
       active.add(entry)
       animate(entry)
     },

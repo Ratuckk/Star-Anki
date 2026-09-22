@@ -38,6 +38,16 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.26 — Deconflição física e órbita cooperativa contextual
+
+- **Clump dos Wingmen:** o log real ainda mostrou pares em emergency regroup a 0.003–0.01u por mais de 0.5s. A deconflição mantém o steering simétrico da v0.99.24, mas agora também resolve penetração com correção posicional simétrica, limitada a 1.25u por par e 1.5u por nave/frame. Assim duas naves não conseguem continuar fisicamente fundidas enquanto a inércia de regroup vence o steering.
+- **Buraco negro contextual:** o estilo orbital deixa de orbitar todo impacto. Sem cooperação, o número dura só 0.5s e não cria arco. A órbita curta (0.85s) só arma quando dois autores diferentes atingem o mesmo alvo em até 1s e pelo menos um deles é Wingman.
+- **Elegibilidade:** a mecânica visual só existe no estilo Buraco negro, só para alvos vivos com HP máximo >= 12 e é encerrada imediatamente por um hit letal. Outros estilos de número não recebem qualquer lógica orbital.
+- **Configuração:** adicionada opção Visual para desligar a órbita cooperativa independentemente do estilo. É puramente cosmética e não altera dano, IA, combo ou pontuação.
+- **Testes:** novo damage-orbit-tracker.test.mjs cobre jogador sozinho, coop em ambas as ordens, mesma autoria, janela de 1s, limiar de 12 HP e limpeza na morte. A suíte de formação agora exige correção posicional simétrica que saia da zona de clump em um frame.
+
+**Validado:** sintaxe dos módulos alterados, damage-orbit-tracker.test.mjs, damage-feedback.test.mjs, suítes de Wingman/rádio/formação, playtest-polish.test.mjs, selftest.mjs e git diff --check.
+
 ### v0.99.25 — Polimento pós-playtest: órbita, áudio, rádio e retorno de emergência
 
 - **Buraco negro / números de dano:** todos os números ficaram 20% menores. No modo orbital, os cinco autores (jogador + quatro Wingmen) recebem posições igualmente espaçadas e giram uma volta completa no sentido horário durante a vida do feedback. O arco deixa de viajar preso ao número e vira um segmento central fixo; os cinco segmentos juntos formam o círculo orbital ao redor do alvo, usando a mesma implementação na prévia das Configurações e no combate.

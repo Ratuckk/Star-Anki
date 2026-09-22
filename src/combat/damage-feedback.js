@@ -10,7 +10,8 @@ export function createDamageFeedback(hit, damage, { pilotId = null, charged = fa
     { damage, pilotId, kind: hit.kind })
   if (!valid) return null
   return {
-    worldPos: hit.worldPos.clone(), targetId: hit.meshRef?.uuid ?? null,
+    worldPos: hit.worldPos.clone(), targetId: hit.meshRef?.uuid ?? null, kind: hit.kind ?? null,
+    targetMaxHp: Number.isFinite(hit.targetMaxHp) ? hit.targetMaxHp : null,
     damage, pilotId, charged, instant, killed: !!hit.killed,
     points: hit.enemyKillPoints || hit.points || 0,
   }
