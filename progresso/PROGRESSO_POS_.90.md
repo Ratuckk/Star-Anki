@@ -38,6 +38,17 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.22 — Autoridade única de estados dos Wingmen
+
+- Criado `src/combat/wingman-state-controller.js`, independente de Three.js/DOM, como rota única para Integridade, Behavior, Actions persistentes, cooldowns e rejeições atômicas. Campos legados do Wingman viraram seletores somente-leitura derivados do novo `control`; writers diretos são bloqueados por teste estrutural.
+- Integridade agora deriva `critical` diretamente do HP; Behavior separa `patrol/dogfight/regroup`; Actions persistentes separam Ram, Guard, Rescue, Assist e Aux Shield. Focus permanece intenção global e solicita transições em vez de forçar `dogfight/patrol`.
+- Interrupções têm política formal de cooldown. Integridade crítica/retirada e emergency return interrompem Actions comprometidas segundo tabela declarada; Ram/Guard/Rescue/Assist recebem cooldown completo e Aux Shield usa política NONE. Isso elimina a reativação no frame seguinte depois de emergency regroup.
+- Intercept, Repair e Boombuster continuam instantâneos/paralelos, mas passam pelo gate central de autorização. `engagementChance` passou a compor base → upgrades → override reativo explícito → clamp; vida baixa do Falco vence combo alto por prioridade declarada, não pela ordem de `if`.
+- Telemetria e `aiValidator` agora registram `from → event → decision → to`, origem, rejeição e política de cooldown das interrupções.
+- Adicionado `src/wingman-state-controller.test.mjs` com os cenários de retirada/focus/regroup, critical/reparo/emergency, Rescue/Ram, reativação pós-interrupção e Focus durante Action, além da proteção estrutural contra novos direct writers.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`. A migração é aplicada e validada em checkout limpo antes do commit final da refatoração.
+
 ### v0.99.21 — Correções pendentes e melhorias funcionais menores
 
 - **Impulsão Conjunta** agora dá invencibilidade ao jogador e ao Slippy durante o propulsor; se

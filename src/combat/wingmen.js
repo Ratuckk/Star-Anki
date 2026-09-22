@@ -9,6 +9,14 @@ import { GOLDEN_KIND } from '../enemies/golden.js'
 import { POWER_LEVEL_AREA_DAMAGE } from '../enemies/shared.js'
 import { aiValidator } from '../ai-validator.js'
 import { createDamageFeedback } from './damage-feedback.js'
+import {
+  WINGMAN_ACTIONS,
+  WINGMAN_BEHAVIORS,
+  WINGMAN_INTERRUPT_EVENTS,
+  composeWingmanStat,
+  createWingmanStateController,
+  initializeWingmanControl,
+} from './wingman-state-controller.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -556,6 +564,43 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
   const playerRollHistory = []
 
+  function authorityLabel(snapshot) {
+    if (snapshot.integrity.retreating) return 'retreating'
+    if (snapshot.action) return `${snapshot.action.kind}/${snapshot.action.phase}`
+    if (snapshot.integrity.critical && snapshot.behavior.kind === WINGMAN_BEHAVIORS.PATROL) return 'critical'
+    return snapshot.behavior.reason ? `${snapshot.behavior.kind}:${snapshot.behavior.reason}` : snapshot.behavior.kind
+  }
+
+  const stateController = createWingmanStateController({
+    lowHpThreshold: WINGMAN_LOW_HP,
+    onDecision: (wingman, transition) => {
+      const from = authorityLabel(transition.before)
+      const to = authorityLabel(transition.after)
+      const cooldownPolicy = transition.cooldownPolicy || transition.interruption?.cooldownPolicy || null
+      telemetry.recordEvent(
+        wingman.profile.name,
+        'transition',
+        `${from} → ${transition.event} → ${transition.decision} → ${to}`,
+        {
+          elapsed, region: transition.region, requested: transition.requested, source: transition.source,
+          reason: transition.reason, from: transition.before, to: transition.after, cooldownPolicy,
+        },
+      )
+      aiValidator.logMechanic('wingman-transition', transition.decision, {
+        pilotId: wingman.profile.id, pilot: wingman.profile.name, region: transition.region, from,
+        requested: transition.requested, event: transition.event, source: transition.source, to,
+        reason: transition.reason, cooldownPolicy,
+      })
+    },
+    onInvariantFailure: (wingman, invariant, transition) => {
+      aiValidator.expect(
+        'Máquina de estados do Wingman preserva invariantes após transição aceita',
+        () => false,
+        { pilotId: wingman.profile.id, errors: invariant.errors, event: transition.event, requested: transition.requested },
+      )
+    },
+  })
+
   function delayedPlayerRoll(delaySeconds) {
     const targetT = elapsed - delaySeconds
     for (let i = playerRollHistory.length - 1; i >= 0; i -= 1) {
@@ -751,53 +796,42 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const auxShieldVisual = profile.id === 1 ? createPeppyAuxShieldVisual() : null
     if (auxShieldVisual) mesh.add(auxShieldVisual)
 
+    const initialShieldMax = WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0)
     const wingman = {
       profile,
       mesh,
       thrusters,
       laserMaterial,
-      state: 'patrol', // 'patrol' | 'dogfight' | 'regroup' | 'escort' | 'ram'
-      stateTimer: 0,
       velocity: frame.forward.clone().multiplyScalar(profile.flightProfile.cruiseSpeed),
       smoothRoll: 0,
       patrolTarget: spawnPos.clone(),
-      targetEnemy: null,
       fireCooldown: 1.5 + Math.random() * 1.0,
-      engagementCooldown: 3.0 + Math.random() * 2.0, // calma inicial antes de qualquer engajamento
       burstRemaining: 0,
       burstTimer: 0,
-      // habilidade única (ver seção "HABILIDADES ÚNICAS DO ESQUADRÃO" acima): começa na metade
-      // do cooldown, não pronta de cara no primeiro segundo de jogo.
-      abilityCooldown: abilityCooldownFor(profile) * 0.5,
-      abilityActive: false,
-      abilityTimer: 0,
-      abilityApplied: false,
-      // Falco: cooldown próprio do Intercept (independente do abilityCooldown da Investida
-      // Aríete) e contador de alvos já encadeados na Investida em Cadeia (zerado a cada nova
-      // investida, ver início do state 'ram' abaixo).
-      interceptCooldown: 0,
-      rescueCooldown: 0,
-      boombusterCooldown: 0,
-      hp: WINGMAN_BASE_HP,
-      maxHp: WINGMAN_BASE_HP,
-      shieldMax: WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0),
-      shield: WINGMAN_BASE_SHIELD + ((profile.id === 1 || profile.id === 2) ? WINGMAN_DEFENDER_SHIELD_BONUS : 0),
-      shieldRegenDelay: 0,
       retreatEffectTimer: 0,
       collisionBumpCooldown: 0,
       obstacleAvoidanceId: null,
       obstacleAvoidanceSide: 0,
       overlapWith: new Set(),
-      emergencyRegroup: false,
-      chainCount: 0,
-      escortKind: null, // 'guard' | 'assist' | 'auxShield' — só usado quando state === 'escort'
       auxShieldVisual,
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
-      // Personalidade de formação (Ideia 4) — só o piloto correspondente usa cada campo:
-      miyuCloakTimer: 0, // Miyu: fase do ciclo de semi-transparência (8s, 1.5s "cloaked")
+      miyuCloakTimer: 0,
       miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
     }
+    initializeWingmanControl(wingman, {
+      hp: WINGMAN_BASE_HP,
+      maxHp: WINGMAN_BASE_HP,
+      shield: initialShieldMax,
+      maxShield: initialShieldMax,
+      shieldRegenDelay: 0,
+      primaryCooldown: abilityCooldownFor(profile) * 0.5,
+      interceptCooldown: 0,
+      rescueCooldown: 0,
+      boombusterCooldown: 0,
+      engagementCooldown: 3.0 + Math.random() * 2.0,
+      lowHpThreshold: WINGMAN_LOW_HP,
+    })
     wingman.damageColors = wingman.damageMaterials.map((material) => material.color ? material.color.clone() : null)
     if (wingman.miyuMaterials) {
       for (const m of wingman.miyuMaterials) m.transparent = true
@@ -849,9 +883,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function recoverMember(profileId, hullStacks = 0) {
     const wingman = spawnMember(profileId)
     if (!wingman) return null
-    wingman.maxHp = WINGMAN_BASE_HP + Math.max(0, hullStacks)
-    wingman.hp = wingman.maxHp
-    wingman.shield = wingman.shieldMax
+    stateController.setMaxHp(wingman, WINGMAN_BASE_HP + Math.max(0, hullStacks), { refill: true })
+    stateController.refillIntegrity(wingman)
     telemetry.recordEvent(wingman.profile.name, 'flight', `Caça ${wingman.profile.name} retornou à ala após recuperação`, { elapsed })
     return wingman
   }
@@ -859,30 +892,21 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function applyDamageToWingman(profileId) {
     const w = activeWingmen.find((member) => member.profile.id === profileId)
     if (!w || w.state === 'retreating') return { applied: false }
-    w.shieldRegenDelay = WINGMAN_SHIELD_REGEN_DELAY_S
-    if (w.shield > 0) w.shield = Math.max(0, w.shield - 1)
-    else w.hp = Math.max(0, w.hp - 1)
-    const retreating = w.hp <= 0
+    const transition = stateController.applyDamage(w, {
+      amount: 1, shieldRegenDelay: WINGMAN_SHIELD_REGEN_DELAY_S,
+      source: 'enemy-damage', event: 'damage-received',
+    })
+    const retreating = w.state === 'retreating'
     if (retreating) {
-      w.state = 'retreating'
-      w.stateTimer = 0
-      w.abilityActive = false
-      w.escortKind = null
-      w.targetEnemy = null
       const text = wingmanRadio.getLine(w.profile.id, 'retreat')
       if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'retreat')
-    } else if (w.hp <= WINGMAN_LOW_HP) {
-      w.state = 'damaged-passive'
-      w.abilityActive = false
-      w.escortKind = null
-      w.targetEnemy = null
     }
     aiValidator.expect(
       'Integridade de aliado fica dentro dos limites após hit',
       () => w.hp >= 0 && w.hp <= w.maxHp && w.shield >= 0 && w.shield <= w.shieldMax,
       { pilotId: profileId, hp: w.hp, maxHp: w.maxHp, shield: w.shield, shieldMax: w.shieldMax },
     )
-    return { applied: true, retreating, hp: w.hp, shield: w.shield }
+    return { applied: transition.decision === 'accepted', retreating, hp: w.hp, shield: w.shield }
   }
 
   function repairNearbyWingmen(position, stacks = 0) {
@@ -890,9 +914,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     let repaired = 0
     for (const w of activeWingmen) {
       if (w.state === 'retreating' || w.mesh.position.distanceTo(position) > radius || w.hp >= w.maxHp) continue
-      w.hp = Math.min(w.maxHp, w.hp + 1)
-      if (w.hp > WINGMAN_LOW_HP && w.state === 'damaged-passive') w.state = 'patrol'
-      repaired += 1
+      const transition = stateController.applyRepair(w, { amount: 1, source: 'slippy-repair-orb', event: 'repair-received' })
+      if ((transition.repaired || 0) > 0) repaired += 1
     }
     return repaired
   }
@@ -903,8 +926,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (!activeWingmen.some((w) => w.profile.id === i)) {
         const spawned = spawnMember(i)
         if (spawned) {
-          spawned.maxHp = WINGMAN_BASE_HP + Math.max(0, hullStacks)
-          spawned.hp = spawned.maxHp
+          stateController.setMaxHp(spawned, WINGMAN_BASE_HP + Math.max(0, hullStacks), { refill: true })
         }
       }
     }
@@ -1002,13 +1024,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     squadronCommandDurationTimer = 0
     squadronCommandCooldownTimer = SQUADRON_COMMAND_COOLDOWN_S
     moraleDamageBonus = 0
-    for (const w of activeWingmen) {
-      if (w.abilityActive) continue // mesmo cuidado do bloco de foco abaixo
-      w.state = 'patrol'
-      w.stateTimer = 0
-      w.targetEnemy = null
-      w.nextWaypointTimer = 0.4
-    }
+    for (const w of activeWingmen) stateController.onCommandIntentChanged(w, 'free')
   }
 
   function toggleCommand(lockedTargets = [], playerPos, slippyMoraleStacks = 0, peppyAuxShieldStacks = 0) {
@@ -1034,24 +1050,22 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       }
 
-      // Atribui alvos imediatamente para todos os caças ativos — exceto quem estiver no meio de
-      // uma habilidade única (investida/escolta): puxar o state pra 'dogfight' à força deixaria
-      // abilityActive travado em true pra sempre (nada mais o desligaria), soft-lock permanente
-      // daquele piloto. Deixa a habilidade terminar sozinha, o comando de foco pega ele depois.
+      // Focus expressa intenção: cada piloto pede a transição e o controlador decide se ela é válida.
+      const focusRecipients = new Set()
       for (let i = 0; i < activeWingmen.length; i++) {
         const w = activeWingmen[i]
-        if (w.abilityActive) continue
-        if (squadronFocusTargets.length > 0) {
-          const chosen = squadronFocusTargets.length === 1
-            ? squadronFocusTargets[0]
-            : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
-          w.targetEnemy = chosen
-          w.state = 'dogfight'
-          w.stateTimer = 0
-          w.burstRemaining = w.profile.burstCount * 2
-          w.burstTimer = 0
-          w.fireCooldown = 0
-        }
+        if (squadronFocusTargets.length === 0) continue
+        const chosen = squadronFocusTargets.length === 1
+          ? squadronFocusTargets[0]
+          : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
+        const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
+          source: 'squadron-focus', event: 'command-focus', origin: 'focus', targetEnemy: chosen,
+        })
+        if (transition.decision !== 'accepted') continue
+        focusRecipients.add(w.profile.id)
+        w.burstRemaining = w.profile.burstCount * 2
+        w.burstTimer = 0
+        w.fireCooldown = 0
       }
 
       triggerSoundCue(WINGMAN_SOUND_CUES.command_focus_toggle, { targetCount: squadronFocusTargets.length, hasLocked: validLocked.length > 0 })
@@ -1065,7 +1079,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // `focus_ready` no rádio trivial. As filas são separadas no HUD pelo campo isAbility.
       const readyQueue = []
       for (const w of activeWingmen) {
-        if (w.abilityActive) continue
+        if (!focusRecipients.has(w.profile.id)) continue
         const slippyFocusUpgrade = w.profile.id === 2 && moraleDamageBonus > 0
         const peppyFocusUpgrade = w.profile.id === 1 && peppyAuxShieldStacks > 0 && w.abilityCooldown <= 0
         const eventId = slippyFocusUpgrade || peppyFocusUpgrade ? 'ability_focus_upgrade' : 'focus_ready'
@@ -1190,7 +1204,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         homingTurnRate: MIYU_BOOMBUSTER_TURN_RATE, lifetime: MIYU_BOOMBUSTER_LIFETIME_S, chargedVisual: true,
       })
     }
-    miyu.boombusterCooldown = cooldown
+    stateController.commitInstantAction(miyu, 'boombuster', {
+      cooldownKey: 'boombuster', cooldownSeconds: cooldown, source: 'miyu-boombuster', event: 'boombuster-fired',
+    })
     aiValidator.expect('Boombuster limita a salva ao número correto de alvos', () => targets.length <= 1 + stacks, { targets: targets.length, stacks, fallbackRandom: nearby.length === 0 })
     return targets.length
   }
@@ -1299,20 +1315,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
     for (let idx = 0; idx < activeWingmen.length; idx++) {
       const w = activeWingmen[idx]
-      w.stateTimer += dt
       w.fireCooldown -= dt
-      if (w.engagementCooldown > 0) w.engagementCooldown -= dt
-      if (!w.abilityActive) w.abilityCooldown = Math.max(0, w.abilityCooldown - dt)
-      if (w.interceptCooldown > 0) w.interceptCooldown -= dt
-      if (w.rescueCooldown > 0) w.rescueCooldown -= dt
-      if (w.boombusterCooldown > 0) w.boombusterCooldown -= dt
       if (w.collisionBumpCooldown > 0) w.collisionBumpCooldown -= dt
       const desiredMaxHp = WINGMAN_BASE_HP + Math.max(0, opts.wingmanHullStacks || 0)
-      if (w.maxHp !== desiredMaxHp) w.maxHp = desiredMaxHp
-      if (w.shieldRegenDelay > 0) w.shieldRegenDelay = Math.max(0, w.shieldRegenDelay - dt)
-      else if (w.shield < w.shieldMax) w.shield = Math.min(w.shieldMax, w.shield + WINGMAN_SHIELD_REGEN_PER_S * dt)
+      stateController.tick(w, dt, { maxHp: desiredMaxHp, shieldRegenPerSecond: WINGMAN_SHIELD_REGEN_PER_S })
       if (w.state === 'retreating') {
-        w.abilityActive = false
         w.retreatEffectTimer -= dt
         if (w.retreatEffectTimer <= 0) {
           w.retreatEffectTimer = 0.38
@@ -1343,49 +1350,65 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // jogador proativamente, mesmo em formação. Independente do abilityCooldown da Investida
       // Aríete (timers separados, ver criação do wingman).
       const falcoInterceptStacks = opts.falcoInterceptStacks || 0
-      if (w.state !== 'damaged-passive' && w.profile.id === 0 && falcoInterceptStacks > 0 && w.interceptCooldown <= 0 &&
-          enemies && enemies.interceptThreateningProjectile) {
-        const threat = enemies.interceptThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
-        if (threat) {
-          aiValidator.expect(
-            'Intercept do Falco remove exatamente um projétil pesado por ativação',
-            () => threat.removedCount === 1,
-            { removedCount: threat.removedCount, powerLevel: threat.powerLevel },
-          )
-          fireFalcoInterceptBeam(w.mesh.position, threat.worldPos)
-          w.interceptCooldown = FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks
-          telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
-          if (!radioMessage) radioMessage = speak(w.profile, 'ability_intercept')
+      if (w.profile.id === 0 && falcoInterceptStacks > 0 && enemies && enemies.interceptThreateningProjectile) {
+        const authorization = stateController.authorizeInstantAction(w, 'intercept', {
+          cooldownKey: 'intercept', allowDuringAction: true, source: 'falco-intercept',
+          event: 'intercept-requested', recordDecision: false,
+        })
+        if (authorization.decision === 'accepted') {
+          const threat = enemies.interceptThreateningProjectile(FALCO_INTERCEPT_MIN_POWER_LEVEL, playerPos)
+          if (threat) {
+            aiValidator.expect(
+              'Intercept do Falco remove exatamente um projétil pesado por ativação',
+              () => threat.removedCount === 1,
+              { removedCount: threat.removedCount, powerLevel: threat.powerLevel },
+            )
+            fireFalcoInterceptBeam(w.mesh.position, threat.worldPos)
+            stateController.commitInstantAction(w, 'intercept', {
+              cooldownKey: 'intercept', cooldownSeconds: FALCO_INTERCEPT_BASE_COOLDOWN_S - falcoInterceptStacks,
+              source: 'falco-intercept', event: 'intercept-fired',
+            })
+            telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
+            if (!radioMessage) radioMessage = speak(w.profile, 'ability_intercept')
+          }
         }
       }
 
       const peppyRescueStacks = opts.peppyRescueStacks || 0
-      if (w.state !== 'damaged-passive' && w.profile.id === 1 && peppyRescueStacks > 0 && w.rescueCooldown <= 0 &&
-          opts.playerTumbling && !w.abilityActive) {
-        w.state = 'rescue'
-        w.stateTimer = 0
-        w.abilityActive = true
-        w.abilityTimer = 0
-        telemetry.recordEvent(w.profile.name, 'ability', 'Peppy iniciou Rescue contra a cambalhota do jogador', { elapsed })
-        if (!radioMessage) radioMessage = speak(w.profile, 'ability_rescue')
+      if (w.profile.id === 1 && peppyRescueStacks > 0 && opts.playerTumbling && !w.abilityActive) {
+        const rescueCooldown = Math.max(1, PEPPY_RESCUE_BASE_COOLDOWN_S - PEPPY_RESCUE_COOLDOWN_PER_STACK_S * peppyRescueStacks)
+        const transition = stateController.startAction(w, WINGMAN_ACTIONS.RESCUE, {
+          cooldownSeconds: rescueCooldown, source: 'peppy-rescue', event: 'rescue-requested',
+        })
+        if (transition.decision === 'accepted') {
+          telemetry.recordEvent(w.profile.name, 'ability', 'Peppy iniciou Rescue contra a cambalhota do jogador', { elapsed })
+          if (!radioMessage) radioMessage = speak(w.profile, 'ability_rescue')
+        }
       }
 
-      const peppyAuxActive = w.state !== 'damaged-passive' && w.profile.id === 1 && (opts.peppyAuxShieldStacks || 0) > 0 && !!opts.repulsionActive
+      const peppyAuxActive = w.profile.id === 1 && (opts.peppyAuxShieldStacks || 0) > 0 && !!opts.repulsionActive
       if (peppyAuxActive && !w.abilityActive) {
-        w.state = 'escort'
-        w.escortKind = 'auxShield'
-        w.abilityActive = true
-        w.abilityTimer = 0
-        telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Auxílio: barreira frontal durante repulsão', { elapsed })
-        if (!radioMessage) radioMessage = speak(w.profile, 'ability_aux_shield')
+        const transition = stateController.startAction(w, WINGMAN_ACTIONS.AUX_SHIELD, {
+          source: 'peppy-aux-shield', event: 'aux-shield-requested', cooldownSeconds: 0,
+        })
+        if (transition.decision === 'accepted') {
+          telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Auxílio: barreira frontal durante repulsão', { elapsed })
+          if (!radioMessage) radioMessage = speak(w.profile, 'ability_aux_shield')
+        }
       }
 
       const miyuBoombusterStacks = opts.miyuBoombusterStacks || 0
-      if (w.state !== 'damaged-passive' && w.profile.id === 3 && miyuBoombusterStacks > 0 && w.boombusterCooldown <= 0) {
-        const shots = fireMiyuBoombuster(w, playerPos, miyuBoombusterStacks)
-        if (shots > 0) {
-          telemetry.recordEvent(w.profile.name, 'ability', `Boombuster lançou ${shots} orbe(s) homing magenta`, { elapsed })
-          if (!radioMessage) radioMessage = speak(w.profile, 'ability_boombuster')
+      if (w.profile.id === 3 && miyuBoombusterStacks > 0) {
+        const authorization = stateController.authorizeInstantAction(w, 'boombuster', {
+          cooldownKey: 'boombuster', allowDuringAction: true, source: 'miyu-boombuster',
+          event: 'boombuster-requested', recordDecision: false,
+        })
+        if (authorization.decision === 'accepted') {
+          const shots = fireMiyuBoombuster(w, playerPos, miyuBoombusterStacks)
+          if (shots > 0) {
+            telemetry.recordEvent(w.profile.name, 'ability', `Boombuster lançou ${shots} orbe(s) homing magenta`, { elapsed })
+            if (!radioMessage) radioMessage = speak(w.profile, 'ability_boombuster')
+          }
         }
       }
 
@@ -1460,11 +1483,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // um dogfight em andamento (não força ram/escort, que já têm saída própria) e volta pra
       // formação, em vez de continuar perseguindo enquanto o jogador está vulnerável.
       if (w.profile.id === 0 && reactivity.playerJustLostLife && w.state === 'dogfight') {
-        w.state = 'patrol'
-        w.stateTimer = 0
-        w.targetEnemy = null
-        w.fireCooldown = 1.5
-        w.engagementCooldown = 2.0
+        const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.PATROL, {
+          source: 'reactivity', event: 'player-life-lost', origin: 'reactivity',
+        })
+        if (transition.decision === 'accepted') {
+          w.fireCooldown = 1.5
+          stateController.setEngagementCooldown(w, 2.0)
+        }
       }
 
       // 1. Regroup se ficou longe demais do jogador. Os limites são deliberadamente menores que
@@ -1477,39 +1502,39 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // piloto volta imediatamente para a SUA vaga — inclusive se a origem foi um estado preso.
       if (distToPlayer > emergencyDistance && w.state !== 'retreating') {
         const stateBefore = w.state
-        const wasEmergency = w.state === 'regroup' && w.emergencyRegroup
-        w.state = 'regroup'
-        w.stateTimer = 0
-        w.targetEnemy = null
-        w.abilityActive = false
-        w.abilityTimer = 0
-        w.abilityApplied = false
-        w.escortKind = null
-        w.obstacleAvoidanceId = null
-        w.obstacleAvoidanceSide = 0
-        w.overlapWith.clear()
-        w.emergencyRegroup = true
-        w.patrolTarget.copy(_wmSlotPos)
-        _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
-        if (_wmToTarget.lengthSq() > 1e-4) {
-          w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
-        }
-        if (!wasEmergency) {
-          aiValidator.expect(
-            'Aliado perdido entra em regroup de emergência com vaga e velocidade válidas',
-            () => w.state === 'regroup' && w.patrolTarget.distanceTo(_wmSlotPos) < 0.001 && Number.isFinite(w.velocity.x) && Number.isFinite(w.velocity.y) && Number.isFinite(w.velocity.z),
-            { pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, inArena },
-          )
-          aiValidator.logMechanic('wingman-emergency-regroup', 'recuperacao-iniciada', {
-            pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, stateBefore,
-          })
+        const wasEmergency = w.emergencyRegroup
+        const transition = stateController.enterEmergencyRegroup(w, {
+          source: 'distance-safety', event: WINGMAN_INTERRUPT_EVENTS.EMERGENCY_RETURN,
+        })
+        if (transition.decision === 'accepted') {
+          w.obstacleAvoidanceId = null
+          w.obstacleAvoidanceSide = 0
+          w.overlapWith.clear()
+          w.patrolTarget.copy(_wmSlotPos)
+          _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
+          if (_wmToTarget.lengthSq() > 1e-4) {
+            w.velocity.copy(_wmToTarget.normalize()).multiplyScalar(WINGMAN_EMERGENCY_REGROUP_SPEED)
+          }
+          if (!wasEmergency) {
+            aiValidator.expect(
+              'Aliado perdido entra em regroup de emergência com vaga e velocidade válidas',
+              () => w.state === 'regroup' && w.patrolTarget.distanceTo(_wmSlotPos) < 0.001 && Number.isFinite(w.velocity.x) && Number.isFinite(w.velocity.y) && Number.isFinite(w.velocity.z),
+              { pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, inArena },
+            )
+            aiValidator.logMechanic('wingman-emergency-regroup', 'recuperacao-iniciada', {
+              pilotId: w.profile.id, distance: distToPlayer, emergencyDistance, stateBefore,
+              cooldownPolicy: transition.interruption?.cooldownPolicy || null,
+            })
+          }
         }
       }
       if (distToPlayer > maxDistance && w.state !== 'regroup' && !w.abilityActive) {
-        telemetry.recordEvent(w.profile.name, 'state', `Regroup acionado: caça a ${distToPlayer.toFixed(1)}u da nave (máx: ${maxDistance}u)`, { elapsed })
-        w.state = 'regroup'
-        w.stateTimer = 0
-        w.targetEnemy = null
+        const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.REGROUP, {
+          source: 'distance-safety', event: 'regroup-distance-exceeded', origin: 'distance-safety', reason: 'normal-distance',
+        })
+        if (transition.decision === 'accepted') {
+          telemetry.recordEvent(w.profile.name, 'state', `Regroup acionado: caça a ${distToPlayer.toFixed(1)}u da nave (máx: ${maxDistance}u)`, { elapsed })
+        }
       }
 
       if (w.state === 'regroup') {
@@ -1522,10 +1547,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             () => distanceToSlot <= arrivalDistance,
             { pilotId: w.profile.id, distanceToSlot, arrivalDistance, inArena },
           )
-          telemetry.recordEvent(w.profile.name, 'state', 'Retornou à própria vaga de formação após regroup', { elapsed })
-          w.state = 'patrol'
-          w.stateTimer = 0
-          w.emergencyRegroup = false
+          const transition = stateController.arriveFormation(w, { source: 'formation', event: 'formation-reached' })
+          if (transition.decision === 'accepted') {
+            telemetry.recordEvent(w.profile.name, 'state', 'Retornou à própria vaga de formação após regroup', { elapsed })
+          }
         }
       } else if (w.state === 'damaged-passive') {
         // Um aliado a 1 HP não inicia dogfight nem habilidade: só tenta manter a formação até
@@ -1551,23 +1576,23 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         // Habilidades únicas de Peppy (Guarda) e Miyu (Carga Compartilhada)
         if (!w.abilityActive && w.abilityCooldown <= 0) {
           if (w.profile.abilityId === 'guard' && shieldNotFull) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
-            if (!radioMessage) radioMessage = speak(w.profile, 'ability_guard')
-            w.state = 'escort'
-            w.escortKind = 'guard'
-            w.stateTimer = 0
-            w.abilityActive = true
-            w.abilityTimer = 0
-            w.abilityApplied = false
+            const transition = stateController.startAction(w, WINGMAN_ACTIONS.GUARD, {
+              cooldownSeconds: abilityCooldownFor(w.profile), data: { applied: false },
+              source: 'peppy-guard', event: 'guard-requested',
+            })
+            if (transition.decision === 'accepted') {
+              telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
+              if (!radioMessage) radioMessage = speak(w.profile, 'ability_guard')
+            }
           } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
-            telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
-            if (!radioMessage) radioMessage = speak(w.profile, 'ability_assist')
-            w.state = 'escort'
-            w.escortKind = 'assist'
-            w.stateTimer = 0
-            w.abilityActive = true
-            w.abilityTimer = 0
-            triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
+            const transition = stateController.startAction(w, WINGMAN_ACTIONS.ASSIST, {
+              cooldownSeconds: abilityCooldownFor(w.profile), source: 'miyu-assist', event: 'assist-requested',
+            })
+            if (transition.decision === 'accepted') {
+              telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
+              if (!radioMessage) radioMessage = speak(w.profile, 'ability_assist')
+              triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
+            }
           }
         }
 
@@ -1588,15 +1613,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                 ? squadronFocusTargets[0]
                 : squadronFocusTargets[Math.floor(Math.random() * squadronFocusTargets.length)]
               if (candidate && candidate.mesh && w.mesh.position.distanceTo(candidate.mesh.position) < 105) {
-                w.targetEnemy = candidate
-                telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
-                if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(w.targetEnemy.kind, 'engage_focus'))
-                w.state = 'dogfight'
-                w.stateTimer = 0
-                w.burstRemaining = 4
-                w.burstTimer = 0.2
+                const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
+                  source: 'squadron-focus', event: 'command-focus-reengage', origin: 'focus', targetEnemy: candidate,
+                })
+                if (transition.decision === 'accepted') {
+                  telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
+                  if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(w.targetEnemy.kind, 'engage_focus'))
+                  w.burstRemaining = 4
+                  w.burstTimer = 0.2
+                }
               } else {
-                w.engagementCooldown = 0.6
+                stateController.setEngagementCooldown(w, 0.6)
               }
             }
           } else if (w.fireCooldown <= 0 && w.engagementCooldown <= 0) {
@@ -1613,16 +1640,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               // global de antes. Reatividade (Ideia 5), só o Falco — vida baixa do jogador vence
               // combo alto se as duas estiverem ativas ao mesmo tempo (prioridade fixa, §5.5 do
               // documento evita a ambiguidade "qual pesa mais").
-              let engagementChance = w.profile.combatProfile.engagementChance
-              // Doutrina de Caça: +8 pp e +4u de leitura por stack para todos; os dois pilotos
-              // ofensivos pedidos (Falco/Miyu) recebem a mesma parcela uma segunda vez.
               const aggressionStacks = opts.squadronAggressionStacks || 0
               const aggressionMult = (w.profile.id === 0 || w.profile.id === 3) ? 2 : 1
-              engagementChance = Math.min(0.92, engagementChance + aggressionStacks * 0.08 * aggressionMult)
+              const engagementOverrides = []
               if (w.profile.id === 0) {
-                if (reactivity.playerLowHealth) engagementChance = 0.85
-                else if (reactivity.playerHighCombo) engagementChance = 0.70
+                if (reactivity.playerLowHealth) engagementOverrides.push({ id: 'falco-player-low-health', priority: 100, value: 0.85 })
+                if (reactivity.playerHighCombo) engagementOverrides.push({ id: 'falco-player-high-combo', priority: 50, value: 0.70 })
               }
+              const { value: engagementChance } = composeWingmanStat({
+                base: w.profile.combatProfile.engagementChance,
+                upgrades: [{ id: 'squadron-aggression', add: aggressionStacks * 0.08 * aggressionMult }],
+                overrides: engagementOverrides, min: 0, max: 0.92,
+              })
               const detectionRange = w.profile.combatProfile.detectionRange + aggressionStacks * 4 * aggressionMult
               if (alive.length > 0 && Math.random() < engagementChance) {
                 const candidates = alive.filter((e) => {
@@ -1649,14 +1678,17 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                     if (aHorda !== bHorda) return aHorda - bHorda
                     return distanceRef.distanceTo(a.mesh.position) - distanceRef.distanceTo(b.mesh.position)
                   })
-                  w.targetEnemy = candidates[0]
-                  telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidates[0].kind} #${candidates[0].id} a ${w.mesh.position.distanceTo(candidates[0].mesh.position).toFixed(1)}u`, { elapsed })
-                  if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(candidates[0].kind, 'engage_dogfight'))
-                  w.state = 'dogfight'
-                  w.stateTimer = 0
-                  w.burstRemaining = 5
-                  w.burstTimer = 0.35
-                  triggerSoundCue(WINGMAN_SOUND_CUES.dogfight_engage, { wingmanId: w.profile.id, name: w.profile.name, enemyKind: candidates[0].kind })
+                  const candidate = candidates[0]
+                  const transition = stateController.requestBehavior(w, WINGMAN_BEHAVIORS.DOGFIGHT, {
+                    source: 'autonomous-ai', event: 'autonomous-engage', origin: 'autonomous', targetEnemy: candidate,
+                  })
+                  if (transition.decision === 'accepted') {
+                    telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidate.kind} #${candidate.id} a ${w.mesh.position.distanceTo(candidate.mesh.position).toFixed(1)}u`, { elapsed })
+                    if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(candidate.kind, 'engage_dogfight'))
+                    w.burstRemaining = 5
+                    w.burstTimer = 0.35
+                    triggerSoundCue(WINGMAN_SOUND_CUES.dogfight_engage, { wingmanId: w.profile.id, name: w.profile.name, enemyKind: candidate.kind })
+                  }
                 } else {
                   w.fireCooldown = 1.2 + Math.random() * 0.8
                 }
@@ -1679,11 +1711,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
           if (!radioMessage) radioMessage = speak(w.profile, 'return_formation')
-          w.state = 'patrol'
-          w.stateTimer = 0
-          w.targetEnemy = null
+          stateController.requestBehavior(w, WINGMAN_BEHAVIORS.PATROL, {
+            source: 'dogfight', event: 'dogfight-ended', origin: 'dogfight-ended',
+          })
           w.fireCooldown = 1.5
-          w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.5)
+          stateController.setEngagementCooldown(w, squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.5))
           if (squadronCommandMode === 'focus') {
             squadronFocusTargets = squadronFocusTargets.filter((t) => t && !t.dying && t.mesh)
           }
@@ -1696,14 +1728,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           // Falco: investida em aríete
           if (w.profile.abilityId === 'ram' && !w.abilityActive && w.abilityCooldown <= 0 &&
               dist >= RAM_MIN_RANGE && dist <= RAM_MAX_RANGE) {
-            telemetry.recordEvent(w.profile.name, 'ability', `Falco iniciou Investida Aríete contra ${w.targetEnemy.kind} #${w.targetEnemy.id}!`, { elapsed })
-            if (!radioMessage) radioMessage = speak(w.profile, 'ability_ram')
-            w.state = 'ram'
-            w.stateTimer = 0
-            w.abilityActive = true
-            w.abilityTimer = 0
-            w.chainCount = 0 // carta "Falco Combate" — cada ativação nova começa a cadeia do zero
-            triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
+            const ramTarget = w.targetEnemy
+            const transition = stateController.startAction(w, WINGMAN_ACTIONS.RAM, {
+              cooldownSeconds: abilityCooldownFor(w.profile), data: { targetEnemy: ramTarget, chainCount: 0 },
+              source: 'falco-ram', event: 'ram-requested',
+            })
+            if (transition.decision === 'accepted') {
+              telemetry.recordEvent(w.profile.name, 'ability', `Falco iniciou Investida Aríete contra ${ramTarget.kind} #${ramTarget.id}!`, { elapsed })
+              if (!radioMessage) radioMessage = speak(w.profile, 'ability_ram')
+              triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
+            }
           } else {
             setDogfightApproachTarget(w, w.targetEnemy.mesh.position, _wmAimDir, frame)
 
@@ -1729,26 +1763,22 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             // mudança, agora escalada pelo teto de segurança do piloto
             if (w.burstRemaining <= 0 && w.stateTimer > effectiveDogfightDuration(w.profile, opts) * 0.7) {
               telemetry.recordEvent(w.profile.name, 'combat', 'Concluiu rajada de ataque no dogfight. Retornando à formação', { elapsed })
-              w.state = 'patrol'
-              w.stateTimer = 0
-              w.targetEnemy = null
+              stateController.requestBehavior(w, WINGMAN_BEHAVIORS.PATROL, {
+                source: 'dogfight', event: 'dogfight-burst-completed', origin: 'dogfight-ended',
+              })
               w.fireCooldown = 1.5
-              w.engagementCooldown = squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.0)
+              stateController.setEngagementCooldown(w, squadronCommandMode === 'focus' ? 0.8 : (3.0 + Math.random() * 2.0))
             }
           }
         }
       } else if (w.state === 'ram') {
         // ============ INVESTIDA ARÍETE (Falco) ============
-        w.abilityTimer += dt
         const target = w.targetEnemy
         const targetLost = !target || target.dying || !target.mesh
         if (targetLost) {
-          w.abilityActive = false
-          w.abilityCooldown = abilityCooldownFor(w.profile)
-          w.state = 'patrol'
-          w.stateTimer = 0
-          w.targetEnemy = null
-          w.engagementCooldown = 4.5
+          stateController.interruptAction(w, WINGMAN_INTERRUPT_EVENTS.TARGET_INVALIDATED, {
+            source: 'falco-ram', engagementCooldown: 4.5,
+          })
         } else {
           w.patrolTarget.copy(target.mesh.position)
           const distNow = w.mesh.position.distanceTo(target.mesh.position)
@@ -1801,33 +1831,25 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               }
               if (nextTarget) {
                 chained = true
-                w.chainCount += 1
-                w.targetEnemy = nextTarget
-                w.abilityTimer = 0
+                stateController.setActionData(w, { chainCount: w.chainCount + 1 })
+                stateController.retargetAction(w, nextTarget)
                 telemetry.recordEvent(w.profile.name, 'ability', `Investida em Cadeia: Falco parte pro próximo alvo (${w.chainCount}/${chainStacks})!`, { elapsed })
               }
             }
 
             if (!chained) {
-              w.abilityActive = false
-              w.abilityCooldown = abilityCooldownFor(w.profile)
-              w.state = 'patrol'
-              w.stateTimer = 0
-              w.targetEnemy = null
-              w.engagementCooldown = 4.5
-              w.chainCount = 0
+              stateController.finishAction(w, {
+                source: 'falco-ram', event: 'ram-finished', outcome: didHit ? 'impact' : 'timeout', engagementCooldown: 4.5,
+              })
             }
           }
         }
       } else if (w.state === 'rescue') {
         w.patrolTarget.copy(playerPos)
         if (w.mesh.position.distanceTo(playerPos) < PEPPY_RESCUE_TRIGGER_RANGE) {
-          const cooldown = PEPPY_RESCUE_BASE_COOLDOWN_S - PEPPY_RESCUE_COOLDOWN_PER_STACK_S * peppyRescueStacks
-          w.rescueCooldown = Math.max(1, cooldown)
-          w.abilityActive = false
-          w.state = 'patrol'
-          w.stateTimer = 0
-          w.engagementCooldown = 2.5
+          stateController.finishAction(w, {
+            source: 'peppy-rescue', event: 'rescue-completed', outcome: 'player-reached', engagementCooldown: 2.5,
+          })
           rescueShieldGrants += 1
           rescueCancels += 1
           aiValidator.expect(
@@ -1839,7 +1861,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         }
       } else if (w.state === 'escort') {
         // ============ ESCOLTA (Peppy: Guarda / Miyu: Carga Compartilhada) ============
-        w.abilityTimer += dt
         const side = w.escortKind === 'auxShield' ? 0 : w.profile.homeSide * ESCORT_SIDE_OFFSET
         w.patrolTarget.copy(playerPos)
           .addScaledVector(frame.right, side)
@@ -1848,7 +1869,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
         if (w.escortKind === 'guard') {
           if (!w.abilityApplied && w.mesh.position.distanceTo(playerPos) < GUARD_TRIGGER_RANGE) {
-            w.abilityApplied = true
+            stateController.setActionData(w, { applied: true })
             shieldGrants += 1
             guardExtraShieldGrants += opts.peppyGuardExtraStacks || 0
             triggerSoundCue(WINGMAN_SOUND_CUES.peppy_guard, { worldPos: w.mesh.position })
@@ -1856,27 +1877,19 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           }
           if (w.abilityTimer > GUARD_ESCORT_S) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Guarda de Peppy concluída, retornando à formação', { elapsed })
-            w.abilityActive = false
-            w.abilityApplied = false
-            w.abilityCooldown = abilityCooldownFor(w.profile)
-            w.state = 'patrol'
-            w.stateTimer = 0
-            w.engagementCooldown = 4.0
+            stateController.finishAction(w, {
+              source: 'peppy-guard', event: 'guard-completed', outcome: 'completed', engagementCooldown: 4.0,
+            })
           }
         } else if (w.escortKind === 'assist') {
           if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Miyu concluída, retornando à formação', { elapsed })
-            w.abilityActive = false
-            w.abilityCooldown = abilityCooldownFor(w.profile)
-            w.state = 'patrol'
-            w.stateTimer = 0
-            w.engagementCooldown = 4.0
+            stateController.finishAction(w, {
+              source: 'miyu-assist', event: 'assist-completed', outcome: homingCharging ? 'timeout' : 'released', engagementCooldown: 4.0,
+            })
           }
         } else if (w.escortKind === 'auxShield' && !opts.repulsionActive) {
-          w.abilityActive = false
-          w.escortKind = null
-          w.state = 'patrol'
-          w.stateTimer = 0
+          stateController.finishAction(w, { source: 'peppy-aux-shield', event: 'aux-shield-ended', outcome: 'repulsion-ended' })
         }
       }
 
@@ -2102,16 +2115,23 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           // Slippy: o próximo tiro que acertar (mata ou não) depois do cooldown pronto solta um
           // orbe de reparo no ponto do impacto — proc no acerto, não em cada disparo.
           const owner = laser.owner
-          if (owner && owner.profile.abilityId === 'repair' && !owner.abilityActive && owner.abilityCooldown <= 0) {
-            const orbPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
-            healOrbSpawns.push(orbPos)
-            // Reatividade (Ideia 5): vida baixa do jogador reduz o cooldown pela metade — o
-            // sistema de proc já é determinístico (sempre solta ao acertar com cooldown pronto),
-            // então "chance sobe 50%" vira "solta com o dobro de frequência" nesse estado.
-            owner.abilityCooldown = abilityCooldownFor(owner.profile) * (reactivity.playerLowHealth ? 0.5 : 1)
-            triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
-            telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
-            if (!radioMessage) radioMessage = speak(owner.profile, 'ability_repair')
+          if (owner && owner.profile.abilityId === 'repair') {
+            const authorization = stateController.authorizeInstantAction(owner, 'repair', {
+              cooldownKey: 'primary', allowDuringAction: false, source: 'slippy-repair',
+              event: 'repair-proc-requested', recordDecision: false,
+            })
+            if (authorization.decision === 'accepted') {
+              const orbPos = hit.worldPos ? hit.worldPos.clone() : laser.mesh.position.clone()
+              healOrbSpawns.push(orbPos)
+              stateController.commitInstantAction(owner, 'repair', {
+                cooldownKey: 'primary',
+                cooldownSeconds: abilityCooldownFor(owner.profile) * (reactivity.playerLowHealth ? 0.5 : 1),
+                source: 'slippy-repair', event: 'repair-proc',
+              })
+              triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
+              telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
+              if (!radioMessage) radioMessage = speak(owner.profile, 'ability_repair')
+            }
           }
           scene.remove(laser.mesh)
           if (laser.ownMaterial) laser.mesh.material.dispose()
