@@ -21,7 +21,9 @@ jobs:
           node-version: 22
       - name: Apply migration
         run: |
+          python3 tools/fix-orbit-clump-migration.py
           python3 tools/apply-orbit-clump-v09926.py
+          rm tools/fix-orbit-clump-migration.py
           rm tools/apply-orbit-clump-v09926.py
           rm .github/workflows/validate-orbit-clump-v09926.yml
       - name: Syntax checks
@@ -51,6 +53,7 @@ jobs:
       - name: Diff validation
         run: |
           git diff --check
+          test ! -e tools/fix-orbit-clump-migration.py
           test ! -e tools/apply-orbit-clump-v09926.py
           test ! -e .github/workflows/validate-orbit-clump-v09926.yml
       - name: Commit validated tree
