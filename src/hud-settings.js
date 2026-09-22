@@ -5,13 +5,14 @@ import {
 } from './keybindings.js'
 import { showScreen } from './hud-shared.js'
 import { SHIP_VISUAL_OPTIONS } from './rail.js'
+import { createDamageNumbers } from './hud-damage.js'
 
 // Overhaul do menu de pausa (v0.80.0): as 3 seções abaixo (Visual/Sensibilidade/Controles de
 // teclado) precisavam existir tanto aqui (tela de Configurações completa, pré-jogo) quanto no
 // painel de "opções básicas" da pausa (hud-pause.js, dentro de uma partida em andamento) — em
 // vez de duplicar o HTML/lógica nos dois lugares, viraram builders exportados e reaproveitados
 // pelos dois. `showSettingsScreen` continua idêntico a antes pra quem já usa (pregame/game-menu).
-export function buildVisualSection() {
+export function buildVisualSection({ onDamageStyleChange = null } = {}) {
   const visualSection = document.createElement('div')
   visualSection.className = 'settings-section'
   const visualTitle = document.createElement('h3')
@@ -100,28 +101,139 @@ export function buildVisualSection() {
   renderVitalsStyleButtons()
 
   const damageRow = document.createElement('div')
-  damageRow.className = 'settings-row'
+  damageRow.className = 'settings-row settings-row-stacked'
   const damageLabel = document.createElement('label')
   damageLabel.textContent = 'Números de dano (jogador e aliados)'
-  const damageSelect = document.createElement('select')
-  damageLabel.appendChild(damageSelect)
-  damageSelect.setAttribute('aria-label', 'Estilo dos números de dano')
-  for (const [value, label] of [['classic', 'Clássico'], ['manga', 'Mangá de colisão'], ['orbit', 'Buraco negro']]) {
-    const option = document.createElement('option')
-    option.value = value
-    option.textContent = label
-    damageSelect.appendChild(option)
-  }
-  damageSelect.value = getSettings().damageNumberStyle
-  damageSelect.addEventListener('change', () => setSetting('damageNumberStyle', damageSelect.value))
   damageRow.appendChild(damageLabel)
+
+  const damageChoices = document.createElement('div')
+  damageChoices.className = 'damage-style-choices'
+  const damageButtons = {}
+  const DAMAGE_STYLES = [
+    { id: 'classic', glyph: '123', label: 'Clássico', hint: 'Direto e discreto' },
+    { id: 'manga', glyph: 'BAM!', label: 'Mangá', hint: 'Impactos em quadros' },
+    { id: 'orbit', glyph: '◎', label: 'Buraco negro', hint: 'Dano em órbita' },
+  ]
+  for (const option of DAMAGE_STYLES) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'damage-style-card'
+    btn.setAttribute('aria-label', `${option.label}: ${option.hint}`)
+    const glyph = document.createElement('strong')
+    glyph.textContent = option.glyph
+    const copy = document.createElement('span')
+    const name = document.createElement('b')
+    name.textContent = option.label
+    const hint = document.createElement('small')
+    hint.textContent = option.hint
+    copy.append(name, hint)
+    btn.append(glyph, copy)
+    btn.addEventListener('click', () => {
+      setSetting('damageNumberStyle', option.id)
+      renderDamageButtons()
+      onDamageStyleChange?.()
+    })
+    damageButtons[option.id] = btn
+    damageChoices.appendChild(btn)
+  }
+  damageRow.appendChild(damageChoices)
   visualSection.appendChild(damageRow)
+
+  function renderDamageButtons() {
+    const current = getSettings().damageNumberStyle
+    for (const [id, btn] of Object.entries(damageButtons)) {
+      const active = id === current
+      btn.classList.toggle('active', active)
+      btn.setAttribute('aria-pressed', String(active))
+    }
+  }
+  renderDamageButtons()
+
   const damageHint = document.createElement('p')
   damageHint.className = 'settings-hint'
   damageHint.textContent = 'A troca vale para os próximos impactos, inclusive ao voltar da pausa.'
   visualSection.appendChild(damageHint)
 
   return visualSection
+}
+
+function buildDamagePreview() {
+  const el = document.createElement('aside')
+  el.className = 'settings-damage-preview'
+
+  const eyebrow = document.createElement('span')
+  eyebrow.className = 'settings-preview-eyebrow'
+  eyebrow.textContent = 'SIMULAÇÃO AO VIVO'
+  const title = document.createElement('h3')
+  title.textContent = 'Leitura de impacto'
+  const copy = document.createElement('p')
+  copy.textContent = 'O mesmo efeito usado em combate, com cada piloto preservando sua própria cor.'
+
+  const stage = document.createElement('div')
+  stage.className = 'settings-damage-stage'
+  stage.setAttribute('aria-label', 'Prévia animada dos números de dano')
+  const reticle = document.createElement('div')
+  reticle.className = 'settings-preview-reticle'
+  const target = document.createElement('div')
+  target.className = 'settings-preview-target'
+  const targetCore = document.createElement('div')
+  targetCore.className = 'settings-preview-target-core'
+  target.appendChild(targetCore)
+  stage.append(reticle, target)
+
+  const footer = document.createElement('div')
+  footer.className = 'settings-preview-footer'
+  const current = document.createElement('span')
+  const replayButton = document.createElement('button')
+  replayButton.type = 'button'
+  replayButton.className = 'btn-secondary settings-preview-replay'
+  replayButton.textContent = '↻ Repetir impacto'
+  footer.append(current, replayButton)
+  el.append(eyebrow, title, copy, stage, footer)
+
+  const damageNumbers = createDamageNumbers(stage)
+  const timeouts = new Set()
+  let kickoffRaf = null
+  const labels = { classic: 'CLÁSSICO', manga: 'MANGÁ', orbit: 'BURACO NEGRO' }
+
+  function clearSequence() {
+    for (const timeout of timeouts) clearTimeout(timeout)
+    timeouts.clear()
+    damageNumbers.dispose()
+  }
+
+  function schedule(delay, fn) {
+    const timeout = setTimeout(() => {
+      timeouts.delete(timeout)
+      fn()
+    }, delay)
+    timeouts.add(timeout)
+  }
+
+  function replay() {
+    clearSequence()
+    current.textContent = labels[getSettings().damageNumberStyle] || labels.classic
+    stage.classList.remove('is-firing')
+    void stage.offsetWidth
+    stage.classList.add('is-firing')
+    schedule(40, () => damageNumbers.spawn(.5, .5, 12, { targetId: 'preview-drone' }))
+    schedule(120, () => damageNumbers.spawn(.5, .5, 8, { targetId: 'preview-drone' }))
+    schedule(230, () => damageNumbers.spawn(.5, .5, 7, { targetId: 'preview-drone', pilotId: 0 }))
+    schedule(330, () => damageNumbers.spawn(.5, .5, 5, { targetId: 'preview-drone', pilotId: 1 }))
+    schedule(430, () => damageNumbers.spawn(.5, .5, 6, { targetId: 'preview-drone', pilotId: 2, killed: true }))
+  }
+
+  replayButton.addEventListener('click', replay)
+
+  return {
+    el,
+    replay,
+    start() { kickoffRaf = requestAnimationFrame(replay) },
+    dispose() {
+      if (kickoffRaf) cancelAnimationFrame(kickoffRaf)
+      clearSequence()
+    },
+  }
 }
 
 // Overhaul 4 (fog como mecânica) — as 3 flags viviam em settings.js com valor padrão fixo mas
@@ -327,6 +439,8 @@ export function showSettingsScreen({ onBack }) {
   showScreen('settings')
   const root = document.getElementById('settings-screen')
   root.innerHTML = ''
+  const app = document.getElementById('app')
+  app.classList.add('settings-mode')
 
   let gamepadRaf = null
   let waitingGpAction = null
@@ -336,15 +450,95 @@ export function showSettingsScreen({ onBack }) {
   // modo "Pressione um botão..." se ele ainda estiver segurado)
   let prevGpButtonsPressed = {}
 
-  const back = document.createElement('button')
-  back.className = 'back-link'
-  back.textContent = '← Voltar'
-  back.addEventListener('click', () => { cleanup(); onBack() })
-  root.appendChild(back)
-
+  const masthead = document.createElement('header')
+  masthead.className = 'settings-masthead'
+  const mastheadCopy = document.createElement('div')
+  const eyebrow = document.createElement('span')
+  eyebrow.className = 'settings-eyebrow'
+  eyebrow.textContent = 'ARWING // SISTEMAS DE BORDO'
   const title = document.createElement('h2')
   title.textContent = 'Configurações'
-  root.appendChild(title)
+  const subtitle = document.createElement('p')
+  subtitle.textContent = 'Ajuste a experiência de voo e veja as mudanças visuais antes de decolar.'
+  mastheadCopy.append(eyebrow, title, subtitle)
+  const back = document.createElement('button')
+  back.className = 'back-link settings-back-button'
+  back.textContent = '← Voltar ao hangar'
+  back.addEventListener('click', () => { cleanup(); onBack() })
+  masthead.append(mastheadCopy, back)
+  root.appendChild(masthead)
+
+  const consoleEl = document.createElement('div')
+  consoleEl.className = 'settings-console'
+  const navigation = document.createElement('nav')
+  navigation.className = 'settings-navigation'
+  navigation.setAttribute('role', 'tablist')
+  navigation.setAttribute('aria-label', 'Categorias de configuração')
+  const content = document.createElement('div')
+  content.className = 'settings-content'
+  consoleEl.append(navigation, content)
+  root.appendChild(consoleEl)
+
+  const categoryDefs = [
+    { id: 'visual', glyph: '◈', label: 'Visual', hint: 'HUD e impactos' },
+    { id: 'game', glyph: '✦', label: 'Partida', hint: 'Vida e arcade' },
+    { id: 'controls', glyph: '⌁', label: 'Controles', hint: 'Teclado e gamepad' },
+    { id: 'fog', glyph: '≋', label: 'Névoa', hint: 'Leitura tática' },
+    { id: 'squad', glyph: '◇', label: 'Esquadrão', hint: 'Alas e rádio' },
+  ]
+  const categoryButtons = {}
+  const panels = {}
+  categoryDefs.forEach((category, categoryIndex) => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'settings-nav-button'
+    button.id = `settings-tab-${category.id}`
+    button.setAttribute('role', 'tab')
+    button.setAttribute('aria-controls', `settings-panel-${category.id}`)
+    const glyph = document.createElement('strong')
+    glyph.textContent = category.glyph
+    const navCopy = document.createElement('span')
+    const label = document.createElement('b')
+    label.textContent = category.label
+    const hint = document.createElement('small')
+    hint.textContent = category.hint
+    navCopy.append(label, hint)
+    button.append(glyph, navCopy)
+    navigation.appendChild(button)
+
+    const panel = document.createElement('section')
+    panel.id = `settings-panel-${category.id}`
+    panel.className = 'settings-category-panel'
+    panel.setAttribute('role', 'tabpanel')
+    panel.setAttribute('aria-labelledby', button.id)
+    content.appendChild(panel)
+    categoryButtons[category.id] = button
+    panels[category.id] = panel
+    button.addEventListener('click', () => activateCategory(category.id))
+    button.addEventListener('keydown', (event) => {
+      const delta = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
+      let nextIndex = categoryIndex
+      if (delta) nextIndex = (categoryIndex + delta + categoryDefs.length) % categoryDefs.length
+      else if (event.key === 'Home') nextIndex = 0
+      else if (event.key === 'End') nextIndex = categoryDefs.length - 1
+      else return
+      event.preventDefault()
+      const next = categoryDefs[nextIndex].id
+      activateCategory(next)
+      categoryButtons[next].focus()
+    })
+  })
+
+  function activateCategory(categoryId) {
+    for (const category of categoryDefs) {
+      const active = category.id === categoryId
+      categoryButtons[category.id].classList.toggle('active', active)
+      categoryButtons[category.id].setAttribute('aria-selected', String(active))
+      categoryButtons[category.id].tabIndex = active ? 0 : -1
+      panels[category.id].hidden = !active
+    }
+  }
 
   const lifeSection = document.createElement('div')
   lifeSection.className = 'settings-section'
@@ -370,6 +564,12 @@ export function showSettingsScreen({ onBack }) {
   lifeRow.appendChild(lifeInput)
   lifeSection.appendChild(lifeRow)
 
+  const squadSetupSection = document.createElement('div')
+  squadSetupSection.className = 'settings-section'
+  const squadSetupTitle = document.createElement('h3')
+  squadSetupTitle.textContent = 'Formação inicial'
+  squadSetupSection.appendChild(squadSetupTitle)
+
   const wingmanRow = document.createElement('div')
   wingmanRow.className = 'settings-row'
   const wingmanLabel = document.createElement('label')
@@ -394,18 +594,23 @@ export function showSettingsScreen({ onBack }) {
     setSetting('startingWingmen', Number(wingmanSelect.value) || 0)
   })
   wingmanRow.appendChild(wingmanSelect)
-  lifeSection.appendChild(wingmanRow)
+  squadSetupSection.appendChild(wingmanRow)
 
-  root.appendChild(lifeSection)
+  panels.game.appendChild(lifeSection)
 
-  root.appendChild(buildVisualSection())
-  root.appendChild(buildFogSection())
-  root.appendChild(buildArcadeSection())
-  root.appendChild(buildRadioSection())
-  root.appendChild(buildSensitivitySection())
+  const damagePreview = buildDamagePreview()
+  const visualLayout = document.createElement('div')
+  visualLayout.className = 'settings-visual-layout'
+  visualLayout.append(buildVisualSection({ onDamageStyleChange: damagePreview.replay }), damagePreview.el)
+  panels.visual.appendChild(visualLayout)
+  panels.fog.appendChild(buildFogSection())
+  panels.game.appendChild(buildArcadeSection())
+  panels.squad.appendChild(squadSetupSection)
+  panels.squad.appendChild(buildRadioSection())
+  panels.controls.appendChild(buildSensitivitySection())
 
   const { el: controlsSection, cleanup: cleanupKeybindSection } = buildKeybindSection()
-  root.appendChild(controlsSection)
+  panels.controls.appendChild(controlsSection)
 
   const gpSection = document.createElement('div')
   gpSection.className = 'settings-section'
@@ -454,7 +659,7 @@ export function showSettingsScreen({ onBack }) {
   buttonsWrap.className = 'gp-buttons'
   gpSection.appendChild(buttonsWrap)
 
-  root.appendChild(gpSection)
+  panels.controls.appendChild(gpSection)
 
   function actionLabel(actionId) {
     return ACTIONS.find((a) => a.id === actionId)?.label || actionId
@@ -584,9 +789,13 @@ export function showSettingsScreen({ onBack }) {
     gamepadRaf = requestAnimationFrame(pollGamepad)
   }
   pollGamepad()
+  activateCategory('visual')
+  damagePreview.start()
 
   function cleanup() {
     cleanupKeybindSection()
     if (gamepadRaf) cancelAnimationFrame(gamepadRaf)
+    damagePreview.dispose()
+    app.classList.remove('settings-mode')
   }
 }

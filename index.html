@@ -502,6 +502,135 @@
   .settings-row input[type="number"] { width: 5rem; padding: 0.4rem; font-size: 1rem; background: #171a21; color: #f5f5f7; border: 1px solid #333944; border-radius: 6px; }
   .settings-hint { margin: 0.3rem 0 0; font-size: 0.8rem; color: #7a8494; }
 
+  /* Configurações como console de bordo: navegação curta, conteúdo por categoria e uma
+     simulação real dos números de dano. Os builders continuam compartilhados com a pausa. */
+  #app.settings-mode { max-width: 1180px; }
+  #settings-screen { --settings-accent: #5ce1ff; }
+  .settings-masthead {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem;
+    padding: 1rem 0 1.2rem; border-bottom: 1px solid rgba(92, 225, 255, 0.24);
+  }
+  .settings-eyebrow, .settings-preview-eyebrow {
+    display: block; color: #5ce1ff; font: 700 0.68rem/1.2 ui-monospace, 'SF Mono', Consolas, monospace;
+    letter-spacing: 0.18em;
+  }
+  .settings-masthead h2 { margin: 0.32rem 0 0; font-size: clamp(1.8rem, 4vw, 2.7rem); letter-spacing: -0.04em; }
+  .settings-masthead p { margin: 0.35rem 0 0; max-width: 620px; color: #8fa1b7; font-size: 0.92rem; }
+  .settings-back-button { flex: 0 0 auto; margin: 0 0 0.2rem; padding: 0.55rem 0.8rem; }
+  .settings-console {
+    display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 1.1rem;
+    margin-top: 1.1rem; min-height: 610px;
+  }
+  .settings-navigation {
+    align-self: start; position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 0.45rem;
+    padding: 0.65rem; background: rgba(16, 24, 36, 0.92); border: 1px solid #263b50; border-radius: 14px;
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+  }
+  .settings-nav-button {
+    width: 100%; min-height: 64px; display: grid; grid-template-columns: 30px 1fr; align-items: center;
+    gap: 0.7rem; margin: 0; padding: 0.7rem; text-align: left; color: #b8c5d4;
+    background: transparent; border: 1px solid transparent; border-radius: 9px;
+  }
+  .settings-nav-button > strong { color: #63788e; font-size: 1.25rem; text-align: center; }
+  .settings-nav-button span { display: grid; gap: 0.08rem; }
+  .settings-nav-button b { color: inherit; font-size: 0.88rem; }
+  .settings-nav-button small { color: #64748b; font-size: 0.68rem; font-weight: 600; }
+  .settings-nav-button:hover { background: rgba(92, 225, 255, 0.06); }
+  .settings-nav-button.active {
+    color: #effcff; background: rgba(92, 225, 255, 0.11); border-color: rgba(92, 225, 255, 0.38);
+    box-shadow: inset 3px 0 #5ce1ff, 0 0 20px rgba(92, 225, 255, 0.06);
+  }
+  .settings-nav-button.active > strong { color: #5ce1ff; text-shadow: 0 0 12px rgba(92, 225, 255, 0.65); }
+  .settings-content { min-width: 0; }
+  .settings-category-panel { animation: settings-panel-enter 180ms ease-out both; }
+  .settings-category-panel > .settings-section:first-child { margin-top: 0; }
+  @keyframes settings-panel-enter {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .settings-mode .settings-section {
+    margin-top: 0.9rem; padding: 1.05rem 1.15rem; background: rgba(19, 30, 44, 0.92);
+    border-color: #2a4358; border-radius: 12px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.2);
+  }
+  .settings-mode .settings-section h3 {
+    color: #dff9ff; font: 800 0.78rem/1.2 ui-monospace, 'SF Mono', Consolas, monospace;
+    letter-spacing: 0.12em;
+  }
+  .settings-row-stacked { display: block; }
+  .settings-row-stacked > label { margin-bottom: 0.65rem; }
+  .settings-visual-layout { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(290px, 0.88fr); gap: 0.9rem; align-items: start; }
+  .settings-visual-layout > .settings-section { margin-top: 0; }
+
+  .damage-style-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+  .damage-style-card {
+    min-width: 0; min-height: 84px; display: flex; align-items: center; gap: 0.6rem; margin: 0; padding: 0.7rem;
+    color: #b6c3d2; text-align: left; background: #101926; border: 1px solid #304357; border-radius: 9px;
+  }
+  .damage-style-card > strong {
+    flex: 0 0 auto; min-width: 39px; color: #8ea3b7; font: 900 0.85rem/1 ui-monospace, 'SF Mono', Consolas, monospace;
+    text-align: center;
+  }
+  .damage-style-card span { display: grid; min-width: 0; gap: 0.18rem; }
+  .damage-style-card b { color: #e7edf4; font-size: 0.78rem; line-height: 1.15; }
+  .damage-style-card small { color: #6f8296; font-size: 0.63rem; line-height: 1.2; }
+  .damage-style-card:hover { border-color: #52718d; background: #142235; }
+  .damage-style-card.active {
+    color: #07131b; background: linear-gradient(145deg, #80ecff, #39bfdc); border-color: #aaf4ff;
+    box-shadow: 0 0 18px rgba(92, 225, 255, 0.22);
+  }
+  .damage-style-card.active > strong, .damage-style-card.active b { color: #07131b; }
+  .damage-style-card.active small { color: #214453; }
+
+  .settings-damage-preview {
+    position: sticky; top: 1rem; overflow: hidden; padding: 1.1rem; background: #0c1420;
+    border: 1px solid #29455a; border-radius: 12px; box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+  }
+  .settings-damage-preview h3 { margin: 0.3rem 0 0; color: #eefbff; font-size: 1.15rem; }
+  .settings-damage-preview > p { margin: 0.35rem 0 0.8rem; color: #7f91a6; font-size: 0.76rem; }
+  .settings-damage-stage {
+    position: relative; height: 310px; overflow: hidden; border: 1px solid rgba(92, 225, 255, 0.18); border-radius: 10px;
+    background-color: #050a11;
+    background-image: linear-gradient(rgba(92, 225, 255, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(92, 225, 255, 0.045) 1px, transparent 1px), radial-gradient(circle at 50% 48%, rgba(24, 83, 112, 0.42), transparent 46%);
+    background-size: 28px 28px, 28px 28px, auto;
+  }
+  .settings-damage-stage:after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(transparent 48%, rgba(92, 225, 255, 0.05) 50%, transparent 52%);
+    background-size: 100% 7px; opacity: 0.45;
+  }
+  .settings-preview-reticle {
+    position: absolute; left: 50%; top: 50%; width: 140px; height: 140px; transform: translate(-50%, -50%);
+    border: 1px solid rgba(92, 225, 255, 0.18); border-radius: 50%;
+  }
+  .settings-preview-reticle:before, .settings-preview-reticle:after {
+    content: ''; position: absolute; background: rgba(92, 225, 255, 0.22);
+  }
+  .settings-preview-reticle:before { left: 50%; top: -18px; bottom: -18px; width: 1px; }
+  .settings-preview-reticle:after { top: 50%; left: -18px; right: -18px; height: 1px; }
+  .settings-preview-target {
+    position: absolute; z-index: 2; left: 50%; top: 50%; width: 88px; height: 34px;
+    transform: translate(-50%, -50%); background: #3d5366; border: 2px solid #a3cadb;
+    clip-path: polygon(0 48%, 28% 0, 72% 0, 100% 48%, 72% 100%, 28% 100%);
+    box-shadow: 0 0 18px rgba(113, 212, 255, 0.45);
+  }
+  .settings-preview-target:before, .settings-preview-target:after {
+    content: ''; position: absolute; top: 12px; width: 15px; height: 8px; background: #ff7e5f; box-shadow: 0 0 10px #ff583a;
+  }
+  .settings-preview-target:before { left: 10px; }
+  .settings-preview-target:after { right: 10px; }
+  .settings-preview-target-core {
+    position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%, -50%) rotate(45deg);
+    background: #ff345f; border: 2px solid #ffd3dd; box-shadow: 0 0 16px #ff345f;
+  }
+  .settings-damage-stage.is-firing .settings-preview-target { animation: settings-target-hit 380ms ease-out 2; }
+  @keyframes settings-target-hit {
+    0%, 100% { filter: brightness(1); }
+    28% { filter: brightness(2.4); }
+  }
+  .settings-preview-footer { display: flex; justify-content: space-between; align-items: center; gap: 0.7rem; margin-top: 0.7rem; }
+  .settings-preview-footer > span { color: #5ce1ff; font: 800 0.66rem ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: 0.1em; }
+  .settings-preview-replay { margin: 0; padding: 0.45rem 0.7rem; font-size: 0.72rem; }
+
   .keybind-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.4rem 0; border-bottom: 1px solid #232a33; }
   .keybind-row:last-child { border-bottom: none; }
   .keybind-btn {
@@ -1410,6 +1539,27 @@
       align-items: flex-start;
       gap: 0.4rem;
     }
+  }
+
+  @media (max-width: 900px) {
+    .settings-console { grid-template-columns: 1fr; min-height: 0; }
+    .settings-navigation {
+      position: static; z-index: 4; flex-direction: row; overflow-x: auto; padding: 0.5rem;
+      scrollbar-width: thin;
+    }
+    .settings-nav-button { flex: 0 0 132px; min-height: 54px; grid-template-columns: 24px 1fr; padding: 0.55rem; }
+    .settings-nav-button small { display: none; }
+    .settings-nav-button.active { box-shadow: inset 0 -3px #5ce1ff; }
+    .settings-visual-layout { grid-template-columns: 1fr; }
+    .settings-damage-preview { position: static; }
+  }
+  @media (max-width: 620px) {
+    #app.settings-mode { padding-inline: 0.7rem; }
+    .settings-masthead { align-items: flex-start; flex-direction: column; gap: 0.75rem; }
+    .settings-back-button { align-self: flex-start; }
+    .damage-style-choices { grid-template-columns: 1fr; }
+    .damage-style-card { min-height: 64px; }
+    .settings-damage-stage { height: 270px; }
   }
 
   /* aviso de "gire o celular": só aparece sobre a tela de JOGO (ver mobile.js, syncRotateOverlay)

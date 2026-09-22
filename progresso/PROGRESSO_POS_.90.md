@@ -940,3 +940,24 @@ console (só o ServiceWorker de infraestrutura, já documentado em entregas ante
 **Falta pra fechar Falco**: nenhuma carta pendente — as 3 estão implementadas. Falta a `getLine`
 confirmar a fala nova via playtest real com áudio (validado só por lookup de string aqui). Próximo:
 Peppy (rádio + cartas, incluindo knockback por tier como pré-requisito de Rescue).
+
+---
+
+### Overhaul visual das Configurações — console de bordo e prévia de dano (22/09/2026)
+
+- **`hud-settings.js`**: a tela completa deixou de ser uma lista longa e passou a ter cinco
+  categorias navegáveis (`Visual`, `Partida`, `Controles`, `Névoa`, `Esquadrão`). Os builders
+  compartilhados continuam os mesmos, portanto as opções rápidas da pausa não perderam nenhuma
+  função. Vida/arcade, teclado/gamepad, fog e formação/rádio ficaram agrupados pelo assunto.
+- **Escolha de dano**: o antigo select virou três cartões visuais (`Clássico`, `Mangá`, `Buraco
+  negro`) com estado selecionado e persistência imediata. A área Visual ganhou uma simulação que
+  usa o próprio `createDamageNumbers()`: reproduz uma rajada do jogador e dos três primeiros
+  aliados, inclusive a soma de hits por autor, e reinicia ao trocar o estilo ou clicar em
+  `Repetir impacto`.
+- **`index.html`**: console responsivo com cabeçalho de sistema, navegação lateral no desktop,
+  barra horizontal no mobile, painel de leitura de impacto e cartões adaptáveis. Em telas menores
+  a prévia vai para baixo das opções e todos os seletores continuam acessíveis.
+
+**Validado**: `node src/damage-feedback.test.mjs` e `node src/selftest.mjs` passam; teste ao vivo
+em `127.0.0.1:8420` confirmou troca animada Clássico → Mangá → Buraco Negro, navegação pelas
+categorias, layout em 390×844 e ausência de erros/avisos no console do navegador.
