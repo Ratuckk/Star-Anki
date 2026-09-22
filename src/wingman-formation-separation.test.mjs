@@ -26,6 +26,13 @@ function member(id, x, y, z, slot) {
   assert.ok(r, 'par exatamente sobreposto deveria receber separação')
   assert.ok(Number.isFinite(r.pushA.x) && Number.isFinite(r.pushA.y) && Number.isFinite(r.pushA.z))
   assert.deepStrictEqual(r.pushB, { x: -r.pushA.x, y: -r.pushA.y, z: -r.pushA.z })
+  assert.deepStrictEqual(r.correctionB, { x: -r.correctionA.x, y: -r.correctionA.y, z: -r.correctionA.z })
+  const correctedDistance = Math.hypot(
+    (a.position.x + r.correctionA.x) - (b.position.x + r.correctionB.x),
+    (a.position.y + r.correctionA.y) - (b.position.y + r.correctionB.y),
+    (a.position.z + r.correctionA.z) - (b.position.z + r.correctionB.z),
+  )
+  assert.ok(correctedDistance > 1, 'correcao posicional precisa tirar sobreposicao exata da zona de clump em um frame')
   const expected = { x: a.slot.side - b.slot.side, y: a.slot.up - b.slot.up, z: a.slot.forward - b.slot.forward }
   const dot = r.pushA.x * expected.x + r.pushA.y * expected.y + r.pushA.z * expected.z
   assert.ok(dot > 0, 'fallback de sobreposição exata deve empurrar cada piloto rumo ao lado da própria vaga')
@@ -69,6 +76,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const wingmenSource = readFileSync(path.join(__dirname, 'combat', 'wingmen.js'), 'utf8')
 assert.ok(wingmenSource.includes('otherIdx = idx + 1'), 'separação precisa iterar pares não ordenados apenas uma vez')
 assert.ok(wingmenSource.includes('separationPush.addScaledVector'), 'integração precisa aplicar contribuição simétrica pré-calculada')
+assert.ok(wingmenSource.includes('separationCorrection') && wingmenSource.includes('WINGMAN_SEPARATION_POSITION_STEP_CAP'), 'integração precisa corrigir penetracao fisica com passo limitado')
 assert.ok(!/if \(transition\.decision === 'accepted'\)[\s\S]{0,220}w\.overlapWith\.clear\(\)/.test(wingmenSource), 'emergency regroup não pode apagar memória de overlap a cada frame')
 
 console.log('wingman-formation-separation.test.mjs: OK')

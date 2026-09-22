@@ -45,6 +45,7 @@ import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
+import { createDamageOrbitTracker } from './combat/damage-orbit-tracker.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -80,6 +81,7 @@ export function createGameLoop(deps) {
   // Overhaul de Personalidade dos wingmen, Ideia 5 — instância própria (não recriar por frame,
   // precisa lembrar quando foi a última vida perdida entre ticks).
   const wingmanReactivity = createWingmanReactivity()
+  const damageOrbitTracker = createDamageOrbitTracker()
 
   function showKnockbackFeedback(tier, playerPosition, frame) {
     _knockbackHudPos.copy(playerPosition).addScaledVector(frame.up, 4.4).project(camera)
@@ -611,14 +613,34 @@ export function createGameLoop(deps) {
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
+    const damageVisualSettings = getSettings()
+    const cooperativeOrbitEnabled = damageVisualSettings.damageNumberStyle === 'orbit' && damageVisualSettings.damageOrbitEnabled !== false
     for (const h of events.damageFeedback || []) {
       // Copiar: worldPos continua em coordenadas de mundo para outros consumidores.
       const ndcH = _threatProj.copy(h.worldPos).project(camera)
       if (ndcH.z < -1 || ndcH.z > 1 || Math.abs(ndcH.x) > 1 || Math.abs(ndcH.y) > 1) continue
       const xFrac = (ndcH.x + 1) / 2
       const yFrac = (1 - ndcH.y) / 2
+      // Dourado vive em subsistema separado e nao devolve maxHp no hit legado; quando vivo,
+      // o snapshot supre o mesmo metadado sem tocar golden.js (preserva customizacoes locais).
+      const targetMaxHp = Number.isFinite(h.targetMaxHp)
+        ? h.targetMaxHp
+        : h.kind === 'golden' ? (combat.getGoldenSnapshot?.()?.maxHp ?? null) : null
+      const orbitDecision = cooperativeOrbitEnabled
+        ? damageOrbitTracker.recordHit({
+            targetId: h.targetId, pilotId: h.pilotId, targetMaxHp, killed: h.killed, now: performance.now(),
+          })
+        : { orbit: false, triggeredNow: false }
+      if (orbitDecision.triggeredNow) {
+        aiValidator.expect(
+          'Órbita visual cooperativa só arma em alvo vivo com pelo menos 12 HP máximos',
+          () => !h.killed && Number.isFinite(targetMaxHp) && targetMaxHp >= 12,
+          { targetId: h.targetId, targetMaxHp, pilotId: h.pilotId },
+        )
+        aiValidator.logMechanic('damage-orbit-visual', 'cohit-armed', { targetId: h.targetId, targetMaxHp, pilotId: h.pilotId, windowMs: orbitDecision.windowMs })
+      }
       hud.spawnDamageNumber(xFrac, yFrac, h.instant ? 'ABATE' : h.damage, {
-        homing: h.charged, pilotId: h.pilotId, targetId: h.targetId, killed: h.killed,
+        homing: h.charged, pilotId: h.pilotId, targetId: h.targetId, killed: h.killed, orbitActive: cooperativeOrbitEnabled && orbitDecision.orbit,
       })
       if (h.points) hud.spawnDamageNumber(xFrac, Math.min(.94, yFrac + .09), `${h.points} PTS`, { points: true, prefix: '+', big: true })
     }

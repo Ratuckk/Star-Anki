@@ -165,6 +165,7 @@ const WINGMAN_ATTACK_LANE_SPACING = 9
 const WINGMAN_ATTACK_LANE_VERTICAL = 3.5
 const WINGMAN_SEPARATION_DISTANCE = 7
 const WINGMAN_SEPARATION_SPEED = 48
+const WINGMAN_SEPARATION_POSITION_STEP_CAP = 1.5
 
 // Reutilizáveis de rotação e matriz ortonormal para cálculo de orientação sem piruetas
 const _rotMatrix = new THREE.Matrix4()
@@ -834,6 +835,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       obstacleAvoidanceId: null,
       obstacleAvoidanceSide: 0,
       separationPush: new THREE.Vector3(),
+      separationCorrection: new THREE.Vector3(),
       auxShieldVisual,
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
@@ -1281,7 +1283,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // Deconflição da ala usa um snapshot único do começo do frame e calcula cada par uma vez.
     // Isso evita o solver antigo A→B/B→A, em que a posição de A já podia ter sido alterada
     // quando B era processado. O impulso é aplicado de forma perfeitamente oposta aos dois.
-    for (const member of activeWingmen) member.separationPush.set(0, 0, 0)
+    for (const member of activeWingmen) {
+      member.separationPush.set(0, 0, 0)
+      member.separationCorrection.set(0, 0, 0)
+    }
     const nextSeparationPairs = new Set()
     for (let idx = 0; idx < activeWingmen.length; idx += 1) {
       const a = activeWingmen[idx]
@@ -1307,6 +1312,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         _wmPairPush.set(result.pushA.x, result.pushA.y, result.pushA.z)
         a.separationPush.addScaledVector(_wmPairPush, 1)
         b.separationPush.addScaledVector(_wmPairPush, -1)
+        _wmPairPush.set(result.correctionA.x, result.correctionA.y, result.correctionA.z)
+        a.separationCorrection.addScaledVector(_wmPairPush, 1)
+        b.separationCorrection.addScaledVector(_wmPairPush, -1)
 
         if (!activeSeparationPairs.has(pairKey)) {
           aiValidator.expect(
@@ -1355,6 +1363,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       }
     }
     activeSeparationPairs = nextSeparationPairs
+
+    // Resolve a penetracao fisica ANTES de recalcular distancias/targets deste frame. Cada par
+    // contribui simetricamente; o acumulado por nave e limitado para nunca virar teleporte.
+    for (const member of activeWingmen) {
+      const correctionLength = member.separationCorrection.length()
+      if (correctionLength > WINGMAN_SEPARATION_POSITION_STEP_CAP) {
+        member.separationCorrection.multiplyScalar(WINGMAN_SEPARATION_POSITION_STEP_CAP / correctionLength)
+      }
+      if (member.separationCorrection.lengthSq() > 0) member.mesh.position.add(member.separationCorrection)
+    }
 
     // Comando de ofensividade do esquadrão — duração de 6s (volta sozinho ao normal) + cooldown
     // de 10s contado a partir do fim (manual ou automático), antes de poder ser reativado.
