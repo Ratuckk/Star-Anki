@@ -38,6 +38,17 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.24 — Deconflição simétrica e detector de clump dos Wingmen
+
+- Playtest real revelou que os quatro Wingmen ainda podiam convergir para praticamente o mesmo ponto durante retorno de emergência. O log do `aiValidator` mostrou pares a 0.0002–2.4u e 200 eventos de separação em ~267ms, embora todas as expectativas anteriores passassem.
+- A separação deixou de ser resolvida sequencialmente dentro do loop de cada piloto. Agora cada par não ordenado é calculado uma única vez a partir do snapshot do começo do frame e recebe impulsos exatamente opostos, eliminando dependência da ordem de iteração.
+- Sobreposição exata usa a diferença entre as vagas de formação como direção determinística de escape, em vez de um vetor genérico por paridade. Assim cada piloto é empurrado para o lado coerente com sua própria vaga.
+- Emergency regroup não limpa mais memória de separação todo frame. O log passa a registrar apenas a entrada real de um par em conflito, impedindo que a timeline de 200 eventos seja apagada em frações de segundo.
+- Adicionado detector de clump persistente: se dois Wingmen permanecerem a menos de 1u por 0.5s, o `aiValidator` gera uma falha com estados, flags de emergência e distâncias ao jogador. Isso cobre justamente o falso verde observado no playtest.
+- Criado `wingman-formation-separation.js`, puro e testável, e a suíte `wingman-formation-separation.test.mjs` cobre simetria, sobreposição exata, retreat e proteção estrutural contra a regressão do loop antigo.
+
+**Validado:** sintaxe dos módulos alterados, suíte de separação, suíte da state machine, suíte de Call & Response, `src/selftest.mjs` e `git diff --check`.
+
 ### v0.99.23 — Rádio Call & Response dos Wingmen
 
 - O rádio deixa de ser apenas uma coleção de falas isoladas: eventos selecionados agora podem abrir uma **thread Call & Response** com outro piloto ativo. A réplica é escolhida por personalidade, nunca pelo mesmo piloto que abriu a conversa, e só aparece depois que a transmissão inicial teve tempo visual para terminar.

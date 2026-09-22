@@ -17,6 +17,11 @@ import {
   createWingmanStateController,
   initializeWingmanControl,
 } from './wingman-state-controller.js'
+import {
+  WINGMAN_CLUMP_DISTANCE,
+  WINGMAN_CLUMP_GRACE_S,
+  computeWingmanPairSeparation,
+} from './wingman-formation-separation.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -173,8 +178,7 @@ const _UP_DIR = new THREE.Vector3(0, 1, 0)
 const _wmSlotPos = new THREE.Vector3()
 const _wmToTarget = new THREE.Vector3()
 const _wmDesiredVelocity = new THREE.Vector3()
-const _wmDiff = new THREE.Vector3()
-const _wmPush = new THREE.Vector3()
+const _wmPairPush = new THREE.Vector3()
 const _wmToEnemy = new THREE.Vector3()
 const _wmVelNorm = new THREE.Vector3()
 const _wmAimDir = new THREE.Vector3()
@@ -561,6 +565,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Slippy (Ideia 4): buffer do roll do JOGADOR pra imitar com 0.3s de atraso — um só histórico
   // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
   const playerRollHistory = []
+  let activeSeparationPairs = new Set()
+  const closeSeparationSince = new Map()
+  const reportedFormationClumps = new Set()
 
   function activeRadioPilotIds() {
     return activeWingmen.map((wingman) => wingman.profile.id)
@@ -826,7 +833,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       collisionBumpCooldown: 0,
       obstacleAvoidanceId: null,
       obstacleAvoidanceSide: 0,
-      overlapWith: new Set(),
+      separationPush: new THREE.Vector3(),
       auxShieldVisual,
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
@@ -1122,6 +1129,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     wingmanRadio.reset()
     pendingRadioMessage = null
     pendingRadioQueue = null
+    activeSeparationPairs.clear()
+    closeSeparationSince.clear()
+    reportedFormationClumps.clear()
     while (activeWingmen.length > 0) {
       const w = activeWingmen.pop()
       scene.remove(w.mesh)
@@ -1267,6 +1277,84 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     wasBoostActive = boostActive
 
     chargeHeldTimer = homingCharging ? chargeHeldTimer + dt : 0
+
+    // Deconflição da ala usa um snapshot único do começo do frame e calcula cada par uma vez.
+    // Isso evita o solver antigo A→B/B→A, em que a posição de A já podia ter sido alterada
+    // quando B era processado. O impulso é aplicado de forma perfeitamente oposta aos dois.
+    for (const member of activeWingmen) member.separationPush.set(0, 0, 0)
+    const nextSeparationPairs = new Set()
+    for (let idx = 0; idx < activeWingmen.length; idx += 1) {
+      const a = activeWingmen[idx]
+      for (let otherIdx = idx + 1; otherIdx < activeWingmen.length; otherIdx += 1) {
+        const b = activeWingmen[otherIdx]
+        const result = computeWingmanPairSeparation(
+          { id: a.profile.id, position: a.mesh.position, slot: FORMATION_SLOTS[a.profile.id], retreating: a.state === 'retreating' },
+          { id: b.profile.id, position: b.mesh.position, slot: FORMATION_SLOTS[b.profile.id], retreating: b.state === 'retreating' },
+          frame,
+          WINGMAN_SEPARATION_DISTANCE,
+          WINGMAN_SEPARATION_SPEED,
+        )
+        const lowId = Math.min(a.profile.id, b.profile.id)
+        const highId = Math.max(a.profile.id, b.profile.id)
+        const pairKey = lowId + ':' + highId
+        if (!result) {
+          closeSeparationSince.delete(pairKey)
+          reportedFormationClumps.delete(pairKey)
+          continue
+        }
+
+        nextSeparationPairs.add(pairKey)
+        _wmPairPush.set(result.pushA.x, result.pushA.y, result.pushA.z)
+        a.separationPush.addScaledVector(_wmPairPush, 1)
+        b.separationPush.addScaledVector(_wmPairPush, -1)
+
+        if (!activeSeparationPairs.has(pairKey)) {
+          aiValidator.expect(
+            'Separação de ala calcula impulsos finitos e simétricos por par',
+            () => Number.isFinite(result.pushA.x) && Number.isFinite(result.pushA.y) && Number.isFinite(result.pushA.z) &&
+              Math.abs(result.pushA.x + result.pushB.x) < 1e-6 &&
+              Math.abs(result.pushA.y + result.pushB.y) < 1e-6 &&
+              Math.abs(result.pushA.z + result.pushB.z) < 1e-6,
+            { pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance, pushA: result.pushA, pushB: result.pushB },
+          )
+          aiValidator.logMechanic('wingman-formation-separation', 'separacao-iniciada', {
+            pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance,
+            stateA: a.state, stateB: b.state, emergencyA: a.emergencyRegroup, emergencyB: b.emergencyRegroup,
+          })
+        }
+
+        if (result.distance < WINGMAN_CLUMP_DISTANCE) {
+          if (!closeSeparationSince.has(pairKey)) closeSeparationSince.set(pairKey, elapsed)
+          const closeFor = elapsed - closeSeparationSince.get(pairKey)
+          if (closeFor >= WINGMAN_CLUMP_GRACE_S && !reportedFormationClumps.has(pairKey)) {
+            reportedFormationClumps.add(pairKey)
+            aiValidator.expect(
+              'Wingmen não permanecem praticamente sobrepostos por mais de 0.5s',
+              () => false,
+              {
+                pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance, closeFor,
+                stateA: a.state, stateB: b.state, emergencyA: a.emergencyRegroup, emergencyB: b.emergencyRegroup,
+                distanceAPlayer: a.mesh.position.distanceTo(playerPos), distanceBPlayer: b.mesh.position.distanceTo(playerPos),
+              },
+            )
+            aiValidator.logMechanic('wingman-formation-clump', 'sobreposicao-persistente', {
+              pilotA: a.profile.id, pilotB: b.profile.id, distance: result.distance, closeFor,
+              stateA: a.state, stateB: b.state,
+            })
+          }
+        } else {
+          closeSeparationSince.delete(pairKey)
+          reportedFormationClumps.delete(pairKey)
+        }
+      }
+    }
+    for (const pairKey of activeSeparationPairs) {
+      if (!nextSeparationPairs.has(pairKey)) {
+        closeSeparationSince.delete(pairKey)
+        reportedFormationClumps.delete(pairKey)
+      }
+    }
+    activeSeparationPairs = nextSeparationPairs
 
     // Comando de ofensividade do esquadrão — duração de 6s (volta sozinho ao normal) + cooldown
     // de 10s contado a partir do fim (manual ou automático), antes de poder ser reativado.
@@ -1542,7 +1630,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         if (transition.decision === 'accepted') {
           w.obstacleAvoidanceId = null
           w.obstacleAvoidanceSide = 0
-          w.overlapWith.clear()
           w.patrolTarget.copy(_wmSlotPos)
           _wmToTarget.copy(_wmSlotPos).sub(w.mesh.position)
           if (_wmToTarget.lengthSq() > 1e-4) {
@@ -1961,43 +2048,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // preservam a intenção original, mas nenhum aliado atravessa deliberadamente um detrito.
       steerAroundObstacle(w, _wmDesiredVelocity, frame)
 
-      // Separação de ala: também resolve o caso degenerado de duas naves exatamente no mesmo
-      // ponto. Antes, `distBetween > 0.01` eliminava o vetor de separação justamente nesse caso.
-      for (let otherIdx = 0; otherIdx < activeWingmen.length; otherIdx++) {
-        if (otherIdx === idx) continue
-        const other = activeWingmen[otherIdx]
-        if (other.state === 'retreating') {
-          w.overlapWith.delete(other.profile.id)
-          continue
-        }
-        _wmDiff.copy(w.mesh.position).sub(other.mesh.position)
-        const distBetween = _wmDiff.length()
-        if (distBetween < WINGMAN_SEPARATION_DISTANCE) {
-          if (distBetween > 0.01) {
-            _wmPush.copy(_wmDiff).multiplyScalar(1 / distBetween)
-          } else {
-            // Ordem por piloto garante vetores opostos e estáveis para os dois membros.
-            const pairDirection = w.profile.id < other.profile.id ? -1 : 1
-            _wmPush.copy(frame.right).multiplyScalar(pairDirection)
-            _wmPush.addScaledVector(frame.up, (w.profile.id % 2 === 0 ? -1 : 1) * 0.28).normalize()
-          }
-          const overlapFrac = 1 - distBetween / WINGMAN_SEPARATION_DISTANCE
-          _wmDesiredVelocity.addScaledVector(_wmPush, WINGMAN_SEPARATION_SPEED * overlapFrac)
-          if (!w.overlapWith.has(other.profile.id)) {
-            w.overlapWith.add(other.profile.id)
-            aiValidator.expect(
-              'Separação de ala sempre resolve pares sobrepostos com um vetor finito',
-              () => Number.isFinite(_wmPush.x) && Number.isFinite(_wmPush.y) && Number.isFinite(_wmPush.z) && _wmPush.lengthSq() > 0,
-              { pilotId: w.profile.id, otherPilotId: other.profile.id, distance: distBetween },
-            )
-            aiValidator.logMechanic('wingman-formation-separation', 'separacao-iniciada', {
-              pilotId: w.profile.id, otherPilotId: other.profile.id, distance: distBetween,
-            })
-          }
-        } else {
-          w.overlapWith.delete(other.profile.id)
-        }
-      }
+      // Impulso de separação já foi calculado simetricamente no prepass do frame.
+      if (w.separationPush.lengthSq() > 0) _wmDesiredVelocity.add(w.separationPush)
 
       // Aceleração com inércia estável (por piloto — ver flightProfile.accelRate)
       const accelRate = w.state === 'ram' ? 5.5 : w.profile.flightProfile.accelRate
