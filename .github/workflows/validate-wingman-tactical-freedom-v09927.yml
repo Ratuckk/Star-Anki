@@ -1,0 +1,60 @@
+name: Validate wingman tactical freedom v0.99.27
+
+on:
+  push:
+    branches:
+      - validation/wingman-tactical-freedom-v09927
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply migration
+        run: |
+          python3 tools/apply-wingman-tactical-freedom-v09927.py
+          rm tools/apply-wingman-tactical-freedom-v09927.py
+          rm .github/workflows/validate-wingman-tactical-freedom-v09927.yml
+      - name: Syntax checks
+        run: |
+          node --check src/combat/wingman-navigation.js
+          node --check src/combat/wingman-state-controller.js
+          node --check src/combat/wingmen.js
+          node --check src/combat/wingman-radio-callresponse.js
+          node --check src/combat/wingman-radio.js
+          node --check src/wingman-navigation.test.mjs
+          node --check src/wingman-state-controller.test.mjs
+          node --check src/wingman-radio-callresponse.test.mjs
+          node --check src/wingman-formation-separation.test.mjs
+          node --check src/playtest-polish.test.mjs
+          node --check src/selftest.mjs
+      - name: Deterministic tests
+        run: |
+          node src/wingman-navigation.test.mjs
+          node src/wingman-state-controller.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+          node src/wingman-formation-separation.test.mjs
+          node src/playtest-polish.test.mjs
+          node src/damage-orbit-tracker.test.mjs
+          node src/selftest.mjs
+      - name: Diff validation
+        run: |
+          git diff --check
+          test ! -e tools/apply-wingman-tactical-freedom-v09927.py
+          test ! -e .github/workflows/validate-wingman-tactical-freedom-v09927.yml
+      - name: Commit validated tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: remove regroup por distancia dos wingmen"
+          git push origin HEAD:validation/wingman-tactical-freedom-v09927
