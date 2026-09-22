@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createWingmanTelemetry } from './wingman-telemetry.js'
-import { createWingmanRadio, ABILITY_EVENT_IDS } from './wingman-radio.js'
+import { createWingmanRadio, ABILITY_EVENT_IDS, classifyWingmanTransitionForRadio } from './wingman-radio.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import { HORDA_KIND } from '../enemies/horda.js'
 import { FRAGATA_KIND } from '../enemies/fragata.js'
@@ -534,13 +534,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   let pendingRadioMessage = null
   // isAbility decide em qual região do HUD a fala aparece (hud-game.js: painel superior/ability
   // vs. inferior/trivial) — classificado por eventId via ABILITY_EVENT_IDS, nunca por engano.
-  function buildRadioPayload(profile, text, eventId) {
-    return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text, isAbility: ABILITY_EVENT_IDS.has(eventId) }
+  function buildRadioPayload(profile, text, eventId, meta = {}) {
+    return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text, isAbility: ABILITY_EVENT_IDS.has(eventId), eventId, ...meta }
   }
-  // Chama o dispatcher pra um evento de um piloto específico; devolve o payload pro HUD ou null
-  // (cooldown global ainda ativo, ou esse par piloto+evento não tem fala cadastrada).
   function speak(profile, eventId) {
-    const text = wingmanRadio.trySpeak(profile.id, eventId)
+    const text = wingmanRadio.trySpeak(profile.id, eventId, performance.now(), { activePilotIds: activeRadioPilotIds() })
     return text ? buildRadioPayload(profile, text, eventId) : null
   }
   // Rádio: qual evento de "engajei" falar depende do tipo de inimigo — chefe/dourado e alguns
@@ -563,6 +561,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Slippy (Ideia 4): buffer do roll do JOGADOR pra imitar com 0.3s de atraso — um só histórico
   // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
   const playerRollHistory = []
+
+  function activeRadioPilotIds() {
+    return activeWingmen.map((wingman) => wingman.profile.id)
+  }
 
   function authorityLabel(snapshot) {
     if (snapshot.integrity.retreating) return 'retreating'
@@ -591,6 +593,18 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         requested: transition.requested, event: transition.event, source: transition.source, to,
         reason: transition.reason, cooldownPolicy,
       })
+      const semanticRadio = classifyWingmanTransitionForRadio(transition)
+      if (semanticRadio && (!pendingRadioMessage || semanticRadio.urgent)) {
+        const context = { activePilotIds: activeRadioPilotIds() }
+        const now = performance.now()
+        const text = semanticRadio.urgent
+          ? wingmanRadio.forceSpeak(wingman.profile.id, semanticRadio.eventId, now, context)
+          : wingmanRadio.trySpeak(wingman.profile.id, semanticRadio.eventId, now, context)
+        if (text) {
+          pendingRadioMessage = buildRadioPayload(wingman.profile, text, semanticRadio.eventId, { semanticTransition: true })
+          aiValidator.logMechanic('wingman-radio-semantic', semanticRadio.eventId, { pilotId: wingman.profile.id, source: transition.source, transitionEvent: transition.event, from, to, urgent: semanticRadio.urgent })
+        }
+      }
     },
     onInvariantFailure: (wingman, invariant, transition) => {
       aiValidator.expect(
@@ -898,7 +912,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     })
     const retreating = w.state === 'retreating'
     if (retreating) {
-      const text = wingmanRadio.getLine(w.profile.id, 'retreat')
+      const text = wingmanRadio.forceSpeak(w.profile.id, 'retreat', performance.now(), { activePilotIds: activeRadioPilotIds() })
       if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'retreat')
     }
     aiValidator.expect(
@@ -1086,7 +1100,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         const text = wingmanRadio.getLine(w.profile.id, eventId)
         if (text) readyQueue.push(buildRadioPayload(w.profile, text, eventId))
       }
-      if (readyQueue.length > 0) pendingRadioQueue = readyQueue
+      if (readyQueue.length > 0) {
+        wingmanRadio.cancelPendingResponse('focus-command-queue')
+        pendingRadioQueue = readyQueue
+      }
 
       return {
         mode: 'focus',
@@ -1102,6 +1119,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function clearSquadron() {
     squadronFocusTargets = []
+    wingmanRadio.reset()
+    pendingRadioMessage = null
+    pendingRadioQueue = null
     while (activeWingmen.length > 0) {
       const w = activeWingmen.pop()
       scene.remove(w.mesh)
@@ -1288,6 +1308,19 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // separado do radioMessage único porque aqui são VÁRIAS falas em fila, não uma só.
     let radioQueue = pendingRadioQueue
     pendingRadioQueue = null
+    if (!radioMessage && !radioQueue) {
+      const eligibleResponderIds = activeWingmen.filter((wingman) => wingman.state !== 'damaged-passive' && wingman.state !== 'retreating').map((wingman) => wingman.profile.id)
+      const reply = wingmanRadio.takeDueResponse(performance.now(), eligibleResponderIds)
+      if (reply) {
+        const responder = activeWingmen.find((wingman) => wingman.profile.id === reply.pilotId)
+        if (responder) {
+          aiValidator.expect('Call & Response nunca usa o mesmo piloto como chamador e respondente', () => reply.pilotId !== reply.openerPilotId, { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
+          aiValidator.logMechanic('wingman-radio-call-response', 'reply-delivered', { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
+          telemetry.recordEvent(responder.profile.name, 'radio', 'Resposta de rádio para ' + reply.triggerEventId, { elapsed, threadId: reply.threadId, openerPilotId: reply.openerPilotId, triggerEventId: reply.triggerEventId })
+          radioMessage = buildRadioPayload(responder.profile, reply.text, 'radio_response', { threadId: reply.threadId, inReplyTo: reply.triggerEventId, openerPilotId: reply.openerPilotId })
+        }
+      }
+    }
     // player_low_health dispara só na VIRADA (false→true), não every frame — um piloto aleatório
     // comenta.
     const isPlayerLowHealthNow = !!reactivity.playerLowHealth
