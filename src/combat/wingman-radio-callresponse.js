@@ -9,6 +9,11 @@ const RESPONSE_LINES = Object.freeze({
     2: ["Falco, that's way too close!", 'Try not to hit EVERYTHING!'],
     3: ['Impact vector confirmed.', 'Aggressive. Effective.'],
   },
+  ability_intercept: {
+    1: ['Good catch, Falco.', 'Threat cleared. Stay on the line.'],
+    2: ['Whoa! Nice save, Falco!', 'That was way too close!'],
+    3: ['Projectile neutralized.', 'Intercept confirmed.'],
+  },
   ability_guard: {
     0: ["I've got the offense. Keep that shield up.", 'Good cover, Peppy.'],
     2: ['Nice cover, Peppy!', "Okay, I'll stay behind you!"],
@@ -18,6 +23,11 @@ const RESPONSE_LINES = Object.freeze({
     0: ['Get him out clean, Peppy.', "I'll keep the heat off you."],
     2: ["I've got the systems side!", 'Rescue lane looks clear!'],
     3: ['Rescue corridor is clear.', 'Covering the extraction vector.'],
+  },
+  ability_aux_shield: {
+    0: ["I'll use the opening.", 'Keep that wall facing forward.'],
+    2: ['Barrier looks solid!', "I'll stay inside the cover!"],
+    3: ['Shield geometry confirmed.', 'Barrier coverage acknowledged.'],
   },
   ability_repair: {
     0: ['Good timing, Slippy.', 'That patch better hold.'],
