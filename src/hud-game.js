@@ -233,6 +233,13 @@ export function createGameHud() {
       let frameIdx = 0
       setFrame(0)
       const sprite = WINGMAN_RADIO_AVATARS[pilotId]
+      const voiceCue = [
+        WINGMAN_SOUND_CUES.pilot_voice_falco,
+        WINGMAN_SOUND_CUES.pilot_voice_peppy,
+        WINGMAN_SOUND_CUES.pilot_voice_slippy,
+        WINGMAN_SOUND_CUES.pilot_voice_miyu,
+      ][pilotId]
+      if (voiceCue) triggerSoundCue(voiceCue, { pilotId })
       // A abertura sonora pertence à transmissão em si, não ao comando [D]. Assim qualquer
       // quote — trivial ou de habilidade — sincroniza com os frames de estática do retrato.
       triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId })

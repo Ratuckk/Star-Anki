@@ -23,6 +23,7 @@
  * @property {number} cooldownMs
  * @property {number} volume
  * @property {'sfx'|'voice'|'ambient'|'music'} category
+ * @property {boolean=} radio Se este cue faz parte de uma transmissão de rádio.
  * @property {boolean} spatial
  * @property {boolean} loop
  * @property {string} triggerLogic
@@ -35,15 +36,15 @@ export const PLAYER_SOUND_CUES = {
   // --- Armas ---
   laser_fire: {
     id: 'player_laser_fire',
-    file: 'sons/Disparo generico.mp3',
+    file: 'sons/disparo.wav',
     durationMs: 240,
     delayMs: 0,
-    cooldownMs: 80,
+    cooldownMs: 150,
     volume: 0.85,
     category: 'sfx',
     spatial: false,
     loop: false,
-    triggerLogic: 'Disparado instantaneamente a cada tiro normal de laser saindo do canhão (combat.tryFire).'
+    triggerLogic: 'Disparado uma vez quando o botão de tiro é pressionado, independente da cadência dos projéteis.'
   },
   charge_loop: {
     id: 'player_charge_loop',
@@ -400,6 +401,7 @@ export const WINGMAN_SOUND_CUES = {
     cooldownMs: 80,
     volume: 0.85,
     category: 'sfx',
+    radio: true,
     spatial: false,
     loop: false,
     triggerLogic: 'Disparado no primeiro frame de estática quando uma transmissão de rádio de aliado abre.'
@@ -412,10 +414,15 @@ export const WINGMAN_SOUND_CUES = {
     cooldownMs: 80,
     volume: 0.75,
     category: 'sfx',
+    radio: true,
     spatial: false,
     loop: false,
     triggerLogic: 'Disparado quando uma transmissão de rádio inicia sua animação de saída.'
   },
+  pilot_voice_falco: { id: 'wingman_voice_falco', file: 'sons/falco.mp3', durationMs: 720, delayMs: 430, cooldownMs: 120, volume: 0.72, category: 'voice', radio: true, spatial: false, loop: false, triggerLogic: 'Ruído vocal de Falco iniciado pouco depois de o som de conexão do rádio terminar.' },
+  pilot_voice_peppy: { id: 'wingman_voice_peppy', file: 'sons/peppy.mp3', durationMs: 720, delayMs: 430, cooldownMs: 120, volume: 0.72, category: 'voice', radio: true, spatial: false, loop: false, triggerLogic: 'Ruído vocal de Peppy iniciado pouco depois de o som de conexão do rádio terminar.' },
+  pilot_voice_slippy: { id: 'wingman_voice_slippy', file: 'sons/slippy.mp3', durationMs: 720, delayMs: 430, cooldownMs: 120, volume: 0.72, category: 'voice', radio: true, spatial: false, loop: false, triggerLogic: 'Ruído vocal de Slippy iniciado pouco depois de o som de conexão do rádio terminar.' },
+  pilot_voice_miyu: { id: 'wingman_voice_miyu', file: 'sons/miyu.wav', durationMs: 720, delayMs: 430, cooldownMs: 120, volume: 0.72, category: 'voice', radio: true, spatial: false, loop: false, triggerLogic: 'Ruído vocal de Miyu iniciado pouco depois de o som de conexão do rádio terminar.' },
   pilot_hit: {
     id: 'wingman_pilot_hit',
     file: null,
@@ -573,7 +580,7 @@ export const ENEMY_SOUND_CUES = {
   },
   boss_laser_charge: {
     id: 'boss_laser_charge',
-    file: 'sons/Laser boss.mp3',
+    file: 'sons/som mira disparo laser boss dourado.mp3',
     durationMs: 1400,
     delayMs: 0,
     cooldownMs: 1000,
@@ -585,7 +592,7 @@ export const ENEMY_SOUND_CUES = {
   },
   boss_laser_fire: {
     id: 'boss_laser_fire',
-    file: 'sons/som mira disparo laser boss dourado.mp3',
+    file: 'sons/Laser boss.mp3',
     durationMs: 2200,
     delayMs: 0,
     cooldownMs: 1000,
@@ -695,7 +702,7 @@ export const ENEMY_SOUND_CUES = {
   },
   golden_laser_fire: {
     id: 'golden_laser_fire',
-    file: 'sons/som mira disparo laser boss dourado.mp3',
+    file: 'sons/Laser boss.mp3',
     durationMs: 2000,
     delayMs: 0,
     cooldownMs: 1000,
@@ -707,7 +714,7 @@ export const ENEMY_SOUND_CUES = {
   },
   golden_laser_charge: {
     id: 'golden_laser_charge',
-    file: 'sons/Laser boss.mp3',
+    file: 'sons/som mira disparo laser boss dourado.mp3',
     durationMs: 1400,
     delayMs: 0,
     cooldownMs: 1000,

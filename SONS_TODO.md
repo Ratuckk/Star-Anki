@@ -1,6 +1,6 @@
 # Checklist de Sons Necessários — Star Anki
 
-## Estado da integração — v0.99.16
+## Estado da integração — v0.99.20
 
 O jogo agora possui um reprodutor real (`src/audio.js`): respeita volume, atraso e cooldown de
 cada cue, pré-carrega os arquivos atribuídos e encerra corretamente o loop da carga quando o
@@ -12,17 +12,19 @@ Arquivos cujo nome deixa a função clara e já foram conectados:
 
 | Arquivo | Evento no jogo |
 | --- | --- |
-| `Disparo generico.mp3` | tiro normal do jogador, laser dos aliados e salva de apoio |
+| `disparo.wav` | som do gatilho do tiro normal do jogador, uma vez por aperto do botão |
+| `Disparo generico.mp3` | laser dos aliados e salva de apoio |
 | `Disparo carregado carregando.mp3` | loop de carregamento do tiro teleguiado |
 | `disparo carregado disparo.mp3` | lançamento do tiro carregado/teleguiado |
 | `explosao disparo completamente carregado.mp3` | explosão em área da carga máxima |
 | `ricochete carta contato pulo.mp3` | carta Ricochete |
 | `som disparo swirl.mp3` | Swirl Blast |
 | `inimigo disparo generico.mp3` | disparo de Blaster, Tank e inimigos genéricos |
-| `Laser boss.mp3` | carregamento/telegraph dos lasers normal e dourado, junto dos círculos de mira |
-| `som mira disparo laser boss dourado.mp3` | disparo liberado dos lasers normal e dourado, após o telegraph |
+| `som mira disparo laser boss dourado.mp3` | carregamento/telegraph dos lasers normal e dourado, junto dos círculos de mira |
+| `Laser boss.mp3` | disparo liberado dos lasers normal e dourado, após o telegraph |
 | `Teleporte dourado.mp3` | sumiço/aparição da Anomalia Dourada |
 | `Radio connect.mp3` / `Radio disconnect.mp3` | abertura/saída de toda transmissão de rádio dos aliados |
+| `falco.mp3` / `peppy.mp3` / `slippy.mp3` / `miyu.wav` | ruído vocal próprio de cada aliado, após a conexão do rádio |
 
 Arquivos mantidos propositalmente sem atribuição até que você diga o que são: `angry-birds-space-
 bomb-explosion-sound.mp3`, `explode_WHu7g6E.mp3`, `numbers-lore-explosion-sound-effect.mp3`,

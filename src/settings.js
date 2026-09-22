@@ -32,6 +32,10 @@ const DEFAULTS = {
   // momentos-chave (engajar, abate, aviso de vida baixa, etc). Puramente cosmético, sem efeito
   // em IA/dano/timing — ver combat/wingman-radio.js e hud-game.js → showWingmanRadio.
   wingmanRadioEnabled: true,
+  // Áudio: 'all' reproduz tudo, 'radio' mantém só rádio/vozes aliados e 'off' silencia.
+  audioMode: 'all',
+  // Volume mestre dos efeitos, de 0 a 1. É consultado a cada cue, então vale durante a partida.
+  audioVolume: 0.8,
 }
 
 function readAll() {
@@ -55,6 +59,11 @@ function writeAll(settings) {
 export function getSettings() {
   const settings = { ...DEFAULTS, ...readAll() }
   if (!['classic', 'manga', 'orbit'].includes(settings.damageNumberStyle)) settings.damageNumberStyle = 'classic'
+  if (!['all', 'radio', 'off'].includes(settings.audioMode)) settings.audioMode = 'all'
+  const parsedAudioVolume = Number(settings.audioVolume)
+  settings.audioVolume = Number.isFinite(parsedAudioVolume)
+    ? Math.max(0, Math.min(1, parsedAudioVolume))
+    : DEFAULTS.audioVolume
   return settings
 }
 
@@ -62,5 +71,9 @@ export function setSetting(key, value) {
   const current = getSettings()
   current[key] = value
   writeAll(current)
+  // O sistema de áudio encerra loops em curso quando muda para rádio/desligado.
+  if (key === 'audioMode' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('star-anki:audio-mode-changed', { detail: current.audioMode }))
+  }
   return current
 }

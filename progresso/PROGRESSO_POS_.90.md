@@ -38,6 +38,32 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.20 — Controles de áudio, vozes de rádio e Doutrina de Caça
+
+- Configurações e pausa agora têm **Áudio**: volume mestre persistente, **Tudo ligado**,
+  **Somente rádio** (conexão, desconexão e vozes dos quatro aliados) e **Desligado**. Ao reduzir
+  para rádio/desligado, loops de efeito que já estavam ativos são interrompidos; nenhum loop de
+  carga fica vazando.
+- O novo `sons/disparo.wav` substitui o som normal da nave e toca uma única vez por aperto do
+  botão de tiro, não a cada projétil da rajada. `falco.mp3`, `peppy.mp3`, `slippy.mp3` e
+  `miyu.wav` entram pouco depois do `Radio connect`, um por piloto. `fox.mp3` foi mantido sem
+  mapeamento porque não corresponde a um dos quatro aliados atuais.
+- A associação confirmada pelo usuário para lasers normal e dourado foi invertida de volta:
+  `som mira disparo laser boss dourado.mp3` na carga/círculos de mira e `Laser boss.mp3` no
+  disparo liberado. O catálogo `SONS_TODO.md` acompanha esta convenção.
+- Criada a carta ofensiva **Doutrina de Caça**, até 3 stacks: cada stack adiciona chance e alcance
+  de engajamento à ala, com o dobro do bônus para Falco e Miyu. A aquisição registra a invariante
+  do teto no `aiValidator`; a carta deixa de aparecer se não houver aliado ativo ou ao chegar no
+  teto.
+- Criado `Docs/prototipo-radio-digitacao.html` com três alternativas isoladas para o texto que
+  aparece letra a letra. **Ainda não integrado**: a escolha do usuário é necessária antes de
+  alterar o HUD do jogo. Opção 1 é terminal limpo, 2 é varredura de rádio e 3 usa speedlines para
+  quotes de habilidade.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`.
+**Playtest pendente**: testar os três modos de áudio, uma transmissão de cada aliado e adquirir a
+carta para então enviar o log do `aiValidator`.
+
 ### Overhaul dos números de dano — Mangá e Buraco Negro selecionáveis (22/09/2026)
 
 - `Configurações → Visual` e as opções da pausa ganharam o seletor **Clássico / Mangá de

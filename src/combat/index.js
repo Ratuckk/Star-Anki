@@ -330,6 +330,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         wingmanHullStacks: player.getWingmanHullStacks?.() || 0,
         miyuBoombusterStacks: player.getMiyuBoombusterStacks?.() || 0,
         miyuStatusStacks: player.getMiyuStatusStacks?.() || 0,
+        squadronAggressionStacks: player.getSquadronAggressionStacks?.() || 0,
         moraleDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
         repulsionActive: opts.repulsionActive,
         // Rescue responde ao período em que o jogador realmente perdeu o controle; a animação

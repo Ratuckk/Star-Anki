@@ -1605,11 +1605,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               // combo alto se as duas estiverem ativas ao mesmo tempo (prioridade fixa, §5.5 do
               // documento evita a ambiguidade "qual pesa mais").
               let engagementChance = w.profile.combatProfile.engagementChance
+              // Doutrina de Caça: +8 pp e +4u de leitura por stack para todos; os dois pilotos
+              // ofensivos pedidos (Falco/Miyu) recebem a mesma parcela uma segunda vez.
+              const aggressionStacks = opts.squadronAggressionStacks || 0
+              const aggressionMult = (w.profile.id === 0 || w.profile.id === 3) ? 2 : 1
+              engagementChance = Math.min(0.92, engagementChance + aggressionStacks * 0.08 * aggressionMult)
               if (w.profile.id === 0) {
                 if (reactivity.playerLowHealth) engagementChance = 0.85
                 else if (reactivity.playerHighCombo) engagementChance = 0.70
               }
-              const detectionRange = w.profile.combatProfile.detectionRange
+              const detectionRange = w.profile.combatProfile.detectionRange + aggressionStacks * 4 * aggressionMult
               if (alive.length > 0 && Math.random() < engagementChance) {
                 const candidates = alive.filter((e) => {
                   _wmRel.copy(e.mesh.position).sub(w.mesh.position)

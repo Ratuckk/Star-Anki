@@ -17,6 +17,7 @@ export const ROGUELIKE_CARDS = [
   { id: 'extra-projectile', category: 'ofensivo', label: 'Tiro duplicado', icon: '⚔️', description: '+1 projétil disparado por tiro.' },
   { id: 'faster-fire', category: 'ofensivo', label: 'Recarga rápida', icon: '⚡', description: 'Reduz o tempo entre disparos.' },
   { id: 'wingman', category: 'ofensivo', label: 'Companheiro de Esquadrão', icon: '🛸', description: 'Convoca um companheiro de equipe permanente (até 4). Voam em formação, combatem ativamente e perseguem inimigos com tiros próprios.' },
+  { id: 'squadron-aggression', category: 'ofensivo', label: 'Doutrina de Caça', icon: '⚔️', description: 'A ala procura combate com mais frequência e alcance. Falco e Miyu recebem o dobro do bônus. Até 3 stacks.' },
   { id: 'more-homing-targets', category: 'ofensivo', label: 'Enxame teleguiado', icon: '🎯', description: 'O tiro carregado atinge mais alvos de uma vez.' },
   { id: 'ricochet', category: 'ofensivo', label: 'Ricochete', icon: '🔀', description: 'Seus tiros carregados pulam para outro inimigo (o mais próximo) após atingir o alvo mirado. Pode ser pego múltiplas vezes para mais pulos.' },
   { id: 'swirl-blast-cooldown', category: 'ofensivo', label: 'Vínculo: Swirl Blast', icon: '🌀', description: 'Reduz o cooldown do Swirl Blast em 15%. Pode ser pega múltiplas vezes (piso de 6s).' },

@@ -328,6 +328,52 @@ export function buildRadioSection() {
   return radioSection
 }
 
+// Controles de áudio persistentes. O modo rádio é útil para quem quer manter a ambientação das
+// transmissões sem os demais efeitos de combate.
+export function buildAudioSection() {
+  const section = document.createElement('div')
+  section.className = 'settings-section'
+  const title = document.createElement('h3')
+  title.textContent = 'Áudio'
+  section.appendChild(title)
+
+  const modeRow = document.createElement('div')
+  modeRow.className = 'settings-row'
+  const modeLabel = document.createElement('label')
+  modeLabel.textContent = 'Reprodução de áudio'
+  const mode = document.createElement('select')
+  for (const [value, label] of [['all', 'Tudo ligado'], ['radio', 'Somente rádio'], ['off', 'Desligado']]) {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    mode.appendChild(option)
+  }
+  mode.value = getSettings().audioMode
+  mode.addEventListener('change', () => setSetting('audioMode', mode.value))
+  modeRow.append(modeLabel, mode)
+  section.appendChild(modeRow)
+
+  const volumeRow = document.createElement('div')
+  volumeRow.className = 'settings-row'
+  const volumeLabel = document.createElement('label')
+  volumeLabel.textContent = 'Volume'
+  const volume = document.createElement('input')
+  volume.type = 'range'
+  volume.min = '0'
+  volume.max = '100'
+  volume.step = '1'
+  volume.value = String(Math.round(getSettings().audioVolume * 100))
+  const value = document.createElement('span')
+  value.textContent = `${volume.value}%`
+  volume.addEventListener('input', () => {
+    value.textContent = `${volume.value}%`
+    setSetting('audioVolume', Number(volume.value) / 100)
+  })
+  volumeRow.append(volumeLabel, volume, value)
+  section.appendChild(volumeRow)
+  return section
+}
+
 // Fase 9 (ideia all-range 5): sensibilidade de giro configurável
 export function buildSensitivitySection() {
   const allRangeSection = document.createElement('div')
@@ -605,6 +651,7 @@ export function showSettingsScreen({ onBack }) {
   panels.visual.appendChild(visualLayout)
   panels.fog.appendChild(buildFogSection())
   panels.game.appendChild(buildArcadeSection())
+  panels.game.appendChild(buildAudioSection())
   panels.squad.appendChild(squadSetupSection)
   panels.squad.appendChild(buildRadioSection())
   panels.controls.appendChild(buildSensitivitySection())

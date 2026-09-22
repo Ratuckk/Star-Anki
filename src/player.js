@@ -19,6 +19,7 @@ const INVINCIBILITY_CAP_MS = 3000
 
 const WINGMAN_CAP = 4
 const LIVES_CAP = 5
+const SQUADRON_AGGRESSION_STACKS_CAP = 3
 
 const FIRE_COOLDOWN_MULT_PER_CORRECT = 0.85
 const FIRE_COOLDOWN_FLOOR = 0.06
@@ -132,6 +133,7 @@ export function createPlayerSystem(session) {
   let miyuAssistStacks = 0
   let miyuBoombusterStacks = 0
   let miyuStatusStacks = 0
+  let squadronAggressionStacks = 0
   const downedWingmanIds = new Set()
   let recoveredWingmanId = null
   let fullSpinIframeMs = FULL_SPIN_IFRAME_MS_BASE
@@ -359,6 +361,15 @@ export function createPlayerSystem(session) {
         case 'miyu-status':
           miyuStatusStacks = Math.min(MIYU_STATUS_STACKS_CAP, miyuStatusStacks + 1)
           break
+        case 'squadron-aggression':
+          squadronAggressionStacks = Math.min(SQUADRON_AGGRESSION_STACKS_CAP, squadronAggressionStacks + 1)
+          aiValidator.expect(
+            'Doutrina de Caça permanece entre zero e o teto de stacks',
+            () => squadronAggressionStacks >= 0 && squadronAggressionStacks <= SQUADRON_AGGRESSION_STACKS_CAP,
+            { squadronAggressionStacks, cap: SQUADRON_AGGRESSION_STACKS_CAP }
+          )
+          aiValidator.logMechanic('doutrina-caca', 'stack-adquirido', { squadronAggressionStacks })
+          break
         case 'swirl-blast-cooldown':
           swirlCooldownMult = Math.max(0.5, swirlCooldownMult * 0.85)
           break
@@ -402,6 +413,7 @@ export function createPlayerSystem(session) {
     getMiyuAssistStacks: () => miyuAssistStacks,
     getMiyuBoombusterStacks: () => miyuBoombusterStacks,
     getMiyuStatusStacks: () => miyuStatusStacks,
+    getSquadronAggressionStacks: () => squadronAggressionStacks,
     consumeRecoveredWingmanId() {
       const id = recoveredWingmanId
       recoveredWingmanId = null
@@ -451,6 +463,7 @@ export function createPlayerSystem(session) {
       miyuAssistStacks = 0
       miyuBoombusterStacks = 0
       miyuStatusStacks = 0
+      squadronAggressionStacks = 0
       downedWingmanIds.clear()
       recoveredWingmanId = null
       temporaryShieldValue = 0
@@ -504,6 +517,7 @@ export function createPlayerSystem(session) {
       if (miyuAssistStacks >= MIYU_ASSIST_STACKS_CAP) exclude.add('miyu-assist-target')
       if (miyuBoombusterStacks >= MIYU_BOOMBUSTER_STACKS_CAP) exclude.add('miyu-boombuster')
       if (miyuStatusStacks >= MIYU_STATUS_STACKS_CAP) exclude.add('miyu-status')
+      if (wingmanCount - downedWingmanIds.size <= 0 || squadronAggressionStacks >= SQUADRON_AGGRESSION_STACKS_CAP) exclude.add('squadron-aggression')
       // Mesmo no teto de quatro, a carta volta ao pool se existe piloto abatido para resgatar.
       if (downedWingmanIds.size > 0) exclude.delete('wingman')
       return exclude

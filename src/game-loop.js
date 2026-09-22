@@ -286,6 +286,8 @@ export function createGameLoop(deps) {
 
     const isCharging = state.fireHeldMs >= player.config.homingChargeMinMs
     if (inputState.firing) {
+      // O novo som da nave representa o aperto do gatilho, não cada projétil da rajada.
+      if (state.fireHeldMs <= 0) triggerSoundCue(PLAYER_SOUND_CUES.laser_fire, { origin: nosePos })
       if (!isCharging && combat.tryFire(nosePos, _fireDirection)) rail.triggerRecoil()
       // Miyu (Carga Compartilhada): quando acoplado ao jogador, acelera o carregamento do
       // tiro teleguiado. Lê o estado do frame ANTERIOR (squadron.update ainda não rodou neste

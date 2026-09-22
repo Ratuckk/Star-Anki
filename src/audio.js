@@ -1,4 +1,5 @@
 import { getAllRegisteredCues, registerAudioHandler } from './audio-cues.js'
+import { getSettings } from './settings.js'
 
 // ============ REPRODUÇÃO DE ÁUDIO ============
 // Arquivos fornecidos pelo usuário tocam pelo HTMLAudio. Onde ainda não há arquivo, um sinal
@@ -24,6 +25,17 @@ export function createAudioSystem() {
   const preloadAudio = []
   let audioContext = null
   let disposed = false
+
+  function stopAllLoops() {
+    for (const id of [...activeLoops.keys()]) stopLoop(id)
+  }
+
+  function onAudioModeChanged(event) {
+    // Não deixa um loop de carga/propulsor continuar audível depois de o usuário reduzir o modo.
+    if (event.detail !== 'all') stopAllLoops()
+  }
+
+  if (typeof window !== 'undefined') window.addEventListener('star-anki:audio-mode-changed', onAudioModeChanged)
 
   function getAudioContext() {
     if (audioContext || typeof window === 'undefined') return audioContext
@@ -104,7 +116,10 @@ export function createAudioSystem() {
 
   function playNow(cue, params) {
     if (disposed) return
-    const volume = clamp01(cue.volume * (Number.isFinite(params.volumeMult) ? params.volumeMult : 1))
+    const settings = getSettings()
+    if (settings.audioMode === 'off') return
+    if (settings.audioMode === 'radio' && !cue.radio) return
+    const volume = clamp01(cue.volume * settings.audioVolume * (Number.isFinite(params.volumeMult) ? params.volumeMult : 1))
     if (cue.file) playFile(cue, volume)
     else playFallback(cue, volume)
   }
@@ -137,7 +152,8 @@ export function createAudioSystem() {
       registerAudioHandler(null)
       for (const timer of timers) clearTimeout(timer)
       timers.clear()
-      for (const id of activeLoops.keys()) stopLoop(id)
+      if (typeof window !== 'undefined') window.removeEventListener('star-anki:audio-mode-changed', onAudioModeChanged)
+      stopAllLoops()
       for (const audio of activeOneShots) {
         audio.pause()
         audio.currentTime = 0

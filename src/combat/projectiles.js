@@ -762,7 +762,6 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       const isFrenzy = !!opts.isFrenzy
       cooldown = isFrenzy ? fireCooldownDuration * 0.45 : fireCooldownDuration
       fire(origin, direction)
-      triggerSoundCue(PLAYER_SOUND_CUES.laser_fire, { isFrenzy, origin })
       if (isFrenzy) {
         _projOrigin.copy(origin).add(FRENZY_OFFSET_L)
         fire(_projOrigin, direction)
