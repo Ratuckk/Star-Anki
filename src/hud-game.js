@@ -953,6 +953,13 @@ export function createGameHud() {
   // guardar dados da última pergunta resolvida para alimentar o painel de explicação
   let lastResolvedCard = null
   let currentErrorFloat = null
+  let explanationOpenHandler = null
+
+  function notifyExplanationOpened() {
+    if (!lastResolvedCard || lastResolvedCard.wasCorrect || lastResolvedCard.explanationRewarded) return
+    lastResolvedCard.explanationRewarded = true
+    explanationOpenHandler?.(lastResolvedCard)
+  }
 
   function openExplDrawer() {
     explDrawer.classList.add('is-open')
@@ -1719,7 +1726,12 @@ export function createGameHud() {
       // Guardar resposta correta no card resolvido para o painel de explicação
       if (lastResolvedCard && data.correctAnswer) {
         lastResolvedCard.answer = data.correctAnswer
+        lastResolvedCard.wasCorrect = !!data.correct
       }
+    },
+
+    setExplanationOpenHandler(handler) {
+      explanationOpenHandler = typeof handler === 'function' ? handler : null
     },
 
     setPaused(paused) {
@@ -2098,6 +2110,7 @@ export function createGameHud() {
         explBtn.innerHTML = '📖 <span>Ver Explicação</span>'
         explBtn.onclick = (e) => {
           e.stopPropagation()
+          notifyExplanationOpened()
           populateExplDrawer(lastResolvedCard)
           openExplDrawer()
           attachExplKeyHandler()
@@ -2396,6 +2409,7 @@ export function createGameHud() {
         explBtn.innerHTML = '📖 <span>Explicação da Resposta</span>'
         explBtn.onclick = (e) => {
           e.stopPropagation()
+          notifyExplanationOpened()
           populateExplDrawer(lastResolvedCard)
           openExplDrawer()
           attachExplKeyHandler()

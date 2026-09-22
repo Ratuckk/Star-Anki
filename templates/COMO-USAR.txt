@@ -24,6 +24,10 @@ Ordem Oficial das 8 Colunas:
   8. tags             — Palavras-chave separadas por espaço (ex: cpu_arquitetura ula).
                         IMPORTANTE: O gerador de alternativas erradas do jogo agrupa
                         cartas com tags iguais para criar opções desafiadoras e plausíveis!
+                        Para forçar confusões pedagógicas úteis, use `confunde:grupo` em
+                        todas as cartas que devem disputar alternativas (ex.: `confunde:armazenamento`).
+                        Para perguntas de cenário, escreva o enunciado como situação prática,
+                        mantendo uma única resposta curta e verificável.
 
 As 4 Regras de Ouro do Anki no Star-Anki:
 ------------------------------------------

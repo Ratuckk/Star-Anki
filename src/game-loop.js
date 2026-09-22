@@ -26,6 +26,7 @@ import {
   RETICLE_AHEAD, RETICLE_OVERSHOOT_FACTOR, RETICLE_SETTLE_RATE,
   ARENA_ENEMY_INTERVAL_MULT,
   NORMAL_SPAWN_INTERVAL_MS, NORMAL_SPAWN_MIN_COUNT, NORMAL_SPAWN_MAX_COUNT,
+  NORMAL_SPAWN_PER_DIFFICULTY_LEVEL,
   NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS, MINI_SWARM_CHANCE,
   REVIEW_ENEMY_INTERVAL_MULT,
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
@@ -778,6 +779,16 @@ export function createGameLoop(deps) {
       state.hitShakeTimer = HIT_SHAKE_DURATION_MS
 
       const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
+      // Pontuação: ser atingido quebra a cadeia do mesmo modo que errar uma pergunta. Só roda no
+      // hit efetivamente resolvido (não em invencibilidade, que já retorna antes deste bloco).
+      const comboBeforeDamage = session.comboMultiplier
+      session.comboMultiplier = 1.0
+      aiValidator.expect(
+        'Levar dano restaura o combo à base',
+        () => session.comboMultiplier === 1.0,
+        { comboBeforeDamage, enemyHits: events.enemyHits },
+      )
+      aiValidator.logMechanic('combo-por-dano', 'combo-quebrado', { comboBeforeDamage })
       rail.triggerImpactSquash()
       // Rádio (Ideia 3, evento player_take_damage — §3.5 do doc, decisão b): só reage a dano do
       // JOGADOR, nunca do wingman (invulnerável). O piloto que fala é sorteado dentro do sistema.
@@ -874,7 +885,8 @@ export function createGameLoop(deps) {
               // +2 por piloto recrutado, lido na hora do spawn (sempre em dia, sem precisar
               // recalcular quando alguém entra/sai da formação no meio da run)
               const wingmanSpawnBonus = (combat.getWingmanCount ? combat.getWingmanCount() : 0) * 2
-              const count = Math.min(room, roll + state.extraSpawnPerBatch + wingmanSpawnBonus)
+              const difficultySpawnBonus = Math.max(0, getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck }) - 1) * NORMAL_SPAWN_PER_DIFFICULTY_LEVEL
+              const count = Math.min(room, roll + state.extraSpawnPerBatch + wingmanSpawnBonus + difficultySpawnBonus)
               for (let i = 0; i < count; i += 1) combat.spawnEnemy()
             }
           }

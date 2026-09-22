@@ -8,6 +8,10 @@
 // mountGame.
 
 export const CYCLE_MS = 110000 // era 90000 (pedido do usuário: 110s, compensado pelo avanço por kill abaixo)
+// Escalada por nível (1-9): cada nível adicional dá mais 25s ao ciclo de pergunta/cartas e
+// acrescenta um inimigo à leva normal. Mantidas separadas para ajuste futuro sem números mágicos.
+export const CYCLE_MS_PER_DIFFICULTY_LEVEL = 25000
+export const NORMAL_SPAWN_PER_DIFFICULTY_LEVEL = 1
 // pedido do usuário: "avance este timer em 2 para cada inimigo derrotado durante ele" — todo
 // kill de inimigo comum (não só o redutor de tempo, que já reduz bem mais) adianta o ciclo
 export const ENEMY_KILL_CYCLE_ADVANCE_MS = 2000
@@ -16,6 +20,9 @@ export const FEEDBACK_MS = 1500
 // v0.29.6: errar não mostra mais o painel de feedback (resposta certa/pontos/combo) — só um
 // texto flutuante vermelho pequeno por 3s, e o jogo segura a fase por esse tempo
 export const WRONG_FEEDBACK_MS = 3000
+// Recompensa pequena e única por abrir a explicação depois de errar; incentiva revisão, sem
+// competir com os 100 pontos-base de um acerto nem permitir farm pelo mesmo card.
+export const EXPLANATION_ERROR_STUDY_BONUS = 25
 export const SPEED_STEP = 0.05
 export const BOOST_EVERY_CORRECT = 2
 export const GROUND_Y = -10

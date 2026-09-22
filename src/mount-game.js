@@ -38,7 +38,7 @@ import {
   GROUND_Y,
   LEVEL_BACKGROUNDS,
   BOSS_EVERY_QUESTIONS, BOSS_CYCLE_MS, BOSS_ENEMY_INTERVAL_MULT, BOSS_NO_DECK_SCORE_INTERVAL,
-  CYCLE_MS,
+  CYCLE_MS, CYCLE_MS_PER_DIFFICULTY_LEVEL, EXPLANATION_ERROR_STUDY_BONUS,
   NORMAL_SPAWN_INTERVAL_MS, REVIEW_ENEMY_INTERVAL_MULT,
   ENEMY_INTERVAL_MIN_BASE, ENEMY_INTERVAL_MAX_BASE, ENEMY_INTERVAL_FLOOR,
   DIFFICULTY_BIAS_INTERVAL_RANGE_MS,
@@ -53,6 +53,15 @@ import {
 // cópia própria.
 export function mountGame(session, deck, menu) {
   const hud = createGameHud()
+  hud.setExplanationOpenHandler?.((card) => {
+    session.score += EXPLANATION_ERROR_STUDY_BONUS
+    aiValidator.expect(
+      'Bônus de estudo após erro é aplicado uma vez e mantém a pontuação válida',
+      () => Number.isFinite(session.score) && session.score >= EXPLANATION_ERROR_STUDY_BONUS,
+      { guid: card.guid, score: session.score, bonus: EXPLANATION_ERROR_STUDY_BONUS },
+    )
+    aiValidator.logMechanic('bonus-explicacao-erro', 'concedido', { guid: card.guid, bonus: EXPLANATION_ERROR_STUDY_BONUS })
+  })
   // mountGame nasce de uma ação explícita do jogador; aproveitar esse gesto desbloqueia o áudio
   // nos navegadores que bloqueiam reprodução automática até o primeiro clique/tecla.
   const audio = createAudioSystem()
@@ -287,7 +296,8 @@ export function mountGame(session, deck, menu) {
       ? (session.score - state.bossNoDeckScoreCheckpoint) >= BOSS_NO_DECK_SCORE_INTERVAL
       : (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
     state.isReviewQuestion = (session.history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
-    state.cycleTimer = state.isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS
+    const difficultyLevel = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: deck?.isNoDeck })
+    state.cycleTimer = state.isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS + (difficultyLevel - 1) * CYCLE_MS_PER_DIFFICULTY_LEVEL
     state.enemyTimer = progression.randomEnemyInterval() * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
     state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
     state.bonusTimer = progression.randomBonusInterval()

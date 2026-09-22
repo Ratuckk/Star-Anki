@@ -38,6 +38,27 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.21 — Correções pendentes e melhorias funcionais menores
+
+- **Impulsão Conjunta** agora dá invencibilidade ao jogador e ao Slippy durante o propulsor; se
+  houver Impulso Aríete, soma corretamente `+4` de dano por stack antes da colisão ser resolvida.
+- **Boombuster** preserva a prioridade do alvo mais próximo dentro do raio, mas embaralha os
+  inimigos quando todos estão fora dele, corrigindo o fallback que era determinístico.
+- Ser atingido por inimigo quebra o combo; o evento registra expectativa e timeline no
+  `aiValidator`.
+- A dificuldade 1–9 passou a somar **25s por nível** ao ciclo regular e **+1 inimigo por nível**
+  às levas normais. Chefes continuam no timer próprio.
+- Abrir a explicação depois de uma resposta errada concede **25 pontos uma única vez por carta**.
+- Alternativas agora reconhecem tags opcionais `confunde:grupo` e priorizam respostas do mesmo
+  grupo; o guia de criação de decks documenta também perguntas de cenário curtas e verificáveis.
+
+**Fora do escopo desta entrega:** integração do texto digitado (aguarda opção visual), sons sem
+arquivo/mapeamento, e os dois itens que reconfiguram inimigos — redução de explosão da Horda em
+fog denso e orientação de spawn — pois o `TEMPLATE_INIMIGOS.md` exige confirmar o comportamento
+item a item antes de alterá-los.
+
+**Validado:** sintaxe dos módulos alterados, `node src/selftest.mjs` e `git diff --check`.
+
 ### v0.99.20 — Controles de áudio, vozes de rádio e Doutrina de Caça
 
 - Configurações e pausa agora têm **Áudio**: volume mestre persistente, **Tudo ligado**,

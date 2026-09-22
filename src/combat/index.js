@@ -274,7 +274,16 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         // golden (só existe durante 'goldenArena', já uma das fases "enemiesActive") também
         // atualiza aqui dentro, via enemies.update()
         const moraleDamageBonus = squadron.getMoraleDamageBonus?.() || 0
-        const enemyResult = enemies.update(dt, playerPosition, { ...opts, ramDamage: (opts.ramDamage || 0) + moraleDamageBonus })
+        const slippyBoostStacks = player.getSlippyBoostStacks?.() || 0
+        const slippyBoostActive = !!opts.boostActive && slippyBoostStacks > 0
+        // Impulsão Conjunta protege os DOIS caças durante o impulso e soma o dano das cartas ao
+        // aríete do jogador. A proteção é aplicada antes das colisões deste frame.
+        if (slippyBoostActive) player.grantInvincibility?.(player.getPropulsionActiveTimer?.() || 0)
+        const jointBoostRamBonus = slippyBoostActive && opts.ramDamage > 0 ? slippyBoostStacks * 4 : 0
+        const enemyResult = enemies.update(dt, playerPosition, {
+          ...opts,
+          ramDamage: (opts.ramDamage || 0) + moraleDamageBonus + jointBoostRamBonus,
+        })
         for (const hit of enemyResult.ramFeedback || []) {
           const feedback = createDamageFeedback(hit, hit.damage, { charged: true })
           if (feedback) damageFeedback.push(feedback)
@@ -296,7 +305,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
           const blocked = enemies.removeProjectilesNear(auxShield.worldPos, auxShield.radius)
           for (const pos of blocked) effects?.shockwave?.(pos, 0x7be7ff, 0.4)
         }
-        const slippyBoostActive = !!opts.boostActive && (player.getSlippyBoostStacks?.() || 0) > 0
         const wingmanTargets = squadron.getDamageTargets?.({ slippyBoostActive }) || []
         const projResult = enemies.updateProjectiles(dt, playerPosition, { ...opts, wingmanTargets })
         for (const profileId of projResult.wingmanHitIds || []) {

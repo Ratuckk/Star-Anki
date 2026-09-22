@@ -209,6 +209,14 @@ export function generateDistractors(card, allCards, opts = { count: 3 }) {
   const correctNorm = normalizeAnswer(card.answer)
   const targetCount = opts.count ?? 3
 
+  // Prioridade 0: tags `confunde:grupo` colocam lado a lado respostas parecidas de propósito
+  // (SATA/NVMe, BIOS/UEFI). A tag é opcional e baralhos antigos mantêm o comportamento anterior.
+  const confusionTags = new Set((card.tags || []).filter((tag) => tag.toLowerCase().startsWith('confunde:')))
+  const confusionCandidates = confusionTags.size === 0 ? [] : allCards.filter((c) => {
+    if (c.guid === card.guid || normalizeAnswer(c.answer) === correctNorm) return false
+    return (c.tags || []).some((tag) => confusionTags.has(tag))
+  })
+
   // Prioridade 1: candidatos do mesmo baralho com comprimento aproximado (±50%)
   const strictCandidates = allCards.filter((c) => {
     if (c.guid === card.guid) return false
@@ -234,8 +242,13 @@ export function generateDistractors(card, allCards, opts = { count: 3 }) {
   const usedNorms = new Set([correctNorm])
   const picked = []
 
+  // 0. Grupo de confusão declarado pelo autor do baralho
+  picked.push(...pickUnique(confusionCandidates, targetCount - picked.length, usedNorms))
+
   // 1. Mesmo notetype + comprimento similar
-  picked.push(...pickUnique(strictCandidates.filter((c) => c.notetype === card.notetype), targetCount - picked.length, usedNorms))
+  if (picked.length < targetCount) {
+    picked.push(...pickUnique(strictCandidates.filter((c) => c.notetype === card.notetype), targetCount - picked.length, usedNorms))
+  }
 
   // 2. Outro notetype + comprimento similar
   if (picked.length < targetCount) {

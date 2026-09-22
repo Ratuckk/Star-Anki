@@ -1171,7 +1171,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const nearby = getAliveEnemies().filter((target) => playerPos.distanceTo(target.mesh.position) <= MIYU_BOOMBUSTER_TARGET_RADIUS)
     const pool = nearby.length > 0 ? nearby : getAliveEnemies()
     if (pool.length === 0) return 0
-    pool.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+    // Dentro do raio a prioridade continua sendo quem ameaça o jogador mais de perto. Fora dele,
+    // o fallback é deliberadamente aleatório para não transformar a habilidade num auto-target
+    // determinístico através de toda a arena.
+    if (nearby.length > 0) pool.sort((a, b) => playerPos.distanceTo(a.mesh.position) - playerPos.distanceTo(b.mesh.position))
+    else {
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[pool[i], pool[j]] = [pool[j], pool[i]]
+      }
+    }
     const targets = pool.slice(0, Math.min(pool.length, 1 + stacks))
     for (const target of targets) {
       _wmToEnemy.copy(target.mesh.position).sub(miyu.mesh.position).normalize()
@@ -1182,7 +1191,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       })
     }
     miyu.boombusterCooldown = cooldown
-    aiValidator.expect('Boombuster limita a salva ao número correto de alvos', () => targets.length <= 1 + stacks, { targets: targets.length, stacks })
+    aiValidator.expect('Boombuster limita a salva ao número correto de alvos', () => targets.length <= 1 + stacks, { targets: targets.length, stacks, fallbackRandom: nearby.length === 0 })
     return targets.length
   }
 
