@@ -22,7 +22,9 @@ jobs:
       - name: Apply migration
         run: |
           python3 tools/apply-wingman-tactical-freedom-v09927.py
+          python3 tools/fix-wingman-tactical-freedom-v09927.py
           rm tools/apply-wingman-tactical-freedom-v09927.py
+          rm tools/fix-wingman-tactical-freedom-v09927.py
           rm .github/workflows/validate-wingman-tactical-freedom-v09927.yml
       - name: Syntax checks
         run: |
@@ -50,6 +52,7 @@ jobs:
         run: |
           git diff --check
           test ! -e tools/apply-wingman-tactical-freedom-v09927.py
+          test ! -e tools/fix-wingman-tactical-freedom-v09927.py
           test ! -e .github/workflows/validate-wingman-tactical-freedom-v09927.yml
       - name: Commit validated tree
         run: |
