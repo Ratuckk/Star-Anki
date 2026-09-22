@@ -38,6 +38,23 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.16 — Reprodução real de efeitos sonoros e catálogo operacional
+
+- Implementado `src/audio.js`, conectado no ciclo de vida da partida: o primeiro gesto que inicia
+  a missão desbloqueia o áudio do navegador, os arquivos são pré-carregados, cada cue respeita
+  volume/atraso/cooldown e tudo é interrompido no teardown. O loop de carregamento do tiro agora
+  recebe encerramento explícito quando o botão é solto, sem vazar para o resto da missão.
+- Ligados 14 cues inequívocos da pasta `sons/`: tiro normal/carregado, carga, explosão máxima,
+  Ricochete, Swirl, tiro inimigo, lasers dos chefes, teleporte dourado e conexão/desconexão do
+  comando de ala. Aliados reutilizam o tiro genérico de propósito; o cooldown independente de
+  cada origem evita uma rajada excessiva.
+- Para os demais 65 cues já catalogados, há fallback sintético curto e discreto por enquanto;
+  assim não ficam mudos, sem fingir que há uma voz ou efeito final gravado. `SONS_TODO.md` ganhou
+  a tabela de mapeamentos e a lista explícita dos seis arquivos ainda ambíguos.
+
+**Validado**: sintaxe de `audio.js`, `audio-cues.js`, `mount-game.js` e `game-loop.js`; `node
+src/selftest.mjs` e `git diff --check` passaram.
+
 ### v0.99.15 — Knockback com janela de controle e recuperação de esquadra perdida
 
 Correção do feedback da v0.99.13/v0.99.14:

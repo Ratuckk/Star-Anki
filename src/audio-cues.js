@@ -35,7 +35,7 @@ export const PLAYER_SOUND_CUES = {
   // --- Armas ---
   laser_fire: {
     id: 'player_laser_fire',
-    file: null,
+    file: 'sons/Disparo generico.mp3',
     durationMs: 240,
     delayMs: 0,
     cooldownMs: 80,
@@ -47,7 +47,7 @@ export const PLAYER_SOUND_CUES = {
   },
   charge_loop: {
     id: 'player_charge_loop',
-    file: null,
+    file: 'sons/Disparo carregado carregando.mp3',
     durationMs: 1200,
     delayMs: 0,
     cooldownMs: 0,
@@ -71,7 +71,7 @@ export const PLAYER_SOUND_CUES = {
   },
   homing_fire: {
     id: 'player_homing_fire',
-    file: null,
+    file: 'sons/disparo carregado disparo.mp3',
     durationMs: 600,
     delayMs: 0,
     cooldownMs: 200,
@@ -95,7 +95,7 @@ export const PLAYER_SOUND_CUES = {
   },
   swirl_blast_fire: {
     id: 'player_swirl_blast_fire',
-    file: null,
+    file: 'sons/som disparo swirl.mp3',
     durationMs: 1400,
     delayMs: 0,
     cooldownMs: 500,
@@ -107,7 +107,7 @@ export const PLAYER_SOUND_CUES = {
   },
   max_charge_splash: {
     id: 'player_max_charge_splash',
-    file: null,
+    file: 'sons/explosao disparo completamente carregado.mp3',
     durationMs: 850,
     delayMs: 0,
     cooldownMs: 300,
@@ -119,7 +119,7 @@ export const PLAYER_SOUND_CUES = {
   },
   ricochet: {
     id: 'player_ricochet',
-    file: null,
+    file: 'sons/ricochete carta contato pulo.mp3',
     durationMs: 280,
     delayMs: 0,
     cooldownMs: 60,
@@ -322,7 +322,7 @@ export const WINGMAN_SOUND_CUES = {
   // --- Comportamentos Gerais do Esquadrão ---
   laser_fire: {
     id: 'wingman_laser_fire',
-    file: null,
+    file: 'sons/Disparo generico.mp3',
     durationMs: 220,
     delayMs: 0,
     cooldownMs: 90,
@@ -334,7 +334,7 @@ export const WINGMAN_SOUND_CUES = {
   },
   support_volley: {
     id: 'wingman_support_volley',
-    file: null,
+    file: 'sons/Disparo generico.mp3',
     durationMs: 300,
     delayMs: 0,
     cooldownMs: 150,
@@ -358,7 +358,7 @@ export const WINGMAN_SOUND_CUES = {
   },
   command_focus_toggle: {
     id: 'wingman_command_focus_toggle',
-    file: null,
+    file: 'sons/Radio connect.mp3',
     durationMs: 400,
     delayMs: 0,
     cooldownMs: 300,
@@ -370,7 +370,7 @@ export const WINGMAN_SOUND_CUES = {
   },
   command_free_toggle: {
     id: 'wingman_command_free_toggle',
-    file: null,
+    file: 'sons/Radio disconnect.mp3',
     durationMs: 350,
     delayMs: 0,
     cooldownMs: 300,
@@ -463,7 +463,7 @@ export const ENEMY_SOUND_CUES = {
   // --- Inimigos Genéricos & Blasters ---
   blaster_fire: {
     id: 'enemy_blaster_fire',
-    file: null,
+    file: 'sons/inimigo disparo generico.mp3',
     durationMs: 260,
     delayMs: 0,
     cooldownMs: 70,
@@ -561,7 +561,7 @@ export const ENEMY_SOUND_CUES = {
   },
   boss_laser_fire: {
     id: 'boss_laser_fire',
-    file: null,
+    file: 'sons/Laser boss.mp3',
     durationMs: 2200,
     delayMs: 0,
     cooldownMs: 1000,
@@ -671,7 +671,7 @@ export const ENEMY_SOUND_CUES = {
   },
   golden_laser_fire: {
     id: 'golden_laser_fire',
-    file: null,
+    file: 'sons/som mira disparo laser boss dourado.mp3',
     durationMs: 2000,
     delayMs: 0,
     cooldownMs: 1000,
@@ -683,7 +683,7 @@ export const ENEMY_SOUND_CUES = {
   },
   golden_teleport: {
     id: 'golden_teleport',
-    file: null,
+    file: 'sons/Teleporte dourado.mp3',
     durationMs: 420,
     delayMs: 0,
     cooldownMs: 300,
@@ -1035,13 +1035,26 @@ export const ENEMY_SOUND_CUES = {
 // sem quebrar execução, sem gerar ruído no console e sem alocar memória desnecessária.
 
 let _activeAudioHandler = null
+let _activeAudioLoopStopHandler = null
 
 /**
  * Registra o manipulador ativo de áudio do jogo (usado pelo futuro createAudioSystem).
  * @param {Function} handler - Função com assinatura (cue, params) => void
  */
-export function registerAudioHandler(handler) {
+export function registerAudioHandler(handler, stopLoopHandler = null) {
   _activeAudioHandler = typeof handler === 'function' ? handler : null
+  _activeAudioLoopStopHandler = typeof stopLoopHandler === 'function' ? stopLoopHandler : null
+}
+
+// Encerra um loop associado a uma cue (ex.: carga do tiro ao soltar o botão). Mantém o mesmo
+// contrato defensivo de triggerSoundCue: áudio nunca pode interromper a partida.
+export function stopSoundCueLoop(cue) {
+  if (!cue?.id || !_activeAudioLoopStopHandler) return
+  try {
+    _activeAudioLoopStopHandler(cue.id)
+  } catch {
+    // No-op seguro
+  }
 }
 
 /**

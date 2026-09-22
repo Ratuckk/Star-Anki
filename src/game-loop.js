@@ -17,7 +17,7 @@ import * as THREE from 'three'
 import { isActionPressed } from './keybindings.js'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import { HOMING_MAX_TARGETS_CAP } from './player.js'
-import { PLAYER_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
+import { PLAYER_SOUND_CUES, stopSoundCueLoop, triggerSoundCue } from './audio-cues.js'
 import { POWER_LEVEL_HIGH_IMPACT } from './enemies/shared.js'
 import {
   ENEMY_KILL_CYCLE_ADVANCE_MS, WARNING_MS,
@@ -332,6 +332,7 @@ export function createGameLoop(deps) {
         state.chargeLoopSignaled = false
       }
     } else {
+      if (state.chargeLoopSignaled) stopSoundCueLoop(PLAYER_SOUND_CUES.charge_loop)
       state.chargeMaxSignaled = false
       state.chargeLoopSignaled = false
       if (isCharging) {

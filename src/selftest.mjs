@@ -422,7 +422,7 @@ assert.strictEqual(afterCooldownElapsed, 'dogfight', 'Companheiro descansado com
 // ---------------------------------------------------------------------------
 // 10. Sound Cues: Validação de Parâmetros, Timings e Despachante Seguro
 // ---------------------------------------------------------------------------
-import { getAllRegisteredCues, triggerSoundCue, registerAudioHandler } from './audio-cues.js'
+import { getAllRegisteredCues, triggerSoundCue, stopSoundCueLoop, registerAudioHandler } from './audio-cues.js'
 
 const allCues = getAllRegisteredCues()
 assert.ok(allCues.player, 'Sound cues do jogador devem estar registradas')
@@ -439,7 +439,7 @@ for (const [groupName, groupCues] of Object.entries(allCues)) {
     const cue = groupCues[key]
     totalCueCount++
     assert.strictEqual(typeof cue.id, 'string', `Cue ${key} deve ter id string`)
-    assert.strictEqual(cue.file, null, `Cue ${key} deve ter file: null (sem áudio inserido ainda)`)
+    assert.ok(cue.file === null || (typeof cue.file === 'string' && cue.file.startsWith('sons/')), `Cue ${key} deve ter arquivo em sons/ ou permanecer sem arquivo`)
     assert.ok(typeof cue.durationMs === 'number' && cue.durationMs > 0, `Cue ${key} deve ter durationMs > 0`)
     assert.ok(typeof cue.delayMs === 'number' && cue.delayMs >= 0, `Cue ${key} deve ter delayMs >= 0`)
     assert.ok(typeof cue.cooldownMs === 'number' && cue.cooldownMs >= 0, `Cue ${key} deve ter cooldownMs >= 0`)
@@ -470,6 +470,7 @@ registerAudioHandler((cue, params) => {
 triggerSoundCue(allCues.wingmen.falco_ram, { worldPos: [10, 20, 30] })
 assert.strictEqual(receivedCue?.id, 'wingman_falco_ram', 'Handler deve receber a cue disparada')
 assert.deepStrictEqual(receivedParams?.worldPos, [10, 20, 30], 'Handler deve receber os parâmetros contextuais')
+assert.doesNotThrow(() => stopSoundCueLoop(allCues.player.charge_loop), 'Parar loop de áudio deve ser seguro mesmo sem controlador de loop')
 
 // Desregistra manipulador após o teste
 registerAudioHandler(null)

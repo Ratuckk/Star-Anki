@@ -1,12 +1,40 @@
 # Checklist de Sons Necessários — Star Anki
 
+## Estado da integração — v0.99.16
+
+O jogo agora possui um reprodutor real (`src/audio.js`): respeita volume, atraso e cooldown de
+cada cue, pré-carrega os arquivos atribuídos e encerra corretamente o loop da carga quando o
+botão de tiro é solto. Cada cue sem arquivo recebe um sinal sintético curto e discreto como
+**fallback provisório** (incluindo um bip de rádio para cues de voz); isso evita eventos mudos,
+mas não substitui efeitos finais nem vozes gravadas.
+
+Arquivos cujo nome deixa a função clara e já foram conectados:
+
+| Arquivo | Evento no jogo |
+| --- | --- |
+| `Disparo generico.mp3` | tiro normal do jogador, laser dos aliados e salva de apoio |
+| `Disparo carregado carregando.mp3` | loop de carregamento do tiro teleguiado |
+| `disparo carregado disparo.mp3` | lançamento do tiro carregado/teleguiado |
+| `explosao disparo completamente carregado.mp3` | explosão em área da carga máxima |
+| `ricochete carta contato pulo.mp3` | carta Ricochete |
+| `som disparo swirl.mp3` | Swirl Blast |
+| `inimigo disparo generico.mp3` | disparo de Blaster, Tank e inimigos genéricos |
+| `Laser boss.mp3` | laser contínuo do chefe normal |
+| `som mira disparo laser boss dourado.mp3` | laser da Anomalia Dourada |
+| `Teleporte dourado.mp3` | sumiço/aparição da Anomalia Dourada |
+| `Radio connect.mp3` / `Radio disconnect.mp3` | entrar/sair do comando de foco da ala |
+
+Arquivos mantidos propositalmente sem atribuição até que você diga o que são: `angry-birds-space-
+bomb-explosion-sound.mp3`, `explode_WHu7g6E.mp3`, `numbers-lore-explosion-sound-effect.mp3`,
+`rebel-blaster.mp3`, `s1_ca-online-audio-converter.mp3` e `shotgun-blasting-intimidator.mp3`.
+Eles não foram encaixados por suposição só pelo nome em inglês.
+
 ## Como usar
 
-O jogo hoje não tem NENHUM som implementado (zero áudio no código). A pasta
-`sons/` na raiz do projeto tem 18 arquivos soltos já enviados (tiros/lasers,
-explosões, um "ricochet" e um stinger tipo "that's no good") — dei uma sugestão
-de encaixe onde fez sentido, marcada como **(sugestão, já na pasta)**, mas são só
-palpites: troque à vontade.
+O checklist foi criado quando o jogo ainda não reproduzia sons. A integração inicial já está
+descrita acima; os itens em branco abaixo continuam sendo a fonte de verdade para os efeitos
+finais que ainda precisam de arquivo próprio. A pasta `sons/` contém os arquivos enviados — os
+nomes ambíguos continuam sem encaixe automático para não introduzir uma associação errada.
 
 Preencha o campo `Arquivo:` de cada item com o nome do arquivo (dentro de
 `sons/` ou de uma subpasta nova, se preferir organizar por categoria) e me

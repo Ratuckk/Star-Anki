@@ -33,6 +33,7 @@ import { createQuestionFlow } from './flow-question.js'
 import { createProgressionFlow } from './flow-progression.js'
 import { createEnvironmentSystem } from './environment.js'
 import { createGameLoop } from './game-loop.js'
+import { createAudioSystem } from './audio.js'
 import {
   GROUND_Y,
   LEVEL_BACKGROUNDS,
@@ -52,6 +53,11 @@ import {
 // cópia própria.
 export function mountGame(session, deck, menu) {
   const hud = createGameHud()
+  // mountGame nasce de uma ação explícita do jogador; aproveitar esse gesto desbloqueia o áudio
+  // nos navegadores que bloqueiam reprodução automática até o primeiro clique/tecla.
+  const audio = createAudioSystem()
+  audio.unlock()
+  audio.preloadMappedFiles()
   // suporte mobile: tela cheia + travar em paisagem, best-effort (ver mobile.js) — o aviso de
   // "gire o celular" continua cobrindo o caso onde nenhum dos dois é suportado pelo navegador
   requestGameOrientation()
@@ -334,6 +340,7 @@ export function mountGame(session, deck, menu) {
     }
     window.removeEventListener('resize', onResize)
     input.dispose()
+    audio.dispose()
     environment.dispose()
     effects.dispose()
     combat.dispose()
