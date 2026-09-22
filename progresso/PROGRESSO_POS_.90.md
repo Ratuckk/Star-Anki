@@ -65,6 +65,11 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 - No dourado, a posição atual do jogador é copiada antes de emitir `golden_laser_charge`; assim o
   efeito espacial de carga e os círculos usam o mesmo alvo, nunca uma posição anterior ou nula.
 
+### v0.99.19 — Aplicação efetiva da ordem das cues
+
+- Consolidada no código a ordem descrita na v0.99.18: o rádio ativa visualmente antes do connect,
+  fecha visualmente antes do disconnect, e o dourado define a posição-alvo antes da cue de carga.
+
 ### v0.99.17 — Sincronia dos sons de rádio e telegraph dos lasers de chefe
 
 - Corrigida a associação dos sons `Radio connect`/`Radio disconnect`: antes eles só eram
