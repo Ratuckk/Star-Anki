@@ -1,0 +1,55 @@
+name: Validate playtest polish v0.99.25
+
+on:
+  push:
+    branches:
+      - validation/playtest-polish-v09925
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply migration
+        run: |
+          node tools/apply-playtest-polish-v09925.mjs
+          rm tools/apply-playtest-polish-v09925.mjs
+          rm .github/workflows/validate-playtest-polish-v09925.yml
+      - name: Syntax checks
+        run: |
+          node --check src/hud-damage.js
+          node --check src/audio.js
+          node --check src/audio-cues.js
+          node --check src/game-loop.js
+          node --check src/combat/wingmen.js
+          node --check src/combat/wingman-radio-callresponse.js
+          node --check src/playtest-polish.test.mjs
+          node --check src/selftest.mjs
+      - name: Deterministic tests
+        run: |
+          node src/playtest-polish.test.mjs
+          node src/wingman-state-controller.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+          node src/wingman-formation-separation.test.mjs
+          node src/selftest.mjs
+      - name: Diff validation
+        run: |
+          git diff --check
+          test ! -e tools/apply-playtest-polish-v09925.mjs
+          test ! -e .github/workflows/validate-playtest-polish-v09925.yml
+      - name: Commit validated tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: polimento pos-playtest dos wingmen e feedback"
+          git push origin HEAD:validation/playtest-polish-v09925
