@@ -21,7 +21,9 @@ jobs:
           node-version: 22
       - name: Apply migration
         run: |
+          node tools/fix-playtest-polish-migration.mjs
           node tools/apply-playtest-polish-v09925.mjs
+          rm tools/fix-playtest-polish-migration.mjs
           rm tools/apply-playtest-polish-v09925.mjs
           rm .github/workflows/validate-playtest-polish-v09925.yml
       - name: Syntax checks
@@ -44,6 +46,7 @@ jobs:
       - name: Diff validation
         run: |
           git diff --check
+          test ! -e tools/fix-playtest-polish-migration.mjs
           test ! -e tools/apply-playtest-polish-v09925.mjs
           test ! -e .github/workflows/validate-playtest-polish-v09925.yml
       - name: Commit validated tree
