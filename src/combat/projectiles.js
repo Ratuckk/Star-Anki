@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { PLAYER_SOUND_CUES, ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import { aiValidator } from '../ai-validator.js'
+import { createDamageFeedback } from './damage-feedback.js'
 import { BOSS_KIND } from '../enemies/boss.js'
 import { GOLDEN_KIND } from '../enemies/golden.js'
 
@@ -435,6 +436,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     // log de acertos (posição, dano, se matou) — usado pelo main.js pra faíscas, flash no mesh
     // atingido e números de dano flutuantes no HUD
     const hitsLog = []
+    const damageFeedback = []
 
     const magnetSources = enemies && enemies.getMagnetSources ? enemies.getMagnetSources() : null
 
@@ -584,6 +586,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
         })
         let stopped = false
         for (const h of pierceHits) {
+          const feedback = createDamageFeedback(h, projectile.damage + globalDamageBonus, { instant: h.kind === 'detrito' })
+          if (feedback) damageFeedback.push(feedback)
           // dourado nunca entra no hitsLog (mesma exclusão de propósito do path não-perfurante
           // logo abaixo) — vira os campos goldenSpecialHit/goldenHitWorldPos em vez disso
           if (h.kind === 'golden') {
@@ -649,6 +653,8 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           squadWipeBonus += (hit.squadWipeBonus || 150)
         }
         if (hit.blocked) { removeProjectile(projectile); continue }
+        const feedback = createDamageFeedback(hit, (projectile.damage ?? 1) + globalDamageBonus, { charged: !!projectile.isHoming })
+        if (feedback) damageFeedback.push(feedback)
         if (projectile.isHoming) {
           triggerSoundCue(PLAYER_SOUND_CUES.homing_impact, { worldPos: hit.worldPos, isMaxCharge: projectile.isMaxCharge })
         }
@@ -665,6 +671,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           enemyKills += splash.enemyKills
           enemyKillPoints += splash.enemyKillPoints
           hitsLog.push(...splash.hitsLog)
+          for (const splashHit of splash.hitsLog) {
+            const splashFeedback = createDamageFeedback(splashHit, splashHit.damage, { charged: true })
+            if (splashFeedback) damageFeedback.push(splashFeedback)
+          }
           if (splash.bossDefeated) {
             bossDefeated = true
             bossDefeatedIsHoming = true
@@ -742,7 +752,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       enemyKills, enemyKillPoints, bonusKillPoints,
       goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
       timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
-      squadWipe, squadWipeBonus,
+      squadWipe, squadWipeBonus, damageFeedback,
     }
   }
 

@@ -181,6 +181,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       let ramGoldenWorldPos = null
       let bossCollisionWorldPos = null
       let goldenHits = 0
+      const ramFeedback = []
       const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
       for (const g of [...goldenTargets]) {
         if (g.dying) {
@@ -204,6 +205,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
 
             if (inRamRange) {
               g.hp -= ramDamage
+              ramFeedback.push({ worldPos: g.mesh.position.clone(), meshRef: g.mesh, damage: ramDamage, killed: g.hp <= 0 })
               if (effects) effects.flashMesh(g.mesh)
               if (g.hp <= 0) {
                 g.dying = true
@@ -304,7 +306,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           }
         }
       }
-      return { ramGoldenDefeated, ramGoldenWorldPos, bossCollisionWorldPos, goldenHits }
+      return { ramGoldenDefeated, ramGoldenWorldPos, bossCollisionWorldPos, goldenHits, ramFeedback }
     },
 
     resolveHit(prevPos, currPos, damage, isHoming, hitBuffer, effects) {

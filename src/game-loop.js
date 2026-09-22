@@ -607,17 +607,16 @@ export function createGameLoop(deps) {
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
-    if (events.hitsLog && events.hitsLog.length > 0) {
-      for (const h of events.hitsLog) {
-        const ndcH = h.worldPos.project(camera)
-        const xFrac = THREE.MathUtils.clamp((ndcH.x + 1) / 2, 0, 1)
-        const yFrac = THREE.MathUtils.clamp((1 - ndcH.y) / 2, 0, 1)
-        if (h.points) {
-          hud.spawnDamageNumber(xFrac, yFrac, h.points, { points: true, prefix: '+', big: true })
-        } else {
-          hud.spawnDamageNumber(xFrac, yFrac, h.damage, { homing: !!h.isHoming })
-        }
-      }
+    for (const h of events.damageFeedback || []) {
+      // Copiar: worldPos continua em coordenadas de mundo para outros consumidores.
+      const ndcH = _threatProj.copy(h.worldPos).project(camera)
+      if (ndcH.z < -1 || ndcH.z > 1 || Math.abs(ndcH.x) > 1 || Math.abs(ndcH.y) > 1) continue
+      const xFrac = (ndcH.x + 1) / 2
+      const yFrac = (1 - ndcH.y) / 2
+      hud.spawnDamageNumber(xFrac, yFrac, h.instant ? 'ABATE' : h.damage, {
+        homing: h.charged, pilotId: h.pilotId, targetId: h.targetId, killed: h.killed,
+      })
+      if (h.points) hud.spawnDamageNumber(xFrac, Math.min(.94, yFrac + .09), `${h.points} PTS`, { points: true, prefix: '+', big: true })
     }
     // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
     // Sobe 1 a cada abate que rendeu pontos (h.points > 0, chefe não conta — ele tem seu próprio

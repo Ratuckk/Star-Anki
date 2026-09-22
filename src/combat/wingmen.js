@@ -8,6 +8,7 @@ import { BOSS_KIND } from '../enemies/boss.js'
 import { GOLDEN_KIND } from '../enemies/golden.js'
 import { POWER_LEVEL_AREA_DAMAGE } from '../enemies/shared.js'
 import { aiValidator } from '../ai-validator.js'
+import { createDamageFeedback } from './damage-feedback.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -1243,6 +1244,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // a investida do Falco resolve o acerto DENTRO do próprio loop de estados)
     let enemyKills = 0
     let enemyKillPoints = 0
+    const damageFeedback = []
     let bossDefeated = false
     let bossHitWorldPos = null
     let goldenSpecialHit = false
@@ -1746,6 +1748,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                 hitBuffer: 1.5,
               })
               if (hit) {
+                const feedback = createDamageFeedback(hit, isBig ? RAM_DAMAGE_VS_BOSS : RAM_DAMAGE, { pilotId: w.profile.id, charged: true })
+                if (feedback) damageFeedback.push(feedback)
                 didHit = true
                 if (effects && effects.explosion) {
                   effects.explosion(target.mesh.position, isBig ? 1.5 : 1.0)
@@ -2055,6 +2059,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           hitBuffer: 0.8,
         })
         if (hit) {
+          const feedback = createDamageFeedback(hit, laser.damage + (opts.moraleDamageBonus || 0), {
+            pilotId: laser.owner?.profile.id ?? null, charged: !!laser.chargedVisual,
+          })
+          if (feedback) damageFeedback.push(feedback)
           if (effects && effects.hitSpark) {
             effects.hitSpark(laser.mesh.position, laser.color)
           }
@@ -2119,6 +2127,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return {
       enemyKills,
       enemyKillPoints,
+      damageFeedback,
       bossDefeated,
       bossHitWorldPos,
       goldenSpecialHit,

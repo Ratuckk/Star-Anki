@@ -99,6 +99,28 @@ export function buildVisualSection() {
   }
   renderVitalsStyleButtons()
 
+  const damageRow = document.createElement('div')
+  damageRow.className = 'settings-row'
+  const damageLabel = document.createElement('label')
+  damageLabel.textContent = 'Números de dano (jogador e aliados)'
+  const damageSelect = document.createElement('select')
+  damageLabel.appendChild(damageSelect)
+  damageSelect.setAttribute('aria-label', 'Estilo dos números de dano')
+  for (const [value, label] of [['classic', 'Clássico'], ['manga', 'Mangá de colisão'], ['orbit', 'Buraco negro']]) {
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = label
+    damageSelect.appendChild(option)
+  }
+  damageSelect.value = getSettings().damageNumberStyle
+  damageSelect.addEventListener('change', () => setSetting('damageNumberStyle', damageSelect.value))
+  damageRow.appendChild(damageLabel)
+  visualSection.appendChild(damageRow)
+  const damageHint = document.createElement('p')
+  damageHint.className = 'settings-hint'
+  damageHint.textContent = 'A troca vale para os próximos impactos, inclusive ao voltar da pausa.'
+  visualSection.appendChild(damageHint)
+
   return visualSection
 }
 

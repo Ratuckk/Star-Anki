@@ -6,6 +6,7 @@ import { buildPauseOverlay } from './hud-pause.js'
 import { injectHudExtraStyles } from './hud-styles.js'
 import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 import { getSettings } from './settings.js'
+import { createDamageNumbers } from './hud-damage.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -50,6 +51,7 @@ export function createGameHud() {
   showScreen('game')
   const root = document.getElementById('game-screen')
   root.innerHTML = ''
+  const damageNumbers = createDamageNumbers(root)
 
   const sceneRoot = document.createElement('div')
   sceneRoot.id = 'scene-root'
@@ -1991,6 +1993,10 @@ export function createGameHud() {
     },
 
     spawnDamageNumber(xFrac, yFrac, value, opts = {}) {
+      if (!opts.points && !opts.time && getSettings().damageNumberStyle !== 'classic') {
+        damageNumbers.spawn(xFrac, yFrac, value, opts)
+        return
+      }
       const el = document.createElement('div')
       el.className = 'hud-damage-number'
       if (opts.homing) el.classList.add('homing')
@@ -2717,6 +2723,7 @@ export function createGameHud() {
     },
 
     unmount() {
+      damageNumbers.dispose()
       // v0.51.0: cancela TUDO que estava agendado (damage numbers, hit marker, absorb beam,
       // focus collapse, error float) e aborta o collapse se ele ainda estiver em voo. Sem
       // isso, um HUD remontado num novo jogo antes do próximo timeout vencer disparava

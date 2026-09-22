@@ -450,6 +450,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     let hits = 0
     let ramKills = 0
     let ramKillPoints = 0
+    const ramFeedback = []
     let ramBossDefeated = false
     let ramBossWorldPos = null
     let bossCollisionWorldPos = null
@@ -513,6 +514,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
               continue
             }
             enemy.hp -= ramDamage
+            // Observação visual do impacto já resolvido; não altera regras de colisão/IA.
+            ramFeedback.push({ worldPos: enemy.mesh.position.clone(), meshRef: enemy.mesh,
+              damage: ramDamage, killed: enemy.hp <= 0,
+              points: enemy.hp <= 0 && enemy.kind !== BOSS_KIND ? killPointsFor(enemy.kind) : 0 })
             if (enemy.hp <= 0) {
               enemy.dying = true
               enemy.deathT = 0
@@ -789,7 +794,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       if (enemy.kind === BOSS_KIND) updateBossLaser(scene, enemy, dt, playerPosition, effects, bossLaserCtx)
     }
-    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos, enemyCollisionWorldPos, enemyCollisionTier }
+    return { hits, ramKills, ramKillPoints, ramBossDefeated, ramBossWorldPos, bossCollisionWorldPos, enemyCollisionWorldPos, enemyCollisionTier, ramFeedback }
   }
 
   function updateEnemyProjectiles(dt, playerPosition, opts = {}) {
@@ -1287,6 +1292,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       return {
         ...result,
+        ramFeedback: [...result.ramFeedback, ...(goldenRamResult?.ramFeedback || [])],
         hits: result.hits + (goldenRamResult?.goldenHits || 0),
         ramGoldenDefeated: goldenRamResult?.ramGoldenDefeated || false,
         ramGoldenWorldPos: goldenRamResult?.ramGoldenWorldPos || null,

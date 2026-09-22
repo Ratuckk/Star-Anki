@@ -38,6 +38,26 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### Overhaul dos números de dano — Mangá e Buraco Negro selecionáveis (22/09/2026)
+
+- `Configurações → Visual` e as opções da pausa ganharam o seletor **Clássico / Mangá de
+  colisão / Buraco negro**. A troca é persistida e vale já nos próximos impactos; Clássico
+  preserva a apresentação anterior.
+- O feedback agora nasce de um canal próprio de acertos confirmados. Ele cobre tiro normal,
+  carregado, Swirl, splash máximo, aríete do jogador, lasers dos quatro aliados, Investida do
+  Falco, Carga Compartilhada e Boombuster. Acertos bloqueados não mostram dano.
+- Cada aliado tem autoria visual própria (nome, cor e forma). Rajadas do mesmo piloto no mesmo
+  alvo em até 120ms são somadas sem misturar autores. O limite de 36 rótulos evita explosão de
+  DOM em cenas densas; animações são canceladas no teardown e respeitam movimento reduzido.
+- Golpes letais preservam o valor de dano e exibem pontos em popup separado. A projeção usa uma
+  cópia da posição do mundo, evitando corromper a posição compartilhada do impacto.
+- Entregue também `output/html/configuracoes-overhaul.html`: proposta interativa de “console de
+  bordo”, com categorias laterais, controles agrupados e prévia animada dos estilos de dano.
+- **Validado**: sintaxe, selftest, teste unitário do contrato de dano, persistência do seletor,
+  módulos reais de projétil/esquadrão com os quatro autores, bloqueios, bônus de Morale,
+  agregação/limite/cleanup do HUD, layout desktop/360px e playtest automatizado dentro do jogo
+  com tanque real, abate e pontos separados nos dois estilos. Nenhum erro JavaScript.
+
 ### v0.99.16 — Reprodução real de efeitos sonoros e catálogo operacional
 
 - Implementado `src/audio.js`, conectado no ciclo de vida da partida: o primeiro gesto que inicia

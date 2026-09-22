@@ -5,6 +5,7 @@ import { GOLDEN_KIND } from '../enemies/golden.js'
 import { createProjectileSystem, DEFAULT_FIRE_COOLDOWN } from './projectiles.js'
 import { createTargetsSystem } from './targets.js'
 import { createLockOnSystem } from './lockon.js'
+import { createDamageFeedback } from './damage-feedback.js'
 
 // re-exportado pra não quebrar quem importava essas constantes daqui (combat.js era o dono
 // antes da Fase 1 da refatoração enemies.js/player.js)
@@ -243,7 +244,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyKills, enemyKillPoints, bonusKillPoints,
         goldenSpecialHit, goldenSpecialHitIsHoming, goldenHitWorldPos,
         timeReductionMs, timeReductionWorldPos, bossDefeated, bossDefeatedIsHoming, bossHitWorldPos, bossOrbHit, hitsLog,
-        squadWipe, squadWipeBonus,
+        squadWipe, squadWipeBonus, damageFeedback,
       } = projectiles.update(dt, aimDirection, {
         allowBossOrbHit: opts.allowBossOrbHit !== false,
         globalDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
@@ -274,6 +275,10 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         // atualiza aqui dentro, via enemies.update()
         const moraleDamageBonus = squadron.getMoraleDamageBonus?.() || 0
         const enemyResult = enemies.update(dt, playerPosition, { ...opts, ramDamage: (opts.ramDamage || 0) + moraleDamageBonus })
+        for (const hit of enemyResult.ramFeedback || []) {
+          const feedback = createDamageFeedback(hit, hit.damage, { charged: true })
+          if (feedback) damageFeedback.push(feedback)
+        }
         enemyHits += enemyResult.hits
         ramKills = enemyResult.ramKills
         ramKillPoints = enemyResult.ramKillPoints
@@ -380,6 +385,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyCollisionWorldPos,
         enemyCollisionTier,
         hitsLog,
+        damageFeedback: [...damageFeedback, ...(wingmanResult.damageFeedback || [])],
         squadWipe: Boolean(squadWipe),
         squadWipeBonus: squadWipeBonus || 0,
         focusFrenzyActivated,

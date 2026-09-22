@@ -3,6 +3,7 @@ const SETTINGS_KEY = 'star-anki-settings'
 const DEFAULTS = {
   startingHealth: 10,
   showEnemyHealthBars: false,
+  damageNumberStyle: 'classic',
   // Fase 9 (ideia all-range 5): multiplicador de sensibilidade de giro no modo all-range
   arenaTurnSensitivity: 1,
   // visual da nave — ids de SHIP_VISUAL_OPTIONS em rail.js ('default'/'bombardeiro'/'racer')
@@ -52,7 +53,9 @@ function writeAll(settings) {
 }
 
 export function getSettings() {
-  return { ...DEFAULTS, ...readAll() }
+  const settings = { ...DEFAULTS, ...readAll() }
+  if (!['classic', 'manga', 'orbit'].includes(settings.damageNumberStyle)) settings.damageNumberStyle = 'classic'
+  return settings
 }
 
 export function setSetting(key, value) {
