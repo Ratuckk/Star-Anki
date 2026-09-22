@@ -1079,3 +1079,21 @@ categorias, layout em 390×844 e ausência de erros/avisos no console do navegad
 **Validado**: `node src/damage-feedback.test.mjs` passa. O `selftest.mjs` completo está bloqueado
 por uma asserção de áudio alheia a esta alteração (`BOSS_LASER` esperado como `Laser boss.mp3`,
 mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss dourado.mp3`).
+
+---
+
+### Laboratório visual isolado de speedlines (22/09/2026)
+
+- **`speedlines-prototype.html`**: protótipo independente baseado principalmente no print real do
+  gameplay enviado pelo usuário — fundo preto, starfield profundo, grid em perspectiva, nave no
+  canto inferior esquerdo, aliados/inimigos, projéteis, retícula, radar e boss grande como stress
+  test. Não altera `index.html`, câmera, FOV, velocidade real, hitboxes, IA ou balanceamento.
+- **Duas camadas separáveis**: estrelas/poeira do mundo viram rastros progressivos reutilizando um
+  único `BufferGeometry`; speedlines abstratas periféricas usam um pool fixo de 180 linhas em
+  canvas. O centro permanece limpo por um bias ajustável e nenhuma nave/inimigo sofre smear.
+- **Controles em tempo real**: intensidade 0–100%, densidade, comprimento, espessura, brilho,
+  bias periférico, toggles independentes de ambientais/abstratas/boss, pausa, reset e presets
+  Neutro/Alta/Extrema. A intensidade inicial é 78% para que o efeito fique imediatamente notável.
+- **Validação**: `src/speedlines-prototype-model.js` concentra normalização e curvas; o laboratório
+  registra mudanças discretas no `aiValidator` e expõe `window.__speedlinesLab` para inspeção.
+  `src/speedlines-prototype.test.mjs` cobre limites, faixas e progressão monotônica das curvas.
