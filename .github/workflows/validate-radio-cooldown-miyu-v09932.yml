@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply v0.99.32 migration
-        run: node scripts/apply-radio-cooldown-miyu-v09932.mjs
+        run: node scripts/run-radio-cooldown-migration-v09932.mjs
 
       - name: Syntax checks
         run: |
@@ -46,6 +46,8 @@ jobs:
       - name: Commit validated clean tree
         run: |
           rm scripts/apply-radio-cooldown-miyu-v09932.mjs
+          rm scripts/run-radio-cooldown-migration-v09932.mjs
+          rm -f scripts/.apply-radio-cooldown-miyu-v09932-fixed.mjs
           rm .github/workflows/validate-radio-cooldown-miyu-v09932.yml
           git config user.name "Star-Anki Validation Bot"
           git config user.email "actions@users.noreply.github.com"
