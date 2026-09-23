@@ -1,0 +1,89 @@
+name: Full project bug hunt v0.99.32
+
+on:
+  push:
+    branches:
+      - audit/full-project-bughunt-v09932
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: audit/full-project-bughunt-v09932
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check every runtime/test module
+        shell: bash
+        run: |
+          set -o pipefail
+          find src tools -type f \( -name '*.js' -o -name '*.mjs' \) -print0 | sort -z | xargs -0 -n1 node --check
+          node --check service-worker.js
+
+      - name: Run every dedicated test
+        shell: bash
+        run: |
+          set -o pipefail
+          for f in $(find src -maxdepth 2 -type f -name '*.test.mjs' | sort); do
+            echo "===== $f ====="
+            node "$f"
+          done
+
+      - name: Full selftest
+        run: node src/selftest.mjs
+
+      - name: Structural and asset audit
+        id: structural
+        continue-on-error: true
+        run: node tools/full-project-audit.mjs
+
+      - name: ESLint definite-bug rules
+        id: eslint
+        continue-on-error: true
+        shell: bash
+        run: |
+          npx --yes eslint@8.57.1 "src/**/*.js" "src/**/*.mjs" service-worker.js \
+            --no-eslintrc \
+            --env browser,es2022,node \
+            --parser-options='{"ecmaVersion":"latest","sourceType":"module"}' \
+            --rule='{"no-dupe-keys":"error","no-unreachable":"error","no-unsafe-finally":"error","no-self-assign":"error","use-isnan":"error","valid-typeof":"error","no-sparse-arrays":"error","no-duplicate-case":"error","getter-return":"error","no-const-assign":"error","no-func-assign":"error","no-import-assign":"error","no-obj-calls":"error","no-promise-executor-return":"error","no-setter-return":"error","no-this-before-super":"error"}'
+
+      - name: Browser smoke setup
+        shell: bash
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.55.0
+          echo "CHROME_BIN=$(command -v google-chrome || command -v chromium || command -v chromium-browser)" >> "$GITHUB_ENV"
+          python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/star-anki-http.log 2>&1 &
+          echo $! >/tmp/star-anki-http.pid
+          sleep 2
+
+      - name: Browser smoke audit
+        id: browser
+        continue-on-error: true
+        run: node tools/browser-smoke-audit.mjs
+
+      - name: Server log
+        if: always()
+        run: cat /tmp/star-anki-http.log || true
+
+      - name: Audit status summary
+        if: always()
+        shell: bash
+        run: |
+          echo "structural=${{ steps.structural.outcome }}"
+          echo "eslint=${{ steps.eslint.outcome }}"
+          echo "browser=${{ steps.browser.outcome }}"
+          git status --short
+          git diff --check
