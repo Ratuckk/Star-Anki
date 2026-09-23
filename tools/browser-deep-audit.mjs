@@ -88,7 +88,8 @@ await page.waitForFunction(() => window.__starAnki?.state?.paused === false)
 
 // Rebind DURANTE a partida via a mesma API usada pela UI. KeyQ deve passar a pausar imediatamente.
 await page.evaluate(async () => {
-  const mod = await import('./src/keybindings.js')
+  // URL absoluta: este import roda no contexto da página, não relativo ao arquivo Playwright.
+  const mod = await import('/src/keybindings.js')
   mod.setBinding('pause', 'KeyQ')
 })
 await page.keyboard.press('KeyQ')
