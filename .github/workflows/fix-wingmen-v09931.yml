@@ -1,0 +1,64 @@
+name: Fix Wingmen v0.99.31
+
+on:
+  push:
+    branches:
+      - fix/wingmen-duplicate-state-v09931
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-wingmen-v09931
+  cancel-in-progress: false
+
+jobs:
+  fix-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply surgical cleanup
+        run: node tools/fix-wingmen-v09931.mjs
+
+      - name: Syntax checks
+        run: |
+          node --check src/combat/wingmen.js
+          node --check src/combat/wingman-flight-stability.js
+          node --check src/wingman-flight-stability.test.mjs
+
+      - name: Wingman regression suites
+        run: |
+          node src/wingman-flight-stability.test.mjs
+          node src/wingman-navigation.test.mjs
+          node src/wingman-formation-separation.test.mjs
+          node src/wingman-state-controller.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+          node src/wingman-radio-overhaul.test.mjs
+          node src/playtest-polish.test.mjs
+
+      - name: Full selftest
+        run: node src/selftest.mjs
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Commit validated fix
+        run: |
+          git rm tools/fix-wingmen-v09931.mjs .github/workflows/fix-wingmen-v09931.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: restaura boot dos wingmen e lança v0.99.31"
+          git push origin HEAD:${{ github.ref_name }}
