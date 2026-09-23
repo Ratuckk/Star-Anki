@@ -2,7 +2,7 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.99.30-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.99.31-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
@@ -202,6 +202,12 @@ Star-Anki/
 ---
 
 ## 📜 Histórico e Evolução
+
+### v0.99.31 — Hotfix de carregamento dos Wingmen
+- Corrige quatro blocos reaplicados por engano em `src/combat/wingmen.js`: estado de posição anterior, watchdog de movimento, cálculo de velocidade do jogador e snapshot de alvos.
+- Restaura o carregamento do módulo e, portanto, o boot do jogo no navegador.
+- Preserva o hardening legítimo da v0.99.30: Wingmen continuam ignorando alvos fora do gameplay e o Focus continua validando alvos ativos.
+- Adiciona regressão estrutural para impedir novas redeclarações/reaplicações desses blocos.
 
 ### v0.99.30 — Estabilidade dos Wingmen, rádio lateral e feedback de dano
 - Rádio dos quatro Wingmen volta aos painéis laterais com vozes, conexão/desconexão e estática; somente o chamado de Fox no Focus permanece acima da nave do jogador.

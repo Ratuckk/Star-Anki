@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   WINGMAN_RESCUE_TIMEOUT_S,
   computeFormationMotionGain,
@@ -16,6 +17,15 @@ assert.equal(computeFormationMotionGain(0), 0)
 assert.equal(computeFormationMotionGain(.7), 0)
 assert.equal(computeFormationMotionGain(8), 1)
 assert.equal(WINGMAN_RESCUE_TIMEOUT_S, 5)
+
+const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
+const occurrences = (needle) => wingmenSource.split(needle).length - 1
+assert.equal(occurrences('const previousPlayerPosition = new THREE.Vector3()'), 1, 'estado de posição anterior não pode ser redeclarado')
+assert.equal(occurrences('motionWatch: createWingmanStallWatch(spawnPos)'), 1, 'motionWatch não pode ser duplicado no objeto do Wingman')
+assert.equal(occurrences('const playerMotionSpeed = hasPreviousPlayerPosition && dt > 0'), 1, 'velocidade do jogador deve ser calculada uma vez por frame')
+assert.equal(occurrences('const readyCombatTargets = new Set(getAliveEnemies())'), 1, 'snapshot de alvos deve existir uma vez por update')
+assert.ok(wingmenSource.includes('for (const e of enemies.getAlive()) if (isWingmanCombatTargetReady(e)) alive.push(e)'), 'lista de alvos deve preservar hardening gameplay-ready')
+assert.ok(wingmenSource.includes('squadronFocusTargets = squadronFocusTargets.filter((t) => isWingmanCombatTargetReady(t, readyCombatTargets))'), 'Focus deve preservar validação de alvo ativo')
 
 const ready = { mesh: { parent: {} }, dying: false, fadingOut: false }
 const pending = { mesh: { parent: {} }, dying: false, fadingOut: false }
