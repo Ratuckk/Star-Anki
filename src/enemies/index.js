@@ -1738,7 +1738,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Dourado vive em golden.js (array/estado próprio) — mesmo pipeline multi-hit, Set
       // separado do de cima por encapsulamento (golden.js não precisa saber do Set genérico).
       const goldenPierced = meta.goldenPiercedTargets || new Set()
-      hits.push(...golden.resolvePiercingHit(prevPos, currPos, damage, goldenPierced, { projectileRadius, bossHpRatio }))
+      const numericHitBuffer = (Number.isFinite(meta.hitBuffer) ? meta.hitBuffer : 0) + (Number.isFinite(meta.projectileRadius) ? meta.projectileRadius : 0)
+      hits.push(...golden.resolvePiercingHit(prevPos, currPos, damage, goldenPierced, numericHitBuffer, {
+        projectileRadius: meta.projectileRadius,
+        bossHpRatio: meta.bossHpRatio,
+      }))
 
       return hits
     },
@@ -1880,6 +1884,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const b = enemies.find((e) => e.kind === BOSS_KIND)
       return b ? b.mesh.position.clone() : null
     },
+    consumeGoldenDefeated: () => (golden.consumeDefeated ? golden.consumeDefeated() : null),
+    hasAliveGolden: () => (golden.hasAlive ? golden.hasAlive() : false),
+    isGoldenDying: () => (golden.isDying ? golden.isDying() : false),
+    getGoldenWorldPos: () => (golden.getWorldPos ? golden.getWorldPos() : null),
+    getGoldenSnapshot: () => (golden.getSnapshots ? golden.getSnapshots()[0] || null : null),
 
     getTelemetry: () => telemetry.getSnapshot(),
     getCombatLog: (limit) => telemetry.getCombatLog(limit),

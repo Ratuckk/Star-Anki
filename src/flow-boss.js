@@ -318,6 +318,7 @@ export function createBossFlow(deps) {
   }
 
   function handleGoldenDefeated(hitWorldPos) {
+    if (state.phase === 'deathCutscene' && state.deathCutsceneKind === 'golden') return
     combat.clearOtherEnemies()
     environment?.setFogProfile?.('goldenDeath')
     state.deathCutsceneKind = 'golden'

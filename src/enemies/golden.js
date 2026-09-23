@@ -86,6 +86,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
   const goldenTargets = []
   let elapsed = 0
   let currentIsDenseFog = false
+  let goldenDefeatedPending = false
+  let goldenDefeatedWorldPos = null
 
   function removeGoldenTarget(g) {
     g.dying = true
@@ -210,6 +212,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
               if (g.hp <= 0) {
                 g.dying = true
                 g.deathT = 0
+                goldenDefeatedPending = true
+                goldenDefeatedWorldPos = g.mesh.position.clone()
                 ramGoldenDefeated = true
                 ramGoldenWorldPos = g.mesh.position.clone()
                 if (effects) {
@@ -322,6 +326,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       if (killed) {
         goldenHit.dying = true
         goldenHit.deathT = 0
+        goldenDefeatedPending = true
+        goldenDefeatedWorldPos = goldenHit.mesh.position.clone()
         triggerSoundCue(ENEMY_SOUND_CUES.golden_cataclysm_death, { worldPos: goldenHit.mesh.position })
         const killColor = isHoming ? HOMING_EXPLOSION_COLOR : GOLDEN_COLOR
         if (effects) {
@@ -370,20 +376,30 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     // mundo perfurado no mesmo frame) e com Set de perfuração PRÓPRIO (piercedTargets aqui é do
     // dourado, separado do Set genérico de inimigos — golden.js não precisa saber dele). O
     // dourado sempre PÁRA o Swirl (não tem conceito de escudo destrutível como o chefe).
-    resolvePiercingHit(prevPos, currPos, damage, piercedTargets, hitBuffer = 0) {
+    resolvePiercingHit(prevPos, currPos, damage, piercedTargets, hitBuffer = 0, meta = {}) {
+      const buffer = typeof hitBuffer === 'number'
+        ? hitBuffer
+        : (Number.isFinite(hitBuffer?.hitBuffer) ? hitBuffer.hitBuffer : (Number.isFinite(hitBuffer?.projectileRadius) ? hitBuffer.projectileRadius : 0))
+      const bossHpRatio = Number.isFinite(meta?.bossHpRatio)
+        ? meta.bossHpRatio
+        : (Number.isFinite(hitBuffer?.bossHpRatio) ? hitBuffer.bossHpRatio : 0)
       const hits = []
       for (const goldenHit of goldenTargets) {
         if (goldenHit.dying) continue
         if (piercedTargets.has(goldenHit.id)) continue
-        if (distanceToSegment(goldenHit.mesh.position, prevPos, currPos) > GOLDEN_HIT_RADIUS + hitBuffer) continue
+        if (distanceToSegment(goldenHit.mesh.position, prevPos, currPos) > GOLDEN_HIT_RADIUS + buffer) continue
         piercedTargets.add(goldenHit.id)
 
-        goldenHit.hp -= damage
+        const bonusDamage = bossHpRatio > 0 ? Math.ceil((goldenHit.maxHp || 0) * bossHpRatio) : 0
+        const totalDamage = damage + bonusDamage
+        goldenHit.hp -= totalDamage
         if (effects) effects.flashMesh(goldenHit.mesh)
         const killed = goldenHit.hp <= 0
         if (killed) {
           goldenHit.dying = true
           goldenHit.deathT = 0
+          goldenDefeatedPending = true
+          goldenDefeatedWorldPos = goldenHit.mesh.position.clone()
           triggerSoundCue(ENEMY_SOUND_CUES.golden_cataclysm_death, { worldPos: goldenHit.mesh.position })
           if (effects) {
             effects.explosion(goldenHit.mesh.position, GOLDEN_COLOR, 2.8, { rings: true })
@@ -401,7 +417,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
 
         hits.push({
           kind: GOLDEN_KIND, killed, worldPos: goldenHit.mesh.position.clone(), meshRef: goldenHit.mesh,
-          damage,
+          damage: totalDamage,
           enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: killed,
           stopProjectile: true,
         })
@@ -411,16 +427,33 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     },
 
     getAlive: () => goldenTargets.filter((g) => !g.dying),
+    hasAlive: () => goldenTargets.some((g) => !g.dying),
+    isDying: () => goldenTargets.some((g) => g.dying),
+    getWorldPos: () => {
+      const g = goldenTargets.find((g) => !g.dying) || goldenTargets[0]
+      return g?.mesh ? g.mesh.position.clone() : null
+    },
 
     getMinimapBlips: () => goldenTargets.filter((g) => !g.dying).map((g) => ({ type: 'golden', worldPos: g.mesh.position })),
     getHitboxTargets: () => goldenTargets.filter((g) => !g.dying).map((g) => ({ worldPos: g.mesh.position, radius: GOLDEN_HIT_RADIUS })),
     getSnapshots: () => goldenTargets.filter((g) => !g.dying).map((g) => ({ id: g.id, worldPos: g.mesh.position.clone(), hp: g.hp, maxHp: g.maxHp })),
 
+    consumeDefeated() {
+      if (!goldenDefeatedPending) return null
+      const res = { defeated: true, worldPos: goldenDefeatedWorldPos ? goldenDefeatedWorldPos.clone() : null }
+      goldenDefeatedPending = false
+      return res
+    },
+
     clear() {
+      goldenDefeatedPending = false
+      goldenDefeatedWorldPos = null
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
     },
 
     dispose() {
+      goldenDefeatedPending = false
+      goldenDefeatedWorldPos = null
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
       goldenGeometry.dispose()
       goldenMaterial.dispose()

@@ -810,6 +810,22 @@ export function createGameLoop(deps) {
       bossFlow.handleBossDefeated(bossDeathWorldPos)
     }
 
+    const goldenDefeatedFromCombat = combat.consumeGoldenDefeated ? combat.consumeGoldenDefeated() : null
+    const isGoldenDefeated = Boolean(events.goldenSpecialHit || goldenDefeatedFromCombat?.defeated)
+    const goldenDeathWorldPos = events.goldenHitWorldPos || goldenDefeatedFromCombat?.worldPos || (combat.getGoldenWorldPos ? combat.getGoldenWorldPos() : null) || playerPos
+
+    if (state.phase === 'goldenArena') {
+      const goldenAlive = combat.hasAliveGolden ? combat.hasAliveGolden() : false
+      const goldenDying = combat.isGoldenDying ? combat.isGoldenDying() : false
+      const goldenSnap = combat.getGoldenSnapshot ? combat.getGoldenSnapshot() : null
+
+      if (isGoldenDefeated || goldenDying || (!goldenAlive && (!goldenSnap || goldenSnap.hp <= 0))) {
+        bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
+      }
+    } else if (isGoldenDefeated && (state.phase === 'cardChoice' || rail.isArena())) {
+      bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
+    }
+
     // ============ COLISÃO FÍSICA COM BOSS / DOURADO (KNOCKBACK + TUMBLE SPIN) ============
     if (events.bossCollisionWorldPos) {
       rail.triggerBossCollisionTumble(events.bossCollisionWorldPos)
@@ -1024,8 +1040,8 @@ export function createGameLoop(deps) {
     } else if (state.phase === 'goldenArena') {
       // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário).
       // O handler (handleGoldenDefeated) NÃO checa fase internamente — o branch já é a guarda.
-      if (events.goldenSpecialHit) {
-        bossFlow.handleGoldenDefeated(events.goldenHitWorldPos || playerPos)
+      if (isGoldenDefeated || events.goldenSpecialHit) {
+        bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
       }
     } else if (state.phase === 'resolution') {
       state.phaseTimer -= dt * 1000

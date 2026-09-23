@@ -103,28 +103,34 @@ function createRingTexture() {
   return texture
 }
 
+function createStarPointTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 31)
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)')
+  grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.85)')
+  grad.addColorStop(0.55, 'rgba(220, 240, 255, 0.28)')
+  grad.addColorStop(1, 'rgba(180, 210, 255, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 64, 64)
+  const texture = new THREE.CanvasTexture(canvas)
+  return texture
+}
+
 function createFogBankTexture() {
   const canvas = document.createElement('canvas')
   canvas.width = 128
   canvas.height = 128
   const ctx = canvas.getContext('2d')
-
-  const lobes = [
-    { x: 64, y: 64, r: 58, alpha: 0.32 },
-    { x: 48, y: 54, r: 42, alpha: 0.22 },
-    { x: 80, y: 56, r: 40, alpha: 0.20 },
-    { x: 56, y: 76, r: 44, alpha: 0.24 },
-    { x: 74, y: 72, r: 38, alpha: 0.18 },
-  ]
-  for (const lobe of lobes) {
-    const grad = ctx.createRadialGradient(lobe.x, lobe.y, 2, lobe.x, lobe.y, lobe.r)
-    grad.addColorStop(0, `rgba(165, 205, 245, ${lobe.alpha})`)
-    grad.addColorStop(0.45, `rgba(110, 165, 225, ${lobe.alpha * 0.55})`)
-    grad.addColorStop(1, 'rgba(30, 60, 110, 0)')
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, 128, 128)
-  }
-
+  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62)
+  grad.addColorStop(0, 'rgba(165, 205, 245, 0.20)')
+  grad.addColorStop(0.35, 'rgba(125, 175, 230, 0.12)')
+  grad.addColorStop(0.70, 'rgba(65, 115, 185, 0.04)')
+  grad.addColorStop(1, 'rgba(20, 50, 95, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 128, 128)
   const texture = new THREE.CanvasTexture(canvas)
   return texture
 }
@@ -283,8 +289,11 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
 
   deepStarGeo.setAttribute('position', new THREE.BufferAttribute(deepStarPos, 3))
   deepStarGeo.setAttribute('color', new THREE.BufferAttribute(deepStarColors, 3))
+  const starTexture = createStarPointTexture()
   const deepStarMat = new THREE.PointsMaterial({
-    size: 1.5,
+    size: 1.25,
+    map: starTexture,
+    alphaTest: 0.01,
     vertexColors: true,
     transparent: true,
     opacity: 0.9,
@@ -320,33 +329,41 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   const MID_STAR_COUNT = 380
   const midStarGeo = new THREE.BufferGeometry()
   const midStarPos = new Float32Array(MID_STAR_COUNT * 3)
+  const midStarBasePos = new Float32Array(MID_STAR_COUNT * 3)
   const midStarColors = new Float32Array(MID_STAR_COUNT * 3)
 
   for (let i = 0; i < MID_STAR_COUNT; i++) {
-    const r = 38 + Math.random() * 105
-    const theta = Math.random() * Math.PI * 2
-    const phi = Math.acos(2 * Math.random() - 1)
-    midStarPos[i * 3] = r * Math.sin(phi) * Math.cos(theta)
-    midStarPos[i * 3 + 1] = r * Math.cos(phi) * 0.72
-    midStarPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta)
+    const rx = (Math.random() - 0.5) * 260
+    const ry = (Math.random() - 0.5) * 160
+    const rz = (Math.random() - 0.5) * 280
+    midStarBasePos[i * 3] = rx
+    midStarBasePos[i * 3 + 1] = ry
+    midStarBasePos[i * 3 + 2] = rz
+    midStarPos[i * 3] = rx
+    midStarPos[i * 3 + 1] = ry
+    midStarPos[i * 3 + 2] = rz
 
     const roll = Math.random()
     if (roll < 0.3) {
-      midStarColors[i * 3] = 0.58; midStarColors[i * 3 + 1] = 0.82; midStarColors[i * 3 + 2] = 1.0
+      midStarColors[i * 3] = 0.62; midStarColors[i * 3 + 1] = 0.85; midStarColors[i * 3 + 2] = 1.0
     } else if (roll < 0.55) {
-      midStarColors[i * 3] = 1.0; midStarColors[i * 3 + 1] = 0.90; midStarColors[i * 3 + 2] = 0.72
+      midStarColors[i * 3] = 1.0; midStarColors[i * 3 + 1] = 0.92; midStarColors[i * 3 + 2] = 0.78
     } else {
-      midStarColors[i * 3] = 0.95; midStarColors[i * 3 + 1] = 0.98; midStarColors[i * 3 + 2] = 1.0
+      midStarColors[i * 3] = 0.96; midStarColors[i * 3 + 1] = 0.98; midStarColors[i * 3 + 2] = 1.0
     }
   }
 
-  midStarGeo.setAttribute('position', new THREE.BufferAttribute(midStarPos, 3))
+  const midStarPosAttr = new THREE.BufferAttribute(midStarPos, 3)
+  midStarPosAttr.setUsage(THREE.DynamicDrawUsage)
+  midStarGeo.setAttribute('position', midStarPosAttr)
   midStarGeo.setAttribute('color', new THREE.BufferAttribute(midStarColors, 3))
   const midStarMat = new THREE.PointsMaterial({
-    size: 2.2,
+    size: 1.15,
+    map: starTexture,
+    alphaTest: 0.01,
     vertexColors: true,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.85,
     depthWrite: false,
     fog: true, // Responde ao fog da cena
   })
@@ -360,9 +377,9 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   const fogBankRoots = Array.from({ length: 3 }, (_, bankIndex) => {
     const root = new THREE.Group()
     const bankSpecs = [
-      [-18, 5, 58, 32, 0.9],
-      [10, -7, 70, 40, 1.0],
-      [24, 9, 46, 28, 0.72],
+      [-32, 14, 32, 22, 0.75],
+      [34, -12, 36, 24, 0.85],
+      [-26, -18, 28, 18, 0.65],
     ]
     const bankMaterials = []
     for (const [x, y, sx, sy, alpha] of bankSpecs) {
@@ -487,13 +504,30 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     // 2. Twinkle e Warp Streaks no Starfield
     midStars.visible = !!ENVIRONMENT_CONFIG.enableMultiLayerStars
     if (ENVIRONMENT_CONFIG.enableMultiLayerStars) {
-      if (camera) {
-        midStars.position.copy(camera.position)
+      midStars.position.set(0, 0, 0)
+      const refX = playerPos ? playerPos.x : (camera ? camera.position.x : 0)
+      const refY = playerPos ? playerPos.y : (camera ? camera.position.y : 0)
+      const refZ = playerPos ? playerPos.z : (camera ? camera.position.z : 0)
+      const SPAN_X = 260, HALF_X = 130
+      const SPAN_Y = 160, HALF_Y = 80
+      const SPAN_Z = 280, HALF_Z = 140
+
+      for (let i = 0; i < MID_STAR_COUNT; i++) {
+        const i3 = i * 3
+        const bx = midStarBasePos[i3]
+        const by = midStarBasePos[i3 + 1]
+        const bz = midStarBasePos[i3 + 2]
+
+        midStarPos[i3] = ((((bx - refX) % SPAN_X) + SPAN_X * 1.5) % SPAN_X) - HALF_X + refX
+        midStarPos[i3 + 1] = ((((by - refY) % SPAN_Y) + SPAN_Y * 1.5) % SPAN_Y) - HALF_Y + refY
+        midStarPos[i3 + 2] = ((((bz - refZ) % SPAN_Z) + SPAN_Z * 1.5) % SPAN_Z) - HALF_Z + refZ
       }
+      midStarPosAttr.needsUpdate = true
+
       const pocketStrength = !inArena && ENVIRONMENT_CONFIG.enableNebulaPockets
         ? fogPocketVisualStrength(rail.getDistance()) : 0
-      midStarMat.opacity = 0.78 * (1 - pocketStrength * 0.58)
-      midStarMat.size = boostActive ? 1.45 : 1.15
+      midStarMat.opacity = 0.75 * (1 - pocketStrength * 0.55)
+      midStarMat.size = boostActive ? 1.35 : 1.10
       // Pulso suave de cintilação
       deepStarMat.size = 1.4 + Math.sin(elapsed * 2.5) * 0.35
 
@@ -641,8 +675,10 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         .addScaledVector(bankFrame.right, bank.userData.lateral)
         .addScaledVector(bankFrame.up, bank.userData.vertical)
       const approach = Math.max(0.35, Math.min(1, 1 - offset / 760))
+      const cameraDist = camera ? camera.position.distanceTo(bank.position) : offset
+      const proximityFade = THREE.MathUtils.clamp((cameraDist - 22) / 45, 0, 1)
       for (const entry of bank.userData.bankMaterials) {
-        entry.material.opacity = (0.12 + approach * 0.16) * entry.alpha
+        entry.material.opacity = (0.04 + approach * 0.06) * entry.alpha * proximityFade
       }
     }
 

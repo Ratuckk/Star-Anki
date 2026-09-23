@@ -565,3 +565,37 @@ test('Swirl Blast: piercedTargets impede dano duplo no mesmo alvo em frames cons
   })
   assert.equal(hits2.length, 0, 'Alvo já contido em piercedTargets não recebe segundo hit')
 })
+
+test('Swirl Blast: Morte do Boss Dourado gera goldenSpecialHit e ativa consumeGoldenDefeated', () => {
+  const scene = new THREE.Scene()
+  const rail = makeMockRail()
+  const enemiesSys = createEnemiesSystem(scene, rail)
+
+  enemiesSys.spawnGoldenSpecial({ distanceMin: 30, distanceMax: 30, level: 1 })
+  const [golden] = enemiesSys.getGoldenAlive()
+  golden.hp = 6 // deixa com 6 de HP para morrer com 1 hit de Swirl Blast
+
+  const prevPos = golden.mesh.position.clone().add(new THREE.Vector3(0, 0, -5))
+  const currPos = golden.mesh.position.clone().add(new THREE.Vector3(0, 0, 5))
+
+  const hits = enemiesSys.resolvePiercingProjectileHits(prevPos, currPos, {
+    damage: 6,
+    hitBuffer: SWIRL_BLAST_HIT_RADIUS,
+    piercedTargets: new Set(),
+    goldenPiercedTargets: new Set(),
+  })
+
+  assert.equal(hits.length, 1)
+  assert.equal(hits[0].kind, GOLDEN_KIND)
+  assert.equal(hits[0].killed, true)
+  assert.equal(hits[0].goldenSpecialHit, true)
+  assert.equal(golden.hp, 0)
+  assert.equal(golden.dying, true)
+  assert.equal(enemiesSys.isGoldenDying(), true)
+
+  const defeated = enemiesSys.consumeGoldenDefeated()
+  assert.ok(defeated, 'consumeGoldenDefeated deve retornar resultado de derrota')
+  assert.equal(defeated.defeated, true)
+  assert.ok(defeated.worldPos, 'deve carregar worldPos do Dourado')
+  assert.equal(enemiesSys.consumeGoldenDefeated(), null, 'consumo subsequente deve ser nulo (idempotente)')
+})

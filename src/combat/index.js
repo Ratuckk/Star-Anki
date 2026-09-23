@@ -209,6 +209,11 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     isBossDying: () => (enemies.isBossDying ? enemies.isBossDying() : false),
     getBossWorldPos: () => (enemies.getBossWorldPos ? enemies.getBossWorldPos() : null),
 
+    consumeGoldenDefeated: () => (enemies.consumeGoldenDefeated ? enemies.consumeGoldenDefeated() : null),
+    hasAliveGolden: () => (enemies.hasAliveGolden ? enemies.hasAliveGolden() : false),
+    isGoldenDying: () => (enemies.isGoldenDying ? enemies.isGoldenDying() : false),
+    getGoldenWorldPos: () => (enemies.getGoldenWorldPos ? enemies.getGoldenWorldPos() : null),
+
     spawnBonusTarget: () => targets.spawnBonusTarget(),
     clearBonusTargets: () => targets.clearBonusTargets(),
     spawnBossOrbs: (count, opts) => targets.spawnBossOrbs(count, opts),

@@ -273,7 +273,9 @@ export function createGameHud() {
           // Fila (ex.: rajada de prontidão do foco) — encadeia a próxima fala automaticamente.
           if (queue.length > 0) {
             const next = queue.shift()
-            play(next)
+            if (next && (!next.createdAt || (performance.now() - next.createdAt) < 4000)) {
+              play(next)
+            }
           }
         }, leaveMs)
         timers.push({ type: 'timeout', id: removeId })
@@ -300,10 +302,15 @@ export function createGameHud() {
       queue = []
       play(payload)
     }
+    function clearQueue() {
+      queue = []
+    }
     function showQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      if (playing) { queue.push(...payloads); return }
-      const [first, ...rest] = payloads
+      const now = performance.now()
+      const stamped = payloads.map((p) => ({ ...p, createdAt: p.createdAt || now }))
+      if (playing) { queue.push(...stamped); return }
+      const [first, ...rest] = stamped
       queue = rest
       play(first)
     }
@@ -314,7 +321,7 @@ export function createGameHud() {
       currentPilotId = null
       queue = []
     }
-    return { show, showQueue, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
+    return { show, showQueue, forceHide, clearQueue, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
   }
 
   const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
@@ -2701,6 +2708,9 @@ export function createGameHud() {
     // piloto" (Documento de Implementação, item 2.1-2.3): se a região OPOSTA está tocando esse
     // mesmo pilotId, esconde ela primeiro (fade-out rápido, sem encadear a fila dela).
     showWingmanRadio(payload) {
+      if (payload.isAbility) {
+        wingmanRadioRegionTrivial.clearQueue()
+      }
       const region = payload.isAbility ? wingmanRadioRegionAbility : wingmanRadioRegionTrivial
       const otherRegion = payload.isAbility ? wingmanRadioRegionTrivial : wingmanRadioRegionAbility
       showRadioAfterOtherRegion(payload, region, otherRegion)
