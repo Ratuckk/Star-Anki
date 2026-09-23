@@ -1165,3 +1165,17 @@ mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss d
 **Validação automatizada:** `node --check` nos módulos alterados, `node src/hud-speedlines.test.mjs`, `node src/speedlines-prototype.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
 
 **Playtest pendente:** confirmar no navegador que boost normal corresponde visualmente à referência do laboratório, Swirl/Dash atingem o pico sem o spinner legado, resize/restart não deixam canvas órfão e o console permanece limpo.
+
+---
+
+### v0.99.33 — Carga Compartilhada: triângulos pertencem à Miyu (23/09/2026)
+
+- Lock-on separado em orçamento BASE e MIYU. O teto por entidade permanece no Fox; os triângulos da Miyu podem repetir o mesmo inimigo enquanto a mira permanece nele.
+- O bônus continua limitado a `1 + stacks`, chegando a 4 locks extras com 3 stacks.
+- `projectiles.js` consome apenas locks BASE; locks `source: miyu` são encaminhados a `wingmen.js`.
+- Cada triângulo produz um laser roxo homing que nasce na nave da Miyu com dano normal de suporte. O Fox não dispara a cópia extra.
+- `aiValidator` instrumenta aquisição e salva da Miyu em eventos discretos.
+- Regressão dedicada cobre budgets, repetição no mesmo alvo, ownership e homing.
+- README e `src/version.js` atualizados para v0.99.33; criados `docs/docs 2/Gpt progress.md` e `progresso/PROGRESSO_POS_.90.35.md`.
+
+**Validação:** sintaxe, teste dedicado, selftest completo e `git diff --check` no workflow isolado.

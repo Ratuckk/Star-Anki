@@ -1258,28 +1258,34 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     })
   }
 
-  // Carga Compartilhada: para cada lock QUE EXCEDE o teto base, Miyu solta um laser roxo
-  // independente. Os tiros do jogador continuam sendo resolvidos pelo sistema de homing usual;
-  // estes são lasers de ala normais, visíveis e com dano próprio, em vez de um bônus invisível.
-  function fireMiyuAssistShots(lockedTargets, baseMaxTargets) {
+  // Carga Compartilhada: cada lock triangular pertence EXCLUSIVAMENTE à Miyu.
+  // Cada triângulo vira um laser roxo homing nascido fisicamente na nave dela.
+  function fireMiyuAssistShots(miyuTargets) {
     const miyu = activeWingmen.find((w) => w.profile.id === 3 && w.abilityActive && w.escortKind === 'assist')
-    if (!miyu || !Array.isArray(lockedTargets)) return 0
+    if (!miyu || !Array.isArray(miyuTargets)) return 0
     let shots = 0
-    for (const target of lockedTargets.slice(Math.max(0, baseMaxTargets))) {
+    const targetCounts = new Map()
+    for (const target of miyuTargets) {
       if (!target?.mesh || target.dying) continue
       _wmToEnemy.copy(target.mesh.position).sub(miyu.mesh.position)
       if (_wmToEnemy.lengthSq() < 0.001) continue
       _wmToEnemy.normalize()
       const muzzle = _wmLaserMuzzle.copy(miyu.mesh.position).addScaledVector(_wmToEnemy, 1.3)
-      fireWingmanLaser(miyu, muzzle, _wmToEnemy, { color: MIYU_CHARGED_SHOT_COLOR, chargedVisual: true })
+      fireWingmanLaser(miyu, muzzle, _wmToEnemy, {
+        color: MIYU_CHARGED_SHOT_COLOR, chargedVisual: true,
+        homingTarget: target, homingTurnRate: MIYU_BOOMBUSTER_TURN_RATE,
+      })
       shots += 1
+      targetCounts.set(target, (targetCounts.get(target) || 0) + 1)
     }
-    aiValidator.expect(
-      'Carga Compartilhada da Miyu só cria disparos extras para locks além do teto base',
-      () => shots <= Math.max(0, lockedTargets.length - baseMaxTargets),
-      { shots, locks: lockedTargets.length, baseMaxTargets },
-    )
-    if (shots > 0) aiValidator.logMechanic('miyu-assist-shot', 'disparos-roxos', { shots, baseMaxTargets })
+    aiValidator.expect('Cada lock triangular da Miyu gera no máximo um disparo próprio',
+      () => shots <= miyuTargets.length, { shots, miyuLocks: miyuTargets.length })
+    if (shots > 0) {
+      aiValidator.logMechanic('miyu-assist-shot', 'triangular-locks-fired-from-miyu', {
+        shots, miyuLocks: miyuTargets.length,
+        repeatedTargets: [...targetCounts.values()].filter((count) => count > 1).length,
+      })
+    }
     return shots
   }
 

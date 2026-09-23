@@ -9,6 +9,7 @@ import './wingman-formation-separation.test.mjs'
 import './wingman-navigation.test.mjs'
 import './damage-orbit-tracker.test.mjs'
 import './playtest-polish.test.mjs'
+import './miyu-assist-locks.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
