@@ -28,6 +28,11 @@ export function fogPocketVisualStrength(distance) {
 
 // Centros dos próximos bancos à frente do jogador. Nunca retorna offset negativo, então o
 // renderer não depende de getFrameAt() aceitar amostras atrás da nave.
+export function fogSpawnStrengthAtOffset(distance, forwardOffset = 0) {
+  const ahead = Math.max(0, Number.isFinite(forwardOffset) ? forwardOffset : 0)
+  return fogPocketVisualStrength((Number.isFinite(distance) ? distance : 0) + ahead)
+}
+
 export function nextFogBankOffsets(distance, count = 3) {
   const n = Math.max(0, Math.trunc(count))
   const local = positiveMod(Number.isFinite(distance) ? distance : 0, FOG_BANK_PERIOD)

@@ -642,7 +642,15 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           }
           if (h.stopProjectile) {
             stopped = true
-            if (effects && effects.swirlBlastExplosion) effects.swirlBlastExplosion(h.worldPos, _projDir)
+            const bossClassImpact = h.kind === BOSS_KIND || h.kind === GOLDEN_KIND
+            if (effects && effects.swirlBlastExplosion) {
+              effects.swirlBlastExplosion(h.worldPos, _projDir, { kind: h.kind, bossClass: bossClassImpact })
+            }
+            if (bossClassImpact) {
+              aiValidator.logMechanic('swirl-impact', 'boss-class-impact', {
+                kind: h.kind, damageApplied: appliedDamage, destroyedShield: !!h.destroyedShield,
+              })
+            }
           }
         }
         if (!stopped && projectile.traveled > SWIRL_BLAST_MAX_RANGE && projectile.swirlHomingTarget) {

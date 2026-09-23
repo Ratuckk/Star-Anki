@@ -7,6 +7,7 @@ import {
 import { createEnemyTelemetry } from './enemy-telemetry.js'
 import { isEnemySpawnPending, isolateSpawnMaterial, releaseSpawnMaterial } from './spawn-lifecycle.js'
 import { aiValidator } from '../ai-validator.js'
+import { fogSpawnStrengthAtOffset } from '../fog-visual-model.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
@@ -938,6 +939,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // posição real — desvio médio estatisticamente nulo, não precisa desfazer no frame seguinte.
   const SPAWN_WOBBLE_DURATION_S = 0.2
   const SPAWN_WOBBLE_MAGNITUDE = 0.15
+  const SPAWN_FOG_INTEGRATION_THRESHOLD = 0.12
+  const SPAWN_FOG_WISP_THRESHOLD = 0.55
   // Ideia 4 do documento (orientação de aproximação — mesh nasce com offset de rotação e
   // converge pra orientação correta) NÃO implementada nesta entrega: a maioria dos inimigos já
   // recalcula orientação a cada frame no próprio update de movimento (lookAt ou similar), que
@@ -947,6 +950,36 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // Mini-swarm/Ima nunca ganham peek mesmo tendo hitRadius acima do limiar — são enxame, o peek
   // "poluiria" a tela quando vários nascem juntos (tabela §2.2 do documento).
   const SPAWN_NO_PEEK_KINDS = new Set([MINI_SWARM_KIND, IMA_KIND])
+
+  function spawnFogVisualStrengthFor(enemy) {
+    if (!enemy?.mesh || rail.isArena()) return 0
+    const frame = rail.getFrameAt(0)
+    _enemyRel.copy(enemy.mesh.position).sub(frame.position)
+    const forwardOffset = Math.max(0, _enemyRel.dot(frame.forward))
+    return fogSpawnStrengthAtOffset(rail.getDistance(), forwardOffset)
+  }
+
+  function triggerFogSpawnMaterialization(enemy) {
+    const strength = Math.max(0, Math.min(1, enemy?.spawnFogVisualStrength || 0))
+    if (!effects || strength < SPAWN_FOG_INTEGRATION_THRESHOLD || enemy?.spawnedInDenseFog) return false
+    const radius = hitRadiusFor(enemy)
+    effects.fogCondensationInward?.(enemy.mesh.position, colorFor(enemy), radius)
+    if (strength >= SPAWN_FOG_WISP_THRESHOLD) {
+      effects.fogWispCondensation?.(enemy.mesh.position, colorFor(enemy))
+    }
+    if (!enemy.spawnFogIntegrationLogged) {
+      enemy.spawnFogIntegrationLogged = true
+      aiValidator.expect(
+        'Spawn integrado ao fog usa força visual normalizada e posição finita',
+        () => strength >= 0 && strength <= 1 && [enemy.mesh.position.x, enemy.mesh.position.y, enemy.mesh.position.z].every(Number.isFinite),
+        { enemyId: enemy.id, kind: enemy.kind, strength },
+      )
+      aiValidator.logMechanic('fog-spawn', 'materialize-from-visible-bank', {
+        enemyId: enemy.id, kind: enemy.kind, strength,
+      })
+    }
+    return true
+  }
 
   function getSpawnDurations(enemy) {
     const hitRadius = hitRadiusFor(enemy)
@@ -988,16 +1021,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
         enemy.mesh.scale.setScalar(targetScale * 0.1)
-        // Materialização começa AGORA (peek já cobriu a antecipação) — condensação inward
-        // dispara na entrada da fase, não no spawn original.
+        // Materialização começa AGORA (peek já cobriu a antecipação). O trail de mini-swarm
+        // continua sendo identidade própria; a condensação de fog só aparece quando o ponto de
+        // spawn está dentro do MESMO banco visual que o ambiente desenha.
         const hordaSplitDenseFog = enemy.spawnedInDenseFog
-        if (effects && !hordaSplitDenseFog) {
-          if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
-            effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-          } else if (effects.fogCondensationInward) {
-            effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
-          }
+        if (effects && !hordaSplitDenseFog && enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+          effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
         }
+        triggerFogSpawnMaterialization(enemy)
       }
     } else if (enemy.spawnPhase === 'materialize') {
       const eased = THREE.MathUtils.smoothstep(localT, 0, 1)
@@ -1042,6 +1073,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.spawnAnimationChannel = null
         enemy.spawnOpacityWasTransparent = false
         enemy.settleFlashFired = false
+        enemy.spawnFogVisualStrength = null
+        enemy.spawnFogIntegrationLogged = false
         // Wobble pós-spawn (aplicado no último instante antes do render — ver applySpawnWobbles)
         enemy.wobbleTimer = SPAWN_WOBBLE_DURATION_S
         enemy.wobbleMagnitude = SPAWN_WOBBLE_MAGNITUDE
@@ -1058,6 +1091,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.targetScale = enemy.scale || enemy.mesh.scale.x || 1.0
       const durations = getSpawnDurations(enemy)
       enemy.spawnDurations = durations
+      enemy.spawnFogVisualStrength = spawnFogVisualStrengthFor(enemy)
+      enemy.spawnFogIntegrationLogged = false
       const hasPeek = durations.peek > 0
       enemy.spawnPhase = hasPeek ? 'peek' : 'materialize'
       enemy.spawnPhaseTimer = 0
@@ -1074,17 +1109,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (hasPeek && effects?.spawnAnticipation && !hordaSplitDenseFog) {
         effects.spawnAnticipation(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy) * 0.6, durations.peek)
       }
-      // Fog tático (Overhaul 4, pilar 3) — filhote de Horda nascido em fog denso pula toda
-      // condensação visual (nasce "literalmente invisível", ver spawnedInDenseFog/fadeInMaterial
-      // em miniSwarm.js) — a única leitura de que ele existe é o fade-in de opacidade + o som.
-      // Materialização dispara já aqui quando NÃO há peek (senão dispara ao entrar na fase).
-      if (effects && !hordaSplitDenseFog && !hasPeek) {
-        if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
-          effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-        } else if (effects.fogCondensationInward) {
-          effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
-        }
+      // Filhote de Horda nascido em fog denso preserva a regra de invisibilidade. Nos demais
+      // spawns sem peek, o trail próprio do mini-swarm continua; a condensação adicional só é
+      // emitida se o spawn caiu espacialmente dentro de um banco de fog visível.
+      if (effects && !hordaSplitDenseFog && !hasPeek && enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+        effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
       }
+      if (!hasPeek) triggerFogSpawnMaterialization(enemy)
     }
     enemies.push(enemy)
     telemetry.recordEvent(enemy.id, enemy.kind, 'spawn', `Inimigo ${enemy.kind} #${enemy.id} surgiu em cena`, {
