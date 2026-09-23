@@ -1,6 +1,6 @@
 # Forgot — itens esquecidos ou ainda não implementados
 
-> Este arquivo consolida **somente** o que ficou faltando do último levantamento sobre os itens **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)** e **10 (Fog)**. Ele não trata sugestões opcionais como requisitos já aprovados e não marca como ausente aquilo que o código atual já implementa.
+> Este arquivo consolida o que ficou faltando ou parcialmente implementado nos levantamentos recentes: **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)**, **10 (Fog)** e a **superchecagem dos inimigos**. Sugestões opcionais não são tratadas como requisitos aprovados. Itens já corrigidos ficam marcados como concluídos para não voltarem acidentalmente ao backlog.
 
 ## 3 — Swirl Blast
 
@@ -155,6 +155,118 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 
 ---
 
+## Superchecagem dos inimigos
+
+> Situação auditada contra o `main`: dos 15 achados originais, **3 foram corrigidos funcionalmente, 2 ficaram parciais e 10 continuam pendentes**. O estado do código é a fonte de verdade; descrições antigas de PR não devem ser usadas para marcar estes itens como concluídos.
+
+### Corrigidos — manter fechados
+
+- [x] **#3 — Spawn `peek/materialize/settle` participava do gameplay.**
+  - O lifecycle real agora bloqueia IA, disparo e colisão enquanto `isEnemySpawnPending(enemy)` for verdadeiro.
+  - Resolvedores de tiro/área e `getAlive()` também excluem inimigos em materialização.
+  - Dívida arquitetural restante: Blaster/Tank ainda possuem uma representação FSM `SPAWNING` separada, mas isso não reabre o bug funcional original.
+
+- [x] **#4 — Spawn modificava materiais compartilhados.**
+  - A animação de spawn passou a usar material clonado por instância e restaura/descarta corretamente o material ao terminar.
+
+- [x] **#6 — Sussurro criava reforços nível 1 fora do pipeline.**
+  - Reforços agora usam `currentDifficultyLevel()`, passam o nível a `spawnBlaster()` e entram via `registerSpawn()`.
+
+### Parcialmente corrigidos — continuam no backlog
+
+- [ ] **#7 — Homing já disparado pode perseguir alvo em `fadingOut`.**
+  - Aquisição nova foi corrigida: `getAlive()` exclui `dying`, `fadingOut` e inimigos ainda materializando.
+  - O problema restante é o projétil que **já possuía alvo**: ele abandona a referência ao detectar `dying`, mas não `fadingOut`.
+  - O Swirl com alvo travado apresenta a mesma lacuna.
+  - Corrigir validação do alvo por frame sem permitir retargeting telepático/inconsistente.
+
+- [ ] **#8 — Campo do Enxame-Ímã permanece ativo durante `fadingOut`.**
+  - A parte do spawn foi corrigida: fontes magnéticas ainda materializando são ignoradas.
+  - Falta excluir inimigos em `fadingOut` de `getMagnetSources()` ou do caminho equivalente que aplica o campo.
+  - O campo não pode continuar alterando tiros quando a fonte já está visualmente desaparecendo.
+
+### Pendentes — não corrigidos
+
+- [ ] **#1 — Boss pode receber dano durante a fase declarada como invulnerável da transição.**
+  - O código ainda tenta restaurar um piso de HP depois (`transitionFloorHp`) em vez de bloquear o dano na origem.
+  - `resolveProjectileHit`, dano em área, Swirl e aríete ainda podem reduzir HP durante `transitioning`.
+  - Um hit letal pode colocar o Boss em `dying` antes da restauração do piso.
+  - A correção deve centralizar a regra: enquanto `transitioning`, todos os caminhos ofensivos que deveriam respeitar invulnerabilidade devem sair sem aplicar dano/morte.
+  - Testar tiro normal, carregado, Swirl, AoE e aríete durante toda a transição.
+
+- [ ] **#2 — `Squadron.remaining` ainda pode ser decrementado duas vezes.**
+  - A morte por projétil reduz `sq.remaining` e a remoção posterior por `removeEnemy()` reduz novamente.
+  - A resolução de morte continua duplicada entre tiro, Swirl, área e aríete.
+  - Centralizar a transição `alive → dying → removed` e garantir que a contagem do esquadrão aconteça exatamente uma vez.
+  - Adicionar teste explícito de squad wipe para não liberar/encerrar esquadrão antes da hora.
+
+- [ ] **#5 — Sentinela perde a distinção de 2 dano no casco / 4 no escudo.**
+  - A entidade ainda declara `GATE_DAMAGE = 2` e `GATE_SHIELD_DAMAGE = 4`.
+  - O pipeline promove apenas `gate.shieldDamage` para um `damage` global e o game loop envia um único número a `player.takeDamage()`.
+  - Preservar ambos os valores até a resolução final, escolhendo corretamente segundo o recurso atingido.
+  - Testar jogador com escudo, sem escudo e transição entre escudo→casco no mesmo contato se isso for permitido pelo sistema.
+
+- [ ] **#9 — Wobble visual altera posição lógica do inimigo.**
+  - O jitter ainda é somado diretamente em `mesh.position.x/y/z` sem restauração pós-render.
+  - Isso pode alterar colisão, mira, homing, distância e comportamento de IA quando a intenção era apenas visual.
+  - Separar posição lógica de offset visual, usando child visual, matriz/offset temporário restaurado ou arquitetura equivalente.
+
+- [ ] **#10 — Quaternion das mini-naves do Dourado recebe vetor de direção escalado.**
+  - O vetor é normalizado, depois multiplicado pela velocidade e então enviado a `setFromUnitVectors`, que espera vetores unitários.
+  - Manter uma direção normalizada separada da velocidade física.
+  - Testar orientação em curvas, aproximação, afastamento e velocidades diferentes.
+
+- [ ] **#11 — Projéteis inimigos comuns continuam usando colisão pontual e podem atravessar o jogador em frames grandes.**
+  - O hit é avaliado na posição final do projétil no frame em vez do segmento percorrido.
+  - Lasers já usam corretamente `prevPos → novaPos`; projéteis comuns devem adotar swept collision equivalente.
+  - Testar FPS baixo, velocidades elevadas, boost/dash do jogador e cruzamentos quase perpendiculares.
+
+- [ ] **#12 — Enxame-Ímã continua calibrado para a velocidade antiga dos tiros.**
+  - A justificativa/força atual foi concebida para projétil de aproximadamente `60 u/s`, enquanto o tiro normal atual está em aproximadamente `260 u/s`.
+  - Recalibrar força, raio e curva de influência com base na física atual.
+  - A alteração precisa ser validada em gameplay para evitar tanto um campo irrelevante quanto um desvio impossível de combater.
+
+- [ ] **#13 — Boss ainda pode disparar rajada normal durante a transição.**
+  - Depois de `updateBossMovement()`, o orquestrador ainda pode diminuir `fireTimer` e chamar `fireBossVolley()` sem bloquear `transitioning`.
+  - Durante uma fase cinematográfica/invulnerável, o comportamento ofensivo precisa seguir a regra aprovada de transição e não acontecer por acidente de timer.
+  - Testar início, meio e frame final da transição para evitar tiro residual na borda temporal.
+
+- [ ] **#14 — Tank em `DISENGAGING` na arena continua perseguindo o jogador.**
+  - O comportamento atual foi preservado explicitamente: em arena chama `updateTankArenaChase()` até passar da distância de remoção.
+  - Isso contradiz a semântica de `DISENGAGING` e pode criar inimigo que deveria sair mas continua pressionando/perseguindo.
+  - Definir comportamento correto de disengage em arena antes de implementar: afastar-se do jogador, manter vetor de saída, ou outro fluxo explícito.
+  - Não apenas renomear o estado; corrigir a lógica de movimento e o critério de despawn juntos.
+
+- [ ] **#15 — Verme pode executar `severChainAt` novamente durante remoção.**
+  - O corte da cadeia pode acontecer no caminho de morte e novamente em `removeEnemy()`.
+  - Tornar a operação idempotente ou centralizar a responsabilidade de corte.
+  - Testar morte da cabeça, segmento intermediário, cauda, morte em área e remoção/despawn para garantir que a cadeia não seja alterada duas vezes.
+
+### Prioridade recomendada para a superchecagem
+
+1. [ ] **P0 — Boss transition/invulnerabilidade (#1).**
+2. [ ] **P0 — Centralização de morte + `Squadron.remaining` (#2).**
+3. [ ] **P0 — Pipeline de dano da Sentinela (#5).**
+4. [ ] **P1 — Homing/Swirl abandonar `fadingOut` (#7).**
+5. [ ] **P1 — Boss não disparar durante transição (#13).**
+6. [ ] **P1 — Swept collision dos projéteis inimigos (#11).**
+7. [ ] **P1 — Enxame-Ímã não atuar em fade + recalibração (#8/#12).**
+8. [ ] **P2 — Wobble puramente visual (#9).**
+9. [ ] **P2 — Quaternion das mini-naves do Dourado (#10).**
+10. [ ] **P2 — Tank `DISENGAGING` em arena (#14).**
+11. [ ] **P2 — Idempotência do `severChainAt` do Verme (#15).**
+
+### Critérios gerais de aceitação da superchecagem
+
+- [ ] Nenhum estado visual de entrada/saída pode continuar causando efeitos físicos por acidente.
+- [ ] Nenhum caminho de dano deve duplicar resolução de morte, contagem de esquadrão ou side effects.
+- [ ] Invulnerabilidade precisa bloquear dano na origem, não reparar HP depois.
+- [ ] Colisões de projéteis rápidos devem ser robustas a variações de `dt`/FPS.
+- [ ] Efeitos puramente visuais não podem modificar posição ou orientação lógica usada por gameplay.
+- [ ] Todo conserto deve ser testado no caminho específico que originou o bug e também em pelo menos um caminho alternativo de dano/morte.
+
+---
+
 ## Resumo do que realmente permanece pendente
 
 ### Swirl Blast
@@ -180,3 +292,17 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 - [ ] Criar bancos de névoa visualmente localizados.
 - [ ] Fazer o spawn/materialização de inimigos interagir visualmente com esses bancos.
 - [ ] Validar visualmente trilho e arena sem depender apenas dos números de densidade.
+
+### Superchecagem dos inimigos
+- [ ] Boss realmente invulnerável durante transição em todos os caminhos de dano.
+- [ ] Centralizar morte/remoção e impedir decremento duplo de `Squadron.remaining`.
+- [ ] Preservar dano 2 casco / 4 escudo da Sentinela até `player.takeDamage()`.
+- [ ] Homing e Swirl abandonarem alvo em `fadingOut`.
+- [ ] Campo do Enxame-Ímã parar durante `fadingOut`.
+- [ ] Tornar wobble estritamente visual, sem alterar posição lógica.
+- [ ] Corrigir direção unitária usada no quaternion das mini-naves do Dourado.
+- [ ] Usar swept collision nos projéteis inimigos comuns.
+- [ ] Recalibrar Enxame-Ímã para a velocidade atual do tiro normal.
+- [ ] Impedir rajada do Boss durante transição.
+- [ ] Corrigir comportamento do Tank `DISENGAGING` em arena.
+- [ ] Tornar `severChainAt` do Verme idempotente/centralizado.
