@@ -137,5 +137,12 @@ assert.match(menuSource, /handlePlayDeck\(currentDeckIds, currentTagFilter\)/, '
 const audioSource = readFileSync(new URL('./audio.js', import.meta.url), 'utf8')
 assert.match(audioSource, /addEventListener\('error', cleanupOneShot\)/)
 assert.match(audioSource, /addEventListener\('abort', cleanupOneShot\)/)
+const gameLoopSource = readFileSync(new URL('./game-loop.js', import.meta.url), 'utf8')
+assert.match(gameLoopSource, /const liveSettings = getSettings\(\)/, 'game loop deve usar snapshot de settings por frame')
+assert.match(gameLoopSource, /const ghostBlipsEnabled = liveSettings\.minimapGhostBlips/, 'radar deve respeitar settings live sem nova leitura')
+assert.match(gameLoopSource, /if \(liveSettings\.showEnemyHealthBars\)/, 'barra de HP deve reagir à opção da pausa')
+assert.match(gameLoopSource, /rail\.setTurnSensitivity\(liveSettings\.arenaTurnSensitivity\)/, 'sensibilidade deve reagir à opção da pausa')
+const cutsceneSource = readFileSync(new URL('./cutscenes.js', import.meta.url), 'utf8')
+assert.match(cutsceneSource, /arenaCutsceneKind === 'boss' \|\| state\.arenaCutsceneKind === 'bossSummon'/, 'primeira transição do chefe também deve receber apresentação de chefe')
 
 console.log('bughunt-regression.test.mjs: OK')
