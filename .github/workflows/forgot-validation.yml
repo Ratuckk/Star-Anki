@@ -1,0 +1,76 @@
+name: Forgot backlog validation
+
+on:
+  push:
+    branches:
+      - validation/forgot-backlog-v09934
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forgot-backlog-v09934
+  cancel-in-progress: false
+
+jobs:
+  migrate-test-commit:
+    if: ${{ !contains(github.event.head_commit.message, '[forgot-applied]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout validation branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare Three.js for Node tests
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-save --no-package-lock three@0.169.0
+
+      - name: Normalize migration anchors
+        run: python scripts/repair-forgot-migrators-v09934.py
+
+      - name: Apply core forgot fixes
+        run: python scripts/apply-forgot-core-v09934.py
+
+      - name: Apply wingman forgot fixes
+        run: python scripts/apply-forgot-wingmen-v09934.py
+
+      - name: Syntax check changed JavaScript
+        run: |
+          git diff --name-only -- 'src/*.js' 'src/**/*.js' | while read -r file; do
+            [ -z "$file" ] || node --check "$file"
+          done
+
+      - name: Run focused wingman suites
+        run: |
+          node src/wingman-state-controller.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+          node src/wingman-radio-overhaul.test.mjs
+          node src/wingman-formation-separation.test.mjs
+          node src/wingman-navigation.test.mjs
+          node src/miyu-assist-locks.test.mjs
+
+      - name: Run full selftest
+        run: node src/selftest.mjs
+
+      - name: Diff sanity
+        run: git diff --check
+
+      - name: Commit validated migration output
+        run: |
+          git config user.name "star-anki-validation-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src
+          if git diff --cached --quiet; then
+            echo "No source changes produced."
+            exit 0
+          fi
+          git commit -m "[forgot-applied] fix: reconcile core and wingman backlog"
+          git push origin HEAD:validation/forgot-backlog-v09934
