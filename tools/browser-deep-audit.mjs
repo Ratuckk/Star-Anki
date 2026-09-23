@@ -74,6 +74,10 @@ assert.equal(snapshot.stopped, false)
 assert.ok(snapshot.pos.every(Number.isFinite), `posição do jogador inválida: ${snapshot.pos}`)
 assert.ok(snapshot.camera.every(Number.isFinite), `posição da câmera inválida: ${snapshot.camera}`)
 console.log('DEEP_AFTER_STEPS', JSON.stringify(snapshot))
+// Eventos de teclado são consumidos dentro do loop. Depois do bloco determinístico, devolve a
+// execução ao RAF normal para testar pausa/rebind/restart exatamente como um usuário faria.
+await page.evaluate(() => window.__starAnki.setManualStepping(false))
+await page.waitForTimeout(80)
 
 // Pausa normal, abre opções e confirma que sliders/toggles continuam montando com storage saneado.
 await page.keyboard.press('Escape')
