@@ -22,7 +22,10 @@ jobs:
       - name: Apply deterministic integration migration
         run: |
           set +e
-          node tools/apply-radio-overhaul-v09928.mjs > validation-migration-error.txt 2>&1
+          {
+            node tools/apply-radio-overhaul-v09928.mjs
+            node tools/patch-radio-selftest-v09928.mjs
+          } > validation-migration-error.txt 2>&1
           status=$?
           set -e
           if [ "$status" -ne 0 ]; then
@@ -73,6 +76,7 @@ jobs:
       - name: Commit validated tree
         run: |
           rm -f tools/apply-radio-overhaul-v09928.mjs
+          rm -f tools/patch-radio-selftest-v09928.mjs
           rm -f .github/workflows/validate-radio-overhaul-v09928.yml
           rm -f README_TEMP_SHOULD_NOT_EXIST
           rm -f assets/wingman-radio/fox.png.base64tmp
