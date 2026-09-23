@@ -3,13 +3,14 @@ import { aiValidator } from '../ai-validator.js'
 // Canal exclusivamente visual. Não participa de pontos, combo, kills ou IA.
 export function createDamageFeedback(hit, damage, { pilotId = null, charged = false, instant = false, sourceKind = null } = {}) {
   if (!hit || hit.blocked) return null
-  // Dano zero sem flag de abate instantâneo não constitui feedback de dano confirmado
-  if (damage === 0 && !instant) return null
+  // Contrato: dano confirmado DEVE ter damage > 0. Contato sem dano, colisão ou destruição
+  // instantânea sem dano numérico (ex: detrito) não produz feedback de dano confirmado.
+  if (!Number.isFinite(damage) || damage <= 0) return null
 
   const isEnv = sourceKind === 'environment' || (pilotId === null && (hit.kind === 'detrito' || instant))
   const resolvedSourceKind = sourceKind || (isEnv ? 'environment' : (pilotId === null ? 'player' : 'pilot'))
   const valid = !!hit.worldPos && [hit.worldPos.x, hit.worldPos.y, hit.worldPos.z].every(Number.isFinite)
-    && Number.isFinite(damage) && (damage > 0 || (instant && damage === 0))
+    && damage > 0
     && (isEnv || pilotId === null || (Number.isInteger(pilotId) && pilotId >= 0 && pilotId <= 3))
 
   aiValidator.expect('Feedback de dano confirmado tem valor, posição e autoria válidos', () => valid,

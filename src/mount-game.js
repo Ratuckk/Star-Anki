@@ -149,6 +149,7 @@ export function mountGame(session, deck, menu) {
     pendingSectorOver: false,
     pendingQuestionKind: null,
     pendingCardChoice: false,
+    arcadeBulletTimeTimer: 0,
     consecutiveCorrect: 0,
     speedMultiplier: 1,
     isBossCycle: false,

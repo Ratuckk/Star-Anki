@@ -743,6 +743,9 @@ export function createWingmanRadio({
   }
 
   return {
+    markSpoken(pilotId, now = performance.now()) {
+      scheduleNextNormalLine(pilotId, now)
+    },
     trySpeak(pilotId, eventId, now = performance.now(), context = {}) {
       return emit(pilotId, eventId, now, context, false, false)
     },

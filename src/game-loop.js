@@ -134,8 +134,16 @@ export function createGameLoop(deps) {
     // Só no modo arcade, só na tela de 3 cartas, e só com a pausa total desligada nas
     // Configurações. Calculado ANTES do early-return de cardChoice (logo abaixo) — é essa
     // condição que decide se aquele bloco continua pausando ou deixa o frame seguir.
+    const isArcadeCardChoice = state.phase === 'cardChoice' && isNoDeck
+    const arcadeCardChoicePauses = isArcadeCardChoice && !!getSettings().arcadeCardChoicePauses
+
+    if (isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0) {
+      state.arcadeBulletTimeTimer = Math.max(0, state.arcadeBulletTimeTimer - rawDt)
+    }
+
     const inArcadeCardChoiceBulletTime =
-      state.phase === 'cardChoice' && isNoDeck && !getSettings().arcadeCardChoicePauses
+      isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0
+
     // Precedência entre as 3 fontes de câmera lenta (só uma decide o dt por frame, nunca
     // compõem): slowMo de DEBUG sempre vence (ferramenta de dev, previsível); bullet-time do
     // card choice (Docs/Bullet-time...) vem depois; Swirl Blast (§4.5) por último — na prática
@@ -185,10 +193,14 @@ export function createGameLoop(deps) {
       renderer.render(scene, camera)
       return
     }
-    // Bullet-time no Card Choice (Arcade), §3.2: cardChoice deixa de ser pausa incondicional —
-    // com `inArcadeCardChoiceBulletTime`, o frame CONTINUA (rail/inimigos/jogador seguem
-    // rodando com o dt já escalado lá em cima); sem isso, cai no comportamento de sempre.
-    if (state.phase === 'cardChoice' && !inArcadeCardChoiceBulletTime) {
+    // Bullet-time no Card Choice (Arcade), §3.2:
+    // Se for fora do Arcade (Roguelike com baralho) ou se a configuração de pausa estiver ativa,
+    // o frame pausa incondicionalmente no cardChoice.
+    // No Arcade sem pausa total, o frame CONTINUA: durante os primeiros 1.5s em bullet-time
+    // (ARCADE_CARD_CHOICE_TIME_SCALE) e após o timer zerar, em velocidade normal 1.0x,
+    // permitindo combate e voo contínuos com o draft pendente na HUD.
+    const shouldPauseForCardChoice = state.phase === 'cardChoice' && (!isNoDeck || arcadeCardChoicePauses)
+    if (shouldPauseForCardChoice) {
       renderer.render(scene, camera)
       return
     }
