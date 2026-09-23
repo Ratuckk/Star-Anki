@@ -1,6 +1,6 @@
 import assert from 'node:assert'
 import { readFileSync } from 'node:fs'
-import { DAMAGE_NUMBER_SCALE, getOrbitAngle, getOrbitArcDashOffset, ORBIT_ARC_SEGMENT } from './hud-damage.js'
+import { DAMAGE_NUMBER_SCALE, MANGA_VISUAL_SCALE, ORBIT_RADIUS, getOrbitAngle } from './hud-damage.js'
 import { PLAYER_SOUND_CUES } from './audio-cues.js'
 import { getLoopTailRestartTime } from './audio.js'
 import { createWingmanRadioConversationManager } from './combat/wingman-radio-callresponse.js'
@@ -9,8 +9,8 @@ import { createWingmanStateController, initializeWingmanControl } from './combat
 assert.strictEqual(DAMAGE_NUMBER_SCALE, 0.8, 'números de dano precisam estar 20% menores')
 const fullTurn = getOrbitAngle(2, 1) - getOrbitAngle(2, 0)
 assert.ok(Math.abs(fullTurn - Math.PI * 2) < 1e-9, 'órbita precisa completar uma volta horária por ciclo')
-assert.strictEqual(new Set([0, 1, 2, 3, 4].map(getOrbitArcDashOffset)).size, 5, 'jogador + 4 aliados precisam ocupar cinco segmentos orbitais distintos')
-assert.ok(ORBIT_ARC_SEGMENT < 20, 'segmentos precisam deixar pequenas folgas entre autores')
+assert.strictEqual(MANGA_VISUAL_SCALE, 0.5, 'Mangá precisa ficar 50% menor')
+assert.strictEqual(ORBIT_RADIUS, 64, 'Buraco Negro usa uma geometria circular compartilhada')
 
 const chargeCue = PLAYER_SOUND_CUES.charge_loop
 assert.strictEqual(chargeCue.volume, 0.5525, 'carga deve ficar 15% abaixo do volume antigo 0.65')

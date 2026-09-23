@@ -38,6 +38,17 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.30 — Correções pós-merge: Wingmen, rádio e dano visual
+
+- **Rádio revertido para lateral:** os quatro Wingmen voltam aos painéis originais com estática, connect/disconnect e voz individual; apenas Fox continua in-world ao iniciar Focus. Os 120 quotes novos permanecem.
+- **Focus corrigido:** todos os Wingmen ativos confirmam lateralmente o comando, mesmo quando uma Action impede a troca imediata para dogfight; a confirmação não cancela a Action.
+- **Alvos válidos:** Focus, dogfight e Ram exigem inimigo realmente gameplay-ready. Mesh de spawn/fade/entidade removida não mantém mais piloto preso perseguindo um alvo fantasma.
+- **Rescue com limite:** Rescue do Peppy recebe timeout técnico de 5s para não manter a Action indefinidamente quando a aproximação não conclui.
+- **Estabilidade de formação:** All-Range passa a desacelerar suavemente ao chegar à vaga; weave/idle diminuem e somem com o jogador parado. Failsafe detecta ausência real de progresso e recupera somente a velocidade, sem teleporte ou regroup por distância.
+- **Mangá:** elementos de dano ficam 50% menores e emergem do centro estável do alvo antes de ocupar seu offset.
+- **Buraco Negro:** segmentos desconexos são removidos; cada alvo cooperativo usa um único círculo real, centrado no alvo, compartilhado pelos números orbitais.
+- **Documentação/versão:** README e versão exibida no site atualizados para v0.99.30.
+
 ### v0.99.28 — Rádio distribuído, Focus/abilities in-world e expansão de 120 quotes
 
 - **Rádio lateral exclusivamente trivial:** o HUD deixa de usar os dois painéis seriais antigos. Abaixo da bandeja de cartas roguelike existem quatro slots independentes e permanentes (Falco/Peppy/Slippy/Miyu); falas triviais e respostas Call & Response entram no slot de quem falou, sem uma transmissão apagar as demais.

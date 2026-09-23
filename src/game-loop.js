@@ -616,8 +616,10 @@ export function createGameLoop(deps) {
     const damageVisualSettings = getSettings()
     const cooperativeOrbitEnabled = damageVisualSettings.damageNumberStyle === 'orbit' && damageVisualSettings.damageOrbitEnabled !== false
     for (const h of events.damageFeedback || []) {
-      // Copiar: worldPos continua em coordenadas de mundo para outros consumidores.
-      const ndcH = _threatProj.copy(h.worldPos).project(camera)
+      // O feedback visual usa o centro estável do alvo. worldPos continua preservado como ponto
+      // real de impacto para partículas/telemetria.
+      const visualAnchor = h.targetWorldPos || h.worldPos
+      const ndcH = _threatProj.copy(visualAnchor).project(camera)
       if (ndcH.z < -1 || ndcH.z > 1 || Math.abs(ndcH.x) > 1 || Math.abs(ndcH.y) > 1) continue
       const xFrac = (ndcH.x + 1) / 2
       const yFrac = (1 - ndcH.y) / 2
