@@ -69,6 +69,12 @@ function writeAll(settings) {
 }
 
 function finiteClamped(value, fallback, min, max, { integer = false } = {}) {
+  // Number(null), Number(false) e Number('') produzem números válidos, mas esses tipos não são
+  // valores persistidos válidos para sliders. Sem esta guarda, corrupção podia virar 0/0.5 em
+  // vez de restaurar o default.
+  if (value == null || typeof value === 'boolean' || typeof value === 'object' || (typeof value === 'string' && value.trim() === '')) {
+    return fallback
+  }
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   const normalized = integer ? Math.round(parsed) : parsed
