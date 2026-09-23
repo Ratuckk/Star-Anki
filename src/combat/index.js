@@ -322,6 +322,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       const wingmanResult = squadron.update(dt, playerPosition, rail.getFrameAt(0), {
         boostActive: opts.boostActive,
         homingCharging: opts.homingCharging,
+        homingHasLockedTarget: opts.homingHasLockedTarget,
         shieldNotFull: player.getShieldValue() < player.getShieldMax(),
         reactivity: opts.reactivity,
         // Cartas de Falco (Docs/# Documento de Implementação — Nova.md) — stacks lidos direto do

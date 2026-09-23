@@ -38,6 +38,16 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.32 — Antispam de rádio e gatilho contextual da Miyu
+
+- **Cooldown universal por piloto:** após uma transmissão, o mesmo aliado fica entre 2 e 10 segundos sem nova fala normal; abilities entram no mesmo rate limiter e urgências explícitas, quando forçadas, reiniciam a janela.
+- **Call & Response preservado:** uma resposta pronta não é descartada só porque o respondente ainda está em cooldown; permanece pendente até ficar elegível ou expirar pelo TTL narrativo existente.
+- **Focus preservado:** a confirmação explícita de todos os Wingmen continua garantida; cada resposta inicia o cooldown daquele piloto.
+- **Miyu / Carga Compartilhada:** a habilidade e o glow podem iniciar ao sincronizar a carga, mas a fala 'ability_assist' só é emitida enquanto a carga continua ativa e 'getLockedEnemySnapshots()' já contém pelo menos um alvo — exatamente a mesma fonte que desenha o triângulo de lock no HUD.
+- **Validação IA:** telemetria registra anúncio da Miyu condicionado a carga+lock e bloqueios de ability por cooldown.
+- **Documentação/versão:** README e versão do site atualizados para v0.99.32.
+
+
 ### v0.99.31 — Hotfix de carregamento dos Wingmen
 
 - **Boot restaurado:** dois follow-ups da v0.99.30 reaplicaram hunks já presentes em `src/combat/wingmen.js`, deixando três declarações de `previousPlayerPosition`/`hasPreviousPlayerPosition` no mesmo escopo. O navegador abortava o parse com `SyntaxError: Identifier 'previousPlayerPosition' has already been declared`, impedindo o jogo inteiro de iniciar.

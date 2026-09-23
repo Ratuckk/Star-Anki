@@ -2,12 +2,14 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.99.31-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.99.32-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
 
 🎮 **Jogue no navegador:** [https://ratuckk.github.io/Star-Anki/](https://ratuckk.github.io/Star-Anki/)
+
+**v0.99.32:** rádio dos Wingmen passa a aplicar cooldown de 2–10 s por piloto a qualquer transmissão normal/ability/Call & Response; a fala da Carga Compartilhada da Miyu só ocorre enquanto o jogador está carregando e já existe um lock visível (triângulo) em inimigo.
 
 ---
 

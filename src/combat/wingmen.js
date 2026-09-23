@@ -541,9 +541,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   const telemetry = createWingmanTelemetry()
   const wingmanRadio = createWingmanRadio()
   const worldRadio = createWingmanWorldRadio(scene)
-  // Falas triviais/semânticas disparadas fora do loop ficam numa lista, não num único slot.
-  // Assim dois pilotos diferentes podem falar no mesmo frame e o HUD distribui cada payload
-  // diretamente no espaço permanente do respectivo personagem.
+  // Falas laterais acumuladas fora do loop. O rate limiter mora em wingman-radio.js e vale
+  // para trivial, abilities e Call & Response por piloto.
   const pendingRadioMessages = []
 
   function buildRadioPayload(profile, text, eventId, meta = {}) {
@@ -555,32 +554,45 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     return text ? buildRadioPayload(profile, text, eventId) : null
   }
 
-  function announceAbility(wingman, eventId) {
-    // A nave continua recebendo o pulso de 1,5 s, mas a TRANSMISSÃO volta ao rádio lateral.
+  function triggerAbilityGlow(wingman) {
     worldRadio.triggerAbilityGlow(wingman.mesh, wingman.profile.accentColor, WINGMAN_ABILITY_GLOW_DURATION_S)
+  }
+
+  function announceAbility(wingman, eventId, { triggerGlow = true } = {}) {
+    // O efeito visual pertence à habilidade e permanece imediato; a fala lateral respeita o
+    // cooldown universal do piloto.
+    if (triggerGlow) triggerAbilityGlow(wingman)
     const text = wingmanRadio.speakAbility(
       wingman.profile.id,
       eventId,
       performance.now(),
       { activePilotIds: activeRadioPilotIds() },
     )
-    aiValidator.expect(
-      'Habilidade de Wingman possui quote lateral e brilho de 1.5s',
-      () => typeof text === 'string' && text.length > 0 && WINGMAN_ABILITY_GLOW_DURATION_S === 1.5,
-      { pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S },
-    )
-    if (text) pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, eventId))
-    aiValidator.logMechanic('wingman-radio', 'ability-announced-lateral', {
-      pilotId: wingman.profile.id,
-      eventId,
-      glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S,
-      hasQuote: !!text,
-    })
+    if (text) {
+      aiValidator.expect(
+        'Habilidade de Wingman anunciada lateralmente preserva quote e brilho de 1.5s',
+        () => text.length > 0 && WINGMAN_ABILITY_GLOW_DURATION_S === 1.5,
+        { pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S },
+      )
+      pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, eventId))
+      aiValidator.logMechanic('wingman-radio', 'ability-announced-lateral', {
+        pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S, hasQuote: true,
+      })
+    } else {
+      aiValidator.logMechanic('wingman-radio', 'ability-radio-suppressed-cooldown', {
+        pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S,
+      })
+    }
     return text
   }
 
   function announceLateral(wingman, eventId) {
-    const text = wingmanRadio.getLine(wingman.profile.id, eventId)
+    const text = wingmanRadio.trySpeak(
+      wingman.profile.id,
+      eventId,
+      performance.now(),
+      { activePilotIds: activeRadioPilotIds() },
+    )
     if (!text) return null
     pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, eventId))
     return text
@@ -883,6 +895,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
       miyuCloakTimer: 0,
+      miyuAssistRadioPending: false,
       miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
     }
     initializeWingmanControl(wingman, {
@@ -1154,6 +1167,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         const eventId = slippyFocusUpgrade || peppyFocusUpgrade ? 'ability_focus_upgrade' : 'focus_ready'
         const text = wingmanRadio.getLine(w.profile.id, eventId)
         if (!text) continue
+        // Focus explícito continua garantindo resposta de todos; depois de falar, cada piloto
+        // entra no mesmo cooldown 2-10s das demais transmissões.
+        wingmanRadio.markSpoken(w.profile.id, performance.now())
         pendingRadioMessages.push(buildRadioPayload(w.profile, text, eventId, { focusResponse: true }))
         focusReplyCount += 1
       }
@@ -1316,6 +1332,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     worldRadio.update(dt, playerPos, frame)
     const boostActive = !!opts.boostActive
     const homingCharging = !!opts.homingCharging
+    const homingHasLockedTarget = !!opts.homingHasLockedTarget
     const shieldNotFull = !!opts.shieldNotFull
     const inArena = rail.isArena()
     const playerMotionSpeed = hasPreviousPlayerPosition && dt > 0
@@ -1548,6 +1565,28 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.auxShieldVisual.material.opacity = 0.58 + Math.sin(elapsed * 5) * 0.16
         }
       }
+      if (
+        w.profile.id === 3 &&
+        w.miyuAssistRadioPending &&
+        w.abilityActive &&
+        w.escortKind === 'assist' &&
+        homingCharging &&
+        homingHasLockedTarget
+      ) {
+        const announced = announceAbility(w, 'ability_assist', { triggerGlow: false })
+        if (announced) {
+          w.miyuAssistRadioPending = false
+          aiValidator.expect(
+            'Miyu só anuncia Carga Compartilhada com carga ativa e lock visível',
+            () => homingCharging && homingHasLockedTarget,
+            { pilotId: w.profile.id, homingCharging, homingHasLockedTarget },
+          )
+          aiValidator.logMechanic('miyu-assist-radio', 'lock-visible-announcement', {
+            pilotId: w.profile.id, homingCharging, homingHasLockedTarget,
+          })
+        }
+      }
+
       const criticalFlash = w.hp <= WINGMAN_LOW_HP && Math.floor(elapsed * 7) % 2 === 0
       w.damageMaterials.forEach((material, materialIndex) => {
         const original = w.damageColors[materialIndex]
@@ -1767,7 +1806,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
-              announceAbility(w, 'ability_assist')
+              // A sincronização e o glow começam agora, mas a fala só pode sair quando o mesmo
+              // lock que desenha o triângulo já existir no HUD.
+              triggerAbilityGlow(w)
+              w.miyuAssistRadioPending = true
               triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
             }
           }
@@ -2069,6 +2111,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         } else if (w.escortKind === 'assist') {
           if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Miyu concluída, retornando à formação', { elapsed })
+            w.miyuAssistRadioPending = false
             stateController.finishAction(w, {
               source: 'miyu-assist', event: 'assist-completed', outcome: homingCharging ? 'timeout' : 'released', engagementCooldown: 4.0,
             })

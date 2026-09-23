@@ -555,6 +555,7 @@ export function createGameLoop(deps) {
     const isDenseFog = !!getSettings().fogTacticalEffects
       && !!environment?.getFogDensity
       && environment.getFogDensity() >= DENSE_FOG_REFERENCE_DENSITY * DENSE_FOG_THRESHOLD_RATIO
+    const homingHasLockedTarget = isCharging && combat.getLockedEnemySnapshots().length > 0
     const events = combat.update(dt, playerPos, {
       enemiesActive,
       aimDirection: _fireDirection,
@@ -564,6 +565,7 @@ export function createGameLoop(deps) {
       repulsionActive: player.isRepulsionActive(),
       shipHitboxPoints,
       homingCharging: isCharging,
+      homingHasLockedTarget,
       reactivity,
       isDenseFog,
     })
