@@ -113,7 +113,11 @@ const RICOCHET_NUDGE_DISTANCE = 3
 // ============ SWIRL BLAST — projétil perfurante (Docs/# Swirl Blast — Design & Plano de I.md +
 // "Proposta — Overhaul visual do Swirl Blast (v2)", pedido do usuário) ============
 const SWIRL_BLAST_SPEED = 520     // velocidade em u/s (~2x o tiro normal de 260) — requisito R5
-const SWIRL_BLAST_DAMAGE = 6      // dano por alvo atingido, sem falloff — requisito R4
+const SWIRL_BLAST_DAMAGE = 6      // dano base por alvo comum
+const SWIRL_PROJECTILE_RADIUS = 3.0
+const SWIRL_BOSS_HP_RATIO = 0.25
+const SWIRL_TRAIL_SPACING = 3.2
+const SWIRL_TRAIL_EMISSIONS_PER_FRAME_CAP = 14
 const SWIRL_BLAST_LIFETIME = 8    // segundos de vida (mesmo do tiro normal)
 const SWIRL_BLAST_MAX_RANGE = 700 // alcance máximo em u (mesmo do tiro normal)
 const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado pra trás (§4.4)
@@ -442,9 +446,12 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
 
     for (let pIdx = projectiles.length - 1; pIdx >= 0; pIdx--) {
       const projectile = projectiles[pIdx]
+      const projectileDt = projectile.isPiercing && Number.isFinite(opts.swirlDt) ? Math.max(0, opts.swirlDt) : dt
       // QoL (v0.29.4): checa .dying direto em vez de filtrar getAlive() por projétil por frame
       if (projectile.homingTarget) {
-        if (projectile.homingTarget.dying) {
+        if (projectile.homingTarget.dying || projectile.homingTarget.fadingOut || !projectile.homingTarget.mesh
+          || (Number.isFinite(projectile.homingTarget.hp) && projectile.homingTarget.hp <= 0)
+          || (Number.isFinite(projectile.homingTarget.health) && projectile.homingTarget.health <= 0)) {
           projectile.homingTarget = null
         } else {
           _projDesired.copy(projectile.homingTarget.mesh.position).sub(projectile.mesh.position).normalize()
@@ -495,7 +502,9 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // vivo via window.__starAnki (posição do projétil oscilando 36u↔147u em torno de um chefe
       // parado, nunca fechando a distância).
       if (projectile.isPiercing && projectile.swirlHomingTarget) {
-        if (projectile.swirlHomingTarget.dying) {
+        if (projectile.swirlHomingTarget.dying || projectile.swirlHomingTarget.fadingOut || !projectile.swirlHomingTarget.mesh
+          || (Number.isFinite(projectile.swirlHomingTarget.hp) && projectile.swirlHomingTarget.hp <= 0)
+          || (Number.isFinite(projectile.swirlHomingTarget.health) && projectile.swirlHomingTarget.health <= 0)) {
           const speedBeforeFreeze = projectile.velocity.length()
           projectile.swirlHomingTarget = null
           aiValidator.expect(
@@ -512,14 +521,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           if (distToTarget <= SWIRL_HOMING_SNAP_RANGE) {
             projectile.velocity.copy(_projDesired).multiplyScalar(speed)
           } else {
-            steerDirectionTowardTarget(_projDir, _projDesired, SWIRL_HOMING_TURN_RATE * dt, _projAxis)
+            steerDirectionTowardTarget(_projDir, _projDesired, SWIRL_HOMING_TURN_RATE * projectileDt, _projAxis)
             projectile.velocity.copy(_projDir).multiplyScalar(speed)
           }
         }
       }
 
       if (projectile.life != null) {
-        projectile.life -= dt
+        projectile.life -= projectileDt
         if (projectile.life <= 0) {
           if (projectile.isPiercing && projectile.swirlHomingTarget) {
             aiValidator.expect(
@@ -534,7 +543,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       }
 
       _projPrevPos.copy(projectile.mesh.position)
-      _projStep.copy(projectile.velocity).multiplyScalar(dt)
+      _projStep.copy(projectile.velocity).multiplyScalar(projectileDt)
       projectile.mesh.position.add(_projStep)
       projectile.traveled += _projStep.length()
       if (projectile.velocity.lengthSq() > 1e-6) {
@@ -547,14 +556,20 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // `rotation.z +=` direto (seria sobrescrito no frame seguinte); acumula o ÂNGULO num
       // campo próprio do projétil e reaplica por cima da direção a cada frame.
       if (projectile.isPiercing) {
-        projectile.spinAngle += SWIRL_SPIN_RATE * dt
+        projectile.spinAngle += SWIRL_SPIN_RATE * projectileDt
         projectile.mesh.rotateZ(projectile.spinAngle)
-        updateSwirlDynamicShell(projectile, dt)
+        updateSwirlDynamicShell(projectile, projectileDt)
         if (effects && effects.swirlAfterimage) {
-          projectile.afterimageTimer -= dt
-          if (projectile.afterimageTimer <= 0) {
-            projectile.afterimageTimer = SWIRL_AFTERIMAGE_INTERVAL
-            effects.swirlAfterimage(projectile.mesh.position, projectile.mesh.quaternion)
+          projectile.trailDistance = (projectile.trailDistance || 0) + _projStep.length()
+          let emitted = 0
+          while (projectile.trailDistance >= SWIRL_TRAIL_SPACING && emitted < SWIRL_TRAIL_EMISSIONS_PER_FRAME_CAP) {
+            projectile.trailDistance -= SWIRL_TRAIL_SPACING
+            const traveledIntoStep = _projStep.length() > 1e-6
+              ? THREE.MathUtils.clamp(1 - projectile.trailDistance / _projStep.length(), 0, 1)
+              : 1
+            _projRingPos.copy(_projPrevPos).lerp(projectile.mesh.position, traveledIntoStep)
+            effects.swirlAfterimage(_projRingPos, projectile.mesh.quaternion)
+            emitted += 1
           }
         }
       }
@@ -580,13 +595,16 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       // resto do bloco abaixo (orbHit/hit único/bonusHit) é do tiro normal/teleguiado.
       if (projectile.isPiercing) {
         const pierceHits = enemies.resolvePiercingProjectileHits(_projPrevPos, projectile.mesh.position, {
-            damage: projectile.damage + globalDamageBonus,
+          damage: projectile.damage + globalDamageBonus,
           piercedTargets: projectile.piercedTargets,
           goldenPiercedTargets: projectile.goldenPiercedTargets,
+          projectileRadius: SWIRL_PROJECTILE_RADIUS,
+          bossHpRatio: SWIRL_BOSS_HP_RATIO,
         })
         let stopped = false
         for (const h of pierceHits) {
-          const feedback = createDamageFeedback(h, projectile.damage + globalDamageBonus, { instant: h.kind === 'detrito' })
+          const appliedDamage = Number.isFinite(h.damageApplied) ? h.damageApplied : projectile.damage + globalDamageBonus
+          const feedback = createDamageFeedback(h, appliedDamage, { instant: h.kind === 'detrito' })
           if (feedback) damageFeedback.push(feedback)
           // dourado nunca entra no hitsLog (mesma exclusão de propósito do path não-perfurante
           // logo abaixo) — vira os campos goldenSpecialHit/goldenHitWorldPos em vez disso
@@ -598,7 +616,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
             }
           } else {
             hitsLog.push({
-              worldPos: h.worldPos, damage: projectile.damage + globalDamageBonus, killed: h.killed,
+              worldPos: h.worldPos, damage: appliedDamage, killed: h.killed,
               isHoming: false, meshRef: h.meshRef, points: h.enemyKillPoints || 0,
             })
             if (h.killed) {
@@ -618,6 +636,10 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           }
           // §3.2.3/§3.2.4 — chefe/dourado/fragata param o Swirl (com ou sem destruir escudo no
           // caminho); explosão de impacto no ponto de parada.
+          if (effects && !h.blocked && !h.stopProjectile) {
+            effects.hitSpark?.(h.worldPos, h.kind === 'detrito' ? 0xffb366 : 0x7bc8ff)
+            effects.shockwave?.(h.worldPos, 0x2b8fff, 0.32)
+          }
           if (h.stopProjectile) {
             stopped = true
             if (effects && effects.swirlBlastExplosion) effects.swirlBlastExplosion(h.worldPos, _projDir)
@@ -854,7 +876,7 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       )
       projectiles.push({
         mesh, velocity: direction.clone().multiplyScalar(SWIRL_BLAST_SPEED), traveled: 0,
-        damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME, spinAngle: 0, afterimageTimer: 0,
+        damage: SWIRL_BLAST_DAMAGE, life: SWIRL_BLAST_LIFETIME, spinAngle: 0, afterimageTimer: 0, trailDistance: 0,
         isPiercing: true, piercedTargets: new Set(), goldenPiercedTargets: new Set(),
         swirlHomingTarget: bossTarget || null,
       })

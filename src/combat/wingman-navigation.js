@@ -8,6 +8,7 @@ export const WINGMAN_NAVIGATION_INTENTS = Object.freeze({
 // Rail: distância espacial não decide mais estado. Só o atraso LONGITUDINAL em relação ao
 // frame atual do trilho acrescenta velocidade, sem cancelar Behavior/Action nem mudar target.
 export const WINGMAN_RAIL_CATCHUP_START = 32
+export const WINGMAN_RAIL_CATCHUP_RELEASE = 22
 export const WINGMAN_RAIL_CATCHUP_FULL = 120
 export const WINGMAN_RAIL_CATCHUP_MAX_BONUS = 72
 
@@ -28,13 +29,19 @@ export function computeRailLongitudinalLag(position, playerPosition, frame) {
   return dx * frame.forward.x + dy * frame.forward.y + dz * frame.forward.z
 }
 
+export function updateRailCatchupState(longitudinalLag, wasActive = false) {
+  if (!Number.isFinite(longitudinalLag)) return false
+  if (wasActive) return longitudinalLag > WINGMAN_RAIL_CATCHUP_RELEASE
+  return longitudinalLag > WINGMAN_RAIL_CATCHUP_START
+}
+
 export function computeRailCatchupBoost(longitudinalLag) {
   if (!Number.isFinite(longitudinalLag) || longitudinalLag <= WINGMAN_RAIL_CATCHUP_START) return 0
   const span = WINGMAN_RAIL_CATCHUP_FULL - WINGMAN_RAIL_CATCHUP_START
   const raw = Math.max(0, Math.min(1, (longitudinalLag - WINGMAN_RAIL_CATCHUP_START) / span))
   // smoothstep evita degrau perceptível quando cruza o limiar.
   const t = raw * raw * (3 - 2 * raw)
-  return WINGMAN_RAIL_CATCHUP_MAX_BONUS * t
+  return Math.min(WINGMAN_RAIL_CATCHUP_MAX_BONUS, WINGMAN_RAIL_CATCHUP_MAX_BONUS * t)
 }
 
 export function navigationIntentForWingman({ state, escortKind = null } = {}) {

@@ -25,8 +25,10 @@ export function computeFormationMotionGain(playerSpeed, idleThreshold = 0.75, fu
 
 export function isWingmanCombatTargetReady(target, readyTargets = null) {
   if (!target || target.dying || target.fadingOut || !target.mesh || !target.mesh.parent) return false
-  // Alguns inimigos já possuem mesh durante a apresentação de spawn, mas ainda estão invulneráveis.
-  // Para IA de Wingman isso continua sendo "não surgiu": não pode virar alvo até o timer zerar.
+  if (Number.isFinite(target.hp) && target.hp <= 0) return false
+  if (Number.isFinite(target.health) && target.health <= 0) return false
+  // Qualquer fase de entrada ainda ativa é não-combate, mesmo que o mesh já exista.
+  if (target.spawnPhase && target.spawnPhase !== 'active') return false
   if (Number.isFinite(target.spawnInvincibleTimer) && target.spawnInvincibleTimer > 0) return false
   if (readyTargets && !readyTargets.has(target)) return false
   return true

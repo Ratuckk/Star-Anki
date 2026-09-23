@@ -297,7 +297,11 @@ export function resolveGateHit(gate, playerPosition, opts = {}) {
     triggerSoundCue(ENEMY_SOUND_CUES.sentinela_crush, { worldPos: gate.mesh.position })
     break
   }
-  return { hit }
+  return {
+    hit,
+    hullDamage: hit ? (gate.damage ?? GATE_DAMAGE) : 0,
+    shieldDamage: hit ? (gate.shieldDamage ?? GATE_SHIELD_DAMAGE) : 0,
+  }
 }
 
 export function disposeSentinela() {

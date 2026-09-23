@@ -62,6 +62,22 @@ function maxLocksForEntity(e) {
   return 1
 }
 
+function isLiveLockTarget(e) {
+  return !!e?.mesh && !e.dying && !e.fadingOut
+    && !(Number.isFinite(e.hp) && e.hp <= 0)
+    && !(Number.isFinite(e.health) && e.health <= 0)
+    && !(e.spawnPhase && e.spawnPhase !== 'active')
+}
+
+function compareLockPriority(a, b) {
+  const aBoss = a.kind === 'boss' ? 1 : 0
+  const bBoss = b.kind === 'boss' ? 1 : 0
+  if (aBoss !== bBoss) return bBoss - aBoss
+  const hpDiff = (Number(b.maxHp) || 0) - (Number(a.maxHp) || 0)
+  if (hpDiff !== 0) return hpDiff
+  return (Number(a.id) || 0) - (Number(b.id) || 0)
+}
+
 // temporário de módulo — evita alocar Vector3 novo a cada snapshot por frame
 const _tmpWorldPos = new THREE.Vector3()
 const _tmpOffset = new THREE.Vector3()
@@ -87,7 +103,7 @@ export function createLockOnSystem(rail, enemies) {
       // estava mirando"). Uma trava só sai por motivo de VALIDADE do alvo em si (morreu, ficou
       // perto demais, passou pra trás) — nunca porque a mira do jogador se moveu.
       lockedEnemies = lockedEnemies.filter((rec) => {
-        if (rec.entity.dying) return false
+        if (!isLiveLockTarget(rec.entity)) return false
         const rel = rec.entity.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist < MIN_LOCK_RANGE) return false
@@ -97,12 +113,13 @@ export function createLockOnSystem(rail, enemies) {
 
       // 2) AQUISIÇÃO — Fox e Miyu têm orçamentos separados. O orçamento BASE continua
       // obedecendo o limite por entidade; MIYU pode repetir o mesmo alvo enquanto ele segue na mira.
-      const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()]
+      const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()].filter(isLiveLockTarget).sort(compareLockPriority)
       const budgets = computeLockBudgets(maxAllowed, baseMaxAllowed)
       let baseCount = lockedEnemies.reduce((n, rec) => n + (rec.source === LOCK_SOURCE_BASE ? 1 : 0), 0)
       let miyuCount = lockedEnemies.reduce((n, rec) => n + (rec.source === LOCK_SOURCE_MIYU ? 1 : 0), 0)
 
       const candidateIsAimedAndValid = (e) => {
+        if (!isLiveLockTarget(e)) return false
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE) return false
@@ -154,7 +171,7 @@ export function createLockOnSystem(rail, enemies) {
       const frame = rail.getFrameAt(0)
       const targets = [...enemies.getAlive(), ...(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])]
       for (const e of targets) {
-        if (!e || e.dying || !e.mesh) continue
+        if (!isLiveLockTarget(e)) continue
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
@@ -173,7 +190,7 @@ export function createLockOnSystem(rail, enemies) {
       const targets = [...enemies.getAlive(), ...(enemies.getGoldenAlive ? enemies.getGoldenAlive() : [])]
       const inCone = []
       for (const e of targets) {
-        if (!e || e.dying || !e.mesh) continue
+        if (!isLiveLockTarget(e)) continue
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
         if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE || rel.dot(frame.forward) < PASS_BEHIND) continue
@@ -193,7 +210,7 @@ export function createLockOnSystem(rail, enemies) {
     takeLockedTargetGroups(inRange) {
       const groups = { base: [], miyu: [] }
       for (const rec of lockedEnemies) {
-        if (rec.entity.dying || !inRange(rec.entity)) continue
+        if (!isLiveLockTarget(rec.entity) || !inRange(rec.entity)) continue
         if (rec.source === LOCK_SOURCE_MIYU) groups.miyu.push(rec.entity)
         else groups.base.push(rec.entity)
       }
@@ -203,14 +220,14 @@ export function createLockOnSystem(rail, enemies) {
 
     takeLockedTargets(inRange) {
       const targets = lockedEnemies
-        .filter((rec) => !rec.entity.dying && inRange(rec.entity))
+        .filter((rec) => isLiveLockTarget(rec.entity) && inRange(rec.entity))
         .map((rec) => rec.entity)
       lockedEnemies = []
       return targets
     },
 
 
-    getLockedEntities: () => lockedEnemies.filter((rec) => !rec.entity.dying).map((rec) => rec.entity),
+    getLockedEntities: () => lockedEnemies.filter((rec) => isLiveLockTarget(rec.entity)).map((rec) => rec.entity),
     clearLockedEnemies() { lockedEnemies = [] },
 
     // ============ SNAPSHOTS — âncora + layout, sem estado ============
@@ -227,7 +244,7 @@ export function createLockOnSystem(rail, enemies) {
     //      Reflow a cada chamada: se uma trava some, as outras reequilibram o anel sem estado
     //      guardado. Nada de clump aleatório.
     getLockedEnemySnapshots: () => {
-      const alive = lockedEnemies.filter((rec) => !rec.entity.dying)
+      const alive = lockedEnemies.filter((rec) => isLiveLockTarget(rec.entity))
 
       // agrupa por entidade mantendo a ordem de aquisição (seq) dentro de cada grupo — a
       // ordenação por seq garante que o anel se mantenha estável quando uma trava é solta
