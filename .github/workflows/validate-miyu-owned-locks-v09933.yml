@@ -1,0 +1,53 @@
+name: validate-miyu-owned-locks-v09933
+
+on:
+  push:
+    branches:
+      - validation/miyu-owned-triangle-locks-v09933
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply v0.99.33 migration
+        run: python scripts/apply-miyu-owned-locks-v09933.py
+
+      - name: Syntax checks
+        run: |
+          node --check src/combat/miyu-assist-lock-budget.js
+          node --check src/combat/lockon.js
+          node --check src/combat/projectiles.js
+          node --check src/combat/index.js
+          node --check src/combat/wingmen.js
+          node --check src/miyu-assist-locks.test.mjs
+          node --check src/selftest.mjs
+
+      - name: Focused Miyu tests
+        run: |
+          node src/miyu-assist-locks.test.mjs
+          node src/wingman-radio-overhaul.test.mjs
+          node src/wingman-flight-stability.test.mjs
+          node src/wingman-state-controller.test.mjs
+
+      - name: Full selftest
+        run: node src/selftest.mjs
+
+      - name: Diff check
+        run: git diff --check
+
+      - name: Commit validated clean tree
+        run: |
+          rm -f scripts/apply-miyu-owned-locks-v09933.py
+          rm -f .github/workflows/validate-miyu-owned-locks-v09933.yml
+          git add -A
+          git config user.name "Star-Anki Validation Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "[validated-miyu-v09933] feat: entrega locks triangulares à Miyu"
+          git push origin HEAD:validation/miyu-owned-triangle-locks-v09933
