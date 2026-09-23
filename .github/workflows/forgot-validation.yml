@@ -33,17 +33,17 @@ jobs:
           npm init -y >/dev/null 2>&1
           npm install --no-save --no-package-lock three@0.169.0
 
-      - name: Apply forgot stage 4
+      - name: Apply forgot stage 5
         run: |
-          if [ -f scripts/apply-forgot-stage4-v09934.py ]; then
-            python scripts/apply-forgot-stage4-v09934.py
+          if [ -f scripts/apply-forgot-stage5-v09934.py ]; then
+            python scripts/apply-forgot-stage5-v09934.py
           else
-            echo "Stage 4 migrator not present yet; validating current snapshot only."
+            echo "Stage 5 migrator not present yet; validating current snapshot only."
           fi
 
       - name: Syntax check changed JavaScript
         run: |
-          git diff --name-only -- 'src/*.js' 'src/**/*.js' | while read -r file; do
+          git diff --name-only -- 'src/*.js' 'src/**/*.js' 'src/*.mjs' 'tools/*.mjs' | while read -r file; do
             [ -z "$file" ] || node --check "$file"
           done
 
@@ -55,14 +55,19 @@ jobs:
           node src/wingman-formation-separation.test.mjs
           node src/wingman-navigation.test.mjs
           node src/miyu-assist-locks.test.mjs
+          [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
 
       - name: Run forgot focused suites
         run: |
           node src/tank.test.mjs
           node src/forgot-stage2.test.mjs
           node src/forgot-stage3.test.mjs
-          [ ! -f src/forgot-stage4.test.mjs ] || node src/forgot-stage4.test.mjs
-          [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
+          node src/forgot-stage4.test.mjs
+          [ ! -f src/lockon-priority.test.mjs ] || node src/lockon-priority.test.mjs
+
+      - name: Run state fuzz audit
+        run: |
+          [ ! -f tools/state-fuzz-audit.mjs ] || node tools/state-fuzz-audit.mjs
 
       - name: Run full selftest
         run: node src/selftest.mjs
@@ -74,10 +79,10 @@ jobs:
         run: |
           git config user.name "star-anki-validation-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add src index.html
+          git add src tools index.html
           if git diff --cached --quiet; then
             echo "No source changes produced."
             exit 0
           fi
-          git commit -m "[forgot-applied] feat: integrate fog spawns and boss swirl impacts"
+          git commit -m "[forgot-applied] test: lockon wingman bughunt and fuzz coverage"
           git push origin HEAD:validation/forgot-backlog-v09934
