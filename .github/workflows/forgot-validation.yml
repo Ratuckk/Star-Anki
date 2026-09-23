@@ -33,12 +33,12 @@ jobs:
           npm init -y >/dev/null 2>&1
           npm install --no-save --no-package-lock three@0.169.0
 
-      - name: Apply forgot stage 3
+      - name: Apply forgot stage 4
         run: |
-          if [ -f scripts/apply-forgot-stage3-v09934.py ]; then
-            python scripts/apply-forgot-stage3-v09934.py
+          if [ -f scripts/apply-forgot-stage4-v09934.py ]; then
+            python scripts/apply-forgot-stage4-v09934.py
           else
-            echo "Stage 3 migrator not present yet; validating current snapshot only."
+            echo "Stage 4 migrator not present yet; validating current snapshot only."
           fi
 
       - name: Syntax check changed JavaScript
@@ -60,7 +60,8 @@ jobs:
         run: |
           node src/tank.test.mjs
           node src/forgot-stage2.test.mjs
-          [ ! -f src/forgot-stage3.test.mjs ] || node src/forgot-stage3.test.mjs
+          node src/forgot-stage3.test.mjs
+          [ ! -f src/forgot-stage4.test.mjs ] || node src/forgot-stage4.test.mjs
           [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
 
       - name: Run full selftest
@@ -78,5 +79,5 @@ jobs:
             echo "No source changes produced."
             exit 0
           fi
-          git commit -m "[forgot-applied] feat: tactical draft fog banks and swirl camera"
+          git commit -m "[forgot-applied] feat: integrate fog spawns and boss swirl impacts"
           git push origin HEAD:validation/forgot-backlog-v09934
