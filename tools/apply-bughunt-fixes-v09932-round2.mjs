@@ -23,6 +23,7 @@ for (const [from, to, label] of [
   [`if (getSettings().wingmanRadioEnabled)`, `if (liveSettings.wingmanRadioEnabled)`, 'rádio live'],
   [`const damageVisualSettings = getSettings()`, `const damageVisualSettings = liveSettings`, 'dano visual live'],
   [`!getSettings().fogTacticalColors`, `!liveSettings.fogTacticalColors`, 'cor fog live'],
+  [`const ghostBlipsEnabled = getSettings().minimapGhostBlips`, `const ghostBlipsEnabled = liveSettings.minimapGhostBlips`, 'radar live'],
   [`if (showEnemyHealthBars) {`, `if (liveSettings.showEnemyHealthBars) {`, 'barra inimiga live'],
 ]) patch('src/game-loop.js', from, to, label)
 
@@ -31,6 +32,16 @@ patch(
   `    rail.update(dt, tumbleLocked ? TUMBLE_LOCKED_INPUT : inputState)\n`,
   `    // O slider também existe no painel de pausa; aplicar o valor atual antes do update faz a\n    // sensibilidade mudar imediatamente sem recriar o controlador/partida.\n    rail.setTurnSensitivity(liveSettings.arenaTurnSensitivity)\n    rail.update(dt, tumbleLocked ? TUMBLE_LOCKED_INPUT : inputState)\n`,
   'sensibilidade live',
+)
+
+// A primeira transição do ciclo do chefe usa kind='boss'; bossSummon é a segunda cutscene depois
+// da caça aos orbes. updateArenaCutscene tratava só bossSummon como chefe, então a apresentação
+// inicial recebia fog/preview de chefe mas não o warning card nem a fenda vermelha.
+patch(
+  'src/cutscenes.js',
+  `    const isBoss = state.arenaCutsceneKind === 'bossSummon'\n`,
+  `    const isBoss = state.arenaCutsceneKind === 'boss' || state.arenaCutsceneKind === 'bossSummon'\n`,
+  'boss inicial também é cutscene de chefe',
 )
 
 console.log('apply-bughunt-fixes-v09932-round2.mjs: OK')
