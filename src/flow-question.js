@@ -6,6 +6,7 @@ import { nextQuestion, resolveAnswer } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
 import { pickRandomCards } from './roguelike.js'
 import { WRONG_FEEDBACK_MS } from './main-constants.js'
+import { aiValidator } from './ai-validator.js'
 
 // Cartas "Vínculo" → id do piloto (mesma ordem de WINGMAN_PROFILES em combat/wingmen.js:
 // 0 Falco, 1 Peppy, 2 Slippy, 3 Miyu).
@@ -55,8 +56,13 @@ export function createQuestionFlow(deps) {
     const cards = pickRandomCards(3, buildCardExcludeSet())
     if (cards.length === 0) { onDone(); return }
     state.phase = 'cardChoice'
+    const compactArcadeDraft = !!deck?.isNoDeck
+    if (compactArcadeDraft) {
+      aiValidator.logMechanic('arcade-draft', 'compact-draft-opened', { cards: cards.map((card) => card.id) })
+    }
     hud.showCardChoice({
       cards,
+      compact: compactArcadeDraft,
       stats: {
         health: session.health,
         maxHealth: player.getMaxHealth ? player.getMaxHealth() : 10,

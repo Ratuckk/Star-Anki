@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import { getSettings } from './settings.js'
 import { FOG_COVERAGE_TARGET, FOG_ARENA_DENSITY_MULT, FOG_DENSITY_LERP_RATE, FOG_COLOR_LERP_RATE } from './main-constants.js'
+import { fogPocketVisualStrength, nextFogBankOffsets } from './fog-visual-model.js'
 
 // ============ PERFIS DE FOG POR EVENTO (Overhaul 4, pilar 4) ============
 // Cor só se aplica de verdade quando getSettings().fogTacticalColors está ligado (default
@@ -77,6 +78,21 @@ function createGasGiantTexture() {
 
   const texture = new THREE.CanvasTexture(canvas)
   return texture
+}
+
+function createFogBankTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  const g = ctx.createRadialGradient(128, 128, 10, 128, 128, 128)
+  g.addColorStop(0, 'rgba(132, 169, 196, 0.34)')
+  g.addColorStop(0.42, 'rgba(74, 109, 138, 0.22)')
+  g.addColorStop(0.75, 'rgba(40, 67, 91, 0.10)')
+  g.addColorStop(1, 'rgba(20, 36, 52, 0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 256, 256)
+  return new THREE.CanvasTexture(canvas)
 }
 
 function createRingTexture() {
@@ -249,6 +265,66 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   const deepStars = new THREE.Points(deepStarGeo, deepStarMat)
   environmentGroup.add(deepStars)
 
+  // Camada intermediária: diferente das estrelas profundas, participa do FogExp2. Ela é a
+  // referência de profundidade que deixa a névoa perceptível sem apagar o céu inteiro.
+  const MID_STAR_COUNT = 360
+  const midStarGeo = new THREE.BufferGeometry()
+  const midStarPos = new Float32Array(MID_STAR_COUNT * 3)
+  for (let i = 0; i < MID_STAR_COUNT; i++) {
+    const r = 48 + Math.random() * 145
+    const theta = Math.random() * Math.PI * 2
+    const phi = Math.acos(2 * Math.random() - 1)
+    midStarPos[i * 3] = r * Math.sin(phi) * Math.cos(theta)
+    midStarPos[i * 3 + 1] = r * Math.cos(phi) * 0.72
+    midStarPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta)
+  }
+  midStarGeo.setAttribute('position', new THREE.BufferAttribute(midStarPos, 3))
+  const midStarMat = new THREE.PointsMaterial({
+    color: 0xc7e7ff,
+    size: 1.15,
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false,
+    fog: true,
+  })
+  const midStars = new THREE.Points(midStarGeo, midStarMat)
+  environmentGroup.add(midStars)
+
+  // Bancos localizados: três massas à frente no trilho, reutilizadas para não alocar por frame.
+  // São sprites com depth-test (não overlay de tela inteira), portanto ocupam um lugar legível no
+  // espaço e podem ser vistos antes de o jogador atravessar a região de densidade maior.
+  const fogBankTexture = createFogBankTexture()
+  const fogBankRoots = Array.from({ length: 3 }, (_, bankIndex) => {
+    const root = new THREE.Group()
+    const bankSpecs = [
+      [-18, 5, 58, 32, 0.9],
+      [10, -7, 70, 40, 1.0],
+      [24, 9, 46, 28, 0.72],
+    ]
+    const bankMaterials = []
+    for (const [x, y, sx, sy, alpha] of bankSpecs) {
+      const material = new THREE.SpriteMaterial({
+        map: fogBankTexture,
+        color: 0x7894aa,
+        transparent: true,
+        opacity: 0.18 * alpha,
+        depthWrite: false,
+        depthTest: true,
+        fog: false,
+      })
+      const sprite = new THREE.Sprite(material)
+      sprite.position.set(x, y, 0)
+      sprite.scale.set(sx, sy, 1)
+      root.add(sprite)
+      bankMaterials.push({ material, alpha })
+    }
+    root.userData.bankMaterials = bankMaterials
+    root.userData.lateral = (bankIndex - 1) * 9
+    root.userData.vertical = bankIndex === 1 ? 1 : (bankIndex === 0 ? -4 : 5)
+    environmentGroup.add(root)
+    return root
+  })
+
   // ============ 4. ESTRELAS CADENTES / METEOROS ============
   const METEOR_COUNT = 3
   const meteors = []
@@ -305,6 +381,7 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     skyDome.visible = ENVIRONMENT_CONFIG.enableSkyDome
     planetGroup.visible = ENVIRONMENT_CONFIG.enableCelestialBodies
     deepStars.visible = ENVIRONMENT_CONFIG.enableMultiLayerStars
+    midStars.visible = ENVIRONMENT_CONFIG.enableMultiLayerStars
     gridPulseMesh.visible = ENVIRONMENT_CONFIG.enableEnergizedGrid
 
     // 1. SkyDome & Corpos celestes acompanham a câmera para infinito
@@ -341,6 +418,33 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         deepStarMat.size = 2.4
       } else {
         deepStars.scale.lerp(_tmpScaleOne, 1 - Math.exp(-6 * dt))
+      }
+
+      // A camada intermediária acompanha a câmera como um volume estelar local, mas continua
+      // submetida ao fog por profundidade. Dentro do bolsão ela perde brilho progressivamente;
+      // as estrelas profundas permanecem, tornando a massa de fog visualmente comparável.
+      if (camera) midStars.position.copy(camera.position)
+      const pocketStrength = !inArena && ENVIRONMENT_CONFIG.enableNebulaPockets
+        ? fogPocketVisualStrength(rail.getDistance()) : 0
+      midStarMat.opacity = 0.78 * (1 - pocketStrength * 0.58)
+      midStarMat.size = boostActive ? 1.45 : 1.15
+    }
+
+    // Volumes localizados de fog: só no rail. Arena conserva leitura limpa de Boss/Dourado.
+    const showFogBanks = !!ENVIRONMENT_CONFIG.enableNebulaPockets && !inArena
+    const bankOffsets = showFogBanks ? nextFogBankOffsets(rail.getDistance(), fogBankRoots.length) : []
+    for (let i = 0; i < fogBankRoots.length; i += 1) {
+      const bank = fogBankRoots[i]
+      const offset = bankOffsets[i]
+      bank.visible = showFogBanks && Number.isFinite(offset) && offset < 760
+      if (!bank.visible) continue
+      const bankFrame = rail.getFrameAt(offset)
+      bank.position.copy(bankFrame.position)
+        .addScaledVector(bankFrame.right, bank.userData.lateral)
+        .addScaledVector(bankFrame.up, bank.userData.vertical)
+      const approach = Math.max(0.35, Math.min(1, 1 - offset / 760))
+      for (const entry of bank.userData.bankMaterials) {
+        entry.material.opacity = (0.12 + approach * 0.16) * entry.alpha
       }
     }
 
@@ -480,6 +584,12 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     moonMat.dispose()
     deepStarGeo.dispose()
     deepStarMat.dispose()
+    midStarGeo.dispose()
+    midStarMat.dispose()
+    for (const bank of fogBankRoots) {
+      for (const entry of bank.userData.bankMaterials || []) entry.material.dispose()
+    }
+    fogBankTexture.dispose()
     meteorMat.dispose()
     for (const m of meteors) m.line.geometry.dispose()
     gridPulseGeo.dispose()

@@ -2285,13 +2285,28 @@ export function createGameHud() {
 
     // pedido do usuário: selecionar as cartas de upgrade pelos NÚMEROS também, igual já
     // funciona no modal de pergunta — reusa os mesmos binds quizSlot1..4 (Digit1..4 por padrão).
-    showCardChoice({ cards, stats, collectedCards, onPick }) {
+    showCardChoice({ cards, stats, collectedCards, compact = false, onPick }) {
       cardChoiceList.innerHTML = ''
       cardChoiceInspector.innerHTML = ''
+      cardChoiceOverlay.classList.toggle('arcade-compact', !!compact)
+      const draftBadge = cardChoiceHeader.querySelector('.card-choice-badge')
+      const draftTitle = cardChoiceHeader.querySelector('.card-choice-title')
+      const draftSubtitle = cardChoiceHeader.querySelector('.card-choice-subtitle')
+      if (compact) {
+        if (draftBadge) draftBadge.textContent = 'DRAFT TÁTICO'
+        if (draftTitle) draftTitle.textContent = 'ESCOLHA RÁPIDA'
+        if (draftSubtitle) draftSubtitle.innerHTML = 'Selecione <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> · o combate continua visível'
+      } else {
+        if (draftBadge) draftBadge.textContent = 'PROTOCOLO DE RECOMPENSA TÁTICA'
+        if (draftTitle) draftTitle.textContent = 'UPGRADE DE SISTEMA DISPONÍVEL'
+        if (draftSubtitle) draftSubtitle.innerHTML = 'Selecione um aprimoramento permanente para sua nave · Teclas <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>'
+      }
       cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
 
+      // No Arcade o draft é deliberadamente compacto: sem inspetor grande cobrindo a ação.
+      // Nos modos normais o inspetor existente continua intacto.
       // QOL (Item 2 — Inspetor de Build & Atributos)
-      if (stats) {
+      if (stats && !compact) {
         const statsRow = document.createElement('div')
         statsRow.className = 'inspector-stats-row'
         statsRow.innerHTML = `
@@ -2324,7 +2339,7 @@ export function createGameHud() {
         cardChoiceInspector.appendChild(statsRow)
       }
 
-      if (collectedCards && collectedCards.size > 0) {
+      if (!compact && collectedCards && collectedCards.size > 0) {
         const entries = Array.from(collectedCards.entries()).filter(([_, count]) => count > 0)
         if (entries.length > 0) {
           const upgradesWrap = document.createElement('div')
@@ -2356,6 +2371,7 @@ export function createGameHud() {
 
       const close = () => {
         cardChoiceOverlay.hidden = true
+        cardChoiceOverlay.classList.remove('arcade-compact')
         cardChoiceInspector.innerHTML = ''
         cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
         closeExplDrawer()
@@ -2453,6 +2469,7 @@ export function createGameHud() {
         cardChoiceGpStop = null
       }
       cardChoiceOverlay.hidden = true
+      cardChoiceOverlay.classList.remove('arcade-compact')
       cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
     },
 

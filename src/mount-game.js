@@ -133,6 +133,8 @@ export function mountGame(session, deck, menu) {
     // Swirl Blast (§4.5) — cutscene de câmera lenta/FOV no disparo, ver game-loop.js runFrame()
     swirlSlowMoMs: 0,
     swirlFovBumpMs: 0,
+    swirlCameraBaseFov: null,
+    swirlCameraPhase: null,
     swirlPunchFired: false, // guarda o disparo único do punch de câmera (ver game-loop.js runFrame)
     lastTime: performance.now(),
     rafId: null,
