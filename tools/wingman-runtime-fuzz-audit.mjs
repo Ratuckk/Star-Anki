@@ -149,7 +149,7 @@ let catchUpExits = 0
 const wingmanCatchupState = new Map([ [0, false], [1, false], [2, false], [3, false] ])
 const wingmanCatchupTransitions = new Map([ [0, []], [1, []], [2, []], [3, []] ])
 
-let obstacleAvoidanceCorrections = 0
+let obstacleAvoidanceChallengeEvents = 0
 let naNsDetected = 0
 let expectationsEvaluated = 0
 
@@ -354,13 +354,13 @@ for (currentFrame = 1; currentFrame <= TOTAL_FRAMES; currentFrame++) {
     }
   }
 
-  // 9. VALIDAÇÃO DE OBSTACLE AVOIDANCE
+  // 9. VALIDAÇÃO DE DESAFIO DE OBSTÁCULOS (Proximidade)
   if (dynamicObstacles.length > 0) {
     for (const pos of positions) {
       for (const obs of dynamicObstacles) {
         const obsDist = pos.distanceTo(obs.mesh.position)
         if (obsDist < obs.radius + 1.25) {
-          obstacleAvoidanceCorrections += 1
+          obstacleAvoidanceChallengeEvents += 1
         }
       }
     }
@@ -377,6 +377,10 @@ if (validatorSummary.expectativas_falhas.length > 0) {
   }
 }
 
+const predictiveCurvesInitiated = (validatorSummary.timeline_mecanicas || []).filter(
+  (m) => m.mechanic === 'wingman-obstacle-avoidance' && m.action === 'curva-preditiva-iniciada'
+).length
+
 // Relatório final estruturado
 const simDurationS = (TOTAL_FRAMES * DT).toFixed(1)
 console.log('\n======================================================')
@@ -391,7 +395,8 @@ console.log(`número de eventos de clumping detectados: ${clumpingEventsDetected
 console.log(`maior duração observada de clumping: ${maxClumpDuration.toFixed(3)}s`)
 console.log(`número de ativações de catch-up: ${catchUpActivations}`)
 console.log(`número de saídas de catch-up: ${catchUpExits}`)
-console.log(`número de correções de obstacle avoidance: ${obstacleAvoidanceCorrections}`)
+console.log(`eventos de desafio de obstáculos (proximidade): ${obstacleAvoidanceChallengeEvents}`)
+console.log(`curvas preditivas de avoidance iniciadas: ${predictiveCurvesInitiated}`)
 console.log(`NaNs detectados: ${naNsDetected}`)
 console.log('======================================================')
 

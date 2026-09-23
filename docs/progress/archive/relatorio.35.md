@@ -1,10 +1,10 @@
 # RELATÓRIO CONSOLIDADO — MARCO v0.99.35 (STAR-ANKI)
 ## Registro Autoritativo de Sistemas Implementados, Backlog Pendente e Diretrizes Técnicas para IAs
 
-> **Documento:** `relatorio.35.md`  
-> **Data:** 23 de Setembro de 2026  
-> **Versão de Referência:** v0.99.31 → v0.99.35 (Branch: `refactor/wingman-state-controller` / Sincronizado com `audit/full-project-bughunt-v09932`)  
-> **Status de Validação:** 33/33 Testes Unitários Aprovados (`selftest.mjs`), Auditoria 0 erros / 0 avisos (`full-project-audit.mjs`), Fuzzing 0 falhas (`state-fuzz-audit.mjs`).  
+> **Documento:** `relatorio.35.md`
+> **Data:** 23 de Setembro de 2026
+> **Versão de Referência:** v0.99.35 (Branch: `chore/reorganize-and-forgot-v09935` / Base de fechamento: `bfad055e7bcb07f57e396a511b3258c15f0f2a91` / Head auditado: `83a1ba832368b066dcb4eda1676202b0559f61c1`)
+> **Status de Validação:** 35/35 Testes Unitários Aprovados (`selftest.mjs`), CI GitHub Actions run `#35912947333` verde, Auditoria 0 erros / 0 avisos (`full-project-audit.mjs`), Fuzzing 0 falhas (`state-fuzz-audit.mjs` e `wingman-runtime-fuzz-audit.mjs`).
 > **Público-alvo:** Desenvolvedores, Engenheiros de Software e Agentes de Inteligência Artificial trabalhando no Star-Anki.
 
 ---
@@ -382,27 +382,27 @@ Este guia é a especificação técnica para qualquer Inteligência Artificial o
 
 ### 3.1 REGRAS DE OURO E MANDAMENTOS DE INTEGRIDADE
 
-1. **Testes Unitários São Inegociáveis:**  
+1. **Testes Unitários São Inegociáveis:**
    Antes de considerar qualquer entrega finalizada, execute:
    ```bash
    node src/selftest.mjs
    ```
    Todos os testes devem passar (33/33 ou mais). Se qualquer teste falhar, a implementação está errada e deve ser corrigida imediatamente.
-2. **Auditoria Estática Zero-Avisos:**  
+2. **Auditoria Estática Zero-Avisos:**
    Execute a ferramenta de auditoria completa:
    ```bash
    node tools/full-project-audit.mjs
    ```
    A contagem deve ser estritamente `AUDIT_SUMMARY errors=0 warnings=0`. Não introduza imports circulares, funções não declaradas nem arquivos soltos.
-3. **Resiliência a Fuzzing de Estado:**  
+3. **Resiliência a Fuzzing de Estado:**
    Execute o teste adversarial:
    ```bash
    node tools/state-fuzz-audit.mjs
    ```
    Deve registrar `FUZZ_SUMMARY failures=0`. Esquemas de storage, inputs e dados persistidos devem ser à prova de falhas e corrupção.
-4. **Preservação de APIs Públicas:**  
+4. **Preservação de APIs Públicas:**
    Nunca altere as assinaturas exportadas consumidas por `src/combat/index.js`, `src/combat/projectiles.js`, `src/combat/wingmen.js` e `src/game-loop.js` sem atualizar todos os seus respectivos consumidores e testes unitários.
-5. **Nunca Confie Cegamente em Números de Documentos de Rascunho:**  
+5. **Nunca Confie Cegamente em Números de Documentos de Rascunho:**
    Documentos conceituais antigos na pasta `Docs/` podem conter discrepâncias com o código real em produção (exemplo: a transição do Boss é 1.2s no código real, enquanto rascunhos mencionavam 2.0s). **Sempre inspecione o código-fonte atual antes de definir constantes.**
 
 ---
@@ -443,24 +443,24 @@ O Star-Anki roda a 60 frames por segundo no navegador. Erros sutis de Three.js c
 
 ### 3.3 PADRÃO DE ARQUITETURA DE MÓDULOS E GERENCIAMENTO DE ESTADO
 
-1. **Estado Único Compartilhado por Referência (`state`):**  
+1. **Estado Único Compartilhado por Referência (`state`):**
    Os fluxos do jogo (`flow-boss.js`, `flow-question.js`, `game-loop.js`) não devem ter estado isolado próprio. Todos recebem e manipulam o objeto central `state` criado em `mount-game.js`. Qualquer mutação em `state.phase` deve ser imediatamente reconhecível pelos demais sistemas.
 2. **Padrão de Criação de Sistemas (Fábricas):**
    ```javascript
    export function createMySystem(deps) {
      const { state, combat, effects, audio } = deps
-     
+
      function update(dt) {
        // Lógica do sistema
      }
-     
+
      return {
        update,
        dispose: () => { /* cleanup */ }
      }
    }
    ```
-3. **Máquina de Estados de Inimigos (`createStateMachine`):**  
+3. **Máquina de Estados de Inimigos (`createStateMachine`):**
    Para novos inimigos, utilize a fábrica em `src/enemies/state-machine.js`. Defina estados com os ciclos formais:
    ```javascript
    const STATES = {

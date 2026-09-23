@@ -78,6 +78,10 @@ jobs:
         run: |
           node tools/wingman-runtime-fuzz-audit.mjs
 
+      - name: Run Markdown Documentation Link Audit
+        run: |
+          node tools/docs-link-audit.mjs
+
       - name: Run Full Project Audit
         run: |
           node tools/full-project-audit.mjs

@@ -2,7 +2,9 @@
 
 > **Versão:** v0.99.35
 > **Branch:** `chore/reorganize-and-forgot-v09935`
-> **Base SHA:** `bfad055e7bcb07f57e396a511b3258c15f0f2a91`
+> **Base do fechamento pré-merge:** `bfad055e7bcb07f57e396a511b3258c15f0f2a91`
+> **Último candidato auditado pré-PR:** `83a1ba832368b066dcb4eda1676202b0559f61c1`
+> **Status da CI (GitHub Actions):** Run `#35912947333` aprovada (Success)
 > **Última atualização:** 2026-09-23
 
 ---
