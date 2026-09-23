@@ -28,23 +28,23 @@
 
 | Arquivo | Ação | Responsabilidade |
 | :--- | :--- | :--- |
-| [`src/enemies/state-machine.js`](src/enemies/state-machine.js) | **[CRIAR NOVO]** | Motor universal de Máquina de Estados Finita (FSM), enums globais de estados e utilitários de transição. |
-| [`src/enemies/index.js`](src/enemies/index.js) | **[MODIFICAR / REDUZIR]** | Remover o bloco `if-else` de 200 linhas em `updateEnemies`; padronizar despache para `enemy.controller.update`. |
-| [`src/enemies/blaster.js`](src/enemies/blaster.js) | **[REFATORAR]** | Eliminar flags soltas (`disengaging`, `tumbleSpin`, `wingBroken`); implementar FSM completa do caça Blaster. |
-| [`src/enemies/miniSwarm.js`](src/enemies/miniSwarm.js) | **[REFATORAR]** | Migrar `swarmState` para a FSM universal (`SWARM_PATROL`, `SWARM_TELEGRAPH`, `SWARM_DIVE`). |
-| [`src/enemies/sentinela.js`](src/enemies/sentinela.js) | **[REFATORAR]** | FSM formal (`APPROACH`, `STANDOFF`, `GATE_TELEGRAPH`, `GATE_FIRE`, `LEAVING`) com auto-remoção limpa. |
-| [`src/enemies/boss.js`](src/enemies/boss.js) | **[REFATORAR]** | HFSM (Fases 1, 2, 3 com sub-estados de ação: `MANEUVER`, `VOLLEY`, `LASER_CHARGE`, `LASER_FIRE`, `PHASE_TRANSITION`). |
-| [`src/enemies/golden.js`](src/enemies/golden.js) | **[REFATORAR]** | FSM para a Anomalia Dourada (`PATROL`, `DASH`, `TELEPORT`, `MINION_BURST`, `MEGA_LASER`, `CATACLYSM`). |
-| [`src/enemies/sussurro.js`](src/enemies/sussurro.js) | **[REFATORAR]** | FSM de camuflagem (`CLOAKED`, `GLITCH_VISIBLE`, `SUMMONING`, `RETREAT`). |
-| [`src/enemies/fragata.js`](src/enemies/fragata.js) | **[REFATORAR]** | FSM de blindagem rotativa (`SHIELD_PATROL`, `CORE_EXPOSED`, `BROADSIDE`). |
-| [`src/enemies/verme.js`](src/enemies/verme.js) | **[MODIFICAR]** | Integrar controlador compatível para elos e promoção de cabeças de subcadeia. |
-| [`src/enemies/timeEnemy.js`](src/enemies/timeEnemy.js) | **[MODIFICAR]** | Integrar controlador compatível para rotação e disparo de desaceleração temporal. |
-| [`src/enemies/tank.js`](src/enemies/tank.js) | **[MODIFICAR]** | Integrar controlador compatível com telegrafia pesada. |
-| [`src/enemies/detrito.js`](src/enemies/detrito.js) | **[MODIFICAR]** | Integrar controlador passivo de rotação e estilhaçamento. |
-| [`src/enemies/ima.js`](src/enemies/ima.js) | **[MODIFICAR]** | Integrar controlador passivo com campo de atração polar. |
-| [`src/enemies/replica.js`](src/enemies/replica.js) | **[MODIFICAR]** | Integrar controlador compatível com espelhamento de rota. |
-| [`src/enemies/enemy-telemetry.js`](src/enemies/enemy-telemetry.js) | **[MODIFICAR]** | Substituir leituras ad-hoc por consulta direta a `enemy.fsm.currentState`. |
-| [`src/selftest.mjs`](src/selftest.mjs) | **[MODIFICAR]** | Adicionar bateria de testes unitários para a FSM e transições de todos os arquétipos. |
+| [`src/enemies/state-machine.js`](../../../src/enemies/state-machine.js) | **[CRIAR NOVO]** | Motor universal de Máquina de Estados Finita (FSM), enums globais de estados e utilitários de transição. |
+| [`src/enemies/index.js`](../../../src/enemies/index.js) | **[MODIFICAR / REDUZIR]** | Remover o bloco `if-else` de 200 linhas em `updateEnemies`; padronizar despache para `enemy.controller.update`. |
+| [`src/enemies/blaster.js`](../../../src/enemies/blaster.js) | **[REFATORAR]** | Eliminar flags soltas (`disengaging`, `tumbleSpin`, `wingBroken`); implementar FSM completa do caça Blaster. |
+| [`src/enemies/miniSwarm.js`](../../../src/enemies/miniSwarm.js) | **[REFATORAR]** | Migrar `swarmState` para a FSM universal (`SWARM_PATROL`, `SWARM_TELEGRAPH`, `SWARM_DIVE`). |
+| [`src/enemies/sentinela.js`](../../../src/enemies/sentinela.js) | **[REFATORAR]** | FSM formal (`APPROACH`, `STANDOFF`, `GATE_TELEGRAPH`, `GATE_FIRE`, `LEAVING`) com auto-remoção limpa. |
+| [`src/enemies/boss.js`](../../../src/enemies/boss.js) | **[REFATORAR]** | HFSM (Fases 1, 2, 3 com sub-estados de ação: `MANEUVER`, `VOLLEY`, `LASER_CHARGE`, `LASER_FIRE`, `PHASE_TRANSITION`). |
+| [`src/enemies/golden.js`](../../../src/enemies/golden.js) | **[REFATORAR]** | FSM para a Anomalia Dourada (`PATROL`, `DASH`, `TELEPORT`, `MINION_BURST`, `MEGA_LASER`, `CATACLYSM`). |
+| [`src/enemies/sussurro.js`](../../../src/enemies/sussurro.js) | **[REFATORAR]** | FSM de camuflagem (`CLOAKED`, `GLITCH_VISIBLE`, `SUMMONING`, `RETREAT`). |
+| [`src/enemies/fragata.js`](../../../src/enemies/fragata.js) | **[REFATORAR]** | FSM de blindagem rotativa (`SHIELD_PATROL`, `CORE_EXPOSED`, `BROADSIDE`). |
+| [`src/enemies/verme.js`](../../../src/enemies/verme.js) | **[MODIFICAR]** | Integrar controlador compatível para elos e promoção de cabeças de subcadeia. |
+| [`src/enemies/timeEnemy.js`](../../../src/enemies/timeEnemy.js) | **[MODIFICAR]** | Integrar controlador compatível para rotação e disparo de desaceleração temporal. |
+| [`src/enemies/tank.js`](../../../src/enemies/tank.js) | **[MODIFICAR]** | Integrar controlador compatível com telegrafia pesada. |
+| [`src/enemies/detrito.js`](../../../src/enemies/detrito.js) | **[MODIFICAR]** | Integrar controlador passivo de rotação e estilhaçamento. |
+| [`src/enemies/ima.js`](../../../src/enemies/ima.js) | **[MODIFICAR]** | Integrar controlador passivo com campo de atração polar. |
+| [`src/enemies/replica.js`](../../../src/enemies/replica.js) | **[MODIFICAR]** | Integrar controlador compatível com espelhamento de rota. |
+| [`src/enemies/enemy-telemetry.js`](../../../src/enemies/enemy-telemetry.js) | **[MODIFICAR]** | Substituir leituras ad-hoc por consulta direta a `enemy.fsm.currentState`. |
+| [`src/selftest.mjs`](../../../src/selftest.mjs) | **[MODIFICAR]** | Adicionar bateria de testes unitários para a FSM e transições de todos os arquétipos. |
 
 ---
 
@@ -84,7 +84,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.1 `Blaster` (Caças Estelares Genéricos)
-- **Arquivo:** [`src/enemies/blaster.js`](src/enemies/blaster.js)
+- **Arquivo:** [`src/enemies/blaster.js`](../../../src/enemies/blaster.js)
 - **Localização Atual:** Linhas 101–285 (`spawnBlaster`, `updateBlasterRailMovement`, `updateBlasterArenaMovement`, `breakBlasterWing`).
 
 #### O que REMOVER:
@@ -127,7 +127,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.2 `MiniSwarm` (Fila / Enxame em Rasante)
-- **Arquivo:** [`src/enemies/miniSwarm.js`](src/enemies/miniSwarm.js)
+- **Arquivo:** [`src/enemies/miniSwarm.js`](../../../src/enemies/miniSwarm.js)
 - **Localização Atual:** Linhas 80–140 (`spawnMiniSwarm`, `updateMiniSwarm`).
 
 #### O que REMOVER:
@@ -147,7 +147,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.3 `Sentinela` (Moldura Pulsante)
-- **Arquivo:** [`src/enemies/sentinela.js`](src/enemies/sentinela.js)
+- **Arquivo:** [`src/enemies/sentinela.js`](../../../src/enemies/sentinela.js)
 - **Localização Atual:** Linhas 26–28, 115–185 (`SENTINELA_STATE_ENGAGING`, `SENTINELA_STATE_LEAVING`, `updateSentinelaMovement`).
 
 #### O que REMOVER:
@@ -169,7 +169,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.4 `Boss` (Chefe Dodecaedro de 3 Fases)
-- **Arquivo:** [`src/enemies/boss.js`](src/enemies/boss.js)
+- **Arquivo:** [`src/enemies/boss.js`](../../../src/enemies/boss.js)
 - **Localização Atual:** Linhas 52–100 (`BOSS_PHASES`), 180–260 (transição de fases e HP floors), 265–440 (`updateBossMovement`, `updateBossLaser`, `fireBossVolley`).
 
 #### O que REMOVER:
@@ -201,7 +201,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.5 `Golden` (Anomalia Dourada)
-- **Arquivo:** [`src/enemies/golden.js`](src/enemies/golden.js)
+- **Arquivo:** [`src/enemies/golden.js`](../../../src/enemies/golden.js)
 - **Localização Atual:** Linhas 15–45, 120–320.
 
 #### O que REMOVER:
@@ -224,7 +224,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.6 `Fragata-Escudo`
-- **Arquivo:** [`src/enemies/fragata.js`](src/enemies/fragata.js)
+- **Arquivo:** [`src/enemies/fragata.js`](../../../src/enemies/fragata.js)
 - **O que IMPLEMENTAR:**
   - `SHIELD_CRUISE`: Blindagem girando a 0.9 rad/s protegendo o arco frontal.
   - `CORE_EXPOSED`: Ao girar para a janela aberta, emite um brilho pulsante no núcleo. Se tomar tiro neste ângulo, sofre dano direto.
@@ -233,7 +233,7 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ---
 
 ### 4.7 `Sussurro`
-- **Arquivo:** [`src/enemies/sussurro.js`](src/enemies/sussurro.js)
+- **Arquivo:** [`src/enemies/sussurro.js`](../../../src/enemies/sussurro.js)
 - **O que REMOVER:** Checagem de invocação de reforços solta em `index.js:453` (`if (sussurroShouldSummon(enemy))`).
 - **O que IMPLEMENTAR:**
   - `CLOAKED_CRUISE`: Opacidade em 0.28, avançando suavemente pelo trilho.
@@ -321,20 +321,20 @@ A fábrica `createStateMachine(enemy, statesConfig, initialState)` deve gerencia
 ## 7. Plano de Execução Passo a Passo para a IA Executora
 
 1. **Passo 1 — Infraestrutura Base:**
-   - Criar [`src/enemies/state-machine.js`](src/enemies/state-machine.js) com `ENEMY_STATES` e a função de criação `createStateMachine`.
+   - Criar [`src/enemies/state-machine.js`](../../../src/enemies/state-machine.js) com `ENEMY_STATES` e a função de criação `createStateMachine`.
 2. **Passo 2 — Migração do Blaster:**
-   - Refatorar [`src/enemies/blaster.js`](src/enemies/blaster.js). Remover flags booleanas e implementar a FSM com os 8 estados definidos na seção 4.1.
+   - Refatorar [`src/enemies/blaster.js`](../../../src/enemies/blaster.js). Remover flags booleanas e implementar a FSM com os 8 estados definidos na seção 4.1.
 3. **Passo 3 — Migração dos Inimigos de Trilho (MiniSwarm e Sentinela):**
-   - Refatorar [`src/enemies/miniSwarm.js`](src/enemies/miniSwarm.js) e [`src/enemies/sentinela.js`](src/enemies/sentinela.js).
+   - Refatorar [`src/enemies/miniSwarm.js`](../../../src/enemies/miniSwarm.js) e [`src/enemies/sentinela.js`](../../../src/enemies/sentinela.js).
 4. **Passo 4 — Migração dos Chefes (Boss e Golden):**
-   - Refatorar [`src/enemies/boss.js`](src/enemies/boss.js) implementando a HFSM de 3 fases e [`src/enemies/golden.js`](src/enemies/golden.js).
+   - Refatorar [`src/enemies/boss.js`](../../../src/enemies/boss.js) implementando a HFSM de 3 fases e [`src/enemies/golden.js`](../../../src/enemies/golden.js).
 5. **Passo 5 — Migração dos Demais Inimigos (Sussurro, Fragata, Verme, etc.):**
    - Adequar os arquivos restantes à interface de controlador padronizada.
 6. **Passo 6 — Limpeza do Orquestrador Central:**
-   - Esvaziar o loop monolítico em [`src/enemies/index.js`](src/enemies/index.js), conectando o despache modular e a delegação de dano.
+   - Esvaziar o loop monolítico em [`src/enemies/index.js`](../../../src/enemies/index.js), conectando o despache modular e a delegação de dano.
 7. **Passo 7 — Atualização da Telemetria:**
-   - Atualizar [`src/enemies/enemy-telemetry.js`](src/enemies/enemy-telemetry.js).
+   - Atualizar [`src/enemies/enemy-telemetry.js`](../../../src/enemies/enemy-telemetry.js).
 8. **Passo 8 — Testes Automatizados e Validação:**
-   - Adicionar uma nova seção de testes em [`src/selftest.mjs`](src/selftest.mjs) que simule instâncias de cada inimigo e verifique as transições de estado da FSM.
+   - Adicionar uma nova seção de testes em [`src/selftest.mjs`](../../../src/selftest.mjs) que simule instâncias de cada inimigo e verifique as transições de estado da FSM.
    - Executar `node --check` em todos os arquivos modificados.
    - Executar `node src/selftest.mjs` e garantir aprovação de 100%.

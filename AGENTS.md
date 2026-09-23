@@ -2,16 +2,52 @@
 
 Rail shooter de estudo estilo Star Fox 64 que transforma um baralho do Anki em perguntas do jogo. Three.js via CDN import map, sem bundler, ES modules nativos.
 
-**Estrutura de módulos** (`src/`): `main.js` (loop principal/orquestração de fases), `rail.js` (trilho/câmera/arena), `combat.js` (tiros do jogador, lock-on, bônus, orbes do chefe), `player.js` (vida/escudo/boost/upgrades), `effects.js` (partículas/explosões/telegraphs), `input.js`, `storage.js`, `anki.js`/`quiz.js`/`decks.js` (parsing do baralho e fila de perguntas), `roguelike.js` (cartas), `keybindings.js`/`settings.js`, `debug.js` (metadados do painel de debug), `hud.js` (fachada) + `hud-*.js` (uma tela por arquivo: pregame, decks, settings, game, end, shared, styles).
+**Estrutura de módulos** (`src/`):
+- `main.js`: bootstrap puro e orquestração externa (suporte mobile e inicialização do menu de jogo).
+- `mount-game.js`: montagem da cena Three.js, iluminação, fog, setup de partida, enterCombat e teardown.
+- `game-loop.js`: loop principal (o tick), física, colisões, atualizações por frame e renderização.
+- `rail.js`: trilho 3D (splines), câmera cinemática e controle de arena All-Range.
+- `combat/index.js` (e subsistemas em `src/combat/`): orquestrador de combate, balística de tiros do jogador, lock-on prioritário, alvos bônus, orbes de chefe e esquadrão de wingmen (`src/combat/wingmen.js`).
+- `player.js`: estado da nave do jogador (vida, escudo, boost, buffs, upgrades e telemetria).
+- `cutscenes.js`: sequências cinemáticas (decolagem, transições e morte de chefes).
+- `effects.js`: sistema de partículas, explosões, shockwaves e telegraphs visuais.
+- `environment.js` e `environment-config.js`: starfield, reciclagem em world-space, parallax espacial e bancos de fog volumétricos.
+- `flow-question.js`, `flow-boss.js`, `flow-progression.js`: fluxo de perguntas/feedback, fases de chefes e progressão de dificuldade.
+- `anki.js`, `quiz.js`, `decks.js`: parsing de baralhos Anki e geração dinâmica de distratores coesos.
+- `roguelike.js`: cartas de melhorias e mecânica de draft (incluindo bullet-time no modo Arcade).
+- `input.js`, `keybindings.js`, `settings.js`: captura e mapeamento de controles (teclado, mouse e gamepad).
+- `audio.js` e `audio-cues.js`: reprodução de áudio, catálogo de sound cues e prioridades sonoras.
+- `debug.js` e `debug-actions.js`: telemetria, inspeção e ações do painel de debug.
+- `hud.js` (fachada) + `hud-*.js`: interface modular por tela (pregame, decks, settings, game, pause, end, damage, speedlines, styles).
 
-**`src/enemies/`** — cada CLASSE de inimigo tem seu próprio arquivo (variações de cor/movimento da MESMA classe ficam dentro do arquivo dela, não viram arquivo novo): `blaster.js` (vermelho comum atirador, 6 perfis de cor/movimento), `miniSwarm.js` (enxame patrulha+mergulho, 3 variantes: reto/zigue-zague/espiral), `timeEnemy.js` (ampulheta normal + variante "mega" com laser), `tank.js` (debug), `boss.js`, `golden.js` (especial dourado + minions, array próprio), `detrito.js` (obstáculo cinza destrutível, spawn independente das regras de pausa), `sentinela.js` (inimigo quadrado só-trilho, dispara "molduras" com centro seguro), `fragata.js`, `verme.js`, `ima.js`, `sussurro.js`, `replica.js`, `shared.js` (helpers sem estado), `state-machine.js` (motor de FSM genérico — `createStateMachine`/`ENEMY_STATES`, sem dependência de Three.js) e `index.js` (orquestrador: `createEnemiesSystem`, mantém os arrays compartilhados — `enemies`/projéteis/lasers/molduras — e despacha por `kind` pros arquivos de classe, exceto os já migrados pra FSM formal — hoje `blaster.js`/`tank.js`, que se auto-atualizam via `enemy.fsm.update()` — ver progresso/PROGRESSO_POS_.70.md). `combat/index.js`/`main.js` importam de `./enemies/index.js`.
+**`src/enemies/`** — cada CLASSE de inimigo tem seu próprio arquivo (variações de cor/movimento da MESMA classe ficam dentro do arquivo dela, não viram arquivo novo):
+- `blaster.js`: caça Blaster padrão (vermelho atirador, 6 perfis de movimento/cor; FSM universal ativa).
+- `tank.js`: unidade pesada regular consolidada (75 pts, 2 vagas de população, FSM de 9 estados, 3 ataques exclusivos, recoil desacoplado da hitbox e vulnerabilidade a Stagger por Swirl Blast — [ADR-0003](docs/decisions/ADR-0003-tank-regular-heavy-unit.md)).
+- `miniSwarm.js`: enxame patrulha + mergulho (3 variantes: reto, zigue-zague, espiral).
+- `timeEnemy.js`: ampulheta cronométrica (normal + variante com laser desacelerador).
+- `sentinela.js`: inimigo de trilho com molduras holográficas (centro translúcido seguro, bordas com dano).
+- `detrito.js`: asteroides e destroços físicos destrutíveis (spawn independente das regras de pausa).
+- `boss.js`: chefe principal de setor (dodecaedro de 3 fases com canhões, lasers e escudos).
+- `golden.js`: mini-chefe Anomalia Dourada (esquadrão, teleporte, dash, mega laser e cutscene cataclísmica).
+- `fragata.js`, `verme.js`, `ima.js`, `sussurro.js`, `replica.js`: arquétipos especializados de suporte e combate.
+- `state-machine.js`: motor genérico de FSM universal (`createStateMachine`, `ENEMY_STATES`).
+- `index.js`: orquestrador de ciclo de vida (`createEnemiesSystem`, arrays compartilhados, despache e despawn universal). `combat/index.js` e `mount-game.js` importam de `./enemies/index.js`.
+- Especificação de migração FSM: [`docs/specs/active/enemy-fsm-overhaul.md`](docs/specs/active/enemy-fsm-overhaul.md).
 
-**Antes de criar ou reconfigurar QUALQUER inimigo, percorra [docs/templates/enemy-spec-template.md](docs/templates/enemy-spec-template.md) e pergunte ao usuário item por item** — checklist obrigatório (estados, movimento, disparo, reação a tiro normal/carregado, esquadrão, boost/repulsão, movimentação do jogador, spawn/fuga/teleporte/invisibilidade, integração técnica com os sistemas compartilhados). Não assuma comportamento "razoável" nem introduza mudança não pedida — pedido explícito do usuário depois de várias reescritas da Sentinela que erraram o conceito por falta de perguntas específicas.
+**Antes de criar ou reconfigurar QUALQUER inimigo, percorra [docs/templates/enemy-spec-template.md](docs/templates/enemy-spec-template.md) e pergunte ao usuário item por item** — checklist obrigatório (estados, movimento, disparo, reação a tiro normal/carregado, esquadrão, boost/repulsão, movimentação do jogador, spawn/fuga/teleporte/invisibilidade, integração técnica com os sistemas compartilhados). Não assuma comportamento "razoável" nem introduza mudança não pedida.
 
 **Ao criar ou alterar mecânica de jogo, siga [docs/project/validation.md](docs/project/validation.md)** — instrumente estado crítico com `aiValidator.expect(...)` (`src/ai-validator.js`) pra conseguir validar via log real de playtest (botão "Copiar Log de Validação IA" no painel de debug) se a lógica funcionou, em vez de confiar só em inspeção visual.
 
-**Toda a documentação, design, backlog e progresso moram em [`docs/`](docs/)** — consulte o mapa mestre em [`docs/README.md`](docs/README.md). O backlog unificado mora em [`docs/planning/BACKLOG.md`](docs/planning/BACKLOG.md), os templates em [`docs/templates/`](docs/templates/), e o estado operacional ativo em [`docs/progress/CURRENT.md`](docs/progress/CURRENT.md). A memória histórica de versões passadas está arquivada em [`docs/progress/archive/`](docs/progress/archive/) (de `PROGRESSO_v0.00-v0.33.md` até `PROGRESSO_v0.90-v0.99.31.md`), e as auditorias em [`docs/audits/archive/`](docs/audits/archive/). Sempre consulte [`docs/progress/CURRENT.md`](docs/progress/CURRENT.md) antes de iniciar qualquer trabalho.
+**Toda a documentação canônica ativa mora em [`docs/`](docs/)** — consulte o mapa mestre em [`docs/README.md`](docs/README.md). A árvore histórica `Docs/` permanece temporariamente no repositório apenas como legado/compatibilidade e não deve receber novos documentos canônicos. O backlog unificado mora em [`docs/planning/BACKLOG.md`](docs/planning/BACKLOG.md), os templates em [`docs/templates/`](docs/templates/), e o estado operacional ativo em [`docs/progress/CURRENT.md`](docs/progress/CURRENT.md). A memória histórica de versões passadas está arquivada em [`docs/progress/archive/`](docs/progress/archive/) e as auditorias em [`docs/audits/archive/`](docs/audits/archive/). Avisos de materiais e licenças de terceiros estão em [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Sempre consulte [`docs/progress/CURRENT.md`](docs/progress/CURRENT.md) antes de iniciar qualquer trabalho.
 
 Servidor de teste: `preview_start` com `name: "static"` (serve a raiz deste projeto em `http://localhost:8420`). Sempre `preview_stop` depois de testar.
 
-**Git**: este projeto está conectado a `github.com/Ratuckk/Star-Anki` (remote `origin`, branch `main`). O usuário (dono do repo, conta GitHub Ratuckk) autorizou explicitamente fazer commit + `git push origin main` automaticamente ao final de cada entrega (fase concluída, bugfix, etc.), sem precisar perguntar de novo a cada vez. Continue seguindo as regras normais de segurança pra git (nunca force-push, nunca pular hooks, revisar `git status`/conteúdo antes de `git add -A`), só não é necessário pedir confirmação explícita pro push em si neste repositório específico.
+**Git e Fluxo de Integração Canônico:**
+- Nunca usar force-push (`git push --force`).
+- Sempre revisar `git status` e `git diff` antes de commitar.
+- Testar exaustivamente antes de commit e push (`node src/selftest.mjs`, auditorias e suítes relevantes).
+- Mudanças substanciais devem ocorrer em branch dedicada (ex.: `feat/...`, `fix/...`, `chore/...`).
+- Publicar a branch remota e abrir Pull Request para a branch `main`.
+- A pipeline de integração contínua (CI) deve passar integralmente no GitHub Actions.
+- Merge em `main` ocorre exclusivamente após decisão explícita de revisão humana.
+- **NUNCA** fazer merge automático ou push direto na `main` apenas porque os testes ficaram verdes.

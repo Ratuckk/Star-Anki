@@ -212,7 +212,8 @@ Para a documentação completa, consulte o **[Mapa Mestre da Documentação](doc
 
 ---
 
-## 📄 Licença
+## 📄 Licença e Materiais de Terceiros
 
-Este projeto é desenvolvido para fins educacionais e de entretenimento, sob a licença [MIT](LICENSE).
-Inspirado na franquia *Star Fox* da Nintendo. Todos os direitos sobre conceitos originais pertencem a seus respectivos detentores.
+O código original e a documentação original do Star-Anki são disponibilizados sob a licença [MIT](LICENSE), salvo indicação em contrário. Assets, personagens, nomes, sprites, áudio e outros materiais de terceiros permanecem sujeitos aos direitos de seus respectivos detentores e não são relicenciados pela licença MIT deste projeto.
+
+Para detalhes completos de procedência e atribuições, consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
