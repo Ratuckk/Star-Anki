@@ -40,6 +40,9 @@ jobs:
           else
             echo "Stage 6 migrator not present yet; validating current snapshot only."
           fi
+          if [ -f scripts/repair-forgot-stage6-v09934.py ]; then
+            python scripts/repair-forgot-stage6-v09934.py
+          fi
 
       - name: Syntax check changed JavaScript
         run: |
