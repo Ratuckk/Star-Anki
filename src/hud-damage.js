@@ -12,19 +12,16 @@ const ORBIT_START_ANGLE = -Math.PI / 2
 const ANGLES = Array.from({ length: AUTHORS.length }, (_, slot) => ORBIT_START_ANGLE + slot * (Math.PI * 2 / AUTHORS.length))
 const MAX_LABELS = 36
 export const DAMAGE_NUMBER_SCALE = 0.8
+export const MANGA_VISUAL_SCALE = 0.5
 export const ORBIT_IDLE_DURATION_MS = 500
 export const ORBIT_ACTIVE_DURATION_MS = 850
-export const ORBIT_ARC_SEGMENT = 16
-export const ORBIT_ARC_STEP = 20
+export const ORBIT_RADIUS = 64
 
 export function getOrbitAngle(slot, t, reducedMotion = false) {
   const start = ANGLES[Math.max(0, Math.min(ANGLES.length - 1, slot))]
   return start + (reducedMotion ? 0 : Math.PI * 2 * Math.max(0, Math.min(1, t)))
 }
 
-export function getOrbitArcDashOffset(slot) {
-  return -(Math.max(0, Math.min(AUTHORS.length - 1, slot)) * ORBIT_ARC_STEP + 2)
-}
 
 function orbitFrame(slot, t, { calm = false, killed = false } = {}) {
   const angle = getOrbitAngle(slot, t, calm)
@@ -32,8 +29,8 @@ function orbitFrame(slot, t, { calm = false, killed = false } = {}) {
   const exit = Math.max(0, (t - .72) / .28)
   const collapse = killed && !calm ? Math.max(0, 1 - Math.max(0, (t - .82) / .18)) : 1
   return {
-    x: Math.cos(angle) * 97 * launch * collapse,
-    y: Math.sin(angle) * 66 * launch * collapse,
+    x: Math.cos(angle) * ORBIT_RADIUS * launch * collapse,
+    y: Math.sin(angle) * ORBIT_RADIUS * launch * collapse,
     opacity: 1 - exit,
   }
 }
@@ -48,7 +45,11 @@ function injectStyles() {
     .damage-feedback small{font-size:${10 * DAMAGE_NUMBER_SCALE}px;font-weight:800;line-height:1.2;position:relative;white-space:nowrap;color:#f4f7ff;text-shadow:0 1px 3px #000}
     .damage-feedback.charged strong{font-size:${36 * DAMAGE_NUMBER_SCALE}px}
     .damage-feedback.word strong{font-size:${19 * DAMAGE_NUMBER_SCALE}px}
-    .damage-feedback.manga{color:#111522;gap:0;padding:9px 0}
+    .damage-feedback.manga{color:#111522;gap:0;padding:4.5px 0;width:48px;height:31px}
+    .damage-feedback.manga strong{font-size:12px}
+    .damage-feedback.manga small{font-size:4px}
+    .damage-feedback.manga.charged strong{font-size:14.4px}
+    .damage-feedback.manga.word strong{font-size:7.6000000000000005px}
     .damage-feedback.manga:before{content:'';position:absolute;inset:0;background:var(--damage-color);z-index:-1;clip-path:polygon(50% 0,60% 17%,80% 3%,79% 27%,100% 27%,88% 47%,100% 62%,79% 66%,85% 90%,60% 83%,50% 100%,38% 82%,15% 95%,20% 70%,0 72%,12% 52%,0 34%,22% 29%,19% 5%,40% 17%)}
     .damage-feedback.manga.slash:before{clip-path:polygon(0 12%,94% 0,100% 87%,6% 100%)}
     .damage-feedback.manga.seal:before{clip-path:ellipse(49% 48%)}
@@ -57,7 +58,7 @@ function injectStyles() {
     .damage-feedback.orbit{width:96px;height:62px}
     .damage-feedback.orbit strong{text-shadow:0 0 10px var(--damage-color),0 2px 3px #000}
     .damage-feedback-orbit-content{position:absolute;inset:0;display:grid;place-items:center;z-index:2;will-change:transform,opacity}
-    .damage-feedback-orbit-ring{position:absolute;left:50%;top:50%;width:194px;height:132px;transform:translate(-50%,-50%) rotate(-90deg);transform-origin:50% 50%;overflow:visible;z-index:1;filter:drop-shadow(0 0 5px var(--damage-color));will-change:opacity}
+    .damage-feedback-orbit-ring{position:absolute;left:50%;top:50%;width:144px;height:144px;transform:translate(-50%,-50%);transform-origin:50% 50%;overflow:visible;z-index:1;filter:drop-shadow(0 0 5px var(--damage-color));will-change:opacity}
     .damage-feedback.classic{width:76px;height:40px}
     .damage-feedback.classic strong{font:900 ${18 * DAMAGE_NUMBER_SCALE}px ui-monospace,monospace}
     .damage-feedback.classic small{font-size:${9 * DAMAGE_NUMBER_SCALE}px}
@@ -65,25 +66,21 @@ function injectStyles() {
   document.head.appendChild(style)
 }
 
-function createOrbitRing(slot, color) {
+function createOrbitRing(color) {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
   svg.classList.add('damage-feedback-orbit-ring')
-  svg.setAttribute('viewBox', '0 0 200 136')
+  svg.setAttribute('viewBox', '0 0 144 144')
   svg.setAttribute('aria-hidden', 'true')
-  const ellipse = document.createElementNS(ns, 'ellipse')
-  ellipse.setAttribute('cx', '100')
-  ellipse.setAttribute('cy', '68')
-  ellipse.setAttribute('rx', '97')
-  ellipse.setAttribute('ry', '66')
-  ellipse.setAttribute('pathLength', '100')
-  ellipse.setAttribute('fill', 'none')
-  ellipse.setAttribute('stroke', color)
-  ellipse.setAttribute('stroke-width', '2.4')
-  ellipse.setAttribute('stroke-linecap', 'round')
-  ellipse.setAttribute('stroke-dasharray', `${ORBIT_ARC_SEGMENT} ${100 - ORBIT_ARC_SEGMENT}`)
-  ellipse.setAttribute('stroke-dashoffset', String(getOrbitArcDashOffset(slot)))
-  svg.appendChild(ellipse)
+  const circle = document.createElementNS(ns, 'circle')
+  circle.setAttribute('cx', '72')
+  circle.setAttribute('cy', '72')
+  circle.setAttribute('r', String(ORBIT_RADIUS))
+  circle.setAttribute('fill', 'none')
+  circle.setAttribute('stroke', color)
+  circle.setAttribute('stroke-width', '2.4')
+  circle.setAttribute('stroke-linecap', 'round')
+  svg.appendChild(circle)
   return svg
 }
 
@@ -113,7 +110,9 @@ export function createDamageNumbers(root) {
       const exit = Math.max(0, (t - .7) / .3)
       let opacity = 1 - exit
       if (style === 'manga') {
-        ;[x, y] = OFFSETS[slot]
+        const launch = calm ? 1 : Math.min(1, t / .16)
+        x = OFFSETS[slot][0] * launch
+        y = OFFSETS[slot][1] * launch
         if (!calm) {
           scale = t < .15 ? .35 + (t / .15) * .85 : 1 + .2 * Math.exp(-(t - .15) * 16) * Math.cos((t - .15) * 35)
           rotation = (slot % 2 ? 5 : -5) * (1 - exit)
@@ -151,18 +150,25 @@ export function createDamageNumbers(root) {
 
   function ensureOrbitRing(entry) {
     if (entry.ringEl || entry.style !== 'orbit') return
-    entry.ringEl = createOrbitRing(entry.slot, entry.color)
+    entry.ringEl = createOrbitRing(entry.color)
     entry.el.insertBefore(entry.ringEl, entry.motionEl)
   }
 
   function activateOrbitForTarget(targetId) {
     if (!targetId) return
-    for (const entry of active) {
-      if (entry.targetId !== targetId || entry.style !== 'orbit' || entry.killed) continue
+    const orbiters = [...active].filter((entry) => entry.targetId === targetId && entry.style === 'orbit' && !entry.killed)
+    if (orbiters.length === 0) return
+    // Um alvo, um círculo. Os números compartilham a mesma geometria; não empilhamos arcos
+    // independentes com centros ligeiramente diferentes.
+    for (const entry of orbiters) {
       entry.orbitActive = true
-      ensureOrbitRing(entry)
-      animate(entry)
+      if (entry.ringEl) {
+        entry.ringEl.remove()
+        entry.ringEl = null
+      }
     }
+    ensureOrbitRing(orbiters[0])
+    for (const entry of orbiters) animate(entry)
   }
 
   function clearTarget(targetId) {
@@ -210,8 +216,7 @@ export function createDamageNumbers(root) {
         content.className = 'damage-feedback-orbit-content'
         content.append(number, label)
         if (orbitActive) {
-          ringEl = createOrbitRing(slot, author.color)
-          el.append(ringEl, content)
+          el.append(content)
         } else {
           el.append(content)
         }
@@ -227,7 +232,8 @@ export function createDamageNumbers(root) {
       root.appendChild(el)
       const entry = { el, motionEl, ringEl, value, hits: 1, style, slot, targetId: opts.targetId, started: now, killed: !!opts.killed, orbitActive, color: author.color }
       active.add(entry)
-      animate(entry)
+      if (orbitActive && opts.targetId) activateOrbitForTarget(opts.targetId)
+      else animate(entry)
     },
     dispose() { for (const entry of active) remove(entry) },
   }
