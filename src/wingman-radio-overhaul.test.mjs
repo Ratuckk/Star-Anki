@@ -68,6 +68,6 @@ for (const required of [
   assert.ok(wingmenSource.includes(required), `wingmen.js sem integração do rádio in-world: ${required}`)
 }
 assert.ok(!wingmenSource.includes("pendingRadioQueue = readyQueue"), 'Focus não pode voltar para fila lateral')
-assert.ok(wingmenSource.includes("eventId === 'engage_focus'"), 'fala de engajamento durante Focus também precisa continuar in-world')
+assert.ok(wingmenSource.includes("engageEventFor(w.targetEnemy.kind, 'engage_focus')") && wingmenSource.includes('announceWorld'), 'fala de reengajamento durante Focus também precisa continuar in-world')
 
 console.log('wingman-radio-overhaul.test.mjs: OK')
