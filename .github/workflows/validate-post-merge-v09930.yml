@@ -30,7 +30,9 @@ jobs:
           PY
           node --check tools/apply-post-merge-v09930.mjs
       - name: Apply v0.99.30 patch
-        run: node tools/apply-post-merge-v09930.mjs
+        run: |
+          node tools/apply-post-merge-v09930.mjs
+          node tools/apply-post-merge-v09930-followup.mjs
       - name: Syntax checks
         run: |
           node --check src/combat/wingman-flight-stability.js
@@ -67,6 +69,6 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No changes to commit'
           else
-            git commit -m 'fix: estabiliza wingmen e corrige radio e feedback visual'
+            git commit -m 'fix: endurece alvo ativo dos wingmen'
             git push origin HEAD:validation/post-merge-v09930
           fi
