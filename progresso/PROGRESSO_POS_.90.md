@@ -38,6 +38,84 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.28 — Rádio distribuído, Focus/abilities in-world e expansão de 120 quotes
+
+- **Rádio lateral exclusivamente trivial:** o HUD deixa de usar os dois painéis seriais antigos. Abaixo da bandeja de cartas roguelike existem quatro slots independentes e permanentes (Falco/Peppy/Slippy/Miyu); falas triviais e respostas Call & Response entram no slot de quem falou, sem uma transmissão apagar as demais.
+- **Concorrência real:** cooldown de fala comum passa a ser por piloto, não global. Call & Response também aceita threads simultâneas de chamadores diferentes; entregar/cancelar uma conversa não apaga as outras.
+- **Focus in-world:** ao ativar Focus, Fox transmite acima da nave do jogador usando o novo retrato `assets/wingman-radio/fox.png`; todos os Wingmen que receberam a ordem respondem acima das próprias naves, em vez de entrar na fila lateral.
+- **Abilities in-world:** Ram, Intercept, Guard, Rescue, Aux Shield, Repair, Boost Dash, Assist e Boombuster anunciam a ativação acima da nave do respectivo piloto e nunca usam o rádio lateral.
+- **Feedback de habilidade:** toda ativação acima cria uma aura aditiva na cor do piloto por exatamente **1,5 s**, seguindo a nave durante o efeito.
+- **Conteúdo:** adicionados **120 quotes triviais novos**, exatamente 30 por piloto, preservando os pools anteriores e sem contar ability quotes.
+- **Validação de conteúdo/roteamento:** nova suíte `wingman-radio-overhaul.test.mjs` valida 30 novos por piloto, ausência de duplicatas entre os 30 novos, cooldown independente, abilities fora do cooldown trivial, threads paralelas e integração estrutural do rádio in-world/slots.
+
+**Validado:** sintaxe dos módulos alterados, suíte de rádio/Call & Response, suíte nova de overhaul, playtest-polish, selftest completo e `git diff --check`.
+
+### v0.99.27 — Tactical Freedom: formação sem coleira e recovery técnico
+
+- **Regroup por distância removido:** `regroup` deixa de existir como Behavior autoritativo. Distância euclidiana do jogador não muda estado, não cancela Action e não força retorno à formação.
+- **All-Range livre:** no modo arena não há qualquer catch-up ou recovery por distância. Wingmen podem operar longe do jogador enquanto seu Behavior/Action continuar válido.
+- **Rail por progresso:** o trilho usa somente atraso longitudinal no `frame.forward`; após 32u de atraso entra um boost suave de catch-up, saturando em +72u/s aos 120u. Distância lateral/vertical é ignorada e nenhuma transição de gameplay ocorre.
+- **Navigation Intent:** formação, attack-lane, support-player e recovery passam a descrever o destino de navegação sem disputar autoridade com Behavior/Action.
+- **Recovery raro e técnico:** somente posição/velocidade não finitas (NaN/Infinity) podem acionar reset para uma vaga válida. O failsafe é silencioso no rádio e mantém a política de cooldown caso precise interromper uma Action.
+- **Deconflição local preservada:** separação simétrica e correção física continuam como proteção contra contato ocasional, mas não precisam mais desfazer convergência criada por emergency regroup.
+- **Rádio:** removidas falas de “você está longe, volte”; a distância deixou de ser evento narrativo.
+
+**Validado:** suíte de navegação, state controller, Call & Response, separação, polimento, selftest completo, sintaxe e git diff --check.
+
+### v0.99.26 — Deconflição física e órbita cooperativa contextual
+
+- **Clump dos Wingmen:** o log real ainda mostrou pares em emergency regroup a 0.003–0.01u por mais de 0.5s. A deconflição mantém o steering simétrico da v0.99.24, mas agora também resolve penetração com correção posicional simétrica, limitada a 1.25u por par e 1.5u por nave/frame. Assim duas naves não conseguem continuar fisicamente fundidas enquanto a inércia de regroup vence o steering.
+- **Buraco negro contextual:** o estilo orbital deixa de orbitar todo impacto. Sem cooperação, o número dura só 0.5s e não cria arco. A órbita curta (0.85s) só arma quando dois autores diferentes atingem o mesmo alvo em até 1s e pelo menos um deles é Wingman.
+- **Elegibilidade:** a mecânica visual só existe no estilo Buraco negro, só para alvos vivos com HP máximo >= 12 e é encerrada imediatamente por um hit letal. Outros estilos de número não recebem qualquer lógica orbital.
+- **Configuração:** adicionada opção Visual para desligar a órbita cooperativa independentemente do estilo. É puramente cosmética e não altera dano, IA, combo ou pontuação.
+- **Testes:** novo damage-orbit-tracker.test.mjs cobre jogador sozinho, coop em ambas as ordens, mesma autoria, janela de 1s, limiar de 12 HP e limpeza na morte. A suíte de formação agora exige correção posicional simétrica que saia da zona de clump em um frame.
+
+**Validado:** sintaxe dos módulos alterados, damage-orbit-tracker.test.mjs, damage-feedback.test.mjs, suítes de Wingman/rádio/formação, playtest-polish.test.mjs, selftest.mjs e git diff --check.
+
+### v0.99.25 — Polimento pós-playtest: órbita, áudio, rádio e retorno de emergência
+
+- **Buraco negro / números de dano:** todos os números ficaram 20% menores. No modo orbital, os cinco autores (jogador + quatro Wingmen) recebem posições igualmente espaçadas e giram uma volta completa no sentido horário durante a vida do feedback. O arco deixa de viajar preso ao número e vira um segmento central fixo; os cinco segmentos juntos formam o círculo orbital ao redor do alvo, usando a mesma implementação na prévia das Configurações e no combate.
+- **Som de carga:** o cue de carregamento entra 180ms depois do limiar de carga, toca 15% mais baixo e, ao chegar ao fim do arquivo, repete somente os 360ms finais em vez de reiniciar toda a introdução.
+- **Rádio Call & Response:** respostas agora aparecem explicitamente com o marcador “↳ Nome do chamador: …”, e Intercept/Aux Shield também podem abrir microconversas. O log de playtest confirmou que a feature já entregava respostas; a mudança torna a relação chamada→resposta perceptível no HUD existente.
+- **Miyu:** Carga Compartilhada passa de 16s para 6s de cooldown base; o piso proporcional do Vínculo passa de 8s para 3s. Boombuster permanece em seu cooldown independente.
+- **Retorno de emergência:** o kick inicial de 140u/s agora é aplicado somente ao entrar em emergency regroup. Frames seguintes atualizam a vaga móvel normalmente, mas não sobrescrevem a velocidade/deconflição. O controller foi reconfirmado: escudo baixo nunca inicia retreat; HP zero é a única origem de retreat, e HP crítico apenas bloqueia ofensiva.
+- Novo playtest-polish.test.mjs cobre a volta orbital, segmentos por autor, volume/cauda do áudio, cooldown da Miyu, Call & Response do Intercept, contrato de escudo e guarda estrutural contra reintroduzir o kick de emergência a cada frame.
+
+**Validado:** sintaxe dos módulos alterados, suítes de Wingman/rádio/formação, node src/playtest-polish.test.mjs, node src/selftest.mjs e git diff --check.
+
+### v0.99.24 — Deconflição simétrica e detector de clump dos Wingmen
+
+- Playtest real revelou que os quatro Wingmen ainda podiam convergir para praticamente o mesmo ponto durante retorno de emergência. O log do `aiValidator` mostrou pares a 0.0002–2.4u e 200 eventos de separação em ~267ms, embora todas as expectativas anteriores passassem.
+- A separação deixou de ser resolvida sequencialmente dentro do loop de cada piloto. Agora cada par não ordenado é calculado uma única vez a partir do snapshot do começo do frame e recebe impulsos exatamente opostos, eliminando dependência da ordem de iteração.
+- Sobreposição exata usa a diferença entre as vagas de formação como direção determinística de escape, em vez de um vetor genérico por paridade. Assim cada piloto é empurrado para o lado coerente com sua própria vaga.
+- Emergency regroup não limpa mais memória de separação todo frame. O log passa a registrar apenas a entrada real de um par em conflito, impedindo que a timeline de 200 eventos seja apagada em frações de segundo.
+- Adicionado detector de clump persistente: se dois Wingmen permanecerem a menos de 1u por 0.5s, o `aiValidator` gera uma falha com estados, flags de emergência e distâncias ao jogador. Isso cobre justamente o falso verde observado no playtest.
+- Criado `wingman-formation-separation.js`, puro e testável, e a suíte `wingman-formation-separation.test.mjs` cobre simetria, sobreposição exata, retreat e proteção estrutural contra a regressão do loop antigo.
+
+**Validado:** sintaxe dos módulos alterados, suíte de separação, suíte da state machine, suíte de Call & Response, `src/selftest.mjs` e `git diff --check`.
+
+### v0.99.23 — Rádio Call & Response dos Wingmen
+
+- O rádio deixa de ser apenas uma coleção de falas isoladas: eventos selecionados agora podem abrir uma **thread Call & Response** com outro piloto ativo. A réplica é escolhida por personalidade, nunca pelo mesmo piloto que abriu a conversa, e só aparece depois que a transmissão inicial teve tempo visual para terminar.
+- Threads têm janela própria de 3,0–4,2s, expiração, cooldown narrativo de 10s e cancelamento determinístico. Respostas são descartadas se o piloto que responderia ficar indisponível; eventos urgentes ou a rajada do comando Focus cancelam conversas antigas para impedir diálogos fora de contexto.
+- A nova máquina de estados passa a alimentar semanticamente o rádio: entrada em `critical`, `emergency return`, recuperação de `critical` e interrupção real de Action recebem eventos próprios. `retreat` continua prioritário e agora também pode abrir uma resposta contextual.
+- Ram, Guard, Rescue, Repair, Assist e Boombuster podem iniciar microconversas curtas entre os pilotos sem transformar todo evento em diálogo. O cooldown global de falas avulsas continua valendo; a resposta é tratada como continuação da mesma transmissão.
+- `aiValidator` registra a classificação semântica e cada resposta efetivamente entregue, além de validar que Call & Response nunca usa o mesmo piloto como chamador e respondente. `clearSquadron()` também limpa threads para impedir resposta fantasma entre resets.
+- Adicionado `src/combat/wingman-radio-callresponse.js` como núcleo puro/testável e `src/wingman-radio-callresponse.test.mjs` cobrindo timing, cooldown narrativo, cancelamento, indisponibilidade do respondente e classificação das novas transições.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-radio-callresponse.test.mjs`, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
+### v0.99.22 — Autoridade única de estados dos Wingmen
+
+- Criado `src/combat/wingman-state-controller.js`, independente de Three.js/DOM, como rota única para Integridade, Behavior, Actions persistentes, cooldowns e rejeições atômicas. Campos legados do Wingman viraram seletores somente-leitura derivados do novo `control`; writers diretos são bloqueados por teste estrutural.
+- Integridade agora deriva `critical` diretamente do HP; Behavior separa `patrol/dogfight/regroup`; Actions persistentes separam Ram, Guard, Rescue, Assist e Aux Shield. Focus permanece intenção global e solicita transições em vez de forçar `dogfight/patrol`.
+- Interrupções têm política formal de cooldown. Integridade crítica/retirada e emergency return interrompem Actions comprometidas segundo tabela declarada; Ram/Guard/Rescue/Assist recebem cooldown completo e Aux Shield usa política NONE. Isso elimina a reativação no frame seguinte depois de emergency regroup.
+- Intercept, Repair e Boombuster continuam instantâneos/paralelos, mas passam pelo gate central de autorização. `engagementChance` passou a compor base → upgrades → override reativo explícito → clamp; vida baixa do Falco vence combo alto por prioridade declarada, não pela ordem de `if`.
+- Telemetria e `aiValidator` agora registram `from → event → decision → to`, origem, rejeição e política de cooldown das interrupções.
+- Adicionado `src/wingman-state-controller.test.mjs` com os cenários de retirada/focus/regroup, critical/reparo/emergency, Rescue/Ram, reativação pós-interrupção e Focus durante Action, além da proteção estrutural contra novos direct writers.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`. A migração é aplicada e validada em checkout limpo antes do commit final da refatoração.
+
 ### v0.99.21 — Correções pendentes e melhorias funcionais menores
 
 - **Impulsão Conjunta** agora dá invencibilidade ao jogador e ao Slippy durante o propulsor; se
@@ -1025,3 +1103,35 @@ categorias, layout em 390×844 e ausência de erros/avisos no console do navegad
 **Validado**: `node src/damage-feedback.test.mjs` passa. O `selftest.mjs` completo está bloqueado
 por uma asserção de áudio alheia a esta alteração (`BOSS_LASER` esperado como `Laser boss.mp3`,
 mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss dourado.mp3`).
+
+---
+
+### Laboratório visual isolado de speedlines (22/09/2026)
+
+- **`speedlines-prototype.html`**: protótipo independente baseado principalmente no print real do
+  gameplay enviado pelo usuário — fundo preto, starfield profundo, grid em perspectiva, nave no
+  canto inferior esquerdo, aliados/inimigos, projéteis, retícula, radar e boss grande como stress
+  test. Não altera `index.html`, câmera, FOV, velocidade real, hitboxes, IA ou balanceamento.
+- **Duas camadas separáveis**: estrelas/poeira do mundo viram rastros progressivos reutilizando um
+  único `BufferGeometry`; speedlines abstratas periféricas usam um pool fixo de 180 linhas em
+  canvas. O centro permanece limpo por um bias ajustável e nenhuma nave/inimigo sofre smear.
+- **Controles em tempo real**: intensidade 0–100%, densidade, comprimento, espessura, brilho,
+  bias periférico, toggles independentes de ambientais/abstratas/boss, pausa, reset e presets
+  Neutro/Alta/Extrema. A intensidade inicial é 78% para que o efeito fique imediatamente notável.
+- **Validação**: `src/speedlines-prototype-model.js` concentra normalização e curvas; o laboratório
+  registra mudanças discretas no `aiValidator` e expõe `window.__speedlinesLab` para inspeção.
+  `src/speedlines-prototype.test.mjs` cobre limites, faixas e progressão monotônica das curvas.
+
+
+### v0.99.29 — Speedlines direcionais do Visual Lab no gameplay
+
+- O laboratório isolado permanece como referência; o gameplay reaproveita apenas a camada abstrata em canvas, sem duplicar estrelas/partículas ambientais.
+- `src/hud-speedlines.js` substitui visualmente o spinner legado de `.hud-motion-lines` e preserva o contrato `hud.setMotionLines(active, intensity)`.
+- Boost normal usa o preset escolhido 90/58/62/100/30/0 (intensidade/densidade/comprimento/espessura/brilho/bias); Swirl Blast e dash lateral continuam podendo elevar a intensidade a 100%. Fora desses gatilhos a intensidade é 0 e o canvas é limpo.
+- O renderer usa pool determinístico de 180 linhas, RAF somente enquanto ativo, DPR limitado a 1.5, resize responsivo e dispose completo no unmount.
+- O `aiValidator` registra apenas transições discretas de ligado/desligado/intensidade, sem log por frame.
+- O Service Worker não ganhou manifesto fixo: o módulo novo segue a estratégia network-first já existente para módulos same-origin e entra no cache ao ser solicitado.
+
+**Validação automatizada:** `node --check` nos módulos alterados, `node src/hud-speedlines.test.mjs`, `node src/speedlines-prototype.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
+**Playtest pendente:** confirmar no navegador que boost normal corresponde visualmente à referência do laboratório, Swirl/Dash atingem o pico sem o spinner legado, resize/restart não deixam canvas órfão e o console permanece limpo.

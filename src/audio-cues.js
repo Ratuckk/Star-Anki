@@ -52,11 +52,13 @@ export const PLAYER_SOUND_CUES = {
     durationMs: 1200,
     delayMs: 0,
     cooldownMs: 0,
-    volume: 0.65,
+    volume: 0.5525, // 15% abaixo de 0.65
     category: 'sfx',
     spatial: false,
     loop: true,
-    triggerLogic: 'Inicia em loop quando o botão de tiro é mantido pressionado (fireHeldMs >= homingChargeMinMs).'
+    loopTailMs: 360,
+    startAfterChargeMs: 180,
+    triggerLogic: 'Começa 180ms depois do limiar de carga; toca a introdução uma vez e depois repete apenas os 360ms finais enquanto o botão continua pressionado.'
   },
   charge_max_ready: {
     id: 'player_charge_max_ready',

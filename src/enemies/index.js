@@ -1469,6 +1469,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
         return {
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+          targetMaxHp: Number.isFinite(enemyHit.maxHp) ? enemyHit.maxHp : null,
           enemyKillPoints, timeReductionMs, bossDefeated, goldenSpecialHit: false,
           squadWipe, squadWipeBonus,
         }

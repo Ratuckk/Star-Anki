@@ -2,6 +2,13 @@ import assert from 'node:assert'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import './wingman-state-controller.test.mjs'
+import './wingman-radio-callresponse.test.mjs'
+import './wingman-radio-overhaul.test.mjs'
+import './wingman-formation-separation.test.mjs'
+import './wingman-navigation.test.mjs'
+import './damage-orbit-tracker.test.mjs'
+import './playtest-polish.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
@@ -573,13 +580,19 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingm
   const line1 = radio.trySpeak(0, 'engage_dogfight', 1000)
   assert.ok(typeof line1 === 'string' && line1.length > 0, 'trySpeak deve devolver uma fala pra um par piloto+evento válido')
 
-  const line2 = radio.trySpeak(1, 'ability_guard', 1500)
-  assert.strictEqual(line2, null, 'cooldown global (6-20s aleatório) deve bloquear uma segunda fala logo em seguida, mesmo de outro piloto/evento')
+  const line2 = radio.trySpeak(1, 'engage_dogfight', 1500)
+  assert.ok(typeof line2 === 'string', 'cooldown de Falco não pode bloquear uma fala trivial de Peppy')
 
-  // Cooldown agora é aleatório entre 6s e 20s (não mais fixo) — usar o MÁXIMO garante que o
-  // cooldown já passou não importa qual valor foi sorteado na fala anterior.
+  const samePilotBlocked = radio.trySpeak(0, 'kill', 1500)
+  assert.strictEqual(samePilotBlocked, null, 'cooldown trivial continua valendo por piloto')
+
+  const abilityDuringCooldown = radio.speakAbility(0, 'ability_ram', 1600)
+  assert.ok(typeof abilityDuringCooldown === 'string', 'ability deve falar in-world mesmo durante cooldown trivial do piloto')
+
+  // O cooldown trivial continua aleatório entre 6s e 20s por piloto; usar o MÁXIMO garante que o
+  // cooldown de Falco já passou não importa qual valor foi sorteado na fala anterior.
   const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + GLOBAL_COOLDOWN_MAX_MS)
-  assert.ok(typeof line3 === 'string', 'depois do cooldown global máximo (20s) passar, trySpeak deve voltar a falar')
+  assert.ok(typeof line3 === 'string', 'depois do cooldown trivial máximo (20s) passar, o mesmo piloto deve voltar a falar')
 
   const missingPilot = radio.trySpeak(99, 'kill', 50000)
   assert.strictEqual(missingPilot, null, 'pilotId inexistente deve devolver null, não lançar erro')

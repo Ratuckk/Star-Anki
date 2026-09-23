@@ -139,6 +139,24 @@ export function buildVisualSection({ onDamageStyleChange = null } = {}) {
   damageRow.appendChild(damageChoices)
   visualSection.appendChild(damageRow)
 
+  const damageOrbitRow = document.createElement('div')
+  damageOrbitRow.className = 'settings-row'
+  const damageOrbitLabel = document.createElement('label')
+  damageOrbitLabel.textContent = 'Órbita cooperativa em inimigos resistentes (12+ HP)'
+  const damageOrbitCheckbox = document.createElement('input')
+  damageOrbitCheckbox.type = 'checkbox'
+  damageOrbitCheckbox.checked = getSettings().damageOrbitEnabled !== false
+  damageOrbitCheckbox.addEventListener('change', () => {
+    setSetting('damageOrbitEnabled', damageOrbitCheckbox.checked)
+    onDamageStyleChange?.()
+  })
+  damageOrbitRow.append(damageOrbitLabel, damageOrbitCheckbox)
+  visualSection.appendChild(damageOrbitRow)
+  const damageOrbitHint = document.createElement('p')
+  damageOrbitHint.className = 'settings-hint'
+  damageOrbitHint.textContent = 'Só afeta Buraco negro. É puramente visual e só arma quando jogador/aliados compartilham o mesmo alvo em até 1s.'
+  visualSection.appendChild(damageOrbitHint)
+
   function renderDamageButtons() {
     const current = getSettings().damageNumberStyle
     for (const [id, btn] of Object.entries(damageButtons)) {
@@ -146,6 +164,8 @@ export function buildVisualSection({ onDamageStyleChange = null } = {}) {
       btn.classList.toggle('active', active)
       btn.setAttribute('aria-pressed', String(active))
     }
+    damageOrbitCheckbox.disabled = current !== 'orbit'
+    damageOrbitRow.classList.toggle('disabled', current !== 'orbit')
   }
   renderDamageButtons()
 
@@ -216,11 +236,10 @@ function buildDamagePreview() {
     stage.classList.remove('is-firing')
     void stage.offsetWidth
     stage.classList.add('is-firing')
-    schedule(40, () => damageNumbers.spawn(.5, .5, 12, { targetId: 'preview-drone' }))
-    schedule(120, () => damageNumbers.spawn(.5, .5, 8, { targetId: 'preview-drone' }))
-    schedule(230, () => damageNumbers.spawn(.5, .5, 7, { targetId: 'preview-drone', pilotId: 0 }))
-    schedule(330, () => damageNumbers.spawn(.5, .5, 5, { targetId: 'preview-drone', pilotId: 1 }))
-    schedule(430, () => damageNumbers.spawn(.5, .5, 6, { targetId: 'preview-drone', pilotId: 2, killed: true }))
+    schedule(40, () => damageNumbers.spawn(.5, .5, 12, { targetId: 'preview-drone', orbitActive: false }))
+    schedule(230, () => damageNumbers.spawn(.5, .5, 7, { targetId: 'preview-drone', pilotId: 0, orbitActive: true }))
+    schedule(330, () => damageNumbers.spawn(.5, .5, 5, { targetId: 'preview-drone', pilotId: 1, orbitActive: true }))
+    schedule(430, () => damageNumbers.spawn(.5, .5, 6, { targetId: 'preview-drone', pilotId: 2, orbitActive: true }))
   }
 
   replayButton.addEventListener('click', replay)

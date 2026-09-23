@@ -17,14 +17,31 @@ function stableToneFromId(id) {
   return 160 + Math.abs(hash % 420)
 }
 
+export function getLoopTailRestartTime(durationSeconds, loopTailMs, fallbackDurationMs = 0) {
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0
+    ? durationSeconds
+    : Math.max(0, Number(fallbackDurationMs) || 0) / 1000
+  const tail = Math.max(0, Number(loopTailMs) || 0) / 1000
+  return Math.max(0, duration - tail)
+}
+
 export function createAudioSystem() {
   const lastPlayedAt = new Map()
+  // entry = { audio, cleanup }; loopTailMs usa replay manual do trecho final, em vez de voltar ao zero.
   const activeLoops = new Map()
   const activeOneShots = new Set()
   const timers = new Set()
   const preloadAudio = []
   let audioContext = null
   let disposed = false
+
+  function removeLoopEntry(id, expectedAudio = null) {
+    const entry = activeLoops.get(id)
+    if (!entry || (expectedAudio && entry.audio !== expectedAudio)) return null
+    activeLoops.delete(id)
+    entry.cleanup?.()
+    return entry
+  }
 
   function stopAllLoops() {
     for (const id of [...activeLoops.keys()]) stopLoop(id)
@@ -68,11 +85,10 @@ export function createAudioSystem() {
   }
 
   function stopLoop(id) {
-    const audio = activeLoops.get(id)
-    if (!audio) return
-    activeLoops.delete(id)
-    audio.pause()
-    audio.currentTime = 0
+    const entry = removeLoopEntry(id)
+    if (!entry) return
+    entry.audio.pause()
+    entry.audio.currentTime = 0
   }
 
   function playFallback(cue, volume) {
@@ -104,13 +120,31 @@ export function createAudioSystem() {
     const audio = new Audio(cue.file)
     audio.preload = 'auto'
     audio.volume = volume
-    audio.loop = cue.loop
-    if (cue.loop) activeLoops.set(cue.id, audio)
-    else activeOneShots.add(audio)
-    audio.addEventListener('ended', () => activeOneShots.delete(audio), { once: true })
+
+    if (cue.loop) {
+      const loopTailMs = Number(cue.loopTailMs)
+      if (Number.isFinite(loopTailMs) && loopTailMs > 0) {
+        audio.loop = false
+        const onEnded = () => {
+          const entry = activeLoops.get(cue.id)
+          if (!entry || entry.audio !== audio || disposed) return
+          audio.currentTime = getLoopTailRestartTime(audio.duration, loopTailMs, cue.durationMs)
+          audio.play().catch(() => removeLoopEntry(cue.id, audio))
+        }
+        audio.addEventListener('ended', onEnded)
+        activeLoops.set(cue.id, { audio, cleanup: () => audio.removeEventListener('ended', onEnded) })
+      } else {
+        audio.loop = true
+        activeLoops.set(cue.id, { audio, cleanup: null })
+      }
+    } else {
+      activeOneShots.add(audio)
+      audio.addEventListener('ended', () => activeOneShots.delete(audio), { once: true })
+    }
+
     audio.play().catch(() => {
       activeOneShots.delete(audio)
-      if (cue.loop) activeLoops.delete(cue.id)
+      if (cue.loop) removeLoopEntry(cue.id, audio)
     })
   }
 
