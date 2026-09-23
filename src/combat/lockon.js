@@ -1,4 +1,11 @@
 import * as THREE from 'three'
+import { aiValidator } from '../ai-validator.js'
+import {
+  LOCK_SOURCE_BASE,
+  LOCK_SOURCE_MIYU,
+  computeLockBudgets,
+  sourceCanLockEntity,
+} from './miyu-assist-lock-budget.js'
 
 // ============ LOCK-ON do tiro carregado ============
 // Overhaul em cima do split de combat.js (v0.38.0). O sistema anterior guardava um `offset`
@@ -32,9 +39,8 @@ const MIN_LOCK_RANGE = 10
 const PASS_BEHIND = -4
 
 // ============ ORIGEM DO LOCK — MIYU vs. BASE ============
-// A Carga Compartilhada só muda a aparência das travas que excedem o teto BASE do jogador.
-export const LOCK_SOURCE_BASE = 'base'
-export const LOCK_SOURCE_MIYU = 'miyu'
+// Fox e Miyu possuem orçamentos independentes; a origem agora é mecânica, não só visual.
+export { LOCK_SOURCE_BASE, LOCK_SOURCE_MIYU }
 
 // ============ LAYOUT DE MULTI-LOCK ============
 // raio do anel de marcadores quando há >1 trava no MESMO alvo grande. Não é o raio de colisão:
@@ -89,28 +95,57 @@ export function createLockOnSystem(rail, enemies) {
         return true
       })
 
-      // 2) AQUISIÇÃO — tenta adicionar novos até bater o orçamento. Critério de ENTRADA usa o
-      // cone estreito.
-      if (lockedEnemies.length >= maxAllowed) return
+      // 2) AQUISIÇÃO — Fox e Miyu têm orçamentos separados. O orçamento BASE continua
+      // obedecendo o limite por entidade; MIYU pode repetir o mesmo alvo enquanto ele segue na mira.
       const candidates = [...enemies.getAlive(), ...enemies.getGoldenAlive()]
-      for (const e of candidates) {
-        if (lockedEnemies.length >= maxAllowed) break
-        const existingLocksForEntity = lockedEnemies.reduce((n, rec) => n + (rec.entity === e ? 1 : 0), 0)
-        // teto por entidade (ver maxLocksForEntity) — alvo comum trava só 1x, Horda até 2, chefe/
-        // dourado só limitado pelo orçamento geral (o layout em anel espalha visualmente)
-        if (existingLocksForEntity >= maxLocksForEntity(e)) continue
+      const budgets = computeLockBudgets(maxAllowed, baseMaxAllowed)
+      let baseCount = lockedEnemies.reduce((n, rec) => n + (rec.source === LOCK_SOURCE_BASE ? 1 : 0), 0)
+      let miyuCount = lockedEnemies.reduce((n, rec) => n + (rec.source === LOCK_SOURCE_MIYU ? 1 : 0), 0)
 
+      const candidateIsAimedAndValid = (e) => {
         const rel = e.mesh.position.clone().sub(origin)
         const dist = rel.length()
-        if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE) continue
-        if (rel.dot(frame.forward) < PASS_BEHIND) continue
+        if (dist > MAX_LOCK_RANGE || dist < MIN_LOCK_RANGE) return false
+        if (rel.dot(frame.forward) < PASS_BEHIND) return false
         const toTarget = rel.clone().normalize()
         const angle = Math.acos(THREE.MathUtils.clamp(direction.dot(toTarget), -1, 1))
-        if (angle >= LOCK_ACQUIRE_ANGLE) continue
-
-        const source = lockedEnemies.length >= baseMaxAllowed ? LOCK_SOURCE_MIYU : LOCK_SOURCE_BASE
-        lockedEnemies.push({ entity: e, seq: nextLockSeq++, source })
+        return angle < LOCK_ACQUIRE_ANGLE
       }
+
+      if (baseCount < budgets.base) {
+        for (const e of candidates) {
+          if (baseCount >= budgets.base) break
+          const existingBaseLocksForEntity = lockedEnemies.reduce(
+            (n, rec) => n + (rec.source === LOCK_SOURCE_BASE && rec.entity === e ? 1 : 0), 0,
+          )
+          if (!sourceCanLockEntity(LOCK_SOURCE_BASE, existingBaseLocksForEntity, maxLocksForEntity(e))) continue
+          if (!candidateIsAimedAndValid(e)) continue
+          lockedEnemies.push({ entity: e, seq: nextLockSeq++, source: LOCK_SOURCE_BASE })
+          baseCount += 1
+        }
+      }
+
+      if (miyuCount < budgets.miyu) {
+        for (const e of candidates) {
+          if (miyuCount >= budgets.miyu) break
+          if (!candidateIsAimedAndValid(e)) continue
+          const existingMiyuLocksForEntity = lockedEnemies.reduce(
+            (n, rec) => n + (rec.source === LOCK_SOURCE_MIYU && rec.entity === e ? 1 : 0), 0,
+          )
+          if (!sourceCanLockEntity(LOCK_SOURCE_MIYU, existingMiyuLocksForEntity, maxLocksForEntity(e))) continue
+          lockedEnemies.push({ entity: e, seq: nextLockSeq++, source: LOCK_SOURCE_MIYU })
+          miyuCount += 1
+          aiValidator.expect('Carga Compartilhada respeita o orçamento de locks triangulares da Miyu',
+            () => miyuCount <= budgets.miyu,
+            { miyuCount, miyuBudget: budgets.miyu, targetKind: e.kind, repeatedOnTarget: existingMiyuLocksForEntity + 1 },
+          )
+          aiValidator.logMechanic('miyu-assist-lock', 'triangular-lock-acquired', {
+            targetKind: e.kind, repeatedOnTarget: existingMiyuLocksForEntity + 1,
+            miyuCount, miyuBudget: budgets.miyu,
+          })
+        }
+      }
+
     },
 
     // Fase 8 (VISUAL): hint pra mira normal — não trava nem marca nada, só responde "tem um
@@ -155,6 +190,17 @@ export function createLockOnSystem(rail, enemies) {
     // sempre reseta ao disparar. Importante: se o alvo grande recebeu N travas, devolve a
     // MESMA entity N vezes — o chamador (fireHomingShot) já sabe lidar com isso (cada trava =
     // 1 tiro teleguiado independente).
+    takeLockedTargetGroups(inRange) {
+      const groups = { base: [], miyu: [] }
+      for (const rec of lockedEnemies) {
+        if (rec.entity.dying || !inRange(rec.entity)) continue
+        if (rec.source === LOCK_SOURCE_MIYU) groups.miyu.push(rec.entity)
+        else groups.base.push(rec.entity)
+      }
+      lockedEnemies = []
+      return groups
+    },
+
     takeLockedTargets(inRange) {
       const targets = lockedEnemies
         .filter((rec) => !rec.entity.dying && inRange(rec.entity))
@@ -162,6 +208,7 @@ export function createLockOnSystem(rail, enemies) {
       lockedEnemies = []
       return targets
     },
+
 
     getLockedEntities: () => lockedEnemies.filter((rec) => !rec.entity.dying).map((rec) => rec.entity),
     clearLockedEnemies() { lockedEnemies = [] },
@@ -207,7 +254,8 @@ export function createLockOnSystem(rail, enemies) {
           continue
         }
 
-        // multi-lock no mesmo alvo (só chefe/dourado chegam aqui): distribui em anel no plano
+        // multi-lock no mesmo alvo (chefe/dourado BASE ou qualquer alvo com locks da Miyu):
+        // distribui em anel no plano horizontal.
         // horizontal (XZ, mundo). Não é o plano perpendicular à visão (precisaria da câmera,
         // que o HUD tem mas o lockon não) — o plano XZ lê bem porque os alvos grandes são
         // vistos quase sempre de frente/longe, e um anel "deitado" ao redor deles parece
