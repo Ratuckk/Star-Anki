@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Peppy — Guarda Extra e Auxílio</title>
+<style>
+  :root { color-scheme: dark; --ink:#eef9f1; --muted:#8ba396; --green:#39ff6a; --cyan:#7be7ff; --bg:#070b10; }
+  * { box-sizing:border-box } body { margin:0; min-height:100vh; background:radial-gradient(circle at 50% 0%,#16323a 0%,var(--bg) 45%); color:var(--ink); font:14px system-ui,sans-serif; padding:32px }
+  h1 { margin:0 0 6px; font-size:24px } p { color:var(--muted); max-width:850px; margin:0 0 24px; line-height:1.5 }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; max-width:1120px }
+  .option { min-height:430px; overflow:hidden; position:relative; border:1px solid #29404a; border-radius:16px; background:linear-gradient(160deg,#111b22,#080c12 68%); box-shadow:0 16px 35px #0007 }
+  .head { padding:16px 18px; border-bottom:1px solid #29404a } .head b { display:block; font-size:16px } .head small { color:var(--muted) }
+  .stage { height:270px; position:relative; display:grid; place-items:center; overflow:hidden; background:linear-gradient(180deg,#0c1820,#05080c) }
+  .stars { position:absolute; inset:0; opacity:.6; background-image:radial-gradient(#fff 1px,transparent 1.5px); background-size:28px 33px }
+  .ship { position:relative; z-index:4; width:72px; height:95px; clip-path:polygon(50% 0,66% 40%,100% 74%,59% 67%,50% 100%,41% 67%,0 74%,34% 40%); background:linear-gradient(90deg,#5b7280,#e4f4fb 48%,#425866); filter:drop-shadow(0 0 10px #bfeeff); }
+  .caption { padding:14px 18px; color:#c4d4ca; line-height:1.45 } button { margin:0 18px 18px; border:1px solid #4d7d5d; border-radius:7px; background:#102619; color:#d7ffe2; padding:8px 11px; cursor:pointer }
+
+  /* Opção 1 — leitura física: anel no casco e arco frontal amplo. */
+  .orbital .shield-ring { position:absolute; z-index:3; width:145px; height:145px; border:3px solid var(--green); border-left-color:transparent; border-radius:50%; box-shadow:0 0 20px #39ff6a99,inset 0 0 18px #39ff6a55; animation:spin 2.4s linear infinite }
+  .orbital .extra { position:absolute; z-index:5; top:35px; right:24px; display:flex; gap:5px }.orbital .extra i{width:11px;height:11px;border-radius:50%;background:var(--green);box-shadow:0 0 9px var(--green)}
+  .orbital .front-arc { position:absolute; z-index:2; width:215px; height:130px; border:4px solid var(--cyan); border-bottom:0; border-radius:220px 220px 0 0; transform:translateY(-58px); box-shadow:0 0 25px #7be7ff99; opacity:.8; animation:pulse 1.1s ease-in-out infinite alternate }
+
+  /* Opção 2 — leitura tática: pips de escudo separados e prisma compacto na frente. */
+  .tactical .pips { position:absolute; z-index:5; left:25px; top:30px; display:grid; grid-template-columns:repeat(3,18px); gap:6px }.tactical .pips i { height:25px; border:1px solid #6aff8d; background:linear-gradient(#b0ffc2,#1d9b48); clip-path:polygon(50% 0,100% 28%,100% 100%,0 100%,0 28%); box-shadow:0 0 10px #39ff6a88 }
+  .tactical .prism { position:absolute; z-index:3; width:126px; height:168px; transform:translateY(-54px) perspective(180px) rotateX(-12deg); clip-path:polygon(50% 0,100% 23%,100% 100%,0 100%,0 23%); background:linear-gradient(90deg,#00c8f833,#a6fbffb8,#00c8f833); border:2px solid #b8fbff; box-shadow:0 0 30px #7be7ff88; animation:prism 1.5s ease-in-out infinite }
+  .tactical .scan { position:absolute; z-index:4; width:118px; height:2px; transform:translateY(-55px); background:#fff; box-shadow:0 0 9px #fff; animation:scan 1.3s linear infinite }
+
+  /* Opção 3 — leitura de comando: medidor grande e escudo em chevron agressivo. */
+  .command .meter { position:absolute; z-index:5; left:21px; top:24px; width:20px; display:grid; gap:5px }.command .meter i { height:28px; background:var(--green); border:1px solid #d5ffe0; box-shadow:0 0 12px #39ff6abb; transform:skewY(-18deg) }
+  .command .meter:after { content:'GUARDA +3'; position:absolute; top:99px; left:-8px; width:70px; color:#aaffbc; font:700 9px ui-monospace,monospace; writing-mode:vertical-rl; letter-spacing:.1em }
+  .command .chevron { position:absolute; z-index:2; width:225px; height:150px; transform:translateY(-58px); clip-path:polygon(50% 0,100% 40%,77% 100%,50% 73%,23% 100%,0 40%); background:linear-gradient(90deg,#0ae4ff22,#c5fbffcc,#0ae4ff22); filter:drop-shadow(0 0 14px #7be7ff); animation:chevron 900ms steps(2) infinite alternate }
+  .command .warning { position:absolute; right:18px; top:26px; z-index:5; color:#7be7ff; font:700 10px ui-monospace,monospace; text-align:right; line-height:1.5 }
+  @keyframes spin {to{transform:rotate(360deg)}} @keyframes pulse {to{opacity:1;filter:brightness(1.7)}} @keyframes prism {50%{filter:brightness(1.5)} 100%{transform:translateY(-54px) perspective(180px) rotateX(-12deg) scale(1.04)}} @keyframes scan {to{transform:translateY(35px)}} @keyframes chevron {to{opacity:.55;transform:translateY(-58px) scale(1.04)}}
+</style>
+<body>
+  <h1>Peppy — protótipos visuais da Etapa 3</h1>
+  <p>Cada opção combina o escudo temporário verde da Guarda Extra com a barreira frontal do Auxílio. Os botões alternam a barreira para facilitar a comparação. Nenhuma opção está ligada ao jogo.</p>
+  <section class="grid">
+    <article class="option orbital"><div class="head"><b>Opção 1 — Órbita protetora</b><small>Leitura física, orgânica e ampla</small></div><div class="stage"><div class="stars"></div><div class="front-arc"></div><div class="shield-ring"></div><div class="ship"></div><div class="extra"><i></i><i></i><i></i></div></div><div class="caption">Três pips orbitam o casco como escudo excedente; o Auxílio vira um arco translúcido que cobre uma área larga à frente.</div><button>Alternar barreira</button></article>
+    <article class="option tactical"><div class="head"><b>Opção 2 — Prisma tático</b><small>Leitura limpa de HUD e bloqueio preciso</small></div><div class="stage"><div class="stars"></div><div class="prism"></div><div class="scan"></div><div class="ship"></div><div class="pips"><i></i><i></i><i></i></div></div><div class="caption">As cargas extras são módulos separados; a defesa do Auxílio é um prisma compacto, com varredura vertical e prioridade na legibilidade.</div><button>Alternar barreira</button></article>
+    <article class="option command"><div class="head"><b>Opção 3 — Linha de comando</b><small>Leitura agressiva, militar e de alto impacto</small></div><div class="stage"><div class="stars"></div><div class="chevron"></div><div class="ship"></div><div class="meter"><i></i><i></i><i></i></div><div class="warning">AUXÍLIO<br>ATIVO</div></div><div class="caption">O escudo extra ganha um medidor vertical permanente; o Auxílio usa um chevron frontal pulsante, mais expressivo para situações de perigo.</div><button>Alternar barreira</button></article>
+  </section>
+<script>
+  document.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
+    const barrier = button.closest('.option').querySelector('.front-arc,.prism,.chevron')
+    barrier.style.visibility = barrier.style.visibility === 'hidden' ? 'visible' : 'hidden'
+  }))
+</script>
+</body>
+</html>

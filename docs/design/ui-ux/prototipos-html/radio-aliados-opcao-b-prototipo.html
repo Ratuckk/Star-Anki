@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Rádio dos Aliados — Opção B (protótipo)</title>
+<style>
+  body{margin:0}
+  .radioB-pill{position:absolute;left:28px;bottom:30px;display:flex;align-items:center;gap:12px;padding:8px 18px 8px 8px;border-radius:999px;background:rgba(10,15,28,0.9);backdrop-filter:blur(8px);border:1px solid var(--pc, rgba(56,189,248,0.6));box-shadow:0 0 18px var(--pg, rgba(56,189,248,0.35)), 0 6px 16px rgba(0,0,0,0.6);opacity:0;transform:translateY(18px) scale(0.9);transition:opacity 160ms ease-out, transform 260ms cubic-bezier(0.18,0.9,0.3,1.25), border-color 200ms, box-shadow 200ms;}
+  .radioB-pill.active{opacity:1;transform:translateY(0) scale(1);}
+  .radioB-avatar{width:44px;height:44px;border-radius:10px;flex-shrink:0;image-rendering:pixelated;border:2px solid var(--pc, #38bdf8);box-shadow:0 0 10px var(--pg, rgba(56,189,248,0.5));background:#0a0f1c;object-fit:cover;}
+  .radioB-restart{position:absolute;right:16px;bottom:14px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#cbd5e1;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.25);border-radius:6px;padding:6px 12px;cursor:pointer}
+  .radioB-restart:hover{background:rgba(255,255,255,0.16)}
+  .radioB-note{position:absolute;left:20px;top:44px;max-width:480px;font-size:11px;line-height:1.5;color:#64748b;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;}
+  .radioB-note b{color:#94a3b8}
+</style>
+</head>
+<body>
+<div style="width: 960px; height: 540px; box-sizing: border-box; position: relative; overflow: hidden; background: radial-gradient(ellipse at 60% 25%, #0c1730 0%, #030509 62%, #000 100%); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; margin: 0 auto;">
+
+  <div style="position:absolute;left:520px;top:60px;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle, rgba(56,189,248,0.10), transparent 70%);filter:blur(2px);"></div>
+  <div style="position:absolute;left:120px;top:280px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle, rgba(168,85,247,0.08), transparent 70%);filter:blur(2px);"></div>
+
+  <div style="position:absolute;left:20px;top:16px;padding:4px 10px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:6px;font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;">Opção B — Notificação de HUD no canto (v2)</div>
+  <div class="radioB-note">
+    Sprites recortados do mugshot sheet de <b>Star Fox 2 (SNES)</b> — spriters-resource.com.<br>
+    Falco / Peppy / Slippy são os originais. <b>Krystal não existe no elenco clássico</b>
+    (SF1/SF2/64) — usei o retrato da <b>Miyu Lynx</b> (SF2) como placeholder até você decidir
+    o que fazer com esse 4º slot.<br>
+    Falas: catchphrases curtas e reais do Falco/Peppy/Slippy em SF64. A da Krystal é uma
+    linha tática original (ela não tem fala canônica em SF64).
+  </div>
+
+  <div class="radioB-pill" id="pill" style="--pc: #3b82f6; --pg: rgba(59,130,246,0.55);">
+    <img class="radioB-avatar" id="avatar" src="" alt="">
+    <div>
+      <div id="pilotName" style="font-size:12px;font-weight:800;letter-spacing:.06em;color:#e2e8f0;text-transform:uppercase;"></div>
+      <div id="line" style="font-size:13px;color:#f8fafc;margin-top:2px;"></div>
+    </div>
+  </div>
+
+  <button class="radioB-restart" id="restart">Reiniciar</button>
+</div>
+
+<script>
+const SPRITE_FALCO = "radio-sprites/falco.png";
+const SPRITE_PEPPY = "radio-sprites/peppy.png";
+const SPRITE_SLIPPY = "radio-sprites/slippy.png";
+const SPRITE_MIYU = "radio-sprites/miyu.png";
+document.addEventListener('DOMContentLoaded', () => {
+  const SCRIPT = [
+    { name: 'Falco', color: '#3b82f6', sprite: SPRITE_FALCO, text: "I'm on him, watch this!" },
+    { name: 'Peppy', color: '#10b981', sprite: SPRITE_PEPPY, text: 'Do a barrel roll!' },
+    { name: 'Slippy', color: '#f97316', sprite: SPRITE_SLIPPY, text: 'Help me, Fox!' },
+    { name: 'Krystal', color: '#a855f7', sprite: SPRITE_MIYU, text: 'Target locked, firing.' },
+    { name: 'Falco', color: '#3b82f6', sprite: SPRITE_FALCO, text: 'You call that flying?' },
+    { name: 'Peppy', color: '#10b981', sprite: SPRITE_PEPPY, text: 'Fall back and regroup!' },
+    { name: 'Slippy', color: '#f97316', sprite: SPRITE_SLIPPY, text: 'Thanks, Fox!' },
+  ]
+  const pill = document.getElementById('pill')
+  const avatar = document.getElementById('avatar')
+  const pilotName = document.getElementById('pilotName')
+  const line = document.getElementById('line')
+  let idx = 0
+  let timers = []
+  function clearTimers() { timers.forEach(t => clearTimeout(t)); timers = [] }
+  function cycle() {
+    const cur = SCRIPT[idx]
+    pill.style.setProperty('--pc', cur.color)
+    pill.style.setProperty('--pg', cur.color + '80')
+    avatar.src = cur.sprite
+    avatar.alt = cur.name
+    pilotName.textContent = cur.name
+    line.textContent = cur.text
+    pill.classList.add('active')
+    timers.push(setTimeout(() => {
+      pill.classList.remove('active')
+      timers.push(setTimeout(() => {
+        idx = (idx + 1) % SCRIPT.length
+        cycle()
+      }, 380))
+    }, 2400))
+  }
+  document.getElementById('restart').addEventListener('click', () => {
+    clearTimers()
+    idx = 0
+    pill.classList.remove('active')
+    cycle()
+  })
+  cycle()
+})
+</script>
+</body>
+</html>

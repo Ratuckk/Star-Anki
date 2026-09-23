@@ -62,6 +62,7 @@ export function createDebugActions(deps) {
     hud.debug.setToggleActive('toggleCelestialBodies', cfg.enableCelestialBodies)
     hud.debug.setToggleActive('toggleMultiLayerStars', cfg.enableMultiLayerStars)
     hud.debug.setToggleActive('toggleWarpStreaks', cfg.enableWarpStreaks)
+    hud.debug.setToggleActive('toggleAbstractSpeedlines', cfg.enableAbstractSpeedlines)
     hud.debug.setToggleActive('toggleNebulaPockets', cfg.enableNebulaPockets)
     hud.debug.setToggleActive('toggleIonStorms', cfg.enableIonStorms)
     hud.debug.setToggleActive('toggleShootingStars', cfg.enableShootingStars)
@@ -294,6 +295,12 @@ export function createDebugActions(deps) {
       if (environment) {
         const active = environment.toggleFeature('enableWarpStreaks')
         hud.debug.setToggleActive('toggleWarpStreaks', active)
+      }
+    },
+    toggleAbstractSpeedlines: () => {
+      if (environment) {
+        const active = environment.toggleFeature('enableAbstractSpeedlines')
+        hud.debug.setToggleActive('toggleAbstractSpeedlines', active)
       }
     },
     toggleNebulaPockets: () => {

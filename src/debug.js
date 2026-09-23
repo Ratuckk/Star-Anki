@@ -90,6 +90,7 @@ export const DEBUG_ACTIONS = [
   { id: 'toggleCelestialBodies', label: 'Ambiente: Gigante Gasoso e Lua', toggle: true, category: 'Ambiente' },
   { id: 'toggleMultiLayerStars', label: 'Ambiente: Estrelas Cintilantes', toggle: true, category: 'Ambiente' },
   { id: 'toggleWarpStreaks', label: 'Ambiente: Dobra no Boost (Warp)', toggle: true, category: 'Ambiente' },
+  { id: 'toggleAbstractSpeedlines', label: 'Ambiente: Speedlines Abstratas', toggle: true, category: 'Ambiente' },
   { id: 'toggleNebulaPockets', label: 'Ambiente: Bolsões de Névoa', toggle: true, category: 'Ambiente' },
   { id: 'toggleIonStorms', label: 'Ambiente: Relâmpagos Iônicos', toggle: true, category: 'Ambiente' },
   { id: 'toggleShootingStars', label: 'Ambiente: Meteoros / Cadentes', toggle: true, category: 'Ambiente' },

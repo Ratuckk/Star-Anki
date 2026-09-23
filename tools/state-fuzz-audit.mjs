@@ -1,95 +1,119 @@
-import {
-  computeWingmanPairSeparation,
-  WINGMAN_SEPARATION_PAIR_CORRECTION_CAP,
-} from '../src/combat/wingman-formation-separation.js'
-import {
-  WINGMAN_RAIL_CATCHUP_MAX_BONUS,
-  computeRailCatchupBoost,
-  computeRailLongitudinalLag,
-  updateRailCatchupState,
-} from '../src/combat/wingman-navigation.js'
-import {
-  computeFormationMotionGain,
-  computeWingmanArrivalScale,
-} from '../src/combat/wingman-flight-stability.js'
+import assert from 'node:assert/strict'
 
-let seed = 0x5a17c0de
-function rnd() {
-  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
-  return seed / 0x100000000
-}
-function span(min, max) { return min + (max - min) * rnd() }
-function finiteVec(v) { return v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) }
-
-const failures = []
-let checks = 0
-function expect(description, condition, context = {}) {
-  checks += 1
-  if (!condition && failures.length < 100) failures.push({ description, context })
-}
-
-const frame = {
-  right: { x: 1, y: 0, z: 0 },
-  up: { x: 0, y: 1, z: 0 },
-  forward: { x: 0, y: 0, z: 1 },
-}
-const slots = [
-  { side: -11, up: 1, forward: 14 },
-  { side: 12.5, up: -0.5, forward: 5 },
-  { side: -12.5, up: -0.5, forward: 4 },
-  { side: 11, up: 2.2, forward: 16 },
-]
-
-for (let i = 0; i < 6000; i += 1) {
-  const aId = Math.floor(rnd() * 4)
-  let bId = Math.floor(rnd() * 4)
-  if (bId === aId) bId = (bId + 1) % 4
-  const a = {
-    id: aId,
-    position: { x: span(-20, 20), y: span(-8, 8), z: span(-20, 20) },
-    slot: slots[aId],
-    retreating: rnd() < 0.03,
+class EventHub {
+  constructor() { this.handlers = new Map() }
+  addEventListener(type, fn) {
+    if (!this.handlers.has(type)) this.handlers.set(type, new Set())
+    this.handlers.get(type).add(fn)
   }
-  const b = {
-    id: bId,
-    position: rnd() < 0.08
-      ? { ...a.position }
-      : { x: span(-20, 20), y: span(-8, 8), z: span(-20, 20) },
-    slot: slots[bId],
-    retreating: rnd() < 0.03,
+  removeEventListener(type, fn) { this.handlers.get(type)?.delete(fn) }
+  dispatch(type, event = {}) {
+    for (const fn of this.handlers.get(type) || []) fn({ type, target: null, ...event })
   }
-  const sep = computeWingmanPairSeparation(a, b, frame, 7, 48)
-  if (sep) {
-    expect('pair separation finite', finiteVec(sep.pushA) && finiteVec(sep.pushB) && finiteVec(sep.correctionA) && finiteVec(sep.correctionB), { i, sep })
-    expect('pair push symmetric', Math.abs(sep.pushA.x + sep.pushB.x) < 1e-9 && Math.abs(sep.pushA.y + sep.pushB.y) < 1e-9 && Math.abs(sep.pushA.z + sep.pushB.z) < 1e-9, { i, sep })
-    const correctionMag = Math.hypot(sep.correctionA.x, sep.correctionA.y, sep.correctionA.z)
-    expect('pair correction clamped', correctionMag <= WINGMAN_SEPARATION_PAIR_CORRECTION_CAP + 1e-9, { i, correctionMag })
-  }
-
-  const lag = span(-180, 420)
-  const wasActive = rnd() < 0.5
-  const active = updateRailCatchupState(lag, wasActive)
-  const boost = active ? computeRailCatchupBoost(Math.max(lag, 32)) : 0
-  expect('catchup boolean', typeof active === 'boolean', { i, lag, wasActive, active })
-  expect('catchup boost finite/clamped', Number.isFinite(boost) && boost >= 0 && boost <= WINGMAN_RAIL_CATCHUP_MAX_BONUS, { i, lag, boost })
-
-  const player = { x: span(-100, 100), y: span(-100, 100), z: span(-100, 100) }
-  const wingman = { x: span(-100, 100), y: span(-100, 100), z: span(-100, 100) }
-  const longitudinal = computeRailLongitudinalLag(wingman, player, frame)
-  expect('longitudinal lag finite', Number.isFinite(longitudinal), { i, longitudinal })
-
-  const arrival = computeWingmanArrivalScale(span(-5, 40))
-  const motionGain = computeFormationMotionGain(span(-5, 80))
-  expect('arrival scale normalized', Number.isFinite(arrival) && arrival >= 0 && arrival <= 1, { i, arrival })
-  expect('motion gain normalized', Number.isFinite(motionGain) && motionGain >= 0 && motionGain <= 1, { i, motionGain })
 }
 
-const report = {
-  seed: '0x5a17c0de',
-  iterations: 6000,
-  verificacoes: checks,
-  falhas: failures.length,
-  expectativas_falhas: failures,
+const windowHub = new EventHub()
+const documentHub = new EventHub()
+globalThis.window = windowHub
+globalThis.document = Object.assign(documentHub, { hidden: false })
+try {
+  if (globalThis.navigator) {
+    globalThis.navigator.getGamepads = () => []
+  } else {
+    Object.defineProperty(globalThis, 'navigator', { value: { getGamepads: () => [] }, configurable: true, writable: true })
+  }
+} catch {
+  Object.defineProperty(globalThis, 'navigator', { value: { getGamepads: () => [] }, configurable: true, writable: true })
 }
-console.log(JSON.stringify(report, null, 2))
-if (failures.length) process.exitCode = 1
+if (!globalThis.performance) globalThis.performance = { now: () => Date.now() }
+
+let storageMap = new Map()
+let throwOnSet = false
+globalThis.localStorage = {
+  getItem(key) { return storageMap.has(key) ? storageMap.get(key) : null },
+  setItem(key, value) { if (throwOnSet) throw new Error('simulated quota/security failure'); storageMap.set(key, String(value)) },
+  removeItem(key) { storageMap.delete(key) },
+}
+
+const { getSettings } = await import('../src/settings.js')
+const { getBindings } = await import('../src/keybindings.js')
+const { createInputState } = await import('../src/input.js')
+const { loadHistory, saveHistory, recordResult } = await import('../src/storage.js')
+const { listDecks } = await import('../src/decks.js')
+
+const findings = []
+function probe(name, fn) {
+  try {
+    const result = fn()
+    console.log(`FUZZ_OK ${name}`, result ?? '')
+  } catch (err) {
+    findings.push({ name, error: err?.stack || String(err) })
+    console.log(`FUZZ_FAIL ${name}: ${err?.message || err}`)
+  }
+}
+
+storageMap = new Map([['star-anki-settings', JSON.stringify({
+  startingHealth: 'not-a-number', startingWingmen: {}, arenaTurnSensitivity: 'NaN',
+  shipVisual: '__invalid__', vitalsHudStyle: '__invalid__', showEnemyHealthBars: 'yes',
+})]])
+probe('settings-corrupt-schema', () => {
+  const s = getSettings()
+  assert.equal(Number.isFinite(s.startingHealth), true, `startingHealth=${s.startingHealth}`)
+  assert.equal(Number.isFinite(s.startingWingmen), true, `startingWingmen=${s.startingWingmen}`)
+  assert.equal(Number.isFinite(s.arenaTurnSensitivity), true, `arenaTurnSensitivity=${s.arenaTurnSensitivity}`)
+  assert.ok(['default', 'bombardeiro', 'racer'].includes(s.shipVisual), `shipVisual=${s.shipVisual}`)
+  assert.ok(['classic', 'orbital'].includes(s.vitalsHudStyle), `vitalsHudStyle=${s.vitalsHudStyle}`)
+  assert.equal(typeof s.showEnemyHealthBars, 'boolean')
+})
+
+storageMap = new Map([['star-anki-keybindings', JSON.stringify({
+  actions: { moveLeft: null, moveRight: 42, fire: 'KeyQ' },
+  gamepad: { axisX: 'oops', axisY: 999, invertY: 'false', buttons: { fire: 'bad', pause: [999, -2, 'x'] } },
+})]])
+probe('keybindings-corrupt-schema', () => {
+  const b = getBindings()
+  assert.ok(Array.isArray(b.actions.moveLeft))
+  assert.ok(Array.isArray(b.actions.moveRight))
+  assert.ok(Array.isArray(b.actions.fire))
+  assert.ok(Array.isArray(b.gamepad.buttons.fire))
+  assert.equal(Number.isInteger(b.gamepad.axisX), true)
+  assert.equal(Number.isInteger(b.gamepad.axisY), true)
+  const input = createInputState()
+  input.dispose()
+})
+
+storageMap = new Map()
+throwOnSet = true
+probe('history-storage-write-failure', () => saveHistory({ x: { acertos: 1, erros: 0 } }))
+throwOnSet = false
+
+storageMap = new Map([['star-anki-history', JSON.stringify({ abc: 'broken-entry' })]])
+probe('history-corrupt-entry-record', () => {
+  const history = loadHistory()
+  recordResult(history, 'abc', true)
+  assert.equal(history.abc.acertos, 1)
+  assert.equal(history.abc.erros, 0)
+})
+
+storageMap = new Map([['star-anki-decks-v1', JSON.stringify([
+  { id: 'broken-1', name: 'Sem texto', savedAt: 1 },
+  null,
+  { id: 17, name: {}, text: 42, savedAt: 'yesterday' },
+])]])
+probe('decks-corrupt-schema-list', () => listDecks())
+
+// Edge presses must not survive a focus loss. Otherwise a pause/command pressed immediately
+// before Alt+Tab can fire after returning to the game even though the key is no longer held.
+storageMap = new Map()
+probe('input-blur-clears-pending-edge', () => {
+  const input = createInputState()
+  windowHub.dispatch('keydown', { code: 'Escape', target: { tagName: 'BODY', isContentEditable: false } })
+  windowHub.dispatch('blur')
+  const state = input.update()
+  assert.equal(state.pressed.has('Escape'), false, 'Escape edge leaked across blur')
+  input.dispose()
+})
+
+console.log(`FUZZ_SUMMARY failures=${findings.length}`)
+for (const f of findings) console.log(`FUZZ_FINDING ${f.name}\n${f.error}`)
+if (findings.length) process.exitCode = 2

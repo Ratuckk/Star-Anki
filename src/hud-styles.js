@@ -868,33 +868,17 @@ export function injectHudExtraStyles() {
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 200ms ease-out;
+  transition: opacity 120ms linear;
   z-index: 3;
   overflow: hidden;
 }
-.hud-motion-lines.active { opacity: var(--intensity, 1); }
-.hud-motion-lines::before,
-.hud-motion-lines::after {
-  content: '';
+.hud-motion-lines.active { opacity: 1; }
+.hud-motion-lines-canvas {
   position: absolute;
-  inset: -10%;
-  background: repeating-conic-gradient(
-    from 0deg at 50% 50%,
-    transparent 0deg,
-    rgba(255, 255, 255, 0.65) 0.4deg,
-    transparent 0.8deg,
-    transparent 45deg
-  );
-  animation: motion-line-spin 1.6s linear infinite;
-}
-.hud-motion-lines::after {
-  animation-duration: 2.2s;
-  animation-direction: reverse;
-  opacity: 0.6;
-}
-@keyframes motion-line-spin {
-  0%   { transform: rotate(0deg) scale(1.15); }
-  100% { transform: rotate(360deg) scale(1.15); }
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* ============ SCREEN DISTORTION (boost) ============ */

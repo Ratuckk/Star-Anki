@@ -39,11 +39,19 @@ const DEFAULTS = {
   audioVolume: 0.8,
 }
 
+const BOOLEAN_KEYS = [
+  'showEnemyHealthBars', 'damageOrbitEnabled', 'fogTacticalColors', 'minimapGhostBlips',
+  'fogTacticalEffects', 'arcadeCardChoicePauses', 'wingmanRadioEnabled',
+]
+
+let cachedSettings = null
+
 function readAll() {
   try {
+    if (typeof localStorage === 'undefined') return {}
     const raw = localStorage.getItem(SETTINGS_KEY)
     const parsed = raw ? JSON.parse(raw) : {}
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
   } catch {
     return {}
   }
@@ -51,30 +59,73 @@ function readAll() {
 
 function writeAll(settings) {
   try {
+    if (typeof localStorage === 'undefined') return false
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    return true
   } catch {
-    // quota excedida ou localStorage desabilitado — falha silenciosa de propósito
+    // quota excedida ou localStorage desabilitado — a configuração ainda vale nesta aba
+    return false
   }
 }
 
-export function getSettings() {
-  const settings = { ...DEFAULTS, ...readAll() }
-  if (!['classic', 'manga', 'orbit'].includes(settings.damageNumberStyle)) settings.damageNumberStyle = 'classic'
-  if (!['all', 'radio', 'off'].includes(settings.audioMode)) settings.audioMode = 'all'
-  const parsedAudioVolume = Number(settings.audioVolume)
-  settings.audioVolume = Number.isFinite(parsedAudioVolume)
-    ? Math.max(0, Math.min(1, parsedAudioVolume))
-    : DEFAULTS.audioVolume
+function finiteClamped(value, fallback, min, max, { integer = false } = {}) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  const normalized = integer ? Math.round(parsed) : parsed
+  return Math.max(min, Math.min(max, normalized))
+}
+
+function sanitizeSettings(raw = {}) {
+  const settings = { ...DEFAULTS }
+
+  settings.startingHealth = finiteClamped(raw.startingHealth, DEFAULTS.startingHealth, 1, 20, { integer: true })
+  settings.startingWingmen = finiteClamped(raw.startingWingmen, DEFAULTS.startingWingmen, 0, 4, { integer: true })
+  settings.arenaTurnSensitivity = finiteClamped(raw.arenaTurnSensitivity, DEFAULTS.arenaTurnSensitivity, 0.5, 2)
+  settings.audioVolume = finiteClamped(raw.audioVolume, DEFAULTS.audioVolume, 0, 1)
+
+  settings.damageNumberStyle = ['classic', 'manga', 'orbit'].includes(raw.damageNumberStyle)
+    ? raw.damageNumberStyle : DEFAULTS.damageNumberStyle
+  settings.audioMode = ['all', 'radio', 'off'].includes(raw.audioMode)
+    ? raw.audioMode : DEFAULTS.audioMode
+  settings.shipVisual = ['default', 'bombardeiro', 'racer'].includes(raw.shipVisual)
+    ? raw.shipVisual : DEFAULTS.shipVisual
+  settings.vitalsHudStyle = ['classic', 'orbital'].includes(raw.vitalsHudStyle)
+    ? raw.vitalsHudStyle : DEFAULTS.vitalsHudStyle
+
+  for (const key of BOOLEAN_KEYS) {
+    settings[key] = typeof raw[key] === 'boolean' ? raw[key] : DEFAULTS[key]
+  }
   return settings
 }
 
+function ensureCache() {
+  if (!cachedSettings) cachedSettings = sanitizeSettings(readAll())
+  return cachedSettings
+}
+
+export function getSettings() {
+  // game-loop/audio consultam configurações várias vezes por frame. localStorage é síncrono e
+  // JSON.parse também tem custo; manter o snapshot sanitizado em memória elimina esse I/O do
+  // hot path sem perder atualização ao vivo (setSetting atualiza o cache imediatamente).
+  return { ...ensureCache() }
+}
+
 export function setSetting(key, value) {
-  const current = getSettings()
-  current[key] = value
+  if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) return getSettings()
+  const current = sanitizeSettings({ ...ensureCache(), [key]: value })
+  cachedSettings = current
   writeAll(current)
   // O sistema de áudio encerra loops em curso quando muda para rádio/desligado.
-  if (key === 'audioMode' && typeof window !== 'undefined') {
+  if (key === 'audioMode' && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
     window.dispatchEvent(new CustomEvent('star-anki:audio-mode-changed', { detail: current.audioMode }))
   }
-  return current
+  return { ...current }
+}
+
+// Outra aba pode alterar as configurações. Invalida só o cache; o próximo leitor revalida o
+// payload inteiro antes de expô-lo ao jogo.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event) => {
+    if (event?.key === SETTINGS_KEY || event?.key == null) cachedSettings = null
+  })
 }

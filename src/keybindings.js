@@ -110,16 +110,49 @@ function writeStored(data) {
 
 export function getBindings() {
   const stored = readStored()
-  const storedGamepad = stored.gamepad || {}
-  // migração do formato antigo (`gamepad.fireButtons` solto) pro novo `gamepad.buttons.fire` —
-  // só entra se o usuário nunca salvou o formato novo, senão o novo sempre vence
-  const buttons = { ...DEFAULT_GAMEPAD.buttons, ...(storedGamepad.buttons || {}) }
-  if (!storedGamepad.buttons && Array.isArray(storedGamepad.fireButtons)) {
-    buttons.fire = storedGamepad.fireButtons
+  const rawActions = stored.actions && typeof stored.actions === 'object' && !Array.isArray(stored.actions)
+    ? stored.actions
+    : {}
+  const actions = { ...DEFAULT_ACTIONS }
+  for (const [key, defaultCodes] of Object.entries(DEFAULT_ACTIONS)) {
+    if (Array.isArray(rawActions[key])) {
+      actions[key] = rawActions[key].filter((c) => typeof c === 'string' && c.length > 0)
+    } else if (typeof rawActions[key] === 'string' && rawActions[key].length > 0) {
+      actions[key] = [rawActions[key]]
+    } else {
+      actions[key] = [...defaultCodes]
+    }
   }
+
+  const storedGamepad = stored.gamepad && typeof stored.gamepad === 'object' && !Array.isArray(stored.gamepad)
+    ? stored.gamepad
+    : {}
+  const rawButtons = storedGamepad.buttons && typeof storedGamepad.buttons === 'object' && !Array.isArray(storedGamepad.buttons)
+    ? storedGamepad.buttons
+    : {}
+  const buttons = {}
+  for (const [actionId, defaultButtons] of Object.entries(DEFAULT_GAMEPAD.buttons)) {
+    if (Array.isArray(rawButtons[actionId])) {
+      buttons[actionId] = rawButtons[actionId].filter((b) => Number.isInteger(b) && b >= 0)
+    } else if (actionId === 'fire' && !storedGamepad.buttons && Array.isArray(storedGamepad.fireButtons)) {
+      buttons[actionId] = storedGamepad.fireButtons.filter((b) => Number.isInteger(b) && b >= 0)
+    } else {
+      buttons[actionId] = [...defaultButtons]
+    }
+  }
+
+  const axisX = Number.isInteger(storedGamepad.axisX) ? storedGamepad.axisX : DEFAULT_GAMEPAD.axisX
+  const axisY = Number.isInteger(storedGamepad.axisY) ? storedGamepad.axisY : DEFAULT_GAMEPAD.axisY
+  const invertY = typeof storedGamepad.invertY === 'boolean' ? storedGamepad.invertY : DEFAULT_GAMEPAD.invertY
+
   return {
-    actions: { ...DEFAULT_ACTIONS, ...(stored.actions || {}) },
-    gamepad: { ...DEFAULT_GAMEPAD, ...storedGamepad, buttons },
+    actions,
+    gamepad: {
+      axisX,
+      axisY,
+      invertY,
+      buttons,
+    },
   }
 }
 

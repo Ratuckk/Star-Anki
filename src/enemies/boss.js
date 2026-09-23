@@ -49,7 +49,7 @@ export const BOSS_LASER_COLOR = 0xff2d4d
 // laserBurstCount/laserBurstDelayS: fase 3 solta o laser em rajada de 2, com 0.4s entre os
 // disparos. Só o PRIMEIRO mira a posição travada no telegraph; o segundo mira a posição ATUAL
 // do jogador — mais perigoso, obriga a continuar se mexendo.
-const BOSS_PHASES = [
+export const BOSS_PHASES = [
   {
     enterAtHpFrac: 1.0,
     chaseSpeed: 14,
@@ -323,6 +323,7 @@ export function updateBossMovement(enemy, dt, playerPosition) {
 //             eixo vertical do mundo). O CORPO DO CHEFE NÃO SE MOVE — a posição do mesh lida
 //             por lockon/minimapa/spawn de minions no mesmo tick continua correta.
 export function fireBossVolley(enemy, playerPosition, ctx) {
+  if (enemy.transitioning || enemy.dying) return
   const cfg = enemy.phaseConfig
   const count = cfg.volleyCount
   triggerSoundCue(ENEMY_SOUND_CUES.boss_volley, { worldPos: enemy.mesh.position, count, phase: enemy.phase + 1 })
@@ -412,6 +413,9 @@ export function updateBossLaser(scene, enemy, dt, playerPosition, effects, ctx) 
       effects.bloomSprite(enemy.mesh.position.clone(), BOSS_SHIELD_COLOR, 1.8)
     }
   }
+
+  // Durante a transição ou morte, lasers e telegraphs ficam completamente bloqueados
+  if (enemy.transitioning || enemy.dying) return
 
   // ============ BURST EM ANDAMENTO ============
   if (enemy.laserBurstRemaining > 0) {

@@ -1,10 +1,18 @@
+import {
+  SPEEDLINES_APPROVED,
+  clampUnit,
+  speedlinesAbstractCurve,
+  speedlinesCenterClearance,
+  speedlinesEnvironmentalCurve,
+  speedlinesLineCount,
+  speedlinesTrailLength,
+  speedlinesTravelSpeed,
+} from './speedlines-visual-model.js'
+
+export { SPEEDLINES_APPROVED }
+
 export const SPEEDLINES_DEFAULTS = Object.freeze({
-  intensity: 78,
-  density: 72,
-  length: 76,
-  thickness: 42,
-  brightness: 66,
-  peripheralBias: 74,
+  ...SPEEDLINES_APPROVED,
   environmental: true,
   abstract: true,
   boss: true,
@@ -41,16 +49,16 @@ export function intensityBand(value) {
 
 export function visualCurves(state) {
   const s = normalizeSpeedlinesState(state)
-  const t = s.intensity / 100
-  const environmental = Math.pow(t, 1.12)
-  const abstract = Math.pow(Math.max(0, (t - 0.18) / 0.82), 1.34)
+  const t = clampUnit(s.intensity / 100)
+  const environmental = speedlinesEnvironmentalCurve(t)
+  const abstract = speedlinesAbstractCurve(t)
   return {
     t,
     environmental,
     abstract,
-    lineCount: Math.round(12 + 168 * abstract * (s.density / 100)),
-    trailLength: (0.06 + 24 * environmental * (s.length / 100)),
-    travelSpeed: 4 + 82 * Math.pow(t, 1.45),
-    centerClearance: 0.12 + 0.35 * (s.peripheralBias / 100),
+    lineCount: speedlinesLineCount(t, s.density),
+    trailLength: speedlinesTrailLength(t, s.length),
+    travelSpeed: speedlinesTravelSpeed(t),
+    centerClearance: speedlinesCenterClearance(s.peripheralBias),
   }
 }

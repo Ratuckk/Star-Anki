@@ -410,7 +410,12 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
   root.position.copy(position)
   scene.add(root)
 
-  const frame = rail.getSpawnFrame()
+  const frame = rail?.getSpawnFrame ? rail.getSpawnFrame() : (rail?.getFrameAt ? rail.getFrameAt(0) : {
+    position: new THREE.Vector3(),
+    forward: new THREE.Vector3(0, 0, 1),
+    up: new THREE.Vector3(0, 1, 0),
+    right: new THREE.Vector3(1, 0, 0),
+  })
   _rel.copy(position).sub(frame.position)
   const enemy = {
     id,

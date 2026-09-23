@@ -26,9 +26,12 @@ import {
 } from './timeEnemy.js'
 import {
   BOSS_KIND, BOSS_COLOR, BOSS_HIT_RADIUS, BOSS_DEATH_DURATION, BOSS_LASER_HIT_RADIUS,
-  bossEnemyGeometry, bossEnemyMaterial, BOSS_SHIELD_COLOR,
+  bossEnemyGeometry, bossEnemyMaterial, BOSS_SHIELD_COLOR, BOSS_PHASES,
   spawnBossEnemy, updateBossMovement, randomBossFireInterval, fireBossVolley, updateBossLaser, explodeBoss, disposeBoss,
 } from './boss.js'
+
+// Dano percentual adicional do Swirl Blast contra chefes (Docs/Swirl Blast)
+export const SWIRL_BOSS_MAX_HP_DAMAGE_RATIO = 0.30
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
 import {
   DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS,
@@ -1241,6 +1244,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnTitanicDetrito(opts = {}) {
@@ -1639,7 +1643,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           if (effects) effects.explosion(enemyHit.mesh.position, colorFor(enemyHit), 1.6, { rings: true })
           hits.push({
             kind: enemyHit.kind, killed: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
-            enemyKillPoints, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
+            damage: 0, damageApplied: 0, enemyKillPoints, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
+            stopProjectile: false, destroyedShield: false,
           })
           continue
         }
@@ -1657,18 +1662,23 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             effects.hitSpark(enemyHit.mesh.position, BOSS_SHIELD_COLOR)
             effects.shockwave(enemyHit.mesh.position, BOSS_SHIELD_COLOR, 0.8)
           }
-          // Swirl consumes the defensive phase, but cannot delete shield and hull in one contact.
-          hits.push({
-            kind: enemyHit.kind, killed: false, blocked: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
-            enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
-            stopProjectile: true, destroyedShield: true, damageApplied: 0,
-          })
-          continue
         }
 
-        const appliedDamage = enemyHit.kind === BOSS_KIND
-          ? damage + Math.ceil((enemyHit.maxHp || 0) * bossHpRatio)
+        const prevHp = enemyHit.hp
+        let effectiveFloor = 0
+        if (enemyHit.kind === BOSS_KIND) {
+          if (enemyHit.transitioning) {
+            effectiveFloor = enemyHit.transitionFloorHp
+          } else if (Array.isArray(BOSS_PHASES) && enemyHit.phase < BOSS_PHASES.length - 1) {
+            effectiveFloor = enemyHit.maxHp * BOSS_PHASES[enemyHit.phase + 1].enterAtHpFrac
+          }
+        }
+
+        const targetDamage = enemyHit.kind === BOSS_KIND
+          ? damage + (Number.isFinite(meta.bossHpRatio) ? Math.ceil((enemyHit.maxHp || 0) * meta.bossHpRatio) : Math.ceil((enemyHit.maxHp || 0) * SWIRL_BOSS_MAX_HP_DAMAGE_RATIO))
           : damage
+        const targetHp = Math.max(effectiveFloor, enemyHit.hp - targetDamage)
+        const appliedDamage = Math.max(0, prevHp - targetHp)
         enemyHit.hp -= appliedDamage
         if (enemyHit.kind === TANK_KIND) enemyHit.requestStagger?.('swirl')
         telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${appliedDamage} de dano perfurante (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage: appliedDamage, hp: enemyHit.hp })
@@ -1719,8 +1729,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
         hits.push({
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+          damage: appliedDamage, damageApplied: appliedDamage,
           enemyKillPoints, timeReductionMs, bossDefeated, squadWipe, squadWipeBonus,
-          stopProjectile: stopsProjectile, destroyedShield, damageApplied: appliedDamage,
+          stopProjectile: stopsProjectile, destroyedShield,
         })
       }
 

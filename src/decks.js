@@ -13,9 +13,10 @@ const REVIEW_MAX_CARDS = 40
 
 function readAll() {
   try {
+    if (typeof localStorage === 'undefined') return []
     const raw = localStorage.getItem(DECKS_KEY)
     const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === 'object') : []
   } catch {
     return []
   }
@@ -23,15 +24,19 @@ function readAll() {
 
 function writeAll(list) {
   try {
+    if (typeof localStorage === 'undefined') return false
     localStorage.setItem(DECKS_KEY, JSON.stringify(list))
+    return true
   } catch {
     // quota excedida ou localStorage desabilitado — falha silenciosa de propósito
+    return false
   }
 }
 
 function migrateLegacyDeck() {
   let legacyText = null
   try {
+    if (typeof localStorage === 'undefined') return
     legacyText = localStorage.getItem(LEGACY_DECK_KEY)
   } catch {
     return
@@ -54,13 +59,20 @@ function makeId() {
   return `deck-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function describe(entry) {
-  const built = buildDeck(entry.text)
-  if (built.warning) return { id: entry.id, name: entry.name, savedAt: entry.savedAt, valid: false, warning: built.warning }
+function describe(rawEntry) {
+  if (!rawEntry || typeof rawEntry !== 'object') {
+    return { id: makeId(), name: 'Baralho corrompido', savedAt: 0, valid: false, warning: 'Entrada inválida' }
+  }
+  const id = typeof rawEntry.id === 'string' ? rawEntry.id : String(rawEntry.id ?? makeId())
+  const name = typeof rawEntry.name === 'string' ? rawEntry.name : 'Baralho sem nome'
+  const savedAt = Number.isFinite(rawEntry.savedAt) ? rawEntry.savedAt : 0
+  const text = typeof rawEntry.text === 'string' ? rawEntry.text : ''
+  const built = buildDeck(text)
+  if (built.warning) return { id, name, savedAt, valid: false, warning: built.warning }
   return {
-    id: entry.id,
-    name: entry.name,
-    savedAt: entry.savedAt,
+    id,
+    name,
+    savedAt,
     valid: true,
     shooterCount: built.shooterCards.length,
     painelCount: built.painelCards.length,

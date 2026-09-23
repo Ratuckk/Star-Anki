@@ -57,12 +57,15 @@ export function createQuestionFlow(deps) {
     if (cards.length === 0) { onDone(); return }
     state.phase = 'cardChoice'
     const compactArcadeDraft = !!deck?.isNoDeck
+    const isArcade = compactArcadeDraft
     if (compactArcadeDraft) {
       aiValidator.logMechanic('arcade-draft', 'compact-draft-opened', { cards: cards.map((card) => card.id) })
+      state.arcadeBulletTimeTimer = 1.5
     }
     hud.showCardChoice({
       cards,
       compact: compactArcadeDraft,
+      isArcade,
       stats: {
         health: session.health,
         maxHealth: player.getMaxHealth ? player.getMaxHealth() : 10,
@@ -74,6 +77,9 @@ export function createQuestionFlow(deps) {
       },
       collectedCards: player.getCollectedCards ? player.getCollectedCards() : new Map(),
       onPick: (card) => {
+        if (isArcade) {
+          state.arcadeBulletTimeTimer = 0
+        }
         applyRoguelikeCard(card)
         onDone()
       },

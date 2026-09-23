@@ -370,18 +370,15 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
     // mundo perfurado no mesmo frame) e com Set de perfuração PRÓPRIO (piercedTargets aqui é do
     // dourado, separado do Set genérico de inimigos — golden.js não precisa saber dele). O
     // dourado sempre PÁRA o Swirl (não tem conceito de escudo destrutível como o chefe).
-    resolvePiercingHit(prevPos, currPos, damage, piercedTargets, options = {}) {
+    resolvePiercingHit(prevPos, currPos, damage, piercedTargets, hitBuffer = 0) {
       const hits = []
-      const projectileRadius = Math.max(0, options.projectileRadius || 0)
-      const bossHpRatio = Math.max(0, options.bossHpRatio || 0)
       for (const goldenHit of goldenTargets) {
         if (goldenHit.dying) continue
         if (piercedTargets.has(goldenHit.id)) continue
-        if (distanceToSegment(goldenHit.mesh.position, prevPos, currPos) > GOLDEN_HIT_RADIUS + projectileRadius) continue
+        if (distanceToSegment(goldenHit.mesh.position, prevPos, currPos) > GOLDEN_HIT_RADIUS + hitBuffer) continue
         piercedTargets.add(goldenHit.id)
 
-        const appliedDamage = damage + Math.ceil((goldenHit.maxHp || 0) * bossHpRatio)
-        goldenHit.hp -= appliedDamage
+        goldenHit.hp -= damage
         if (effects) effects.flashMesh(goldenHit.mesh)
         const killed = goldenHit.hp <= 0
         if (killed) {
@@ -404,8 +401,9 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
 
         hits.push({
           kind: GOLDEN_KIND, killed, worldPos: goldenHit.mesh.position.clone(), meshRef: goldenHit.mesh,
+          damage,
           enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: killed,
-          stopProjectile: true, damageApplied: appliedDamage,
+          stopProjectile: true,
         })
         break // o dourado sempre para o Swirl — não há por que seguir perfurando depois dele
       }

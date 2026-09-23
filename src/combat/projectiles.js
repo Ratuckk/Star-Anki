@@ -131,7 +131,9 @@ const SWIRL_AFTERIMAGE_INTERVAL = 0.03 // segundos entre cada afterimage deixado
 //
 // ESCALA — Rodada 1 (0.6×) testada e aprovada ao vivo pelo usuário; Rodada 2 abaixo é a escala
 // CHEIA da proposta v2 (1.0×). Pra voltar pra Rodada 1 se precisar, é só trocar de volta pra 0.6.
-const SWIRL_SCALE = 1.0
+export const SWIRL_SCALE = 1.0
+export const SWIRL_BLAST_BASE_HIT_RADIUS = 3.0
+export const SWIRL_BLAST_HIT_RADIUS = SWIRL_BLAST_BASE_HIT_RADIUS * SWIRL_SCALE
 
 const SWIRL_CORE_COLOR = 0x2b8fff  // azul principal — mesma família do tiro carregado máximo
 const SWIRL_DEEP_COLOR = 0x1a5fb4  // azul escuro da "plumagem" traseira

@@ -555,6 +555,141 @@ export const ENEMY_SOUND_CUES = {
     triggerLogic: 'Fanfarra de bônus arcade disparada quando todos os caças de uma esquadrilha são abatidos.'
   },
 
+  // --- Tanque (Unidade Pesada de Assalto) ---
+  tank_brace: {
+    id: 'enemy_tank_brace',
+    file: null,
+    durationMs: 450,
+    delayMs: 0,
+    cooldownMs: 200,
+    volume: 0.75,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Ruído hidráulico pesado e trava dos estabilizadores mecânicos ao entrar em estado de brace.'
+  },
+  tank_siege_charge: {
+    id: 'enemy_tank_siege_charge',
+    file: null,
+    durationMs: 400,
+    delayMs: 0,
+    cooldownMs: 250,
+    volume: 0.80,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Zumbido grave de capacitores de plasma concentrando energia no canhão de cerco.'
+  },
+  tank_siege_fire: {
+    id: 'enemy_tank_siege_fire',
+    file: null,
+    durationMs: 600,
+    delayMs: 0,
+    cooldownMs: 150,
+    volume: 0.90,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Disparo de impacto massivo do projétil de alta energia do canhão de cerco com forte recoil.'
+  },
+  tank_burst_charge: {
+    id: 'enemy_tank_burst_charge',
+    file: null,
+    durationMs: 300,
+    delayMs: 0,
+    cooldownMs: 200,
+    volume: 0.70,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Pulso mecânico rápido sinalizando a preparação da rajada de supressão.'
+  },
+  tank_burst_fire: {
+    id: 'enemy_tank_burst_fire',
+    file: null,
+    durationMs: 250,
+    delayMs: 0,
+    cooldownMs: 80,
+    volume: 0.75,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Disparo ritmado de cada projétil da rajada de supressão.'
+  },
+  tank_ram_charge: {
+    id: 'enemy_tank_ram_charge',
+    file: null,
+    durationMs: 550,
+    delayMs: 0,
+    cooldownMs: 500,
+    volume: 0.85,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Ignição e queima prévia dos propulsores de sobrealimentação para a investida de aríete pesado.'
+  },
+  tank_ram_thrust: {
+    id: 'enemy_tank_ram_thrust',
+    file: null,
+    durationMs: 600,
+    delayMs: 0,
+    cooldownMs: 400,
+    volume: 0.90,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Rugido potente de aceleração contínua durante a investida pesada de aríete.'
+  },
+  tank_armor_break: {
+    id: 'enemy_tank_armor_break',
+    file: null,
+    durationMs: 450,
+    delayMs: 0,
+    cooldownMs: 300,
+    volume: 0.80,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Estalo de blindagem e desprendimento de placas ao cruzar o limiar de 66% de integridade estrutural.'
+  },
+  tank_critical: {
+    id: 'enemy_tank_critical',
+    file: null,
+    durationMs: 500,
+    delayMs: 0,
+    cooldownMs: 400,
+    volume: 0.85,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Alarme mecânico grave e curto circuito interno ao entrar em estado crítico abaixo de 33% de HP.'
+  },
+  tank_stagger: {
+    id: 'enemy_tank_stagger',
+    file: null,
+    durationMs: 450,
+    delayMs: 0,
+    cooldownMs: 300,
+    volume: 0.85,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Impacto ressonante e perda de estabilidade mecânica causada pelo impacto perfurante do Swirl Blast.'
+  },
+  tank_death: {
+    id: 'enemy_tank_death',
+    file: null,
+    durationMs: 800,
+    delayMs: 0,
+    cooldownMs: 100,
+    volume: 0.95,
+    category: 'sfx',
+    spatial: true,
+    loop: false,
+    triggerLogic: 'Detonação pesada e catastrófica do reator do Tanque ao ser destruído.'
+  },
+
+
   // --- Chefe (Boss - Destruidor Dimensional) ---
   boss_entrance: {
     id: 'boss_entrance',

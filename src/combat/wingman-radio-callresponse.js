@@ -244,6 +244,10 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
     return cancelWhere(() => true, reason) > 0
   }
 
+  function cancelConversationForPilot(pilotId, reason = 'pilot-left') {
+    return cancelWhere((thread) => thread.openerPilotId === pilotId || thread.responderPilotId === pilotId, reason) > 0
+  }
+
   function openFromEvent({ openerPilotId, triggerEventId, now, activePilotIds = [], force = false }) {
     const byResponder = RESPONSE_LINES[triggerEventId]
     if (!byResponder) return null
@@ -294,11 +298,15 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
       }
     }
 
-    const index = pending.findIndex((thread) =>
-      now >= thread.dueAt && eligibleResponderIds.includes(thread.responderPilotId)
-    )
+    const index = pending.findIndex((thread) => now >= thread.dueAt)
     if (index < 0) return null
     const thread = pending[index]
+    if (!eligibleResponderIds.includes(thread.responderPilotId)) {
+      pending.splice(index, 1)
+      stats.canceled += 1
+      stats.lastCancelReason = 'responder-unavailable'
+      return null
+    }
 
     pending.splice(index, 1)
     stats.delivered += 1
@@ -324,6 +332,7 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
     openFromEvent,
     takeDueResponse,
     cancelPendingResponse,
+    cancelConversationForPilot,
     getDebugSnapshot,
     reset,
   }

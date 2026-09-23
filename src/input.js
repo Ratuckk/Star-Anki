@@ -76,6 +76,7 @@ export function createInputState() {
   // inputs futuros do lado oposto. Limpar no blur resolve a causa raiz.
   function clearKeys() {
     keys.clear()
+    pressedThisFrame.clear()
   }
   function onVisibilityChange() {
     if (document.hidden) clearKeys()

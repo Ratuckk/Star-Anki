@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protótipo — Rádio abaixo das cartas</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #03060d; color: #eaf6ff; }
+    header { padding: 22px clamp(18px, 4vw, 60px); border-bottom: 1px solid #1b3b58; background: #07111d; }
+    h1 { margin: 0 0 8px; font-size: clamp(1.1rem, 2.5vw, 1.7rem); color: #70dcff; }
+    p { margin: 0; line-height: 1.45; color: #b8cad9; }
+    main { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 20px; padding: 22px clamp(18px, 4vw, 60px) 50px; }
+    .option { padding: 14px; border: 1px solid #24506d; border-radius: 10px; background: #08121f; box-shadow: 0 12px 28px #0008; }
+    h2 { margin: 0 0 6px; font-size: 1rem; color: #fff; }
+    .option > p { min-height: 64px; font-size: .8rem; }
+    .mock { position: relative; overflow: hidden; height: 500px; margin-top: 16px; border: 1px solid #24435e; border-radius: 7px; background: radial-gradient(circle at 64% 35%, #102840 0 1px, transparent 2px), radial-gradient(circle at 25% 70%, #fff 0 1px, transparent 2px), #02050b; background-size: 70px 90px, 110px 70px; }
+    .points { position: absolute; left: 12px; top: 12px; font: 700 11px system-ui; }
+    .ability { position: absolute; left: 12px; top: 38px; display: flex; gap: 5px; }
+    .hex { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #48bdf0; clip-path: polygon(25% 5%,75% 5%,100% 50%,75% 95%,25% 95%,0 50%); background: #0b1f35; font-size: 12px; }
+    .cards { position: absolute; left: 12px; top: 86px; width: 245px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .card { width: 53px; height: 28px; display: grid; place-items: center; border: 1px solid #e23576; border-radius: 5px; background: #101827; color: #fff; font-size: 11px; }
+    .card:nth-child(3n) { border-color: #e8cf36; } .card:nth-child(4n) { border-color: #37cffa; }
+    .quote { display: flex; align-items: center; gap: 7px; min-width: 200px; max-width: 260px; padding: 6px 9px 6px 6px; border: 1px solid var(--c); border-radius: 4px; background: rgba(7, 14, 25, .96); box-shadow: 0 0 13px color-mix(in srgb, var(--c) 45%, transparent); font-size: 10px; }
+    .portrait { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border: 1px solid var(--c); border-radius: 3px; background: #263b58; font-size: 15px; }
+    .quote b { display: block; margin-bottom: 2px; font-size: 9px; color: var(--c); }
+    .q-falco { --c: #54b9ff; } .q-peppy { --c: #66e5a2; } .q-slippy { --c: #ffcc60; } .q-miyu { --c: #ef8aff; }
+    .label { position: absolute; right: 8px; bottom: 8px; color: #6e91ab; font-size: 9px; }
+    .o1 .quote { position: absolute; left: 12px; top: 185px; }
+    .o1 .quote + .quote { top: 232px; }
+    .o2 .radio-stack { position: absolute; left: 12px; top: 185px; width: 264px; display: grid; gap: 5px; }
+    .o2 .quote { max-width: none; min-width: 0; transform: translateX(0); }
+    .o2 .quote:nth-child(2) { transform: translateX(16px); }
+    .o2 .quote:nth-child(3) { transform: translateX(32px); }
+    .o3 .ability-lane, .o3 .trivial-lane { position: absolute; left: 12px; right: 12px; display: flex; gap: 6px; padding: 6px; border-left: 2px solid #467d9f; background: #07111dcc; }
+    .o3 .ability-lane { top: 185px; border-color: #e46bff; }
+    .o3 .trivial-lane { top: 240px; border-color: #46bce8; }
+    .o3 .quote { min-width: 0; flex: 1; padding-right: 5px; }
+    .o3 .quote .copy { min-width: 0; } .o3 .quote span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .lane-title { width: 36px; flex: 0 0 36px; align-self: center; color: #afcff0; font-size: 8px; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .08em; }
+    button { width: 100%; margin-top: 12px; padding: 9px; border: 1px solid #3daedc; border-radius: 5px; background: #0e2840; color: #dff6ff; font: inherit; cursor: pointer; }
+    button:hover, button.selected { background: #176087; box-shadow: 0 0 16px #1aa8dc66; }
+    #result { position: fixed; right: 18px; bottom: 18px; display: none; padding: 10px 13px; border: 1px solid #48d9ff; border-radius: 5px; background: #061525; color: #dff8ff; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header><h1>Quotes do esquadrão — abaixo das cartas</h1><p>As três opções mantêm a bandeja de cartas livre e permitem que mais de uma fala seja lida sem uma sobrescrever a outra.</p></header>
+  <main>
+    <section class="option o1"><h2>Opção 1 — Duas falas ancoradas</h2><p>O quote mais novo aparece logo abaixo da bandeja; um segundo fica diretamente abaixo. Limpo, com limite visual claro de duas mensagens.</p><div class="mock"><div class="points">Pontos: 30605 · Combo x1.00</div><div class="ability"><div class="hex">☄</div><div class="hex">🛡</div><div class="hex">🩹</div><div class="hex">🔗</div></div><div class="cards"><i class="card">🛸 ×4</i><i class="card">🟣 ×3</i><i class="card">▲ ×2</i><i class="card">⌛ ×1</i><i class="card">🌀 ×1</i><i class="card">⚙ ×3</i><i class="card">☄ ×3</i><i class="card">💠 ×1</i><i class="card">✿ ×1</i><i class="card">♥ ×2</i></div><div class="quote q-falco"><i class="portrait">🦅</i><div><b>FALCO</b>Locked and loaded!</div></div><div class="quote q-slippy"><i class="portrait">🐸</i><div><b>SLIPPY</b>Morale boost is live!</div></div><span class="label">cada nova fala ocupa a próxima vaga</span></div><button data-option="1">Escolher Opção 1</button></section>
+    <section class="option o2"><h2>Opção 2 — Pilha de transmissão</h2><p>Até três quotes formam uma escadinha compacta. A fala mais nova fica no topo e as anteriores desaparecem em sequência, criando sensação de rádio ativo.</p><div class="mock"><div class="points">Pontos: 30605 · Combo x1.00</div><div class="ability"><div class="hex">☄</div><div class="hex">🛡</div><div class="hex">🩹</div><div class="hex">🔗</div></div><div class="cards"><i class="card">🛸 ×4</i><i class="card">🟣 ×3</i><i class="card">▲ ×2</i><i class="card">⌛ ×1</i><i class="card">🌀 ×1</i><i class="card">⚙ ×3</i><i class="card">☄ ×3</i><i class="card">💠 ×1</i><i class="card">✿ ×1</i><i class="card">♥ ×2</i></div><div class="radio-stack"><div class="quote q-miyu"><i class="portrait">🐱</i><div><b>MIYU</b>Priority target confirmed.</div></div><div class="quote q-peppy"><i class="portrait">🐰</i><div><b>PEPPY</b>Standing by.</div></div><div class="quote q-falco"><i class="portrait">🦅</i><div><b>FALCO</b>On your mark!</div></div></div><span class="label">3 transmissões, sem cobrir a bandeja</span></div><button data-option="2">Escolher Opção 2</button></section>
+    <section class="option o3"><h2>Opção 3 — Dois canais simultâneos</h2><p>Ability e trivial têm faixas próprias, ambas abaixo das cartas. Cada faixa mostra até dois pilotos lado a lado; é a opção mais explícita para eventos simultâneos.</p><div class="mock"><div class="points">Pontos: 30605 · Combo x1.00</div><div class="ability"><div class="hex">☄</div><div class="hex">🛡</div><div class="hex">🩹</div><div class="hex">🔗</div></div><div class="cards"><i class="card">🛸 ×4</i><i class="card">🟣 ×3</i><i class="card">▲ ×2</i><i class="card">⌛ ×1</i><i class="card">🌀 ×1</i><i class="card">⚙ ×3</i><i class="card">☄ ×3</i><i class="card">💠 ×1</i><i class="card">✿ ×1</i><i class="card">♥ ×2</i></div><div class="ability-lane"><span class="lane-title">ABILITY</span><div class="quote q-slippy"><i class="portrait">🐸</i><div class="copy"><b>SLIPPY</b><span>Morale boost is live!</span></div></div><div class="quote q-falco"><i class="portrait">🦅</i><div class="copy"><b>FALCO</b><span>Not on my watch!</span></div></div></div><div class="trivial-lane"><span class="lane-title">RÁDIO</span><div class="quote q-peppy"><i class="portrait">🐰</i><div class="copy"><b>PEPPY</b><span>Standing by.</span></div></div><div class="quote q-miyu"><i class="portrait">🐱</i><div class="copy"><b>MIYU</b><span>Moving to intercept.</span></div></div></div><span class="label">separa ability e trivial sem escondê-los</span></div><button data-option="3">Escolher Opção 3</button></section>
+  </main>
+  <div id="result"></div>
+  <script>
+    const result = document.querySelector('#result')
+    document.querySelectorAll('button').forEach((button) => button.addEventListener('click', () => {
+      document.querySelectorAll('button').forEach((other) => other.classList.remove('selected'))
+      button.classList.add('selected')
+      result.textContent = `Opção ${button.dataset.option} selecionada — responda “opção ${button.dataset.option}” no chat.`
+      result.style.display = 'block'
+    }))
+  </script>
+</body>
+</html>
