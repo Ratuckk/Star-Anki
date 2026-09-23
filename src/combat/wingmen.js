@@ -2537,7 +2537,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       .filter((w) => w.state !== 'retreating' && !(w.profile.id === 2 && opts.slippyBoostActive))
       .map((w) => ({ id: w.profile.id, worldPos: w.mesh.position.clone(), radius: 1.25 })),
     getVitalSnapshots: () => activeWingmen.map((w) => ({
-      id: w.profile.id, name: w.profile.name, color: w.profile.color, worldPos: w.mesh.position,
+      id: w.profile.id, name: w.profile.name, color: w.profile.color, worldPos: w.mesh.position.clone(),
       hp: w.hp, maxHp: w.maxHp, shield: w.shield, maxShield: w.shieldMax,
       lowHp: w.hp <= WINGMAN_LOW_HP,
       retreating: w.state === 'retreating',

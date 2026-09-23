@@ -7,6 +7,8 @@ import {
   WINGMAN_RAIL_CATCHUP_MAX_BONUS,
   computeRailCatchupBoost,
   computeRailLongitudinalLag,
+  updateRailCatchupState,
+  WINGMAN_RAIL_CATCHUP_RELEASE,
   isFiniteWingmanPosition,
   navigationIntentForWingman,
 } from './combat/wingman-navigation.js'
@@ -24,6 +26,9 @@ assert.ok(computeRailCatchupBoost(60) > 0)
 assert.ok(computeRailCatchupBoost(60) < computeRailCatchupBoost(90))
 assert.equal(computeRailCatchupBoost(WINGMAN_RAIL_CATCHUP_FULL), WINGMAN_RAIL_CATCHUP_MAX_BONUS)
 assert.equal(computeRailCatchupBoost(999), WINGMAN_RAIL_CATCHUP_MAX_BONUS)
+assert.equal(updateRailCatchupState(WINGMAN_RAIL_CATCHUP_START + 1, false), true, 'catch-up deve iniciar acima do threshold de entrada')
+assert.equal(updateRailCatchupState(WINGMAN_RAIL_CATCHUP_RELEASE + 1, true), true, 'histerese deve manter catch-up entre release e start')
+assert.equal(updateRailCatchupState(WINGMAN_RAIL_CATCHUP_RELEASE - 1, true), false, 'catch-up deve soltar só abaixo do threshold de release')
 
 assert.equal(navigationIntentForWingman({ state: 'patrol' }), WINGMAN_NAVIGATION_INTENTS.FORMATION)
 assert.equal(navigationIntentForWingman({ state: 'damaged-passive' }), WINGMAN_NAVIGATION_INTENTS.FORMATION)
