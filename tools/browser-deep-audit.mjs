@@ -50,6 +50,12 @@ const arcade = page.getByRole('button', { name: /arcade|sem baralho/i }).first()
 assert.equal(await arcade.count() > 0, true, 'botão Arcade deve existir mesmo com storage corrompido')
 await arcade.click()
 await page.waitForFunction(() => !!window.__starAnki, null, { timeout: 12000 })
+const initialDomCounts = await page.evaluate(() => ({
+  canvases: document.querySelectorAll('#game-screen canvas').length,
+  pauseOverlays: document.querySelectorAll('.pause-overlay').length,
+}))
+assert.ok(initialDomCounts.canvases > 0, 'partida montada precisa ter canvas')
+assert.ok(initialDomCounts.pauseOverlays > 0, 'partida montada precisa ter overlay de pausa')
 
 // Pula decolagem e entra no stepper determinístico.
 await page.keyboard.press('Space')
@@ -128,7 +134,8 @@ await page.waitForFunction(() => !window.__starAnki, null, { timeout: 10000 })
 assert.equal(await page.getByRole('button', { name: /arcade|sem baralho/i }).first().count() > 0, true)
 
 // Monta uma terceira partida no mesmo documento: pega vazamentos de listener/DOM que só aparecem
-// depois de ciclos repetidos de mount/teardown.
+// depois de ciclos repetidos de mount/teardown. Compara contra o baseline da primeira montagem,
+// porque o HUD usa canvases próprios além do canvas WebGL.
 await page.getByRole('button', { name: /arcade|sem baralho/i }).first().click()
 await page.waitForFunction(() => !!window.__starAnki, null, { timeout: 12000 })
 await page.keyboard.press('Space')
@@ -145,10 +152,10 @@ snapshot = await page.evaluate(() => ({
     window.__starAnki.rail.getPlayerPosition().z,
   ].every(Number.isFinite),
 }))
-assert.equal(snapshot.canvases, 1, 'restart/exit não pode acumular canvas WebGL')
-assert.equal(snapshot.pauseOverlays, 1, 'restart/exit não pode acumular overlay de pausa')
+assert.equal(snapshot.canvases, initialDomCounts.canvases, 'restart/exit não pode acumular canvas')
+assert.equal(snapshot.pauseOverlays, initialDomCounts.pauseOverlays, 'restart/exit não pode acumular overlay de pausa')
 assert.equal(snapshot.finite, true)
-console.log('DEEP_REMOUNT', JSON.stringify(snapshot))
+console.log('DEEP_REMOUNT', JSON.stringify({ ...snapshot, baseline: initialDomCounts }))
 
 for (const w of warnings) console.log(`DEEP_WARN ${w}`)
 for (const e of errors) console.log(`DEEP_ERROR ${e}`)
