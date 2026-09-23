@@ -15,7 +15,13 @@ page.on('console', (msg) => {
   if (msg.type() === 'error') errors.push(`console.error: ${text}`)
   else if (msg.type() === 'warning') warnings.push(`console.warn: ${text}`)
 })
-page.on('requestfailed', (req) => errors.push(`requestfailed: ${req.method()} ${req.url()} :: ${req.failure()?.errorText || 'unknown'}`))
+page.on('requestfailed', (req) => {
+  const failure = req.failure()?.errorText || 'unknown'
+  // HTMLAudioElement cancela preloads/one-shots que são substituídos ou encerrados no teardown;
+  // o servidor já confirmou HTTP 200 nesses arquivos. Não esconder falhas de script/imagem/XHR.
+  if (req.resourceType() === 'media' && failure.includes('ERR_ABORTED')) return
+  errors.push(`requestfailed: ${req.resourceType()} ${req.method()} ${req.url()} :: ${failure}`)
+})
 page.on('response', (res) => {
   if (res.status() >= 400) errors.push(`http ${res.status()}: ${res.url()}`)
 })
