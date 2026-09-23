@@ -1,6 +1,6 @@
 # Forgot — itens esquecidos ou ainda não implementados
 
-> Este arquivo consolida o que ficou faltando ou parcialmente implementado nos levantamentos recentes: **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)**, **10 (Fog)** e a **superchecagem dos inimigos**. Sugestões opcionais não são tratadas como requisitos aprovados. Itens já corrigidos ficam marcados como concluídos para não voltarem acidentalmente ao backlog.
+> Este arquivo consolida o que ficou faltando ou parcialmente implementado nos levantamentos recentes: **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)**, **10 (Fog)**, a **superchecagem dos inimigos** e a **caça extensiva de bugs dos Wingmen levantada pelo Antigravity**. Sugestões opcionais não são tratadas como requisitos aprovados. Itens já corrigidos ficam marcados como concluídos para não voltarem acidentalmente ao backlog.
 
 ## 3 — Swirl Blast
 
@@ -267,6 +267,127 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 
 ---
 
+## Caça extensiva de bugs dos Wingmen — Antigravity
+
+> Esta seção preserva o diagnóstico e o plano de correção fornecidos pelo **Antigravity**. Estes itens entram no `forgot.md` como **backlog a verificar/corrigir**; não devem ser marcados como concluídos sem conferir o `main` atual e executar os testes correspondentes.
+
+### Bugs levantados pelo Antigravity
+
+- [ ] **Bug 1 — CRÍTICO: corrupção da posição mundial do Wingman via `.project(camera)` em `getVitalSnapshots`.**
+  - `getVitalSnapshots()` teria retornado `worldPos: w.mesh.position` por referência direta.
+  - O `game-loop.js` projeta `v.worldPos.project(camera)` ao calcular a posição de HUD de um Wingman ferido.
+  - Como `Vector3.project()` muta o vetor in-place, isso pode substituir a posição 3D real do Wingman por coordenadas NDC.
+  - Correção proposta: retornar `w.mesh.position.clone()` e ainda usar `v.worldPos.clone().project(camera)` defensivamente no consumidor.
+  - **Critério:** projetar vitais para a tela nunca pode alterar `mesh.position` do aliado.
+
+- [ ] **Bug 2 — ALTO: recuperação/respawn bloqueados durante os 5s de `retreating`.**
+  - `spawnMember(id)` impediria uma nova instância porque o piloto ainda permanece em `activeWingmen` durante a retirada.
+  - `recoverMember(id)` delega para `spawnMember(id)` e pode falhar silenciosamente nesse intervalo.
+  - `setWingmanCount(n)` sofre o mesmo conflito de slot.
+  - Correção proposta: se a instância existente do piloto estiver em `state === 'retreating'`, removê-la antes de instanciar a nave recuperada.
+  - **Critério:** uma carta de recuperação escolhida durante a retirada deve recuperar o piloto imediatamente e nunca ser descartada silenciosamente.
+
+- [ ] **Bug 3 — ALTO: `getWingmanCount()` conta aliados em retirada.**
+  - A contagem teria usado `activeWingmen.length`, enquanto outros consumidores ignoram `state === 'retreating'`.
+  - Isso pode inflar bônus de spawn de inimigos, HUD e suporte sincronizado depois que o aliado já foi abatido.
+  - Correção proposta: contar somente `activeWingmen.filter((w) => w.state !== 'retreating')`.
+  - **Critério:** o Wingman deve deixar de contar como ativo no instante em que entra em retirada.
+
+- [ ] **Bug 4 — ALTO: `markWingmanDown` atrasado até o fim da retirada e pool roguelike inconsistente.**
+  - O Antigravity apontou que `player.markWingmanDown(profileId)` só era chamado quando o retreat terminava.
+  - Durante os 5s intermediários, cartas de upgrade do piloto abatido ainda podiam entrar no pool e a carta de recuperação ainda não aparecia.
+  - Correção proposta: chamar `player.markWingmanDown?.(profileId)` imediatamente quando o hit coloca o aliado em `retreating`.
+  - **Critério:** pool roguelike, estado do Player e estado visual do Wingman devem concordar desde o primeiro frame da retirada.
+
+- [ ] **Bug 5 — MÉDIO: falas fantasmas de pilotos em `retreating`.**
+  - Pilotos abatidos ainda poderiam participar de pools/gatilhos como `player_low_health`, `boost_used`, `charged_shot_used`, dano recebido, abates de laser e call-response.
+  - Correção proposta: filtrar `w.state !== 'retreating'` em todos os pools/gatilhos e cancelar threads pendentes que envolvam pilotos que saíram.
+  - **Critério:** um piloto em retirada não pode iniciar nem continuar conversa casual/combativa como se ainda estivesse ativo.
+
+- [ ] **Bug 6 — MÉDIO: `auxShieldVisual` e cor crítica congelados durante retirada.**
+  - O bloco de `retreating` dá `continue` antes das linhas que desligam o escudo auxiliar e restauram materiais de dano.
+  - Isso pode deixar a bolha auxiliar do Peppy e/ou o piscar vermelho crítico congelados durante a fuga.
+  - Correção proposta: no próprio bloco de retreat, forçar `auxShieldVisual.visible = false` e restaurar as cores originais de `damageMaterials`/`damageColors`.
+  - **Critério:** a retirada sempre começa com efeitos temporários de combate limpos, sem escudo auxiliar residual ou material crítico travado.
+
+- [ ] **Bug 7 — MÉDIO: seleção de alvos da Investida em Cadeia do Falco.**
+  - O encadeamento iteraria `enemies.getAlive()` diretamente, sem aplicar toda a validação de `isWingmanCombatTargetReady(candidate)` e sem incluir Dourados.
+  - O efeito de explosão também poderia usar `target.mesh.position` mesmo quando `hit.worldPos` é a posição correta de impacto.
+  - Correção proposta: usar `getAliveEnemies()`/pipeline equivalente já validado, incluir Dourados e preferir `hit.worldPos || target.mesh.position` nos efeitos.
+  - **Critério:** a cadeia só pode saltar para alvos gameplay-ready e os efeitos devem nascer no ponto real do hit.
+
+- [ ] **Bug 8 — MÉDIO: `isWingmanCombatTargetReady` não rejeita `spawnPhase` nem HP zerado em todos os caminhos.**
+  - Sem `readyTargets`, uma validação direta poderia considerar inimigos em `peek/materialize/settle` ou com `hp <= 0`/`health <= 0` como prontos.
+  - Correção proposta: rejeitar explicitamente `target.spawnPhase`, `hp <= 0` e `health <= 0` quando esses campos forem finitos.
+  - **Critério:** nenhum Wingman pode atacar um alvo ainda materializando ou já morto, independentemente do caminho usado para obter o alvo.
+
+- [ ] **Bug 9 — MÉDIO: vazamento de estado em `clearSquadron()`.**
+  - O reset não limparia `squadronCommandMode`, timers de comando/cooldown, `moraleDamageBonus`, `abilityCooldownMultByProfileId` e outros históricos transitórios.
+  - Isso pode fazer um novo setor/sessão nascer carregando `focus` ou multiplicadores da partida anterior.
+  - Correção proposta: reset completo de modos, timers, bônus e mapas transitórios em `clearSquadron()`.
+  - **Critério:** após `clearSquadron()`, recriar Wingmen deve ser equivalente a iniciar o subsistema do zero, exceto por estado explicitamente persistente.
+
+- [ ] **Bug 10 — LEVE/ESTABILIDADE: alocações desnecessárias e risco de NaN em hot loops.**
+  - Foram apontadas alocações de `new THREE.Vector3()`/`.clone()` em caminhos frequentes e normalização sem teste de magnitude zero no Boombuster da Miyu.
+  - Correção proposta: reutilizar vetores scratch como `_wmLaserMuzzle`/`_wmRel` e proteger toda normalização que possa receber vetor de comprimento zero.
+  - **Critério:** nenhuma direção zero pode produzir NaN; hot loops de tiro/manobra não devem criar vetores descartáveis sem necessidade.
+
+### Arquivos indicados pelo plano do Antigravity
+
+- [ ] **`src/combat/wingman-flight-stability.js`**
+  - Reforçar `isWingmanCombatTargetReady()` com rejeição de `spawnPhase`, `hp <= 0` e `health <= 0`.
+
+- [ ] **`src/combat/wingmen.js`**
+  - Clonar posição em `getVitalSnapshots()`.
+  - Fazer `getWingmanCount()` ignorar `retreating`.
+  - Permitir respawn/recovery substituindo instância em retreat.
+  - Resetar estado transitório completo em `clearSquadron()`.
+  - Limpar escudo auxiliar e materiais críticos no retreat.
+  - Corrigir Chain Ram do Falco.
+  - Excluir retreating do rádio/call-response.
+  - Reusar vetores scratch e proteger normalizações.
+
+- [ ] **`src/combat/index.js`**
+  - Marcar `player.markWingmanDown?.(profileId)` imediatamente quando o dano iniciar retreat.
+
+- [ ] **`src/game-loop.js`**
+  - Projetar HUD com `v.worldPos.clone().project(camera)` de forma defensiva.
+
+### Testes obrigatórios propostos pelo Antigravity
+
+- [ ] Criar/manter `src/wingman-bughunt.test.mjs` cobrindo os 10 cenários:
+  1. Imutabilidade de `mesh.position` ao projetar vitais para NDC.
+  2. Recuperação durante os 5s de retreat.
+  3. `getWingmanCount()` ignorando retreat.
+  4. `markWingmanDown` imediato e pool roguelike consistente.
+  5. Rádio sem falas de Wingmen em retreat.
+  6. Desativação de `auxShieldVisual` e restauração de materiais no retreat.
+  7. Chain Ram do Falco com alvos gameplay-ready e suporte a Dourados.
+  8. `isWingmanCombatTargetReady` rejeitando `spawnPhase` e HP zerado.
+  9. `clearSquadron()` limpando comandos/bônus/multiplicadores transitórios.
+  10. Ausência de NaN e redução de alocações nos caminhos auditados.
+
+- [ ] Executar `node src/wingman-bughunt.test.mjs`.
+- [ ] Executar `node src/selftest.mjs`.
+- [ ] Executar `node tools/state-fuzz-audit.mjs`.
+- [ ] Executar `node tools/full-project-audit.mjs`.
+- [ ] Confirmar que a suíte de regressão do projeto continua integralmente aprovada e que `full-project-audit` termina com **0 erros e 0 avisos**.
+
+### Prioridade sugerida para os bugs de Wingmen do Antigravity
+
+1. [ ] **P0 — Bug 1: corrupção de posição por `.project(camera)`.**
+2. [ ] **P0 — Bug 2: recovery/respawn descartado durante retreat.**
+3. [ ] **P0 — Bug 4: `markWingmanDown` atrasado / pool roguelike incorreto.**
+4. [ ] **P1 — Bug 3: contagem de Wingmen incluindo retreat.**
+5. [ ] **P1 — Bug 8: target readiness incompleta.**
+6. [ ] **P1 — Bug 7: Chain Ram do Falco.**
+7. [ ] **P1 — Bug 9: vazamento de estado em `clearSquadron()`.**
+8. [ ] **P2 — Bug 5: rádio fantasma.**
+9. [ ] **P2 — Bug 6: visuais congelados no retreat.**
+10. [ ] **P2 — Bug 10: estabilidade/performance dos hot loops.**
+
+---
+
 ## Resumo do que realmente permanece pendente
 
 ### Swirl Blast
@@ -306,3 +427,16 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 - [ ] Impedir rajada do Boss durante transição.
 - [ ] Corrigir comportamento do Tank `DISENGAGING` em arena.
 - [ ] Tornar `severChainAt` do Verme idempotente/centralizado.
+
+### Wingmen — Antigravity
+- [ ] Impedir corrupção de `mesh.position` por projeção NDC.
+- [ ] Permitir recovery/respawn durante `retreating`.
+- [ ] Excluir `retreating` de `getWingmanCount()`.
+- [ ] Marcar piloto como down imediatamente ao entrar em retreat e corrigir o pool roguelike.
+- [ ] Remover pilotos em retreat dos pools/threads de rádio.
+- [ ] Limpar `auxShieldVisual` e materiais críticos durante retreat.
+- [ ] Corrigir seleção/impacto da Chain Ram do Falco.
+- [ ] Reforçar `isWingmanCombatTargetReady()` contra spawn pendente e HP zerado.
+- [ ] Resetar todo estado transitório relevante em `clearSquadron()`.
+- [ ] Remover riscos de NaN e alocações desnecessárias nos hot loops auditados.
+- [ ] Implementar e executar a suíte `wingman-bughunt.test.mjs` + regressões globais.
