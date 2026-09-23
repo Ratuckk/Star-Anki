@@ -6,10 +6,12 @@ export { showSectorEnd, showPainelCard, showPainelAnswer } from './hud-end.js'
 
 import { createGameHud as createBaseGameHud } from './hud-game.js'
 import { createWingmanRadioSlots } from './hud-wingman-radio-slots.js'
+import { createHudSpeedlines } from './hud-speedlines.js'
 
 export function createGameHud() {
   const hud = createBaseGameHud()
   const wingmanSlots = createWingmanRadioSlots()
+  const speedlines = createHudSpeedlines(document.getElementById('game-screen'))
   const baseUnmount = hud.unmount?.bind(hud)
 
   // v0.99.28: lateral é EXCLUSIVO de trivial/Call & Response.
@@ -25,7 +27,14 @@ export function createGameHud() {
     wingmanSlots.showMany(payloads)
   }
 
+  // O contrato antigo do game-loop continua intacto: boost passa intensity=null e usa o
+  // preset de gameplay; Swirl/Dash passam 1.0 e elevam apenas a intensidade para 100%.
+  hud.setMotionLines = (active, intensity = null) => {
+    speedlines.set(active, intensity)
+  }
+
   hud.unmount = () => {
+    speedlines.dispose()
     wingmanSlots.dispose()
     baseUnmount?.()
   }
