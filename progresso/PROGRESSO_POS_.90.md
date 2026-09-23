@@ -38,6 +38,15 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.31 — Hotfix de carregamento dos Wingmen
+
+- **Boot restaurado:** dois follow-ups da v0.99.30 reaplicaram hunks já presentes em `src/combat/wingmen.js`, deixando três declarações de `previousPlayerPosition`/`hasPreviousPlayerPosition` no mesmo escopo. O navegador abortava o parse com `SyntaxError: Identifier 'previousPlayerPosition' has already been declared`, impedindo o jogo inteiro de iniciar.
+- **Duplicações removidas na causa-raiz:** também foram consolidados para uma única cópia `motionWatch`, o cálculo `playerMotionSpeed/formationMotionGain` e `readyCombatTargets`, que haviam sido reaplicados pelos mesmos commits.
+- **Sem regressão de IA:** foram preservadas as mudanças legítimas dos follow-ups — `getAliveEnemies` continua filtrando por `isWingmanCombatTargetReady`, o Focus continua limpando alvos com o mesmo contrato e a invencibilidade de spawn continua impedindo aquisição prematura.
+- **Regressão automatizada:** `wingman-flight-stability.test.mjs` agora lê `wingmen.js` e exige exatamente uma ocorrência dos quatro blocos estruturais, além de conferir os dois filtros gameplay-ready.
+- **Validação:** sintaxe de `wingmen.js`, suítes de estabilidade/navegação/formação/state/radio, playtest-polish, selftest e `git diff --check`.
+- **Versão:** v0.99.30 → v0.99.31.
+
 ### v0.99.30 — Correções pós-merge: Wingmen, rádio e dano visual
 
 - **Rádio revertido para lateral:** os quatro Wingmen voltam aos painéis originais com estática, connect/disconnect e voz individual; apenas Fox continua in-world ao iniciar Focus. Os 120 quotes novos permanecem.
