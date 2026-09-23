@@ -19,7 +19,10 @@ function walk(dir) {
 
 const files = walk(root)
 const rel = (p) => p.slice(root.length + 1).replaceAll('\\', '/')
-const codeFiles = files.filter((p) => ['.js', '.mjs'].includes(extname(p)) && !rel(p).startsWith('output/'))
+const codeFiles = files.filter((p) => {
+  const r = rel(p)
+  return ['.js', '.mjs'].includes(extname(p)) && !r.startsWith('output/') && !r.startsWith('tools/apply-bughunt-fixes-')
+})
 const textFiles = files.filter((p) => ['.js', '.mjs', '.html', '.webmanifest', '.md'].includes(extname(p)) || rel(p) === 'service-worker.js')
 const fileSet = new Set(files.map((p) => normalize(p)))
 
