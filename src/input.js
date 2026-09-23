@@ -72,10 +72,12 @@ export function createInputState() {
   }
 
   // CRÍTICO: ao perder foco (Alt+Tab, clicar fora, trocar de aba), o keyup das teclas que
-  // estavam pressionadas nunca chega — elas ficariam presas no Set para sempre, cancelando
-  // inputs futuros do lado oposto. Limpar no blur resolve a causa raiz.
+  // estavam pressionadas nunca chega. Além dos HOLDS, uma borda (Escape/D/etc.) que aconteceu
+  // imediatamente antes do blur também não pode sobreviver até o primeiro frame do retorno,
+  // senão uma ação pontual dispara sozinha quando o usuário volta pra aba.
   function clearKeys() {
     keys.clear()
+    pressedThisFrame.clear()
   }
   function onVisibilityChange() {
     if (document.hidden) clearKeys()
@@ -221,6 +223,7 @@ export function createInputState() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', clearKeys)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      clearKeys()
     },
   }
 }
