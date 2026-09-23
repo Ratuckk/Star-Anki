@@ -33,12 +33,12 @@ jobs:
           npm init -y >/dev/null 2>&1
           npm install --no-save --no-package-lock three@0.169.0
 
-      - name: Apply forgot stage 2
+      - name: Apply forgot stage 3
         run: |
-          if [ -f scripts/apply-forgot-stage2-v09934.py ]; then
-            python scripts/apply-forgot-stage2-v09934.py
+          if [ -f scripts/apply-forgot-stage3-v09934.py ]; then
+            python scripts/apply-forgot-stage3-v09934.py
           else
-            echo "Stage 2 migrator not present yet; validating current snapshot only."
+            echo "Stage 3 migrator not present yet; validating current snapshot only."
           fi
 
       - name: Syntax check changed JavaScript
@@ -58,8 +58,9 @@ jobs:
 
       - name: Run forgot focused suites
         run: |
-          [ ! -f src/tank.test.mjs ] || node src/tank.test.mjs
-          [ ! -f src/forgot-stage2.test.mjs ] || node src/forgot-stage2.test.mjs
+          node src/tank.test.mjs
+          node src/forgot-stage2.test.mjs
+          [ ! -f src/forgot-stage3.test.mjs ] || node src/forgot-stage3.test.mjs
           [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
 
       - name: Run full selftest
@@ -72,10 +73,10 @@ jobs:
         run: |
           git config user.name "star-anki-validation-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add src
+          git add src index.html
           if git diff --cached --quiet; then
             echo "No source changes produced."
             exit 0
           fi
-          git commit -m "[forgot-applied] fix: integrate tank damage and runtime contracts"
+          git commit -m "[forgot-applied] feat: tactical draft fog banks and swirl camera"
           git push origin HEAD:validation/forgot-backlog-v09934
