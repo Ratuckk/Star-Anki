@@ -8,12 +8,23 @@ export const ABILITY_EVENT_IDS = new Set([
   'ability_assist', 'ability_boombuster', 'ability_focus_upgrade',
 ])
 
-export const RADIO_COOLDOWN_MIN_MS = 2000
-export const RADIO_COOLDOWN_MAX_MS = 10000
-// Aliases preservados para compatibilidade com imports antigos.
-export const GLOBAL_COOLDOWN_MIN_MS = RADIO_COOLDOWN_MIN_MS
-export const GLOBAL_COOLDOWN_MAX_MS = RADIO_COOLDOWN_MAX_MS
+export const GLOBAL_COOLDOWN_MIN_MS = 6000
+export const GLOBAL_COOLDOWN_MAX_MS = 20000
 export const NEW_TRIVIAL_QUOTES_PER_PILOT = 30
+
+export const SQUAD_TRIVIAL_GAP_MS = 6000
+export const TRIVIAL_TRANSMISSION_ESTIMATED_MS = 2800
+export const EVENT_CATEGORY_DEDUP_WINDOW_MS = 8000
+
+export function getEventCategory(eventId) {
+  if (eventId.startsWith('engage_')) return 'engage'
+  if (eventId === 'return_formation') return 'formation'
+  if (eventId === 'action_interrupted') return 'interrupted'
+  if (eventId.startsWith('state_')) return 'state'
+  if (eventId === 'boost_used' || eventId === 'charged_shot_used') return 'tactical'
+  if (eventId === 'kill' || eventId === 'boss_kill' || eventId === 'golden_kill') return 'kill'
+  return eventId
+}
 
 const LINES = {
   "0": {
@@ -667,29 +678,59 @@ export function getWingmanRadioValidationSnapshot(pilotId) {
   }
 }
 
-export function createWingmanRadio({ random = Math.random } = {}) {
+export function createWingmanRadio({
+  random = Math.random,
+  enforceSquadSilence = false,
+  squadSilenceGapMs = SQUAD_TRIVIAL_GAP_MS,
+  categoryDedupWindowMs = EVENT_CATEGORY_DEDUP_WINDOW_MS,
+} = {}) {
   const nextAllowedAtByPilot = new Map()
+  const lastCategoryEmittedAt = new Map()
+  let squadTrivialSilenceUntil = -Infinity
   let hasSaidAlone = false
   const conversations = createWingmanRadioConversationManager({ random })
 
-  function scheduleNextLine(pilotId, now) {
+  function scheduleNextNormalLine(pilotId, now) {
     nextAllowedAtByPilot.set(
       pilotId,
-      now + RADIO_COOLDOWN_MIN_MS + random() * (RADIO_COOLDOWN_MAX_MS - RADIO_COOLDOWN_MIN_MS),
+      now + GLOBAL_COOLDOWN_MIN_MS + random() * (GLOBAL_COOLDOWN_MAX_MS - GLOBAL_COOLDOWN_MIN_MS),
     )
   }
 
-  function canSpeak(pilotId, now) {
-    return now >= (nextAllowedAtByPilot.get(pilotId) ?? -Infinity)
-  }
+  function emit(pilotId, eventId, now, context = {}, force = false, bypassCooldown = false) {
+    const isAbility = ABILITY_EVENT_IDS.has(eventId)
+    const isUrgent = force || isAbility || eventId === 'retreat' || eventId === 'state_critical'
 
-  function emit(pilotId, eventId, now, context = {}, force = false) {
-    if (!force && !canSpeak(pilotId, now)) return null
+    if (enforceSquadSilence && !isUrgent) {
+      if (now < squadTrivialSilenceUntil) return null
+      const category = getEventCategory(eventId)
+      const lastCatAt = lastCategoryEmittedAt.get(category) ?? -Infinity
+      if (now - lastCatAt < categoryDedupWindowMs) return null
+    }
+
+    const nextAllowedAt = nextAllowedAtByPilot.get(pilotId) ?? -Infinity
+    if (!force && !bypassCooldown && !isAbility && now < nextAllowedAt) return null
     const pool = LINES[pilotId]?.[eventId]
     if (!pool || pool.length === 0) return null
 
     const line = pick(random, pool)
-    scheduleNextLine(pilotId, now)
+
+    if (isUrgent) {
+      conversations.cancelPendingResponse('urgent-preempt')
+      if (enforceSquadSilence) {
+        squadTrivialSilenceUntil = Math.max(
+          squadTrivialSilenceUntil,
+          now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + 4000,
+        )
+      }
+    } else {
+      if (!isAbility && !bypassCooldown) scheduleNextNormalLine(pilotId, now)
+      if (enforceSquadSilence) {
+        squadTrivialSilenceUntil = now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs
+        const category = getEventCategory(eventId)
+        lastCategoryEmittedAt.set(category, now)
+      }
+    }
 
     conversations.openFromEvent({
       openerPilotId: pilotId,
@@ -702,16 +743,18 @@ export function createWingmanRadio({ random = Math.random } = {}) {
   }
 
   return {
+    markSpoken(pilotId, now = performance.now()) {
+      scheduleNextNormalLine(pilotId, now)
+    },
     trySpeak(pilotId, eventId, now = performance.now(), context = {}) {
-      return emit(pilotId, eventId, now, context, false)
+      return emit(pilotId, eventId, now, context, false, false)
     },
     forceSpeak(pilotId, eventId, now = performance.now(), context = {}) {
-      // Urgências explícitas podem furar o bloqueio atual, mas reiniciam o cooldown.
-      return emit(pilotId, eventId, now, context, true)
+      return emit(pilotId, eventId, now, context, true, false)
     },
     speakAbility(pilotId, eventId, now = performance.now(), context = {}) {
       if (!ABILITY_EVENT_IDS.has(eventId)) return null
-      return emit(pilotId, eventId, now, context, false)
+      return emit(pilotId, eventId, now, context, false, true)
     },
     trySpeakAlone(pilotId, now = performance.now()) {
       if (hasSaidAlone) return null
@@ -722,26 +765,29 @@ export function createWingmanRadio({ random = Math.random } = {}) {
     getLine(pilotId, eventId) {
       return pick(random, LINES[pilotId]?.[eventId])
     },
-    canSpeak(pilotId, now = performance.now()) {
-      return canSpeak(pilotId, now)
-    },
-    markSpoken(pilotId, now = performance.now()) {
-      scheduleNextLine(pilotId, now)
-    },
     takeDueResponse(now = performance.now(), eligibleResponderIds = []) {
-      const cooldownEligible = eligibleResponderIds.filter((pilotId) => canSpeak(pilotId, now))
-      const reply = conversations.takeDueResponse(now, cooldownEligible)
-      if (reply) scheduleNextLine(reply.pilotId, now)
+      const reply = conversations.takeDueResponse(now, eligibleResponderIds)
+      if (reply && enforceSquadSilence) {
+        squadTrivialSilenceUntil = now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs
+      }
       return reply
     },
     cancelPendingResponse(reason) {
       return conversations.cancelPendingResponse(reason)
     },
+    cancelConversationForPilot(pilotId, reason) {
+      return conversations.cancelConversationForPilot(pilotId, reason)
+    },
     getConversationDebug() {
       return conversations.getDebugSnapshot()
     },
+    getSquadTrivialSilenceUntil() {
+      return squadTrivialSilenceUntil
+    },
     reset() {
       nextAllowedAtByPilot.clear()
+      lastCategoryEmittedAt.clear()
+      squadTrivialSilenceUntil = -Infinity
       hasSaidAlone = false
       conversations.reset()
     },

@@ -26,6 +26,7 @@ import {
   WINGMAN_NAVIGATION_INTENTS,
   computeRailCatchupBoost,
   computeRailLongitudinalLag,
+  updateRailCatchupState,
   isFiniteWingmanPosition,
   navigationIntentForWingman,
 } from './wingman-navigation.js'
@@ -539,7 +540,7 @@ function buildWingmanShip(profile) {
 
 export function createSquadronSystem(scene, rail, effects, enemies) {
   const telemetry = createWingmanTelemetry()
-  const wingmanRadio = createWingmanRadio()
+  const wingmanRadio = createWingmanRadio({ enforceSquadSilence: true, squadSilenceGapMs: 6000 })
   const worldRadio = createWingmanWorldRadio(scene)
   // Falas laterais acumuladas fora do loop. O rate limiter mora em wingman-radio.js e vale
   // para trivial, abilities e Call & Response por piloto.
@@ -562,6 +563,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // O efeito visual pertence à habilidade e permanece imediato; a fala lateral respeita o
     // cooldown universal do piloto.
     if (triggerGlow) triggerAbilityGlow(wingman)
+    for (let i = pendingRadioMessages.length - 1; i >= 0; i -= 1) {
+      if (!pendingRadioMessages[i]?.isAbility) pendingRadioMessages.splice(i, 1)
+    }
     const text = wingmanRadio.speakAbility(
       wingman.profile.id,
       eventId,
@@ -587,6 +591,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   }
 
   function announceLateral(wingman, eventId) {
+    if (pendingRadioMessages.some((m) => !m.isAbility)) return null
     const text = wingmanRadio.trySpeak(
       wingman.profile.id,
       eventId,
@@ -623,7 +628,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   let hasPreviousPlayerPosition = false
 
   function activeRadioPilotIds() {
-    return activeWingmen.map((wingman) => wingman.profile.id)
+    return activeWingmen.filter((wingman) => wingman.state !== 'retreating').map((wingman) => wingman.profile.id)
   }
 
   function authorityLabel(snapshot) {
@@ -655,6 +660,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       })
       const semanticRadio = classifyWingmanTransitionForRadio(transition)
       if (semanticRadio) {
+        if (semanticRadio.urgent) {
+          for (let i = pendingRadioMessages.length - 1; i >= 0; i -= 1) {
+            if (!pendingRadioMessages[i]?.isAbility) pendingRadioMessages.splice(i, 1)
+          }
+        } else if (pendingRadioMessages.some((m) => !m.isAbility)) {
+          return
+        }
         const context = { activePilotIds: activeRadioPilotIds() }
         const now = performance.now()
         const text = semanticRadio.urgent
@@ -960,6 +972,15 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   }
 
   function recoverMember(profileId, hullStacks = 0) {
+    const staleIndex = activeWingmen.findIndex((w) => w.profile.id === profileId && w.state === 'retreating')
+    if (staleIndex >= 0) {
+      const stale = activeWingmen.splice(staleIndex, 1)[0]
+      worldRadio.clearPilot?.(profileId)
+      scene.remove(stale.mesh)
+      disposeWingmanMesh(stale.mesh)
+      stale.laserMaterial?.dispose?.()
+      aiValidator.logMechanic('wingman-recovery', 'retreat-instance-replaced', { pilotId: profileId })
+    }
     const wingman = spawnMember(profileId)
     if (!wingman) return null
     stateController.setMaxHp(wingman, WINGMAN_BASE_HP + Math.max(0, hullStacks), { refill: true })
@@ -976,16 +997,30 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       source: 'enemy-damage', event: 'damage-received',
     })
     const retreating = w.state === 'retreating'
-    if (retreating) {
+    const enteredRetreat = retreating && !w.retreatDownReported
+    if (enteredRetreat) {
+      w.retreatDownReported = true
+      if (w.auxShieldVisual) w.auxShieldVisual.visible = false
+      if (w.damageMaterials && w.damageColors) {
+        for (let i = 0; i < w.damageMaterials.length; i += 1) {
+          if (w.damageColors[i] && w.damageMaterials[i]?.color) w.damageMaterials[i].color.copy(w.damageColors[i])
+        }
+      }
+      worldRadio.clearPilot?.(w.profile.id)
+      wingmanRadio.cancelPendingResponse?.('pilot-retreated')
+      for (let i = pendingRadioMessages.length - 1; i >= 0; i -= 1) {
+        if (pendingRadioMessages[i]?.pilotId === w.profile.id) pendingRadioMessages.splice(i, 1)
+      }
       const text = wingmanRadio.forceSpeak(w.profile.id, 'retreat', performance.now(), { activePilotIds: activeRadioPilotIds() })
       if (text) pendingRadioMessages.push(buildRadioPayload(w.profile, text, 'retreat'))
+      aiValidator.logMechanic('wingman-integrity', 'down-reported-immediately', { pilotId: profileId })
     }
     aiValidator.expect(
       'Integridade de aliado fica dentro dos limites após hit',
       () => w.hp >= 0 && w.hp <= w.maxHp && w.shield >= 0 && w.shield <= w.shieldMax,
       { pilotId: profileId, hp: w.hp, maxHp: w.maxHp, shield: w.shield, shieldMax: w.shieldMax },
     )
-    return { applied: transition.decision === 'accepted', retreating, hp: w.hp, shield: w.shield }
+    return { applied: transition.decision === 'accepted', retreating, enteredRetreat, hp: w.hp, shield: w.shield }
   }
 
   function repairNearbyWingmen(position, stacks = 0) {
@@ -1202,9 +1237,22 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     wingmanRadio.reset()
     pendingRadioMessages.length = 0
     worldRadio.clear()
-    activeSeparationPairs.clear()
-    closeSeparationSince.clear()
-    reportedFormationClumps.clear()
+      activeSeparationPairs.clear()
+      closeSeparationSince.clear()
+      reportedFormationClumps.clear()
+      squadronCommandMode = 'free'
+      squadronFocusTargets = []
+      squadronCommandDurationTimer = 0
+      squadronCommandCooldownTimer = 0
+      moraleDamageBonus = 0
+      chargeHeldTimer = 0
+      wasPlayerLowHealth = false
+      wasBoostActive = false
+      wasHomingCharging = false
+      playerRollHistory.length = 0
+      abilityCooldownMultByProfileId.fill(1)
+      hasPreviousPlayerPosition = false
+      previousPlayerPosition.set(0, 0, 0)
     while (activeWingmen.length > 0) {
       const w = activeWingmen.pop()
       scene.remove(w.mesh)
@@ -1371,6 +1419,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     for (const member of activeWingmen) {
       member.separationPush.set(0, 0, 0)
       member.separationCorrection.set(0, 0, 0)
+      member.separationYield = 0
     }
     const nextSeparationPairs = new Set()
     for (let idx = 0; idx < activeWingmen.length; idx += 1) {
@@ -1456,7 +1505,11 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       if (correctionLength > WINGMAN_SEPARATION_POSITION_STEP_CAP) {
         member.separationCorrection.multiplyScalar(WINGMAN_SEPARATION_POSITION_STEP_CAP / correctionLength)
       }
-      if (member.separationCorrection.lengthSq() > 0) member.mesh.position.add(member.separationCorrection)
+      if (member.separationCorrection.lengthSq() > 0) {
+        member.mesh.position.add(member.separationCorrection)
+        // Formation attraction yields for this frame while physical depenetration is active.
+        member.separationYield = Math.min(0.65, correctionLength / 2.5)
+      }
     }
 
     // Comando de ofensividade do esquadrão — duração de 6s (volta sozinho ao normal) + cooldown
@@ -1493,7 +1546,16 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const completedRetreatIds = []
     // O rádio lateral consome as mensagens acumuladas e mantém os canais trivial/ability do HUD.
     // fora do loop e acrescenta a resposta Call & Response que estiver vencida neste frame.
-    const radioMessages = pendingRadioMessages.splice(0)
+    const rawRadioMessages = pendingRadioMessages.splice(0)
+    const abilities = rawRadioMessages.filter((m) => m.isAbility)
+    const trivials = rawRadioMessages.filter((m) => !m.isAbility)
+    let radioMessages = []
+    if (abilities.length > 0) {
+      radioMessages = abilities
+    } else if (trivials.length > 0) {
+      radioMessages = [trivials[0]]
+    }
+
     const readyCombatTargets = new Set(getAliveEnemies())
     const eligibleResponderIds = activeWingmen
       .filter((wingman) => wingman.state !== 'damaged-passive' && wingman.state !== 'retreating')
@@ -1505,16 +1567,20 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         aiValidator.expect('Call & Response nunca usa o mesmo piloto como chamador e respondente', () => reply.pilotId !== reply.openerPilotId, { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
         aiValidator.logMechanic('wingman-radio-call-response', 'reply-delivered', { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
         telemetry.recordEvent(responder.profile.name, 'radio', 'Resposta de rádio para ' + reply.triggerEventId, { elapsed, threadId: reply.threadId, openerPilotId: reply.openerPilotId, triggerEventId: reply.triggerEventId })
-        radioMessages.push(buildRadioPayload(responder.profile, reply.text, 'radio_response', {
+        const replyPayload = buildRadioPayload(responder.profile, reply.text, 'radio_response', {
           threadId: reply.threadId,
           inReplyTo: reply.triggerEventId,
           openerPilotId: reply.openerPilotId,
           isCallResponse: true,
-        }))
+        })
+        if (radioMessages.length === 0 || !radioMessages[0].isAbility) {
+          radioMessages = [replyPayload]
+        }
       }
     }
 
     function queueTrivial(profile, eventId) {
+      if (radioMessages.length > 0) return null
       const payload = speak(profile, eventId)
       if (payload) radioMessages.push(payload)
       return payload
@@ -2050,8 +2116,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             if (didHit && chainStacks > 0 && w.chainCount < chainStacks && enemies && enemies.getAlive) {
               let nextTarget = null
               let nextDist = FALCO_CHAIN_RADIUS
-              for (const candidate of enemies.getAlive()) {
-                if (candidate === target || !candidate.mesh) continue
+              const chainCandidates = [
+                ...enemies.getAlive(),
+                ...(enemies.getGoldenAlive?.() || []),
+              ]
+              for (const candidate of chainCandidates) {
+                if (candidate === target || !isWingmanCombatTargetReady(candidate, readyCombatTargets)) continue
                 const d = w.mesh.position.distanceTo(candidate.mesh.position)
                 if (d < nextDist) { nextDist = d; nextTarget = candidate }
               }
@@ -2168,9 +2238,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       // nem este vetor existe: liberdade espacial total dentro das regras normais de combate.
       if (!inArena) {
         const longitudinalLag = computeRailLongitudinalLag(w.mesh.position, playerPos, frame)
-        const catchupBoost = computeRailCatchupBoost(longitudinalLag)
+        const catchupNow = updateRailCatchupState(longitudinalLag, w.railCatchupActive)
+        const catchupBoost = catchupNow ? computeRailCatchupBoost(Math.max(longitudinalLag, 32)) : 0
         if (catchupBoost > 0) _wmDesiredVelocity.addScaledVector(frame.forward, catchupBoost)
-        const catchupNow = catchupBoost > 0.01
         if (catchupNow !== w.railCatchupActive) {
           w.railCatchupActive = catchupNow
           aiValidator.logMechanic('wingman-rail-catchup', catchupNow ? 'catchup-started' : 'catchup-ended', {
@@ -2187,7 +2257,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       steerAroundObstacle(w, _wmDesiredVelocity, frame)
 
       // Impulso de separação já foi calculado simetricamente no prepass do frame.
-      if (w.separationPush.lengthSq() > 0) _wmDesiredVelocity.add(w.separationPush)
+      if (w.separationPush.lengthSq() > 0) _wmDesiredVelocity.multiplyScalar(1 - (w.separationYield || 0) * 0.35)
+      _wmDesiredVelocity.add(w.separationPush)
 
       // Aceleração com inércia estável (por piloto — ver flightProfile.accelRate)
       const accelRate = w.state === 'ram' ? 5.5 : w.profile.flightProfile.accelRate
@@ -2427,6 +2498,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // pendingRadioMessage pro próximo update() devolver.
   function triggerPlayerTookDamage() {
     if (activeWingmen.length === 0) return
+    if (pendingRadioMessages.some((m) => !m.isAbility)) return
     const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
     const msg = speak(w.profile, 'player_take_damage')
     if (msg) pendingRadioMessages.push(msg)
@@ -2484,13 +2556,13 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     }),
     getMoraleDamageBonus: () => moraleDamageBonus,
     getWingmanPositions: () => activeWingmen.filter((w) => w.state !== 'retreating').map((w) => w.mesh.position.clone()),
-    getWingmanCount: () => activeWingmen.length,
+    getWingmanCount: () => activeWingmen.filter((w) => w.state !== 'retreating').length,
     getActiveMembers: () => activeWingmen.filter((w) => w.state !== 'retreating').map((w) => ({ id: w.profile.id, name: w.profile.name, title: w.profile.title, color: w.profile.color })),
     getDamageTargets: (opts = {}) => activeWingmen
       .filter((w) => w.state !== 'retreating' && !(w.profile.id === 2 && opts.slippyBoostActive))
-      .map((w) => ({ id: w.profile.id, worldPos: w.mesh.position, radius: 1.25 })),
+      .map((w) => ({ id: w.profile.id, worldPos: w.mesh.position.clone(), radius: 1.25 })),
     getVitalSnapshots: () => activeWingmen.map((w) => ({
-      id: w.profile.id, name: w.profile.name, color: w.profile.color, worldPos: w.mesh.position,
+      id: w.profile.id, name: w.profile.name, color: w.profile.color, worldPos: w.mesh.position.clone(),
       hp: w.hp, maxHp: w.maxHp, shield: w.shield, maxShield: w.shieldMax,
       lowHp: w.hp <= WINGMAN_LOW_HP,
       retreating: w.state === 'retreating',

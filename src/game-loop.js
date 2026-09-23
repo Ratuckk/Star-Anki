@@ -38,7 +38,7 @@ import {
   BOSS_ENEMY_INTERVAL_MULT,
   LEVEL_BACKGROUNDS,
   DENSE_FOG_THRESHOLD_RATIO, DENSE_FOG_REFERENCE_DENSITY,
-  SWIRL_SLOW_MO_MS, SWIRL_SLOW_MO_FACTOR, SWIRL_FOV_BUMP_MS, SWIRL_FOV_TARGET,
+  SWIRL_SLOW_MO_MS, SWIRL_SLOW_MO_FACTOR, SWIRL_FOV_BUMP_MS,
   ARCADE_CARD_CHOICE_TIME_SCALE,
 } from './main-constants.js'
 import { getDifficultyLevel } from './enemies/shared.js'
@@ -46,6 +46,7 @@ import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
 import { createDamageOrbitTracker } from './combat/damage-orbit-tracker.js'
+import { sampleSwirlCamera } from './swirl-camera-model.js'
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -128,12 +129,21 @@ export function createGameLoop(deps) {
     if (state.stopped) return
     const rawDt = forcedRawDt != null ? forcedRawDt : Math.min((now - state.lastTime) / 1000, 0.1)
     const baseDt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
+    const swirlCinematicActive = state.swirlSlowMoMs > 0
     // Bullet-time no Card Choice (Arcade) — Docs/Bullet-time no Card Choice (Arcade).md, §3.1.
     // Só no modo arcade, só na tela de 3 cartas, e só com a pausa total desligada nas
     // Configurações. Calculado ANTES do early-return de cardChoice (logo abaixo) — é essa
     // condição que decide se aquele bloco continua pausando ou deixa o frame seguir.
+    const isArcadeCardChoice = state.phase === 'cardChoice' && isNoDeck
+    const arcadeCardChoicePauses = isArcadeCardChoice && !!getSettings().arcadeCardChoicePauses
+
+    if (isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0) {
+      state.arcadeBulletTimeTimer = Math.max(0, state.arcadeBulletTimeTimer - rawDt)
+    }
+
     const inArcadeCardChoiceBulletTime =
-      state.phase === 'cardChoice' && isNoDeck && !getSettings().arcadeCardChoicePauses
+      isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0
+
     // Precedência entre as 3 fontes de câmera lenta (só uma decide o dt por frame, nunca
     // compõem): slowMo de DEBUG sempre vence (ferramenta de dev, previsível); bullet-time do
     // card choice (Docs/Bullet-time...) vem depois; Swirl Blast (§4.5) por último — na prática
@@ -146,6 +156,7 @@ export function createGameLoop(deps) {
         : state.swirlSlowMoMs > 0
           ? baseDt * SWIRL_SLOW_MO_FACTOR
           : baseDt
+    const swirlCameraWasActive = state.swirlFovBumpMs > 0
     state.swirlSlowMoMs = Math.max(0, state.swirlSlowMoMs - rawDt * 1000)
     state.swirlFovBumpMs = Math.max(0, state.swirlFovBumpMs - rawDt * 1000)
     state.lastTime = now
@@ -182,10 +193,14 @@ export function createGameLoop(deps) {
       renderer.render(scene, camera)
       return
     }
-    // Bullet-time no Card Choice (Arcade), §3.2: cardChoice deixa de ser pausa incondicional —
-    // com `inArcadeCardChoiceBulletTime`, o frame CONTINUA (rail/inimigos/jogador seguem
-    // rodando com o dt já escalado lá em cima); sem isso, cai no comportamento de sempre.
-    if (state.phase === 'cardChoice' && !inArcadeCardChoiceBulletTime) {
+    // Bullet-time no Card Choice (Arcade), §3.2:
+    // Se for fora do Arcade (Roguelike com baralho) ou se a configuração de pausa estiver ativa,
+    // o frame pausa incondicionalmente no cardChoice.
+    // No Arcade sem pausa total, o frame CONTINUA: durante os primeiros 1.5s em bullet-time
+    // (ARCADE_CARD_CHOICE_TIME_SCALE) e após o timer zerar, em velocidade normal 1.0x,
+    // permitindo combate e voo contínuos com o draft pendente na HUD.
+    const shouldPauseForCardChoice = state.phase === 'cardChoice' && (!isNoDeck || arcadeCardChoicePauses)
+    if (shouldPauseForCardChoice) {
       renderer.render(scene, camera)
       return
     }
@@ -208,43 +223,51 @@ export function createGameLoop(deps) {
     // passando ao player e o giro segue sendo tratado abaixo para poder cancelar a cambalhota.
     rail.update(dt, tumbleLocked ? TUMBLE_LOCKED_INPUT : inputState)
 
-    // Swirl Blast (§4.5) — FOV bump + "punch" de câmera por cima do que rail.update() acabou de
-    // calcular (o lerp de FOV do boost continua rodando por baixo; isso só SOBRESCREVE o valor
-    // final do frame enquanto durar, e some sozinho quando o timer zera — sem precisar "devolver
-    // o controle" de propósito). Sobe linear nos primeiros 50% da janela, ease-out nos últimos 50%.
-    if (state.swirlFovBumpMs > 0) {
+    // Swirl Blast — coreografia em três beats: compressão curta, release e retorno.
+    // A curva é pura/testável (swirl-camera-model.js) e trabalha como OFFSET sobre o FOV que o
+    // rail tinha no disparo. Isso evita o antigo hardcode 70→95, que diminuía demais o projétil,
+    // e garante retorno exato sem somar transformações de FOV frame a frame.
+    if (swirlCameraWasActive) {
       const elapsedMs = SWIRL_FOV_BUMP_MS - state.swirlFovBumpMs
-      const halfMs = SWIRL_FOV_BUMP_MS / 2
-      const bumpFrac = elapsedMs <= halfMs
-        ? elapsedMs / halfMs
-        : 1 - Math.pow((elapsedMs - halfMs) / halfMs, 2)
-      camera.fov = 70 + bumpFrac * (SWIRL_FOV_TARGET - 70)
+      const cameraBeat = sampleSwirlCamera(elapsedMs, SWIRL_FOV_BUMP_MS)
+      const baseFov = Number.isFinite(state.swirlCameraBaseFov) ? state.swirlCameraBaseFov : camera.fov
+      camera.fov = baseFov + cameraBeat.fovOffsetDeg
       camera.updateProjectionMatrix()
-      camera.rotateZ(THREE.MathUtils.degToRad(3) * bumpFrac)
-      // Punch de câmera "afastando" (§4.5: "offset de +1.5 no eixo Z NO INSTANTE do disparo") —
-      // BUG CORRIGIDO: `camera.translateZ()` é incremento relativo ao eixo local, não um offset
-      // absoluto. Chamar isso a cada frame do bump (era `translateZ(1.5 * bumpFrac)` sem guarda)
-      // empilhava ~18 frames de +1.5*bumpFrac em 300ms — o lerp de `rail.update()` só corrige uma
-      // fração da posição por frame, não o suficiente pra compensar, então a câmera fugia dezenas
-      // de unidades pra trás da nave em vez do impulso pontual de 1.5u descrito no doc. Agora
-      // dispara só UMA VEZ (no primeiro frame em que o bump fica ativo, guardado por
-      // `state.swirlPunchFired`) — o lerp do rail traz a câmera de volta sozinho depois, mesma
-      // dinâmica do shake de dano.
-      if (!state.swirlPunchFired) {
+      camera.rotateZ(cameraBeat.rollRad)
+
+      if (cameraBeat.phase !== state.swirlCameraPhase) {
+        state.swirlCameraPhase = cameraBeat.phase
+        aiValidator.logMechanic('swirl-camera', `phase-${cameraBeat.phase}`, {
+          elapsedMs, baseFov, fov: camera.fov,
+        })
+      }
+
+      // O punch continua sendo um único deslocamento de 1.5u, mas só acontece no beat de
+      // release, depois da compressão visual. Nunca multiplica por frame.
+      if (cameraBeat.punchReady && !state.swirlPunchFired) {
         state.swirlPunchFired = true
         const _prePunchPos = camera.position.clone()
         camera.translateZ(1.5)
-        // Regressão exata do bug corrigido acima: translateZ(1.5) tem que mover a câmera 1.5u
-        // NESTE frame e só neste frame — se voltar a empilhar (ex: alguém remove a guarda de
-        // `swirlPunchFired` de novo), a distância medida aqui vai estourar bem além de 1.5.
         aiValidator.expect(
-          'Swirl Blast: punch de câmera desloca exatamente 1.5u, uma vez por disparo (não acumula frame a frame)',
+          'Swirl Blast: punch de câmera desloca exatamente 1.5u, uma vez por disparo',
           () => Math.abs(camera.position.distanceTo(_prePunchPos) - 1.5) < 0.01,
-          { distanceMoved: camera.position.distanceTo(_prePunchPos), bumpFrac }
+          { distanceMoved: camera.position.distanceTo(_prePunchPos), phase: cameraBeat.phase },
         )
       }
-    } else if (state.swirlPunchFired) {
-      state.swirlPunchFired = false
+
+      if (state.swirlFovBumpMs <= 0) {
+        camera.fov = baseFov
+        camera.updateProjectionMatrix()
+        aiValidator.expect(
+          'Swirl Blast: coreografia devolve exatamente o FOV capturado no disparo',
+          () => Math.abs(camera.fov - baseFov) < 0.001,
+          { baseFov, restoredFov: camera.fov },
+        )
+        aiValidator.logMechanic('swirl-camera', 'choreography-ended', { baseFov })
+        state.swirlCameraBaseFov = null
+        state.swirlCameraPhase = null
+        state.swirlPunchFired = false
+      }
     }
     // CRÍTICO: camera.updateMatrixWorld() — ver comentário no arquivo original
     camera.updateMatrixWorld()
@@ -352,7 +375,17 @@ export function createGameLoop(deps) {
           // de uma chamada explícita aqui.
           state.swirlSlowMoMs = SWIRL_SLOW_MO_MS
           state.swirlFovBumpMs = SWIRL_FOV_BUMP_MS
+          state.swirlCameraBaseFov = camera.fov
+          state.swirlCameraPhase = null
           state.swirlPunchFired = false
+          aiValidator.expect(
+            'Swirl Blast captura um FOV-base finito antes da coreografia',
+            () => Number.isFinite(state.swirlCameraBaseFov),
+            { baseFov: state.swirlCameraBaseFov },
+          )
+          aiValidator.logMechanic('swirl-camera', 'choreography-started', {
+            baseFov: state.swirlCameraBaseFov, durationMs: SWIRL_FOV_BUMP_MS,
+          })
         } else {
           combat.fireHomingShot(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), isMaxCharge)
         }
@@ -568,6 +601,9 @@ export function createGameLoop(deps) {
       homingHasLockedTarget,
       reactivity,
       isDenseFog,
+      // O mundo desacelera no super-ataque, mas o projétil Swirl conserva velocidade em tempo
+      // real. O slow-mo de DEBUG continua vencendo para manter a ferramenta previsível.
+      swirlProjectileDt: state.debugFlags.slowMoActive ? dt : (swirlCinematicActive ? rawDt : dt),
     })
 
     // ============ HIT MARKER ============
@@ -786,6 +822,22 @@ export function createGameLoop(deps) {
       bossFlow.handleBossDefeated(bossDeathWorldPos)
     }
 
+    const goldenDefeatedFromCombat = combat.consumeGoldenDefeated ? combat.consumeGoldenDefeated() : null
+    const isGoldenDefeated = Boolean(events.goldenSpecialHit || goldenDefeatedFromCombat?.defeated)
+    const goldenDeathWorldPos = events.goldenHitWorldPos || goldenDefeatedFromCombat?.worldPos || (combat.getGoldenWorldPos ? combat.getGoldenWorldPos() : null) || playerPos
+
+    if (state.phase === 'goldenArena') {
+      const goldenAlive = combat.hasAliveGolden ? combat.hasAliveGolden() : false
+      const goldenDying = combat.isGoldenDying ? combat.isGoldenDying() : false
+      const goldenSnap = combat.getGoldenSnapshot ? combat.getGoldenSnapshot() : null
+
+      if (isGoldenDefeated || goldenDying || (!goldenAlive && (!goldenSnap || goldenSnap.hp <= 0))) {
+        bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
+      }
+    } else if (isGoldenDefeated && (state.phase === 'cardChoice' || rail.isArena())) {
+      bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
+    }
+
     // ============ COLISÃO FÍSICA COM BOSS / DOURADO (KNOCKBACK + TUMBLE SPIN) ============
     if (events.bossCollisionWorldPos) {
       rail.triggerBossCollisionTumble(events.bossCollisionWorldPos)
@@ -805,7 +857,13 @@ export function createGameLoop(deps) {
     if (events.enemyHits > 0 && !player.isInvincible() && !state.debugFlags.godMode) {
       state.hitShakeTimer = HIT_SHAKE_DURATION_MS
 
-      const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
+      const hasChannelDamage = (events.enemyShieldDamage || 0) > 0 || (events.enemyHullDamage || 0) > 0
+      const result = hasChannelDamage && player.takeDamageChannels
+        ? player.takeDamageChannels({
+            shieldDamage: events.enemyShieldDamage || 0,
+            hullDamage: events.enemyHullDamage || 0,
+          })
+        : player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
       // Pontuação: ser atingido quebra a cadeia do mesmo modo que errar uma pergunta. Só roda no
       // hit efetivamente resolvido (não em invencibilidade, que já retorna antes deste bloco).
       const comboBeforeDamage = session.comboMultiplier
@@ -994,8 +1052,8 @@ export function createGameLoop(deps) {
     } else if (state.phase === 'goldenArena') {
       // v0.32: duração ilimitada — só sai daqui derrotando o dourado (pedido do usuário).
       // O handler (handleGoldenDefeated) NÃO checa fase internamente — o branch já é a guarda.
-      if (events.goldenSpecialHit) {
-        bossFlow.handleGoldenDefeated(events.goldenHitWorldPos || playerPos)
+      if (isGoldenDefeated || events.goldenSpecialHit) {
+        bossFlow.handleGoldenDefeated(goldenDeathWorldPos)
       }
     } else if (state.phase === 'resolution') {
       state.phaseTimer -= dt * 1000
@@ -1181,7 +1239,11 @@ export function createGameLoop(deps) {
     // Wobble pós-spawn (Overhaul de spawn/despawn) — aplicado no ÚLTIMO instante antes do
     // render, nunca antes (hit-test/lock-on/IA do frame já leram a posição "real" sem jitter).
     combat.applySpawnWobbles?.()
-    renderer.render(scene, camera)
+    try {
+      renderer.render(scene, camera)
+    } finally {
+      combat.restoreSpawnWobbles?.()
+    }
   }
 
   function tick(now) {

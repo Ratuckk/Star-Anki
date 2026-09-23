@@ -252,20 +252,20 @@ export const LOW_HEALTH_THRESHOLD_FRAC = 0.4
 
 // ============ SWIRL BLAST (habilidade base — Docs/# Swirl Blast — Design & Plano de I.md) ============
 // Cooldown base da habilidade, em ms. Ver player.js (isSwirlReady/startSwirlCooldown).
-export const SWIRL_COOLDOWN_MS = 12000
+export const SWIRL_COOLDOWN_MS = 10000
 
 // Duração da cutscene de câmera lenta ao disparar, em ms. É o tempo em que o dt global é
 // multiplicado por SWIRL_SLOW_MO_FACTOR, dando o efeito "super attack freeze" (§4.5).
-export const SWIRL_SLOW_MO_MS = 450
+export const SWIRL_SLOW_MO_MS = 650
 
 // Fator de time scale durante a cutscene. 0.15 = 15% da velocidade normal (bem lento, mas não
 // congelado — inimigos e projéteis continuam se movendo devagar).
-export const SWIRL_SLOW_MO_FACTOR = 0.15
+export const SWIRL_SLOW_MO_FACTOR = 0.25
 
 // Duração do FOV bump, em ms. Começa no instante do disparo e dura um pouco menos que o
 // slow-mo, pra dar tempo do FOV voltar ao normal antes de tudo descongelar.
-export const SWIRL_FOV_BUMP_MS = 300
+export const SWIRL_FOV_BUMP_MS = 600
 
 // FOV alvo no pico do bump. Base do jogo é 70; boost normal sobe pra 84. Swirl sobe pra 95, mais
 // agressivo — "você acabou de disparar um super ataque".
-export const SWIRL_FOV_TARGET = 95
+export const SWIRL_FOV_TARGET = 105

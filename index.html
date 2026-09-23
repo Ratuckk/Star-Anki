@@ -741,6 +741,91 @@
     to { opacity: 1; }
   }
 
+  /* Arcade — Draft Tático: ocupa só o topo e deixa o centro da ação legível. */
+  .card-choice-overlay.arcade-compact {
+    justify-content: flex-start;
+    gap: 0.65rem;
+    padding: max(12px, 2vh) 1rem 0;
+    background: linear-gradient(180deg, rgba(5, 10, 18, 0.94) 0%, rgba(5, 10, 18, 0.72) 24%, rgba(5, 10, 18, 0.12) 43%, transparent 58%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    pointer-events: none;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-header {
+    max-width: 760px;
+    pointer-events: none;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-badge {
+    margin-bottom: 0.2rem;
+    padding: 0.18rem 0.65rem;
+    font-size: 0.6rem;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-title {
+    margin-bottom: 0.2rem;
+    font-size: 1rem;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-subtitle {
+    font-size: 0.7rem;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-inspector {
+    display: none;
+  }
+  .card-choice-overlay.arcade-compact .card-choice-list {
+    width: min(980px, 96vw);
+    max-width: 96vw;
+    gap: 0.65rem;
+    flex-wrap: nowrap;
+    pointer-events: auto;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card {
+    width: min(30vw, 292px);
+    min-height: 118px;
+    margin: 0;
+    padding: 0.62rem 0.72rem;
+    border-radius: 10px;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card:hover {
+    transform: translateY(-3px) scale(1.015);
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-top-row {
+    margin-bottom: 0.32rem;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-category {
+    font-size: 0.56rem;
+    padding: 0.1rem 0.35rem;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-key-badge {
+    width: 21px;
+    height: 21px;
+    color: #ffffff;
+    border-color: rgba(125, 211, 252, 0.7);
+    box-shadow: 0 0 9px rgba(56, 189, 248, 0.25);
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-icon-wrap {
+    width: 30px;
+    height: 30px;
+    margin-bottom: 0.28rem;
+    border-radius: 7px;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-icon {
+    font-size: 1.1rem;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-name {
+    margin-bottom: 0.18rem;
+    font-size: 0.88rem;
+  }
+  .card-choice-overlay.arcade-compact .roguelike-card .card-desc {
+    font-size: 0.68rem;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .card-choice-overlay.arcade-compact .hud-expl-card-row {
+    pointer-events: auto;
+  }
+
   .card-choice-header {
     text-align: center;
     max-width: 600px;
@@ -1048,6 +1133,115 @@
     background: rgba(255, 215, 0, 0.1);
     border-color: rgba(255, 215, 0, 0.25);
   }
+
+  /* ============ ARCADE TACTICAL TOP DRAFT ============ */
+  .hud-arcade-tactical-draft {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    z-index: 120;
+    pointer-events: none;
+    max-width: 96vw;
+    animation: tactical-draft-drop 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes tactical-draft-drop {
+    from { opacity: 0; transform: translate(-50%, -18px) scale(0.96); }
+    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  }
+  .hud-tactical-draft-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: #38bdf8;
+    background: rgba(10, 16, 28, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 999px;
+    padding: 2px 10px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  }
+  .hud-tactical-draft-header .badge {
+    background: rgba(56, 189, 248, 0.2);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .hud-tactical-draft-chips {
+    display: flex;
+    gap: 10px;
+    pointer-events: auto;
+    flex-wrap: nowrap;
+  }
+  .hud-tactical-draft-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(10, 16, 26, 0.96) 100%);
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    padding: 6px 14px 6px 10px;
+    cursor: pointer;
+    color: #f8fafc;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    max-width: 280px;
+    text-align: left;
+  }
+  .hud-tactical-draft-chip:hover {
+    transform: translateY(-2px) scale(1.03);
+    border-color: #38bdf8;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.8), 0 0 12px rgba(56, 189, 248, 0.4);
+  }
+  .hud-tactical-draft-chip .chip-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(56, 189, 248, 0.25);
+    color: #38bdf8;
+    font-weight: 900;
+    font-size: 0.78rem;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    flex-shrink: 0;
+  }
+  .hud-tactical-draft-chip .chip-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .hud-tactical-draft-chip .chip-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .hud-tactical-draft-chip .chip-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hud-tactical-draft-chip .chip-desc {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hud-tactical-draft-chip.category-ofensivo { border-color: rgba(239, 68, 68, 0.4); }
+  .hud-tactical-draft-chip.category-ofensivo .chip-key { background: rgba(239, 68, 68, 0.25); color: #f87171; border-color: rgba(239, 68, 68, 0.5); }
+  .hud-tactical-draft-chip.category-defensivo { border-color: rgba(59, 130, 246, 0.4); }
+  .hud-tactical-draft-chip.category-defensivo .chip-key { background: rgba(59, 130, 246, 0.25); color: #60a5fa; border-color: rgba(59, 130, 246, 0.5); }
+  .hud-tactical-draft-chip.category-utilitario { border-color: rgba(16, 185, 129, 0.4); }
+  .hud-tactical-draft-chip.category-utilitario .chip-key { background: rgba(16, 185, 129, 0.25); color: #34d399; border-color: rgba(16, 185, 129, 0.5); }
 
 
   .enemy-health-bar {

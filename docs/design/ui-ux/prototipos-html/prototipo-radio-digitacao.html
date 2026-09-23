@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Protótipo — Rádio com texto digitado</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, Consolas, monospace; background: #03070f; color: #e6f5ff; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 60% 15%, #16305155, transparent 34%), #03070f; }
+    main { width: min(1040px, 92vw); padding: 34px 0 52px; }
+    h1 { font-size: clamp(1.3rem, 3vw, 2rem); margin: 0 0 8px; color: #78e8ff; }
+    .intro { color: #9aafc6; margin: 0 0 28px; line-height: 1.5; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    article { min-height: 364px; padding: 18px; border: 1px solid #315575; background: linear-gradient(145deg, #0c1828e8, #050a12ee); box-shadow: 0 14px 45px #0008; }
+    h2 { margin: 0 0 8px; color: #ffdc67; font-size: 1rem; letter-spacing: .07em; }
+    p { color: #a9bdd0; font: 13px/1.45 system-ui, sans-serif; min-height: 57px; }
+    .stage { position: relative; height: 175px; overflow: hidden; display: flex; align-items: end; padding: 12px; background: #01040a; border: 1px solid #263b52; }
+    .radio { width: 100%; min-height: 88px; padding: 10px; border: 2px solid var(--pilot); background: #07101dde; box-shadow: 0 0 16px color-mix(in srgb, var(--pilot) 34%, transparent); }
+    .head { display: flex; gap: 8px; align-items: center; font-size: 11px; font-weight: 800; color: var(--pilot); letter-spacing: .1em; }
+    .portrait { width: 30px; height: 30px; display: grid; place-items: center; color: #05101a; background: var(--pilot); clip-path: polygon(50% 0, 100% 27%, 82% 100%, 18% 100%, 0 27%); }
+    .line { margin-top: 8px; min-height: 36px; font: 700 14px/1.28 system-ui, sans-serif; letter-spacing: .01em; }
+    .cursor { display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--pilot); animation: blink .65s steps(1) infinite; }
+    button { margin-top: 14px; padding: 8px 12px; border: 1px solid #4f88ae; color: #d8f5ff; background: #142940; cursor: pointer; font: 700 12px ui-monospace, monospace; }
+    button:hover { background: #20476b; }
+    /* Opção 1: leitura limpa, cursor mecânico e cadência constante. */
+    .op1 .radio { border-radius: 5px; }
+    .op1 .line { text-shadow: 0 0 8px #71dfff88; }
+    /* Opção 2: uma varredura curta acompanha cada letra; mais energética. */
+    .op2 .radio { position: relative; border-radius: 0; }
+    .op2 .radio::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(90deg, transparent, #fff8, transparent); transform: translateX(-120%); }
+    .op2 .radio.pulse::after { animation: sweep .22s ease-out; }
+    .op2 .line { text-shadow: 1px 0 #f46c9a66, -1px 0 #61e9ff66; }
+    .op2 .letter { animation: pop .17s ease-out both; }
+    /* Opção 3: rádio de habilidade: speedlines desaceleram enquanto a fala chega. */
+    .op3 .stage { align-items: center; }
+    .op3 .speedlines { position: absolute; inset: 0; opacity: .45; background: repeating-linear-gradient(160deg, transparent 0 15px, #a680ff66 16px 17px, transparent 18px 32px); transform: translateX(-55%); }
+    .op3 .speedlines.run { animation: speed-in 1.25s cubic-bezier(.13,.82,.27,1) both; }
+    .op3 .radio { position: relative; z-index: 1; border-color: #b892ff; box-shadow: 0 0 28px #966cff90; transform: skewX(-4deg); }
+    .op3 .head, .op3 .line { transform: skewX(4deg); }
+    .op3 .line { font-size: 15px; text-shadow: 0 0 10px #bd9cff; }
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes sweep { to { opacity: .75; transform: translateX(120%); } }
+    @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(1.25); } to { opacity: 1; transform: none; } }
+    @keyframes speed-in { 0% { transform: translateX(-110%); filter: blur(3px); } 70% { transform: translateX(-5%); filter: blur(.3px); } 100% { transform: translateX(7%); filter: none; } }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } article { min-height: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Rádio: texto aparecendo letra por letra</h1>
+    <p class="intro">Cada opção mantém a mesma fala e velocidade base. A diferença é a presença visual: discreta, com pulso de comunicação, ou com speedlines para falas de habilidade.</p>
+    <section class="grid">
+      <article class="op1" style="--pilot:#54c6ff">
+        <h2>Opção 1 — Terminal limpo</h2><p>Digitação constante com cursor. A mais legível e silenciosa visualmente.</p>
+        <div class="stage"><div class="radio"><div class="head"><span class="portrait">F</span>FALCO // CANAL ABERTO</div><div class="line"></div></div></div><button>Reproduzir</button>
+      </article>
+      <article class="op2" style="--pilot:#ffbd53">
+        <h2>Opção 2 — Varredura de rádio</h2><p>Cada letra ganha uma microentrada e o painel recebe um pulso de transmissão.</p>
+        <div class="stage"><div class="radio"><div class="head"><span class="portrait">P</span>PEPPY // CANAL ABERTO</div><div class="line"></div></div></div><button>Reproduzir</button>
+      </article>
+      <article class="op3" style="--pilot:#b892ff">
+        <h2>Opção 3 — Speedlines de habilidade</h2><p>Speedlines entram rápido, desaceleram durante a frase e retomam no final. Mais destaque para ability quotes.</p>
+        <div class="stage"><div class="speedlines"></div><div class="radio"><div class="head"><span class="portrait">M</span>MIYU // HABILIDADE</div><div class="line"></div></div></div><button>Reproduzir</button>
+      </article>
+    </section>
+  </main>
+  <script>
+    const phrase = 'Multiple contacts. Staying sharp.'
+    function run(card) {
+      const line = card.querySelector('.line'); const radio = card.querySelector('.radio'); const lines = card.querySelector('.speedlines')
+      clearInterval(card.timer); line.textContent = ''; lines?.classList.remove('run'); radio.classList.remove('pulse')
+      void radio.offsetWidth; lines?.classList.add('run')
+      let i = 0
+      card.timer = setInterval(() => {
+        const letter = phrase[i++]
+        if (letter == null) { clearInterval(card.timer); return }
+        const span = document.createElement('span'); span.className = 'letter'; span.textContent = letter; line.append(span)
+        if (card.classList.contains('op2')) { radio.classList.remove('pulse'); void radio.offsetWidth; radio.classList.add('pulse') }
+        if (i === phrase.length) line.insertAdjacentHTML('beforeend', '<i class="cursor"></i>')
+      }, 29)
+    }
+    document.querySelectorAll('article').forEach(card => { card.querySelector('button').onclick = () => run(card); run(card) })
+  </script>
+</body>
+</html>

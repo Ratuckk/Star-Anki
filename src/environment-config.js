@@ -9,7 +9,9 @@ export const ENVIRONMENT_CONFIG = {
   enableCelestialBodies: false, // Desativado: planetas/luas removidos conforme pedido
   enableMultiLayerStars: true,  // Estrelas multicamadas com cintilação suave (twinkle)
   enableWarpStreaks: true,      // Esticamento de estrelas/poeira no boost (efeito hiperespaço)
+  enableAbstractSpeedlines: true, // Linhas radiais 2D aprovadas no laboratório visual
   enableNebulaPockets: true,    // Bolsões de névoa densa e transição de atmosfera no percurso
+  enableVolumetricFogBanks: true, // Bancos volumétricos localizados de névoa no espaço
   enableIonStorms: false,       // Desativado: preserva fundo preto limpo
   enableShootingStars: false,   // Desativado
   enableEnergizedGrid: false,   // Desativado: grid clássico

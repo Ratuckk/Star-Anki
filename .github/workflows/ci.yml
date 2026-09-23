@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - chore/reorganize-and-forgot-v09935
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-save --no-package-lock three@0.169.0
+
+      - name: Syntax check JS / MJS files
+        run: |
+          find src tools -name "*.js" -o -name "*.mjs" | while read -r file; do
+            node --check "$file"
+          done
+
+      - name: Run Stage Tests
+        run: |
+          node src/forgot-stage2.test.mjs
+          node src/forgot-stage3.test.mjs
+          node src/forgot-stage4.test.mjs
+
+      - name: Run Enemy and Combat Tests
+        run: |
+          node src/enemy-supercheck.test.mjs
+          node src/lockon-priority.test.mjs
+          node src/combat-lockon-swirl.test.mjs
+          node src/tank.test.mjs
+
+      - name: Run Wingman Suites
+        run: |
+          node src/wingman-bughunt.test.mjs
+          node src/wingman-navigation.test.mjs
+          node src/wingman-global-radio.test.mjs
+          node src/miyu-assist-locks.test.mjs
+          node src/wingman-radio-overhaul.test.mjs
+          node src/wingman-radio-callresponse.test.mjs
+
+      - name: Run Arcade Bullet-Time and Polish Suites
+        run: |
+          node src/arcade-draft-bullet-time.test.mjs
+          node src/playtest-polish.test.mjs
+
+      - name: Run Comprehensive Selftest
+        run: |
+          node src/selftest.mjs
+
+      - name: Run State Fuzz Audit
+        run: |
+          node tools/state-fuzz-audit.mjs
+
+      - name: Run Wingman Runtime Fuzz Audit
+        run: |
+          node tools/wingman-runtime-fuzz-audit.mjs
+
+      - name: Run Markdown Documentation Link Audit
+        run: |
+          node tools/docs-link-audit.mjs
+
+      - name: Run Full Project Audit
+        run: |
+          node tools/full-project-audit.mjs
+
+      - name: Check Git Diff Hygiene
+        run: |
+          git diff --check

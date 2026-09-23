@@ -963,10 +963,21 @@ export function createEffectsSystem(scene, opts = {}) {
   // negócio mora em combat/projectiles.js, essa função só desenha). SWIRL_EXPLOSION_RADIUS
   // recalibrado pra 4.5 (era 2.5) + shockwave branco extra — leitura de "acabei de quebrar o
   // escudo dele".
-  function swirlBlastExplosion(position) {
+  function swirlBlastExplosion(position, direction = null, opts = {}) {
     explosion(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS, { rings: true })
     shockwave(position, SWIRL_COLOR, SWIRL_EXPLOSION_RADIUS * 1.1)
     shockwave(position, 0xffffff, SWIRL_EXPLOSION_RADIUS * 0.7)
+
+    // Boss-class ganha uma segunda assinatura cromática/escala. Fragata continua com o impacto
+    // azul acima; Boss lê quente/vermelho e Dourado lê ouro, sem alterar dano ou colisão.
+    if (opts.bossClass) {
+      const identityColor = opts.kind === 'golden' ? 0xffd24a : 0xff684a
+      shockwave(position, identityColor, SWIRL_EXPLOSION_RADIUS * 1.55)
+      shockwave(position, 0xffffff, SWIRL_EXPLOSION_RADIUS * 1.05)
+      bloomSprite(position, identityColor, 4.4)
+      hitSpark(position, identityColor)
+      hitSpark(position, 0xffffff)
+    }
 
     // Overhaul v2 (§6) — onda de fragmentos triangulares: 8 tetraedros pequenos girando pra fora
     // em leque hemisférico, reforça a leitura "triangular" também no impacto, não só em voo.

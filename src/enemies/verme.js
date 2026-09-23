@@ -118,6 +118,8 @@ export function updateVermeMovement(enemy, dt, rail) {
 // spawn. Recalcula os 3 números a partir da posição ATUAL dele, projetada na base da câmera
 // deste instante — vira cabeça exatamente de onde já estava, sem pulo.
 export function severChainAt(deadSegment, allEnemies, rail) {
+  if (!deadSegment || deadSegment.chainSevered) return false
+  deadSegment.chainSevered = true
   if (deadSegment?.mesh) {
     triggerSoundCue(ENEMY_SOUND_CUES.verme_segment_break, { worldPos: deadSegment.mesh.position.clone() })
   }
@@ -130,6 +132,7 @@ export function severChainAt(deadSegment, allEnemies, rail) {
     next.screenX = rel.dot(frame.right)
     next.screenY = rel.dot(frame.up)
   }
+  return true
 }
 
 export function disposeVerme() {

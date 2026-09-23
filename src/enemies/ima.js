@@ -15,12 +15,11 @@ export const IMA_DEATH_DURATION = 0.2
 export const IMA_HP = 4
 export const IMA_KILL_BONUS = 15
 // campo maior = o projétil fica dentro por mais tempo acumulando mais desvio
-export const IMA_FIELD_RADIUS = 12
-// força ~7x maior que antes (era 26): com 26 o desvio total ficava em ~3-4° (imperceptível),
-// porque o efeito dura só ~0.3s (tempo de travessia do raio 9 a 60 u/s) e a força é somada à
-// velocidade POR FRAME em projectiles.js. 180 dá ~25° de desvio visível — a curva aparece de
-// verdade no tiro normal que passa perto. Ver tabela no comentário do projectiles.js.
-export const IMA_FIELD_STRENGTH = 180
+export const IMA_FIELD_RADIUS = 15
+// Recalibrado para PROJECTILE_SPEED=260: o tiro cruza o campo muito mais rápido que na versão
+// antiga, então a aceleração lateral precisa ser maior para continuar legível sem virar uma
+// parede invisível. O falloff ainda zera suavemente na borda e o homing/Swirl ignoram o campo.
+export const IMA_FIELD_STRENGTH = 1100
 
 const GROUP_MIN = 3
 const GROUP_MAX = 5

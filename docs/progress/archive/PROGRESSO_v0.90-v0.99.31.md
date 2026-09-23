@@ -1,0 +1,1157 @@
+# Progresso pós-v0.90 — novas documentações a partir daqui
+
+Continuação do [PROGRESSO_POS_.80.md](PROGRESSO_POS_.80.md) (histórico v0.84.0 → v0.89.0, agora
+congelado). A partir desta entrega, toda documentação nova entra neste arquivo.
+
+---
+
+## Backlog Pendente (herdado da v0.89.0)
+
+Itens discutidos e aprovados pelo usuário mas ainda **não implementados**. Servem de referência
+para futuras entregas neste arquivo. O detalhamento completo está em [BACKLOG.md](BACKLOG.md).
+
+### P2 — Médio valor
+- [ ] **Perguntas de cenário** — testar aplicação prática, não só definição.
+
+### P3 — Especulativo / requer decisão
+- [ ] **Bônus de pontos por abrir explicação em erros**.
+- [ ] **Distratores por tag de confusão** — forçar discriminação entre conceitos comumente trocados.
+
+Também pendentes, herdados do Overhaul 4 (fog) e do Overhaul de spawn/despawn (ver
+`Docs/Overhaul 4 — Fog como mecânica de g.md` e `Docs/Overhaul do sistema de spawn e desp.md`),
+sem prioridade definida — ficam só de referência:
+- [ ] Redução de 60% na explosão de morte da Horda em fog denso (pilar 3 do Overhaul 4) —
+  pulado por exigir checar 3+ pontos de código por um ganho visual pequeno.
+- [ ] Fog reagindo ao nível de dificuldade (§4.5 do Overhaul 4) — bônus opcional.
+- [ ] Ideia 4 do overhaul de spawn — orientação de aproximação (rotação convergindo no spawn) —
+  pulado porque a maioria dos inimigos recalcula orientação por `lookAt` logo depois do bloco de
+  spawn no mesmo frame, sobrescrevendo o slerp; precisaria de auditoria caso a caso por tipo.
+
+Herdado também do `Docs/# Documento de Implementação — Nova.md` (rádio dos aliados + cartas por
+personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
+- [ ] Auditoria posterior (v0.99.10) reabriu itens do documento: Impulsão Conjunta ainda não
+  protege o jogador, o bônus de aríete dela não é somado, e o fallback distante do Boombuster não
+  é aleatório. O indicador do Intercept foi concluído na v0.99.11; a mira com escala projetada
+  real e o triângulo da Miyu, na v0.99.12.
+
+---
+
+## Histórico de Entregas pós-v0.90.0
+
+### v0.99.31 — Hotfix de carregamento dos Wingmen
+
+- **Boot restaurado:** dois follow-ups da v0.99.30 reaplicaram hunks já presentes em `src/combat/wingmen.js`, deixando três declarações de `previousPlayerPosition`/`hasPreviousPlayerPosition` no mesmo escopo. O navegador abortava o parse com `SyntaxError: Identifier 'previousPlayerPosition' has already been declared`, impedindo o jogo inteiro de iniciar.
+- **Duplicações removidas na causa-raiz:** também foram consolidados para uma única cópia `motionWatch`, o cálculo `playerMotionSpeed/formationMotionGain` e `readyCombatTargets`, que haviam sido reaplicados pelos mesmos commits.
+- **Sem regressão de IA:** foram preservadas as mudanças legítimas dos follow-ups — `getAliveEnemies` continua filtrando por `isWingmanCombatTargetReady`, o Focus continua limpando alvos com o mesmo contrato e a invencibilidade de spawn continua impedindo aquisição prematura.
+- **Regressão automatizada:** `wingman-flight-stability.test.mjs` agora lê `wingmen.js` e exige exatamente uma ocorrência dos quatro blocos estruturais, além de conferir os dois filtros gameplay-ready.
+- **Validação:** sintaxe de `wingmen.js`, suítes de estabilidade/navegação/formação/state/radio, playtest-polish, selftest e `git diff --check`.
+- **Versão:** v0.99.30 → v0.99.31.
+
+### v0.99.30 — Correções pós-merge: Wingmen, rádio e dano visual
+
+- **Rádio revertido para lateral:** os quatro Wingmen voltam aos painéis originais com estática, connect/disconnect e voz individual; apenas Fox continua in-world ao iniciar Focus. Os 120 quotes novos permanecem.
+- **Focus corrigido:** todos os Wingmen ativos confirmam lateralmente o comando, mesmo quando uma Action impede a troca imediata para dogfight; a confirmação não cancela a Action.
+- **Alvos válidos:** Focus, dogfight e Ram exigem inimigo realmente gameplay-ready. Mesh de spawn/fade/entidade removida não mantém mais piloto preso perseguindo um alvo fantasma.
+- **Rescue com limite:** Rescue do Peppy recebe timeout técnico de 5s para não manter a Action indefinidamente quando a aproximação não conclui.
+- **Estabilidade de formação:** All-Range passa a desacelerar suavemente ao chegar à vaga; weave/idle diminuem e somem com o jogador parado. Failsafe detecta ausência real de progresso e recupera somente a velocidade, sem teleporte ou regroup por distância.
+- **Mangá:** elementos de dano ficam 50% menores e emergem do centro estável do alvo antes de ocupar seu offset.
+- **Buraco Negro:** segmentos desconexos são removidos; cada alvo cooperativo usa um único círculo real, centrado no alvo, compartilhado pelos números orbitais.
+- **Documentação/versão:** README e versão exibida no site atualizados para v0.99.30.
+
+### v0.99.28 — Rádio distribuído, Focus/abilities in-world e expansão de 120 quotes
+
+- **Rádio lateral exclusivamente trivial:** o HUD deixa de usar os dois painéis seriais antigos. Abaixo da bandeja de cartas roguelike existem quatro slots independentes e permanentes (Falco/Peppy/Slippy/Miyu); falas triviais e respostas Call & Response entram no slot de quem falou, sem uma transmissão apagar as demais.
+- **Concorrência real:** cooldown de fala comum passa a ser por piloto, não global. Call & Response também aceita threads simultâneas de chamadores diferentes; entregar/cancelar uma conversa não apaga as outras.
+- **Focus in-world:** ao ativar Focus, Fox transmite acima da nave do jogador usando o novo retrato `assets/wingman-radio/fox.png`; todos os Wingmen que receberam a ordem respondem acima das próprias naves, em vez de entrar na fila lateral.
+- **Abilities in-world:** Ram, Intercept, Guard, Rescue, Aux Shield, Repair, Boost Dash, Assist e Boombuster anunciam a ativação acima da nave do respectivo piloto e nunca usam o rádio lateral.
+- **Feedback de habilidade:** toda ativação acima cria uma aura aditiva na cor do piloto por exatamente **1,5 s**, seguindo a nave durante o efeito.
+- **Conteúdo:** adicionados **120 quotes triviais novos**, exatamente 30 por piloto, preservando os pools anteriores e sem contar ability quotes.
+- **Validação de conteúdo/roteamento:** nova suíte `wingman-radio-overhaul.test.mjs` valida 30 novos por piloto, ausência de duplicatas entre os 30 novos, cooldown independente, abilities fora do cooldown trivial, threads paralelas e integração estrutural do rádio in-world/slots.
+
+**Validado:** sintaxe dos módulos alterados, suíte de rádio/Call & Response, suíte nova de overhaul, playtest-polish, selftest completo e `git diff --check`.
+
+### v0.99.27 — Tactical Freedom: formação sem coleira e recovery técnico
+
+- **Regroup por distância removido:** `regroup` deixa de existir como Behavior autoritativo. Distância euclidiana do jogador não muda estado, não cancela Action e não força retorno à formação.
+- **All-Range livre:** no modo arena não há qualquer catch-up ou recovery por distância. Wingmen podem operar longe do jogador enquanto seu Behavior/Action continuar válido.
+- **Rail por progresso:** o trilho usa somente atraso longitudinal no `frame.forward`; após 32u de atraso entra um boost suave de catch-up, saturando em +72u/s aos 120u. Distância lateral/vertical é ignorada e nenhuma transição de gameplay ocorre.
+- **Navigation Intent:** formação, attack-lane, support-player e recovery passam a descrever o destino de navegação sem disputar autoridade com Behavior/Action.
+- **Recovery raro e técnico:** somente posição/velocidade não finitas (NaN/Infinity) podem acionar reset para uma vaga válida. O failsafe é silencioso no rádio e mantém a política de cooldown caso precise interromper uma Action.
+- **Deconflição local preservada:** separação simétrica e correção física continuam como proteção contra contato ocasional, mas não precisam mais desfazer convergência criada por emergency regroup.
+- **Rádio:** removidas falas de “você está longe, volte”; a distância deixou de ser evento narrativo.
+
+**Validado:** suíte de navegação, state controller, Call & Response, separação, polimento, selftest completo, sintaxe e git diff --check.
+
+### v0.99.26 — Deconflição física e órbita cooperativa contextual
+
+- **Clump dos Wingmen:** o log real ainda mostrou pares em emergency regroup a 0.003–0.01u por mais de 0.5s. A deconflição mantém o steering simétrico da v0.99.24, mas agora também resolve penetração com correção posicional simétrica, limitada a 1.25u por par e 1.5u por nave/frame. Assim duas naves não conseguem continuar fisicamente fundidas enquanto a inércia de regroup vence o steering.
+- **Buraco negro contextual:** o estilo orbital deixa de orbitar todo impacto. Sem cooperação, o número dura só 0.5s e não cria arco. A órbita curta (0.85s) só arma quando dois autores diferentes atingem o mesmo alvo em até 1s e pelo menos um deles é Wingman.
+- **Elegibilidade:** a mecânica visual só existe no estilo Buraco negro, só para alvos vivos com HP máximo >= 12 e é encerrada imediatamente por um hit letal. Outros estilos de número não recebem qualquer lógica orbital.
+- **Configuração:** adicionada opção Visual para desligar a órbita cooperativa independentemente do estilo. É puramente cosmética e não altera dano, IA, combo ou pontuação.
+- **Testes:** novo damage-orbit-tracker.test.mjs cobre jogador sozinho, coop em ambas as ordens, mesma autoria, janela de 1s, limiar de 12 HP e limpeza na morte. A suíte de formação agora exige correção posicional simétrica que saia da zona de clump em um frame.
+
+**Validado:** sintaxe dos módulos alterados, damage-orbit-tracker.test.mjs, damage-feedback.test.mjs, suítes de Wingman/rádio/formação, playtest-polish.test.mjs, selftest.mjs e git diff --check.
+
+### v0.99.25 — Polimento pós-playtest: órbita, áudio, rádio e retorno de emergência
+
+- **Buraco negro / números de dano:** todos os números ficaram 20% menores. No modo orbital, os cinco autores (jogador + quatro Wingmen) recebem posições igualmente espaçadas e giram uma volta completa no sentido horário durante a vida do feedback. O arco deixa de viajar preso ao número e vira um segmento central fixo; os cinco segmentos juntos formam o círculo orbital ao redor do alvo, usando a mesma implementação na prévia das Configurações e no combate.
+- **Som de carga:** o cue de carregamento entra 180ms depois do limiar de carga, toca 15% mais baixo e, ao chegar ao fim do arquivo, repete somente os 360ms finais em vez de reiniciar toda a introdução.
+- **Rádio Call & Response:** respostas agora aparecem explicitamente com o marcador “↳ Nome do chamador: …”, e Intercept/Aux Shield também podem abrir microconversas. O log de playtest confirmou que a feature já entregava respostas; a mudança torna a relação chamada→resposta perceptível no HUD existente.
+- **Miyu:** Carga Compartilhada passa de 16s para 6s de cooldown base; o piso proporcional do Vínculo passa de 8s para 3s. Boombuster permanece em seu cooldown independente.
+- **Retorno de emergência:** o kick inicial de 140u/s agora é aplicado somente ao entrar em emergency regroup. Frames seguintes atualizam a vaga móvel normalmente, mas não sobrescrevem a velocidade/deconflição. O controller foi reconfirmado: escudo baixo nunca inicia retreat; HP zero é a única origem de retreat, e HP crítico apenas bloqueia ofensiva.
+- Novo playtest-polish.test.mjs cobre a volta orbital, segmentos por autor, volume/cauda do áudio, cooldown da Miyu, Call & Response do Intercept, contrato de escudo e guarda estrutural contra reintroduzir o kick de emergência a cada frame.
+
+**Validado:** sintaxe dos módulos alterados, suítes de Wingman/rádio/formação, node src/playtest-polish.test.mjs, node src/selftest.mjs e git diff --check.
+
+### v0.99.24 — Deconflição simétrica e detector de clump dos Wingmen
+
+- Playtest real revelou que os quatro Wingmen ainda podiam convergir para praticamente o mesmo ponto durante retorno de emergência. O log do `aiValidator` mostrou pares a 0.0002–2.4u e 200 eventos de separação em ~267ms, embora todas as expectativas anteriores passassem.
+- A separação deixou de ser resolvida sequencialmente dentro do loop de cada piloto. Agora cada par não ordenado é calculado uma única vez a partir do snapshot do começo do frame e recebe impulsos exatamente opostos, eliminando dependência da ordem de iteração.
+- Sobreposição exata usa a diferença entre as vagas de formação como direção determinística de escape, em vez de um vetor genérico por paridade. Assim cada piloto é empurrado para o lado coerente com sua própria vaga.
+- Emergency regroup não limpa mais memória de separação todo frame. O log passa a registrar apenas a entrada real de um par em conflito, impedindo que a timeline de 200 eventos seja apagada em frações de segundo.
+- Adicionado detector de clump persistente: se dois Wingmen permanecerem a menos de 1u por 0.5s, o `aiValidator` gera uma falha com estados, flags de emergência e distâncias ao jogador. Isso cobre justamente o falso verde observado no playtest.
+- Criado `wingman-formation-separation.js`, puro e testável, e a suíte `wingman-formation-separation.test.mjs` cobre simetria, sobreposição exata, retreat e proteção estrutural contra a regressão do loop antigo.
+
+**Validado:** sintaxe dos módulos alterados, suíte de separação, suíte da state machine, suíte de Call & Response, `src/selftest.mjs` e `git diff --check`.
+
+### v0.99.23 — Rádio Call & Response dos Wingmen
+
+- O rádio deixa de ser apenas uma coleção de falas isoladas: eventos selecionados agora podem abrir uma **thread Call & Response** com outro piloto ativo. A réplica é escolhida por personalidade, nunca pelo mesmo piloto que abriu a conversa, e só aparece depois que a transmissão inicial teve tempo visual para terminar.
+- Threads têm janela própria de 3,0–4,2s, expiração, cooldown narrativo de 10s e cancelamento determinístico. Respostas são descartadas se o piloto que responderia ficar indisponível; eventos urgentes ou a rajada do comando Focus cancelam conversas antigas para impedir diálogos fora de contexto.
+- A nova máquina de estados passa a alimentar semanticamente o rádio: entrada em `critical`, `emergency return`, recuperação de `critical` e interrupção real de Action recebem eventos próprios. `retreat` continua prioritário e agora também pode abrir uma resposta contextual.
+- Ram, Guard, Rescue, Repair, Assist e Boombuster podem iniciar microconversas curtas entre os pilotos sem transformar todo evento em diálogo. O cooldown global de falas avulsas continua valendo; a resposta é tratada como continuação da mesma transmissão.
+- `aiValidator` registra a classificação semântica e cada resposta efetivamente entregue, além de validar que Call & Response nunca usa o mesmo piloto como chamador e respondente. `clearSquadron()` também limpa threads para impedir resposta fantasma entre resets.
+- Adicionado `src/combat/wingman-radio-callresponse.js` como núcleo puro/testável e `src/wingman-radio-callresponse.test.mjs` cobrindo timing, cooldown narrativo, cancelamento, indisponibilidade do respondente e classificação das novas transições.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-radio-callresponse.test.mjs`, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
+### v0.99.22 — Autoridade única de estados dos Wingmen
+
+- Criado `src/combat/wingman-state-controller.js`, independente de Three.js/DOM, como rota única para Integridade, Behavior, Actions persistentes, cooldowns e rejeições atômicas. Campos legados do Wingman viraram seletores somente-leitura derivados do novo `control`; writers diretos são bloqueados por teste estrutural.
+- Integridade agora deriva `critical` diretamente do HP; Behavior separa `patrol/dogfight/regroup`; Actions persistentes separam Ram, Guard, Rescue, Assist e Aux Shield. Focus permanece intenção global e solicita transições em vez de forçar `dogfight/patrol`.
+- Interrupções têm política formal de cooldown. Integridade crítica/retirada e emergency return interrompem Actions comprometidas segundo tabela declarada; Ram/Guard/Rescue/Assist recebem cooldown completo e Aux Shield usa política NONE. Isso elimina a reativação no frame seguinte depois de emergency regroup.
+- Intercept, Repair e Boombuster continuam instantâneos/paralelos, mas passam pelo gate central de autorização. `engagementChance` passou a compor base → upgrades → override reativo explícito → clamp; vida baixa do Falco vence combo alto por prioridade declarada, não pela ordem de `if`.
+- Telemetria e `aiValidator` agora registram `from → event → decision → to`, origem, rejeição e política de cooldown das interrupções.
+- Adicionado `src/wingman-state-controller.test.mjs` com os cenários de retirada/focus/regroup, critical/reparo/emergency, Rescue/Ram, reativação pós-interrupção e Focus durante Action, além da proteção estrutural contra novos direct writers.
+
+**Validado:** `node --check` dos módulos alterados, `node src/wingman-state-controller.test.mjs`, `node src/selftest.mjs` e `git diff --check`. A migração é aplicada e validada em checkout limpo antes do commit final da refatoração.
+
+### v0.99.21 — Correções pendentes e melhorias funcionais menores
+
+- **Impulsão Conjunta** agora dá invencibilidade ao jogador e ao Slippy durante o propulsor; se
+  houver Impulso Aríete, soma corretamente `+4` de dano por stack antes da colisão ser resolvida.
+- **Boombuster** preserva a prioridade do alvo mais próximo dentro do raio, mas embaralha os
+  inimigos quando todos estão fora dele, corrigindo o fallback que era determinístico.
+- Ser atingido por inimigo quebra o combo; o evento registra expectativa e timeline no
+  `aiValidator`.
+- A dificuldade 1–9 passou a somar **25s por nível** ao ciclo regular e **+1 inimigo por nível**
+  às levas normais. Chefes continuam no timer próprio.
+- Abrir a explicação depois de uma resposta errada concede **25 pontos uma única vez por carta**.
+- Alternativas agora reconhecem tags opcionais `confunde:grupo` e priorizam respostas do mesmo
+  grupo; o guia de criação de decks documenta também perguntas de cenário curtas e verificáveis.
+
+**Fora do escopo desta entrega:** integração do texto digitado (aguarda opção visual), sons sem
+arquivo/mapeamento, e os dois itens que reconfiguram inimigos — redução de explosão da Horda em
+fog denso e orientação de spawn — pois o `TEMPLATE_INIMIGOS.md` exige confirmar o comportamento
+item a item antes de alterá-los.
+
+**Validado:** sintaxe dos módulos alterados, `node src/selftest.mjs` e `git diff --check`.
+
+### v0.99.20 — Controles de áudio, vozes de rádio e Doutrina de Caça
+
+- Configurações e pausa agora têm **Áudio**: volume mestre persistente, **Tudo ligado**,
+  **Somente rádio** (conexão, desconexão e vozes dos quatro aliados) e **Desligado**. Ao reduzir
+  para rádio/desligado, loops de efeito que já estavam ativos são interrompidos; nenhum loop de
+  carga fica vazando.
+- O novo `sons/disparo.wav` substitui o som normal da nave e toca uma única vez por aperto do
+  botão de tiro, não a cada projétil da rajada. `falco.mp3`, `peppy.mp3`, `slippy.mp3` e
+  `miyu.wav` entram pouco depois do `Radio connect`, um por piloto. `fox.mp3` foi mantido sem
+  mapeamento porque não corresponde a um dos quatro aliados atuais.
+- A associação confirmada pelo usuário para lasers normal e dourado foi invertida de volta:
+  `som mira disparo laser boss dourado.mp3` na carga/círculos de mira e `Laser boss.mp3` no
+  disparo liberado. O catálogo `SONS_TODO.md` acompanha esta convenção.
+- Criada a carta ofensiva **Doutrina de Caça**, até 3 stacks: cada stack adiciona chance e alcance
+  de engajamento à ala, com o dobro do bônus para Falco e Miyu. A aquisição registra a invariante
+  do teto no `aiValidator`; a carta deixa de aparecer se não houver aliado ativo ou ao chegar no
+  teto.
+- Criado `Docs/prototipo-radio-digitacao.html` com três alternativas isoladas para o texto que
+  aparece letra a letra. **Ainda não integrado**: a escolha do usuário é necessária antes de
+  alterar o HUD do jogo. Opção 1 é terminal limpo, 2 é varredura de rádio e 3 usa speedlines para
+  quotes de habilidade.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`.
+**Playtest pendente**: testar os três modos de áudio, uma transmissão de cada aliado e adquirir a
+carta para então enviar o log do `aiValidator`.
+
+### Overhaul dos números de dano — Mangá e Buraco Negro selecionáveis (22/09/2026)
+
+- `Configurações → Visual` e as opções da pausa ganharam o seletor **Clássico / Mangá de
+  colisão / Buraco negro**. A troca é persistida e vale já nos próximos impactos; Clássico
+  preserva a apresentação anterior.
+- O feedback agora nasce de um canal próprio de acertos confirmados. Ele cobre tiro normal,
+  carregado, Swirl, splash máximo, aríete do jogador, lasers dos quatro aliados, Investida do
+  Falco, Carga Compartilhada e Boombuster. Acertos bloqueados não mostram dano.
+- Cada aliado tem autoria visual própria (nome, cor e forma). Rajadas do mesmo piloto no mesmo
+  alvo em até 120ms são somadas sem misturar autores. O limite de 36 rótulos evita explosão de
+  DOM em cenas densas; animações são canceladas no teardown e respeitam movimento reduzido.
+- Golpes letais preservam o valor de dano e exibem pontos em popup separado. A projeção usa uma
+  cópia da posição do mundo, evitando corromper a posição compartilhada do impacto.
+- Entregue também `output/html/configuracoes-overhaul.html`: proposta interativa de “console de
+  bordo”, com categorias laterais, controles agrupados e prévia animada dos estilos de dano.
+- **Validado**: sintaxe, selftest, teste unitário do contrato de dano, persistência do seletor,
+  módulos reais de projétil/esquadrão com os quatro autores, bloqueios, bônus de Morale,
+  agregação/limite/cleanup do HUD, layout desktop/360px e playtest automatizado dentro do jogo
+  com tanque real, abate e pontos separados nos dois estilos. Nenhum erro JavaScript.
+
+### v0.99.18 — Ordem definitiva das cues de rádio e telegraph
+
+- Garantida a ordem temporal: o painel de rádio torna-se visível antes do `Radio connect`, e o
+  `Radio disconnect` começa somente após a classe visual de saída.
+- No dourado, a posição atual do jogador é copiada antes de emitir `golden_laser_charge`; assim o
+  efeito espacial de carga e os círculos usam o mesmo alvo, nunca uma posição anterior ou nula.
+
+### v0.99.19 — Aplicação efetiva da ordem das cues
+
+- Consolidada no código a ordem descrita na v0.99.18: o rádio ativa visualmente antes do connect,
+  fecha visualmente antes do disconnect, e o dourado define a posição-alvo antes da cue de carga.
+
+### v0.99.17 — Sincronia dos sons de rádio e telegraph dos lasers de chefe
+
+- Corrigida a associação dos sons `Radio connect`/`Radio disconnect`: antes eles só eram
+  disparados ao alternar o comando [D], em vez de na transmissão mostrada na tela. Agora o som de
+  conexão toca junto do primeiro frame de estática de qualquer quote (trivial ou habilidade) e o
+  de desconexão começa junto da animação de saída; filas mantêm o ciclo completo por mensagem.
+- `Laser boss.mp3` foi movido do tiro para o **telegraph** do chefe normal. O mesmo som agora é
+  disparado no início dos círculos de mira do dourado, que antes não tinham cue de carga. O som de
+  tiro (`som mira disparo laser boss dourado.mp3`) toca somente quando o laser normal ou dourado
+  é realmente criado, depois de os círculos terminarem.
+
+**Validar em playtest**: cada quote deve ter um connect/um disconnect, e ambos os tipos de chefe
+devem tocar a carga ANTES do laser, nunca no instante posterior de disparo.
+
+### v0.99.16 — Reprodução real de efeitos sonoros e catálogo operacional
+
+- Implementado `src/audio.js`, conectado no ciclo de vida da partida: o primeiro gesto que inicia
+  a missão desbloqueia o áudio do navegador, os arquivos são pré-carregados, cada cue respeita
+  volume/atraso/cooldown e tudo é interrompido no teardown. O loop de carregamento do tiro agora
+  recebe encerramento explícito quando o botão é solto, sem vazar para o resto da missão.
+- Ligados 14 cues inequívocos da pasta `sons/`: tiro normal/carregado, carga, explosão máxima,
+  Ricochete, Swirl, tiro inimigo, lasers dos chefes, teleporte dourado e conexão/desconexão do
+  comando de ala. Aliados reutilizam o tiro genérico de propósito; o cooldown independente de
+  cada origem evita uma rajada excessiva.
+- Para os demais 65 cues já catalogados, há fallback sintético curto e discreto por enquanto;
+  assim não ficam mudos, sem fingir que há uma voz ou efeito final gravado. `SONS_TODO.md` ganhou
+  a tabela de mapeamentos e a lista explícita dos seis arquivos ainda ambíguos.
+
+**Validado**: sintaxe de `audio.js`, `audio-cues.js`, `mount-game.js` e `game-loop.js`; `node
+src/selftest.mjs` e `git diff --check` passaram.
+
+### v0.99.15 — Knockback com janela de controle e recuperação de esquadra perdida
+
+Correção do feedback da v0.99.13/v0.99.14:
+
+- As durações do knockback voltaram aos valores originais por tier: **1,2 / 1,8 / 2,6 / 3,6s**.
+  A animação de cambalhota continua até o fim de cada uma delas, mas a perda total de controles
+  agora dura apenas os primeiros **35%**. Tiro, giro, propulsão e repulsão seguem disponíveis
+  durante essa janela; passado o marco de 35%, direção e comando de esquadrão voltam mesmo com a
+  nave ainda girando. O Rescue de Peppy também só considera essa janela de perda real de controle,
+  para não gastar a habilidade no trecho apenas visual.
+- A causa que a separação local da v0.99.14 não cobria era um aliado em `ram`, `rescue` ou
+  `escort` com `abilityActive`: esse estado podia ignorar indefinidamente o limite normal de
+  distância e manter pilotos convergindo para fora da área. Foi acrescentado um **regroup de
+  emergência** a 1,5× do limite de alcance (72u no trilho; 108u na arena). Ele interrompe o
+  estado preso, limpa alvo/desvio antigo e conduz cada piloto em voo para sua vaga individual de
+  formação a 140u/s — sem teleporte. A bandeira evita registrar o mesmo resgate a cada frame.
+- `aiValidator` agora registra `wingman-emergency-regroup` e confere vaga/velocidade finitas no
+  instante da recuperação; a validação de knockback também confere a janela de 35%.
+
+**Validado**: `node --check` nos quatro módulos alterados, `node src/selftest.mjs` e
+`git diff --check` passaram. O jogo abriu localmente com Esquadrão completo, sem erro de
+carregamento. **Pendente de playtest direcionado**: deixe uma Investida/Rescue passar longe ou
+force um aliado fora da área; o log precisa trazer `wingman-emergency-regroup` e cada membro deve
+retornar à própria vaga, sem ficar fundido aos outros.
+
+### Protótipos HTML animados — números de dano (21/09/2026)
+
+- Correção de formato solicitada pelo usuário: precisa decidir vendo animações HTML, não
+  slides/PDF. Entregue `output/html/dano-animado.html`, autônomo e sem dependências de rede,
+  além da visualização interativa na conversa.
+- Três alternativas na mesma cena: Mangá de colisão, Buraco negro e Coral de guerra.
+  Incluem jogador e quatro aliados com autoria, tiro normal, carregado, ataque conjunto e
+  golpe letal com pontuação separada. Valores são ilustrativos; combate real não foi alterado.
+- Controles de repetição, pausa, seleção de cenário, velocidade 1×/0,5×/0,25× e busca temporal.
+  Sequência finita, modo de movimento reduzido e controles responsivos para telas estreitas.
+- **Validado**: execução em navegador, três estilos, quatro cenários individuais, reprodução,
+  pausa, busca temporal, velocidade, layout a 360px e HTML autônomo com movimento reduzido;
+  nenhum erro JavaScript. Capturas revisadas; status reposicionado para não cruzar as notas.
+
+### v0.99.14 — Separação determinística da ala e retorno de formação mais preciso
+
+Correção específica para o relato de aliados fundidos entre si e longe do jogador:
+
+- O repulsor entre aliados não fazia nada quando a distância era praticamente zero, porque o
+  vetor de direção não existia. Cada par nessa condição agora recebe vetores opostos, estáveis e
+  determinísticos a partir da ordem dos pilotos, com uma pequena componente vertical; não há
+  teleporte nem sorteio que possa fazê-los escolher a mesma saída.
+- A distância mínima de separação subiu de 4,5u para 7u, e a força de recuperação acompanha a
+  profundidade da sobreposição. Um evento só é registrado quando o par entra na zona, sem poluir
+  o log a cada frame.
+- As linhas de aproximação de dogfight ficaram mais espaçadas (9u lateral/3,5u vertical) e o
+  `regroup` só termina a 4u no trilho ou 5u na arena da vaga própria (antes 8u/12u). Assim, o
+  retorno não solta dois pilotos longe demais de posições visualmente muito próximas.
+- `aiValidator` cobre a invariante nova: todo par sobreposto precisa receber um vetor de separação
+  finito e diferente de zero, registrado como `wingman-formation-separation`.
+
+**Validado**: sintaxe, selftest e `git diff --check`. **Pendente de playtest**: formar ala cheia,
+forçar Foco contra o mesmo alvo e passar por detritos; o Log de Validação IA deve mostrar início
+de separação sem expectativas falhas.
+
+### Estudo visual — overhaul dos números de dano (21/09/2026)
+
+- Documento de seis páginas em `output/pdf/overhaul-numeros-de-dano.pdf`: três direções
+  ilustradas — Mangá de colisão, Buraco negro contábil e Coral de guerra — com tempos de
+  animação propostos, identificação dos aliados, limites de poluição e comparação de custos.
+- Todas incluem dano confirmado do jogador e dos aliados (laser, aríete, Carga Compartilhada
+  e Boombuster), sem mudar balanceamento. São propostas; nenhuma foi implementada ou escolhida.
+- Inspeção do código: `game-loop.js` escolhe pontos em vez de dano quando `h.points` existe;
+  o retorno de `wingmen.update()` não inclui hits individuais para o HUD. A futura integração
+  precisa preservar autoria, dano efetivamente aplicado e golpe letal, sem duplicar pontos.
+- **Validado**: PDF renderizado em PNG e seis páginas revisadas visualmente; ajustados etiqueta
+  do jogador e arco do Coral. Sem alteração em módulos do jogo nem incremento de versão.
+
+### v0.99.13 — Knockback mais pesado, alerta ancorado e desvio dos aliados corrigido
+
+- Todas as quatro intensidades de knockback passaram a durar o dobro: 2,4/3,6/5,2/7,2s. Durante
+  a cambalhota, a direção de voo e o comando de esquadrão ficam bloqueados; tiro, giro completo,
+  propulsão e repulsão continuam disponíveis como as únicas respostas ativas. A expectativa do
+  `aiValidator` agora confere que a duração iniciada é exatamente a configurada para o tier.
+- O alerta de perigo foi ampliado em 100% (ícone de 34px para 68px) e recebe a projeção da nave
+  em tela, aparecendo logo acima dela em vez de ficar preso ao rodapé/centro do HUD.
+- Rádio trivial e quote de habilidade cresceram 25% (retrato, tipografia, espaçamento e caixa).
+  A âncora entre os dois canais também cresceu para que continuem sem sobreposição abaixo das
+  cartas.
+- **Correção de causa raiz dos aliados/detritos**: a velocidade relativa do preditor estava com
+  sinal invertido. Ao avançar para um detrito, ele calculava o instante de maior aproximação como
+  zero e só reagia tarde demais. Agora usa obstáculo−aliado, olha 2s adiante, com margem maior e
+  força lateral proporcional à velocidade. O desvio é aplicado em patrulha, escolta, dogfight,
+  Investida e Rescue, sem trocar o estado atual do aliado.
+
+**Validado**: sintaxe dos cinco módulos, `node src/selftest.mjs` e `git diff --check` passaram.
+**Pendente de playtest**: exercitar detritos grandes/em deriva com 2–4 aliados e enviar o Log de
+Validação IA; os eventos `wingman-obstacle-avoidance` devem iniciar antes do contato.
+
+### v0.99.12 — Locks projetados e disparos carregados roxos da Miyu
+
+Escolha do usuário: **Opção 1** do protótipo de lock-on — composição limpa, três frames de
+convergência e triângulo ciano para os locks extras da Miyu.
+
+- O tamanho-base do marcador agora é calculado com o `hit radius`, distância e FOV reais da
+  câmera. Assim, o terceiro frame coincide com o tamanho projetado do inimigo em tela, em vez de
+  depender de uma faixa estática em pixels; os dois primeiros ficam em 1,9× e 1,4× para manter a
+  leitura da convergência.
+- O lock adicional da Miyu deixou de ser um quadrado cortado por `clip-path`: agora é um contorno
+  triangular de três arestas, cujo retângulo envolvente tem exatamente o tamanho do inimigo.
+- Carga Compartilhada e Boombuster passaram a usar o mesmo roxo (`#9b5de5`) no projétil, nas duas
+  argolas de saída, no rastro ao longo do voo e nas argolas do impacto. O laser normal da Miyu
+  permanece rosa. Esta aplicação também cobre o Boombuster por ele ser seu disparo carregado
+  teleguiado.
+
+**Validado**: sintaxe de todos os módulos alterados e `node src/selftest.mjs` passaram. **Pendente
+de playtest visual**: confirmar a leitura em alvos muito próximos/grandes e observar a densidade
+dos rastros roxos numa salva com 3 stacks.
+
+### v0.99.11 — Intercept do Falco com confirmação visual forte
+
+Por autorização explícita do usuário, este visual foi integrado sem uma rodada de protótipos:
+
+- O feixe do Intercept ficou mais espesso e permanece por 0,58s, deixando clara a linha entre
+  Falco e o projétil bloqueado.
+- O ponto do bloqueio recebe clarão azul, explosão maior com anéis, shockwave ampla e faíscas de
+  ricochete azuis. O disparo hostil continua removido atomicamente antes do efeito; nada novo
+  causa dano em inimigos próximos.
+
+**Validado**: sintaxe, selftest e inspeção de whitespace. **Pendente de playtest**: conferir se
+o efeito continua legível contra chefe, fog e múltiplos projéteis, sem dominar a tela.
+
+### v0.99.10 — Curva preditiva dos aliados contra detritos
+
+Implementada a **Opção 1** escolhida pelo usuário para navegação de obstáculos:
+
+- Detritos agora expõem um contrato de rota exclusivo (`id`, posição, raio e deriva), separado de
+  alvo de combate e de colisão/dano. Um obstáculo futuro só entra nesse contrato se for declarado
+  explicitamente, evitando que inimigos móveis passem a repelir aliados acidentalmente.
+- Cada aliado antecipa o ponto de maior aproximação por até 1,1s e acrescenta uma curva lateral
+  suave à rota que já tinha. O lado da curva é estável enquanto aquele detrito for a ameaça, então
+  não há ping-pong visual entre esquerda e direita; ao sair da zona de risco, a formação retoma a
+  vaga normal sozinha.
+- Dogfight, escolta e retorno à formação continuam ativos durante o contorno. Investida de Falco e
+  Rescue de Peppy preservam sua trajetória comprometida, para a evasão não fazer uma habilidade
+  perder o alvo. Detritos continuam sem causar dano aos aliados, conforme a decisão de balanceamento.
+- `aiValidator` registra o começo de cada curva e valida que a lateral escolhida é sempre `-1` ou
+  `+1`, permitindo conferir o comportamento emergente no log real de playtest.
+
+**Corrigido na v0.99.13**: o sinal da velocidade relativa estava invertido; a versão original
+reagia tarde em vários vetores de aproximação. A janela e a margem também foram ampliadas.
+
+**Validado**: sintaxe dos dois módulos, `node src/selftest.mjs` e `git diff --check` passaram.
+**Pendente de playtest**: spawnar 2–3 aliados e detritos comuns/em deriva; depois copiar o log de
+Validação IA para confirmar ausência de falhas e calibrar a distância da curva.
+
+### v0.99.9 — Rádio separado abaixo das cartas + speedlines de habilidade
+
+Escolhas visuais do usuário integradas: composição de canais da **Opção 3**, com separação maior,
+e animação de habilidade da **Opção 2** (derrapagem com speedlines).
+
+- O rádio trivial e o painel de habilidade agora ficam abaixo da bandeja de cartas, em duas faixas
+  distintas. A posição é calculada a partir da altura real da bandeja e atualiza quando as cartas
+  quebram linha por quantidade ou redimensionamento da tela.
+- Ability quotes entram em 1,2s: chegam com speedlines longas, freiam comprimindo as linhas e
+  estabilizam; na saída, painel e linhas aceleram para a direita. Quotes triviais preservam a
+  animação de rádio anterior.
+- A fila do Foco é dividida por `isAbility`: cada canal mantém sua própria sequência e um quote
+  de habilidade não pode mais ser renderizado na faixa trivial. Canais coexistem para pilotos
+  diferentes; a exclusão mútua continua valendo para o mesmo piloto.
+- A regra de Focus foi completada: Slippy com Morale e Peppy com Auxílio disponível usam
+  `ability_focus_upgrade`; os demais continuam com `focus_ready`.
+
+**Validado**: sintaxe, selftest e inspeção de whitespace. Próximo playtest: acionar Foco com
+Slippy Morale e Peppy Auxílio, além de acumular várias linhas de cartas para conferir as âncoras.
+
+---
+
+### v0.99.8 — Formação dos aliados: retorno real e ataques separados
+
+Correção dos sintomas reportados em playtest (aliados muito longe e vários ocupando o mesmo ponto):
+
+- `regroup` deixou de encerrar por timeout de três segundos. Agora só retorna a `patrol` ao chegar
+  à vaga individual de formação, com limites de distância menores (48u no trilho, 72u na arena)
+  e velocidade adicional proporcional à distância para não permanecer perdido fora da tela.
+- Ataques ao mesmo inimigo agora usam linhas de aproximação próprias por piloto, com separação
+  lateral e vertical estável no frame do jogador. O comando de Foco continua permitindo atacar o
+  mesmo alvo, mas sem fundir as naves visualmente no ponto de ataque.
+- Nova expectativa do `aiValidator` registra se algum aliado sair de `regroup` sem ter alcançado
+  a própria vaga.
+
+**Resolvido na v0.99.9**: a Opção 3 de posicionamento foi escolhida e integrada; esta anotação
+fica preservada apenas como contexto histórico da escolha.
+
+---
+
+### v0.99.7 — Faíscas de impacto concluídas
+
+Etapa final independente do documento `Docs/# Documento de Implementação — Nova.md`:
+
+- As faíscas de ricochete de tiros normais não-letais agora geram **20–26** traços, em vez de
+  10–14, e o leque abriu de ±35° para **±55°**.
+- A cor normal agora é branca pura (`#ffffff`). O caminho já existente de Morale continua
+  sobrescrevendo explicitamente a cor para verde (`#39ff6a`) enquanto o buff estiver ativo.
+- Não foram alterados velocidade, duração, física de desaceleração nem os demais efeitos de hit.
+
+**Validado**: sintaxe dos módulos alterados, selftest e inspeção de whitespace passaram. Falta
+apenas o playtest visual para calibrar a leitura em tela cheia.
+
+---
+
+### v0.99.6 — Correção de texto do Boombuster
+
+Tooltip do Boombuster corrigido para dizer explicitamente `1 + stacks` alvos, igual ao efeito real.
+
+### v0.99.5 — Etapa 5: Miyu (Assist, Boombuster e Status)
+
+- Auditoria confirmou que a camada externa do glow cresce 25% durante Assist. Os locks e tiros
+  carregados foram corrigidos depois na v0.99.12 (triângulo real ciano e efeitos roxos).
+- **Assist +1 Alvo (0/3)**: acrescenta um lock extra por stack enquanto Carga Compartilhada está
+  ativa, sempre respeitando o teto global de oito.
+- **Boombuster (0/3)**: após a escolha do usuário pela **Opção 2 — Orbes de rastreio**, Miyu
+  dispara simultaneamente orbes homing roxos. Cada um causa 3 de dano; seleciona até
+  `1 + stacks` alvos, priorizando os mais próximos do jogador dentro de 90u e recorrendo a alvos
+  vivos fora do raio quando necessário. Cooldown configurável: 10/8/6/4s. O sub-ícone 🟣 tem
+  cooldown próprio no HUD.
+- **Status (0/3)**: soma +2s de dogfight por stack para Miyu.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passaram. Próximo playtest: Assist com 1–3 stacks, salva do Boombuster contra múltiplos inimigos
+e tempo de dogfight da Miyu.
+
+### v0.99.4 — Cobertura de molduras da Sentinela para aliados
+
+Correção complementar da Etapa 4: as molduras da Sentinela também verificam a posição de cada
+aliado ativo no instante de cruzamento do plano, usando a mesma abertura segura do jogador. Assim,
+projéteis, lasers e molduras podem afetar aliados; colisões físicas continuam só com tranco visual.
+
+### v0.99.3 — Etapa 4: Slippy e integridade da ala
+
+- **Integridade dos aliados**: cada piloto começa com 4 HP e 3 de escudo; Peppy e Slippy têm 5
+  de escudo. O escudo absorve hits antes do casco e recarrega pela mesma regra do jogador (1,5s
+  de espera, 0,4 por segundo). Barras de escudo azul e casco na cor do piloto só aparecem quando
+  desgastadas; a 1 HP, barra e nave piscam em vermelho.
+- **Retirada**: a 0 HP, o piloto entra em `retreating`, fica invulnerável/não-alvejável, não usa
+  ataques ou habilidades, fala uma nova linha de rádio e sai em cinco segundos com fumaça e fogo.
+  O HUD mostra `FORA`. A próxima carta de Companhia o recupera com vida/escudo completos; cartas
+  pessoais são removidas, enquanto **Casco da Ala** permanece.
+- **Slippy**: Repair Aliados (0/2) cura +1 HP dos aliados ativos próximos ao orbe; Morale Boost
+  (0/3) liga no Foco [D], dá +1 dano por stack a tiros/ram/aliados e torna as faíscas verdes;
+  Impulsão Conjunta (0/2) deixa Slippy invulnerável durante os 950ms do propulsor e soma +4 dano
+  por stack ao aríete. O foco de Slippy com Morale usa quote de ability no painel superior.
+- **Suporte — Casco da Ala (0/3)**: cada stack adiciona +1 HP máximo a todos e persiste após a
+  retirada de um piloto. Colisões físicas não removem HP, conforme decisão do usuário.
+
+**Validado**: verificações sintáticas dos módulos alterados, `node src/selftest.mjs` e
+`git diff --check` passaram. Próximo playtest: absorver hits no escudo de Slippy, deixá-lo a 1 HP,
+confirmar retirada/retorno por carta e testar Morale + Impulsão.
+
+### v0.99.2 — Etapa 3: Peppy (Guarda Extra, Rescue e Auxílio)
+
+Implementação da etapa Peppy após a escolha do usuário pela **Opção 1 — Órbita protetora** para
+a direção visual. A Guarda preserva seu gatilho atual (só parte quando o escudo normal não está
+cheio), para não alterar silenciosamente o comportamento base.
+
+- **Guarda Extra (0/3)**: a Guarda normal ainda repõe uma carga azul; cada stack concede mais uma
+  carga temporária verde acima de `shieldMax`, por 10s. Ela não regenera, é removida ao expirar ou
+  perder vida e absorve dano antes do escudo normal. HUD clássico mostra pips verdes extras;
+  HUD orbital muda o arco para verde durante a proteção.
+- **Rescue (0/3)**: ao detectar tumble, Peppy voa até o jogador; ao alcançar 5u, cancela a
+  cambalhota pela rampa existente, concede +1 escudo e entra em cooldown próprio de 20/16/12s.
+  O sub-ícone 🛟 aparece abaixo do hexágono principal, independente da Guarda.
+- **Auxílio (0/1)**: durante a repulsão, Peppy assume a frente e a barreira ampla bloqueia
+  projéteis que chegam à sua zona, antes da resolução de dano do jogador. O único dreno continua
+  sendo o da própria repulsão; bloquear não adiciona custo.
+- **Validação IA**: invariantes para cargas temporárias (0–3) e cooldown do Rescue (12–20s).
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passam. Próximo playtest: usar Guarda Extra com 3 stacks, disparar Rescue durante tier 3/4 e
+segurar repulsão diante de projéteis.
+
+### v0.99.1 — Etapa 2 revisada: Falco Intercept sem remoção em área
+
+Continuação após a Etapa 1 do rádio. Convenção de versão alterada por pedido explícito do usuário:
+**não avançar para v1.0.0 sem autorização**; entregas posteriores usam mais casas decimais.
+
+Auditoria confirmou que Investida em Cadeia (0/3, alvo vivo mais próximo dentro de 80u), cooldown
+próprio do Intercept (6→3s) e Fôlego de Combate (+2s/stack, até 11.5s) já obedeciam ao documento.
+Foi encontrado e corrigido um desvio no Intercept:
+
+- Antes, ele escolhia um projétil pesado, mas chamava `removeProjectilesNear()` com raio de 2.5u,
+  removendo também qualquer outro projétil que estivesse próximo. Isso transformava uma defesa
+  unitária em limpeza em área, fora do comportamento definido.
+- `enemies/index.js` agora encapsula a busca e a remoção atômica de **um** projétil perigoso;
+  `wingmen.js` usa essa operação para Falco e registra `aiValidator.expect()` exigindo
+  `removedCount === 1` em toda ativação. O visual azul já aprovado não foi alterado.
+
+**Validado**: `node --check src/enemies/index.js`, `node --check src/combat/wingmen.js`,
+`node src/selftest.mjs` e `git diff --check` passam. Próximo playtest: colocar dois projéteis
+pesados próximos um do outro e confirmar que o Intercept elimina somente um.
+
+### v0.99.0 — Etapa 1 revisada: Rádio dos Aliados completo e exclusão de painéis
+
+Auditoria e conclusão da Etapa 1 solicitada no documento de implementação, sem iniciar as etapas
+de Falco, Peppy, Slippy, Miyu ou faíscas.
+
+- **Cobertura de falas**: cada piloto agora tem ao menos 30 falas (Falco 31, Peppy 39, Slippy 37,
+  Miyu 30). A exigência de “30 exatas” entrava em conflito com a regra explícita de nunca remover
+  falas já existentes; foi priorizada a preservação, e o teste protege o mínimo de 30.
+- **Pools de ability prontos**: todos os eventIds de ability do documento já têm cinco falas
+  próprias no piloto aplicável, inclusive Rescue, Auxílio, Morale, Impulsão, Boombuster e Focus
+  Upgrade, apesar de suas cartas ainda não existirem. Quando as próximas etapas ativarem esses
+  eventos, eles já vão obrigatoriamente para o painel superior com conteúdo próprio.
+- **Exclusão mútua corrigida**: ao trocar o mesmo piloto entre rádio trivial e ability, o HUD
+  aguarda os 190ms da saída do painel anterior antes de abrir o outro. Antes havia sobreposição
+  visual curta, contrariando a regra do documento. A posição superior de 18px foi preservada: é a
+  correção posterior que impede os quotes de cobrir a bandeja de buffs.
+- **Prevenção**: `getWingmanRadioLineCount()` e novos casos em `selftest.mjs` asseguram o mínimo
+  por piloto e verificam que cada ability catalogada tem uma fala retornável.
+
+**Validado**: `node --check src/combat/wingman-radio.js`, `node --check src/hud-game.js`,
+`node src/selftest.mjs` e `git diff --check` passam. A revisão visual deve ser confirmada no
+próximo playtest com uma fala trivial e uma ability do mesmo piloto em sequência.
+
+### v0.98.0 — Correções visuais, cutscene Arcade e Carga Compartilhada
+
+Correção dos seis pontos reportados após a v0.97.0, sem alterar comportamento de IA, spawn ou
+movimento dos inimigos.
+
+- **Knockback**: as durações dos quatro tiers foram dobradas para **1.2s, 1.8s, 2.6s e 3.6s**;
+  força, giro, regras de tier e o cancelamento suavizado de 0.2s permanecem iguais.
+- **Indicador central**: `PERIGO` agora é uma peça fixa da HUD, acima das demais camadas, que é
+  reiniciada em cada impacto de tier 2–4. Antes era criado e removido no fim da animação, uma
+  janela curta demais que podia fazê-lo não ser visto.
+- **Habilidades e cooldowns**: a habilidade principal mantém seu ícone e contador na posição
+  superior original. Cada habilidade adicional fica abaixo, com ícone próprio e contador visível
+  próprio; o Intercept do Falco continua usando `interceptCooldown`, separado de `abilityCooldown`.
+- **Arcade sem baralho**: depois da apresentação `boss`, o fluxo entra direto na luta; não agenda
+  mais a apresentação `bossSummon`, que era a segunda cutscene.
+- **Miyu — Item 0 fechado**: locks acima do teto base recebem triângulo ciano, a camada externa da
+  mira carregada cresce 1.25× durante Carga Compartilhada e, ao soltar o tiro, cada lock extra
+  recebe um laser magenta independente da Miyu. A validação IA registra que esses disparos só
+  existem para locks além do teto base.
+- **Falco Intercept**: o raio azul ficou mais espesso, brilhante e duradouro; ao destruir o
+  projétil, agora deixa explosão e onda de choque azuis visíveis.
+- **Quotes dos aliados**: o painel foi movido para o topo esquerdo, acima da bandeja de buffs de
+  cartas, removendo a sobreposição.
+
+**Validado**: `node --check` nos módulos alterados, `node src/selftest.mjs` e `git diff --check`
+passam. Próximo playtest: disparar um Intercept do Falco, usar Carga Compartilhada com pelo menos
+um lock além do limite normal e confirmar os dois indicadores visuais.
+
+### v0.97.0 — Knockback por tier de ameaça (pré-requisito do Peppy Rescue)
+
+Primeira parte da fase do Peppy, conforme a ordem do `Docs/# Documento de Implementação — Nova.md`:
+o pré-requisito QoL #6/#7 agora está fechado antes de criar a carta Rescue.
+
+- **Quatro tiers reais de impacto**: inimigos pequenos (Blaster, Mini-Swarm, Sussurro, Réplica,
+  Ímã) causam tier 1; médios (Tank, Time, Sentinela, Verme, Horda), tier 2; Fragata e Detrito,
+  tier 3; Chefe/Dourado, tier 4. Projéteis, lasers e molduras usam tier 2–4 pelo `powerLevel`.
+  A classificação só controla a reação da nave do jogador; não muda IA, movimento, HP, tiro ou
+  spawn de inimigos.
+- **Perda de controle calibrada e cancelável**: originalmente, duração/força subiam de 0.6s/leve
+  até 1.8s/máxima; as durações foram dobradas na v0.98.0.
+  Um giro completo ou a repulsão encerram o tumble por uma rampa de 0.2s, em vez de cortar a
+  rotação/empurrão de um frame para o outro.
+- **Último escudo pesa mais**: se um impacto físico quebra a última carga, o tier é elevado no
+  mínimo para 3; o mesmo já vale para projéteis.
+- **Feedback de leitura imediata**: vignette vermelha proporcional ao tier em todos os impactos;
+  triângulo `PERIGO` nos tiers 2–4. Shake também escala com colisões físicas.
+- **Validação em playtest**: `aiValidator.expect()` registra que todo tumble nasce com tier e
+  duração válidos e que encerra sem timer pendente; a timeline registra início/cancelamento.
+
+**Validado**: `node --check` nos módulos alterados e `node src/selftest.mjs` passam.
+No próximo playtest real, testar uma colisão leve, uma com Fragata/Detrito, um projétil nível 4
+e o cancelamento por giro/repulsão; então colar o **Log de Validação IA** para confirmar que não
+houve expectativa falha.
+
+---
+
+### v0.90.0 — Dash lateral: afterimage + speedlines; contador de cooldown do Swirl Blast na HUD
+
+Dois pedidos do usuário na mesma mensagem.
+
+**1) Afterimage + speedlines no dash lateral** (propulsão segurada + bank/dodge em arena,
+`rail.triggerArenaLateralDash`, `ARENA_DASH_DURATION = 0.22s`). Achado no caminho: o dash tem
+DUAS formas de disparo — segurar `propulsion` + eixo de bank (já chamava o burst pontual
+`effects.lateralDashVFX`) E tocar `dodgeLeft`/`dodgeRight` com `propulsionHeld` (NÃO chamava
+nada, gap pré-existente). Corrigido as duas:
+- `rail.js`: novo getter `isLateralDashActive()` (`lateralDashT < 1`), mesmo padrão de
+  `isFullSpinActive()`.
+- `effects.js`: novo `dashAfterimage()` (cone genérico, igual em espírito a `rollAfterimage`/
+  `ramAfterimage`, cor `0x4db8ff` — a mesma do burst de `lateralDashVFX`) tocando a cada
+  `DASH_AFTERIMAGE_INTERVAL = 0.025s` enquanto `dashActive` (intervalo mais curto que o do roll,
+  0.04s, porque a janela do dash é bem menor — senão a trilha fica esparsa). Registrado no mesmo
+  `update()`/dispose()/reset que os outros afterimages do jogador.
+- `game-loop.js`: `dashActive = rail.isLateralDashActive()` computado uma vez, usado em três
+  lugares — `effects.update()` (afterimage), `hud.setMotionLines()` (speedlines, mesma
+  intensidade máxima 1.0 que o Swirl Blast usa), e passado como estava faltando o burst
+  `lateralDashVFX` no branch de `dodgeLeft`/`dodgeRight` + propulsão.
+
+**2) Contador de cooldown do Swirl Blast na HUD.** O jogo já tinha o cooldown funcionando
+(`player.getSwirlCooldownMs`/`getSwirlCooldownTotalMs`, ver etapas anteriores do Swirl Blast) mas
+NENHUM indicador visual — pedido explícito pra colocar "embaixo do mesmo local de onde fica o
+foco de aliados" (o widget `[D] FOCO` do comando de esquadrão, `hud-squad-command-widget`).
+- `hud-game.js`: `squadCommandWidget` (antes filho direto de `topbarRow`) agora mora dentro de um
+  novo wrapper `.hud-squad-column` (flex column) que ocupa o mesmo slot horizontal no topbar —
+  não muda a posição de nada que já existia. Novo `swirlCooldownWidget` empilhado por baixo,
+  MESMA estrutura/classes do widget de FOCO (badge + meter + timer), só com ícone 🌀/label
+  "SWIRL" e sem o estado "active" (Swirl não tem janela de duração, só dispara e entra em
+  cooldown — só `ready`/`cooling`). Novo `hud.setSwirlCooldown(cooldownMs, totalMs)` segue
+  exatamente o padrão de `setSquadronCommandState` (fill cresce conforme o cooldown esvazia,
+  texto em segundos, "PRONTO" quando liberado).
+- `hud-styles.js`: `.hud-squad-column` (a coluna) + `.hud-swirl-widget.ready` (variante de cor —
+  azul do Swirl, `0x2b8fff`, em vez do ciano `#38bdf8` do FOCO, pra não ler como o mesmo botão;
+  estado `cooling` reaproveita o cinza neutro já existente sem modificação).
+- `game-loop.js`: `hud.setSwirlCooldown(player.getSwirlCooldownMs(), player.getSwirlCooldownTotalMs())`
+  chamado todo frame, ao lado do `setSquadronCommandState` existente.
+
+Verificação: `node --check` em todos os arquivos alterados, `node src/selftest.mjs` passando. Não
+consegui verificar visualmente no browser desta vez — o servidor de preview carregou mas a página
+ficou em branco (o import map do jogo carrega `three` de `cdn.jsdelivr.net`; a rede da sessão não
+completou esse fetch a tempo, mesmo problema já visto no timeout de 300s de uma tentativa de
+`navigate`). Não é causado por este código (nenhum arquivo dependente do import de `three` sequer
+chegou a ser requisitado no log do servidor — o import map trava antes disso). Ambas as mudanças
+seguem 1:1 padrões já existentes e testados (`rollAfterimage`/`isFullSpinActive` e
+`setSquadronCommandState`), mas ainda vale o usuário confirmar visualmente no próximo playtest.
+
+### v0.91.0 — Overhaul visual v2 do Swirl Blast — forma triangular de 9 camadas + homing contra chefe/dourado
+
+Pedido do usuário via documento de proposta pronto (`Docs/# Swirl Blast — Design & Plano de I.md`
+tem a amenda no topo). Duas clarificações resolvidas ANTES de codar (ver histórico da conversa):
+
+1. **Base de cálculo desatualizada** — o documento assumia como "hoje" os números PRÉ-v0.88.0 (ver
+   entrada "Swirl Blast: escala visual recalibrada" nesta mesma cadeia de arquivos), mas o jogo já
+   tinha valores maiores em produção. Usuário confirmou: aplicar os valores PROPOSTOS ao pé da
+   letra (não recalcular a partir do real "hoje").
+2. **Escala inicial** — o próprio doc recomenda 2 rodadas de teste (moderada 0.6× primeiro, cheia
+   depois) por riscos reais que ele mesmo lista (near-clip da câmera, homing pode trivializar luta
+   de chefe, pode ficar grande demais). Usuário escolheu **Rodada 1 (0.6×)** primeiro, depois do
+   susto recente com o tamanho errado da Horda — quer ver funcionando antes de ir pro tamanho
+   cheio. Constante `SWIRL_SCALE = 0.6` em `projectiles.js` — pra Rodada 2, é só subir esse valor
+   pra 1.0 (todos os `*_RADIUS`/`*_LENGTH` já são derivados dele).
+3. **Conflito com R1 do doc original** ("disparo reto, sem homing", citado como pedido explícito
+   do usuário) — a proposta v2 pede homing contra chefe/dourado, batendo de frente com R1.
+   Levantado explicitamente antes de implementar; usuário confirmou "homing apenas contra chefes"
+   e depois esclareceu "chefes inclui o dourado" — R1 amendado só pra esse caso específico
+   (`BOSS_KIND`/`GOLDEN_KIND`), continua valendo pra todo o resto. Doc original marcado com a
+   amenda.
+
+**`src/combat/projectiles.js`** — reescrita completa do bloco Swirl:
+- Geometria: 9 camadas (pirâmide principal 3 segmentos radiais, pirâmide traseira invertida,
+  agulha frontal, `TorusKnotGeometry` de espiral, 5 anéis triangulares em funil com velocidade de
+  giro PRÓPRIA cada um via `userData.spinSpeed` — dessincronizados de propósito —, aura, núcleo
+  cilíndrico branco, cone de cauda, 3 esferas de exaustão nas quinas da base traseira). Material
+  da espiral é PRÓPRIO por instância (`buildSwirlSpiralMaterial()`, não compartilhado) — precisa
+  variar opacidade/velocidade por projétil quando homing está ativo, sem afetar outro Swirl em
+  voo; descartado em `removeProjectile` (não no `dispose()` global, que só cobre o que é
+  compartilhado).
+- Homing: `projectile.swirlHomingTarget` (campo NOVO, não reaproveita o `projectile.homingTarget`
+  genérico do teleguiado comum — aquele também sobrescreveria a VELOCIDADE pro valor do
+  teleguiado, errado aqui). Lerp de DIREÇÃO com `SWIRL_HOMING_TURN_RATE=4.0 rad/s`, mantendo a
+  velocidade do Swirl sempre. Congela (mantendo velocidade) se o alvo morrer no meio do voo.
+- `fireSwirlBlast(origin, direction, bossTarget = null)` — 3º parâmetro novo.
+- `updateSwirlDynamicShell()` — gira a espiral e os 5 anéis cada um na sua velocidade, por cima do
+  giro do grupo inteiro (`SWIRL_SPIN_RATE`); acende a espiral (opacidade 0.75→1.0, giro 15→22
+  rad/s) quando `swirlHomingTarget` está ativo.
+
+**`src/combat/index.js`** — `fireSwirlBlast` agora consulta `lockon.getLockedEntities()` e filtra
+por `BOSS_KIND`/`GOLDEN_KIND` ANTES de `game-loop.js` chamar `combat.clearLockedEnemies()` (que já
+rodava incondicionalmente depois do branch de release do fogo — não precisou de mudança lá).
+
+**`src/effects.js`** — `swirlBlastFlash` ganhou parâmetro `isHoming` (mais intenso quando
+travado); `swirlAfterimage` usa a mesma silhueta triangular nova (3 segmentos, não mais 8);
+`swirlBlastExplosion` ganhou 8 fragmentos triangulares (`TetrahedronGeometry`) voando em leque
+hemisférico; `swirlLockReticle(targetPosition, fireDirection)` novo — anel branco breve sobre o
+alvo no instante do disparo homing (orientado contra `fireDirection`, não há acesso à câmera
+neste arquivo pra fazer billboard de verdade).
+
+**Validado com `aiValidator.expect()`**: homing só ativa com alvo chefe/dourado; velocidade
+preservada ao congelar por morte do alvo no meio do voo. Testado ao vivo via
+`window.__starAnki` (`combat.sweepLockOn` + `combat.fireSwirlBlast` chamados diretamente,
+contornando o gate de carga/giro do game-loop só pra teste) — **duas trajetórias reais**
+capturadas frame a frame: (a) chefe travado fora do eixo de disparo → X cresce em direção ao
+chefe com incremento CRESCENTE a cada frame (correção proporcional visível, não teleporte); (b)
+sem nenhum lock → X e Y decrescem em incremento CONSTANTE (reta perfeita, R1 preservado). Zero
+erros no console em toda a sessão de teste; `getScene().children` confirmou o Group de 15 filhos
+(1+1+1+1+5+1+1+1+3) batendo exato com as 9 camadas descritas.
+
+## Rádio dos Aliados (Overhaul de Personalidade, Ideia 3) — implementado
+
+Ideia 3 do `Docs/# Overhaul de Personalidade e Vida.md` (bloqueada até um protótipo HTML com 3
+opções visuais ser decidido). Processo: prototipei as 3 opções como um canvas de Design (claude.ai
+artifact), usuário gostou da Opção B (notificação de HUD no canto) mas pediu sprites reais de
+personagens em vez de ícone colorido + quotes em inglês alinhadas ao Star Fox 64 original — nesse
+ponto o usuário pediu pra **não** ser mais em artefato hospedado, e sim arquivo HTML local mesmo
+(protótipos ficaram em `Docs/Rádio dos Aliados — Opção B (protótipo).html` e a v2 com os sprites/
+estática reais). Depois de decidido, pediu refinamento: painel quadrado (não pill, acomoda melhor
+o ícone) + efeito de "rádio riscado" (a estática de sintonia real do jogo, não um glitch genérico)
++ 3 novas opções de ANIMAÇÃO com isso em mente. Escolhida a **Opção 3**: painel corta pra dentro
+em fatias (glitch de steps, tipo troca de canal) na entrada, retrato passa pelos frames de
+estática, flicker rápido antes de sumir.
+
+**Assets — de onde vieram (importante pra nunca esquecer a fonte)**: sprites reais recortados do
+jogo **Star Fox 2 (SNES)**, via spriters-resource.com (asset `snes/starfox2/asset/1451/`
+"Mugshots" pros retratos de Falco/Peppy/Slippy/Miyu — grade de 65×65px por personagem, confirmada
+por pixel-sampling; asset `1452/` "Portraits" pra sequência de "estática de sintonia" — 2 ícones de
+bracket + 4 blocos de ruído colorido + 1 ruído escuro, EXATAMENTE a animação de "sinal chegando"
+que o jogo original usa antes de mostrar o retrato de um personagem no rádio). Baixados via
+ImageMagick (`magick -crop` no grid certo, filter point + resize pra manter pixel art nítida) —
+NÃO por base64 colado manualmente (primeira tentativa disso corrompeu silenciosamente as imagens,
+gerando strings curtas inválidas; lição: para blobs >1KB, baixar/decodificar via arquivo, nunca
+copiar base64 gigante à mão). Assets finais em `assets/wingman-radio/` (`falco.png`, `peppy.png`,
+`slippy.png`, `miyu.png`, `static1.png`..`static7.png`) — commitados no repo público. **Risco de
+direito autoral aceito conscientemente pelo usuário** (sprites da Nintendo/Argonaut, projeto
+pessoal não-comercial) — se o projeto algum dia for distribuído/monetizado, trocar por arte
+própria.
+
+**Renomeação Krystal → Miyu**: o 4º piloto (roxo, `WINGMAN_PROFILES[3]`) se chamava "Krystal" mas
+esse nome não existe no elenco clássico de Star Fox (ela só estreia em Star Fox Adventures/GameCube,
+anos depois de SF64) — não tem sprite correspondente na folha de SF2. Como não dava pra ter um
+retrato "Krystal" com a cara da Miyu Lynx, o usuário decidiu renomear o piloto inteiro pra Miyu em
+todo o jogo (rename global via sed, case-preservado: `Krystal`→`Miyu`, `krystal`→`miyu`,
+`KRYSTAL`→`MIYU`, 7 arquivos: `combat/wingmen.js`, `game-loop.js`, `hud-game.js`, `audio-cues.js`,
+`roguelike.js`, `debug.js`, `flow-question.js`). Título ("Vanguarda Fantasma") e tema (stealth/
+cloak) continuam batendo bem com a Miyu, não precisou mudar.
+
+**Idioma das falas**: inglês, catchphrases curtas no espírito de Star Fox 64 (pedido explícito do
+usuário — "Do a barrel roll!" pra Peppy, "Help me, Fox!" reaproveitado pro evento `alone` do
+Slippy, etc) — o resto do jogo é todo em português, isso é homenagem direta à série, decisão
+consciente, não inconsistência.
+
+**Arquitetura**: `src/combat/wingman-radio.js` (novo) — dispatcher puramente lógico, sem DOM,
+igual ao spec original do doc (`trySpeak(pilotId, eventId, now)`, cooldown global de 6s,
+`trySpeakAlone` com estado próprio pra só falar 1x por partida). 10 pontos de disparo em
+`combat/wingmen.js` (8 do doc + `player_low_health` edge-triggered + `alone`): `engage_dogfight`,
+`engage_focus`, `ability_ram/guard/repair/assist`, `kill`, `return_formation`,
+`player_low_health`, `alone`; mais `player_take_damage` disparado de FORA do laço de update
+(`triggerPlayerTookDamage()`, chamado por `game-loop.js` no momento em que `player.takeDamage()`
+resolve — decisão (b) do §3.5 do doc: só reage a dano do JOGADOR, nunca do wingman, que é
+invulnerável). Mensagens que nascem fora do laço de `update()` ficam em `pendingRadioMessage`
+(closure) até o próximo frame devolver — 1 frame de atraso, imperceptível. `combat/index.js`
+repassa `radioMessage` no retorno de `update()` e expõe `notifyPlayerDamaged()` (patch cirúrgico —
+arquivo tem WIP concorrente de outra sessão no Swirl Blast homing, mesma técnica de sempre:
+extrai HEAD, replica só as 2 linhas novas, diff, `git apply --cached`). `hud-game.js` →
+`showWingmanRadio({ pilotId, name, color, text })` monta o painel + toca o flipbook de 7 frames de
+estática (55ms cada, pré-carregados no mount do HUD pra primeira fala da partida não perder frame
+por cache frio) antes de resolver no retrato de verdade. CSS em `hud-styles.js`
+(`.hud-wingman-radio*`) — `@keyframes hud-wingman-radio-glitch-in` (clip-path em steps) e
+`-flicker` (opacity em steps) fazem as duas animações da Opção 3. Setting novo
+`wingmanRadioEnabled` (default `true`, toggle em Configurações → "Rádio do Esquadrão").
+
+**Testado ao vivo** via `window.__starAnki.combat.notifyPlayerDamaged()` + eventos orgânicos de IA
+durante partida real com Esquadrão completo (4 pilotos) — painel apareceu corretamente pros 4
+pilotos (cores/retratos certos), zero erros de console. `selftest.mjs` ganhou seção nova
+(cooldown global bloqueia 2ª fala, libera depois de 6s, `pilotId`/`eventId` inexistentes devolvem
+`null` sem lançar, `reset()` zera cooldown, `trySpeakAlone` só fala 1x mesmo com outro piloto e
+cooldown livre).
+
+### Swirl Blast Rodada 2 (escala cheia) + bug real do homing corrigido
+
+(sem número de versão nesta entrada — havia um bump pra v0.92.0 pendente/staged de outra sessão
+concorrente no momento desta entrega, ver nota sobre `game-loop.js` mais abaixo; não dava pra
+commitar `version.js` sem entrelaçar as duas entregas)
+
+Usuário aprovou a Rodada 1 (0.6×) em teste real e pediu pra seguir pra Rodada 2, mas reportou dois
+problemas: (1) "o projétil precisa ser maior" — pedido de Rodada 2 mesmo; (2) "ele ainda não é
+teleguiado corretamente até os chefes" — bug real, não percepção.
+
+**Escala**: `SWIRL_SCALE` em `combat/projectiles.js` foi de `0.6` pra `1.0` (valores cheios da
+proposta v2). As constantes duplicadas de propósito em `effects.js` (não importa de
+`combat/projectiles.js` — mesma regra de sempre, evita import circular) também foram reescaladas
+pra bater: `SWIRL_FLASH_RING_SCALE` (4.8→8.0), `SWIRL_EXPLOSION_RADIUS` (4.2→7.0),
+`swirlFragmentGeo` (0.3→0.5), `swirlAfterimageCoreGeo` (1.8×6.0→3.0×10.0).
+
+**Bug do homing — causa raiz encontrada via teste ao vivo, não suposição**: o homing da Rodada 1
+usava `Vector3.lerp` entre a direção atual e a direção desejada (ambas normalizadas) pra simular
+uma taxa de giro limitada. Isso tem um defeito geométrico conhecido: lerp entre dois vetores
+UNITÁRIOS encolhe de magnitude perto de ângulos largos (~90°-180°) antes de normalizar de volta —
+distorce a taxa de giro real e, em alvo próximo/ângulo largo, o projétil ULTRAPASSAVA o alvo e
+entrava numa órbita instável ao redor dele sem nunca fechar a distância até o `hitRadius`. Provado
+via `window.__starAnki`: disparo contra chefe reposicionado a 60u de distância / 15u lateral
+(mira reta, sem apontar pro alvo — simula o jogador não conseguindo manter a mira exata após o
+giro completo) — posição do projétil oscilando 36u↔147u em torno de um chefe PARADO, nunca
+conectando, expirando por alcance máximo.
+
+**Correção em 2 partes** (ambas em `combat/projectiles.js`, bloco do homing dentro de
+`update(dt, ...)`):
+1. Trocada a rotação de `Vector3.lerp` (degenera) por rotação de eixo-ângulo de verdade
+   (`Vector3.applyAxisAngle` em torno do eixo `cross(direçãoAtual, direçãoDesejada)`, ângulo
+   limitado por `SWIRL_HOMING_TURN_RATE * dt`) — taxa de giro genuinamente constante, sem a
+   distorção do lerp. `SWIRL_HOMING_TURN_RATE` subiu de `4.0` pra `18.0` rad/s (o valor de 4.0
+   nunca convergia a tempo mesmo com a rotação corrigida).
+2. Mesmo com eixo-ângulo correto, perseguição pura (mirar sempre na posição ATUAL do alvo) tem um
+   problema geométrico separado e conhecido: perto do alvo, a taxa angular NECESSÁRIA pra
+   continuar apontando pra ele cresce sem limite — o projétil pode ficar preso numa órbita estável
+   ao redor do alvo (visto ao vivo: mínimo de distância baixando de 68u→38u→18u conforme
+   `SWIRL_HOMING_TURN_RATE` subia, mas nunca cruzando o `hitRadius` de ~7.7u — um ciclo-limite, não
+   uma espiral convergente). Adicionado `SWIRL_HOMING_SNAP_RANGE = 26` — dentro desse raio, o
+   projétil aponta DIRETO pro alvo (sem limite de giro), a "guiagem terminal" padrão de mísseis em
+   jogos, só pro trecho final. É maior que a órbita observada em teste, então garante que a órbita
+   sempre entra no raio de snap e converge de vez.
+
+**Validado ao vivo** (`window.__starAnki`, chefe E dourado, caso fácil/moderado/extremo):
+- 60u frente / 15u lateral, mira reta: hit em 6 frames.
+- 40u frente / 25u lateral (~32°), mira reta: hit em 4 frames.
+- 40u frente / 25u lateral, disparo PERPENDICULAR (mira "pra cima", pior caso de desalinhamento
+  giro→soltura): hit em 7 frames — esse caso especificamente falhava 100% das vezes antes da
+  correção (expirava sem conectar).
+- Dourado, mesmo caso moderado: hit em 8 frames.
+- R1 (sem alvo travado): 15 frames consecutivos com delta de posição EXATAMENTE idêntico
+  (8.684u/frame) — zero curvatura, trajetória reta preservada intacta.
+- `stopProjectile` (chefe/dourado sempre param o Swirl) continua funcionando — grupo do projétil
+  removido da cena no mesmo frame do hit em todos os casos acima.
+
+**Câmera lenta (slow-mo do Swirl)** — usuário pediu pra ajustar ele mesmo, só perguntou se as
+variáveis já estavam isoladas/comentadas pra edição fácil. Confirmado que sim, sem precisar mexer:
+`SWIRL_SLOW_MO_MS`/`SWIRL_SLOW_MO_FACTOR`/`SWIRL_FOV_BUMP_MS`/`SWIRL_FOV_TARGET` em
+`main-constants.js` (bloco "SWIRL BLAST", cada uma já com comentário explicando o efeito). O punch
+de câmera (`camera.translateZ(1.5)`) e o roll (`degToRad(3)`) em `game-loop.js` também têm
+comentário no local explicando o que fazem, mas ficaram como número mágico inline (não extraídos
+pra constante nomeada) — havia uma sessão concorrente com mudanças não commitadas nesse mesmo
+arquivo (`game-loop.js`) no momento desta entrega; extrair essas duas constantes teria misturado
+esta entrega com o trabalho pendente da outra sessão, então foi revertido de propósito. Se quiser
+essa extração depois, é seguro fazer numa entrega isolada.
+
+## Rádio dos Aliados — correção de bug + expansão de conteúdo + fila de mensagens
+
+Entrega seguinte à implementação inicial do Rádio dos Aliados (ver seção acima). Usuário reportou
+bug visual real: **os retratos só trocavam um tempo DEPOIS da mensagem aparecer**, não junto com
+ela.
+
+**Causa raiz**: o flipbook de estática reatribuía `img.src` a cada 55ms (7 frames). Browsers
+cancelam o carregamento anterior assim que um novo `src` é atribuído — 55ms é rápido demais pra
+completar fetch+decode+paint de um frame antes do próximo substituir, então NENHUM frame de
+estática chegava a pintar; o `<img>` ficava com o retrato antigo (ou em branco) até o load final
+(por acaso lento o bastante pra sobreviver) trocar de repente, bem depois do texto já ter
+aparecido. **Fix**: os 7 frames de estática viraram `<img>` de verdade, pré-carregados 1x no mount
+do HUD e NUNCA MAIS têm `src` tocado — "tocar o flipbook" virou só alternar qual já tem a classe
+`visible` (opacity via CSS, sem nenhuma rede/decode no caminho crítico). Retrato final continua
+reatribuindo `src` (não tem pressão de tempo, 2.4s de hold sobram).
+
+**+52 falas novas** (pedido: mín. 40, referenciando inimigos/chefes/impulso/disparo carregado/
+habilidades "principalmente"/eventos): mais variedade nos 4 eventos de habilidade existentes (2-3
+falas cada agora, era 1); eventos novos — `engage_boss` (chefe/dourado, prioridade sobre o
+genérico via `engageEventFor()`), `engage_horda`/`engage_fragata` (inimigos com identidade visual
+forte), `boss_kill`/`golden_kill` (substituem `kill` genérico quando `hit.bossDefeated`/
+`goldenSpecialHit`), `boost_used` (edge-trigger em `opts.boostActive`), `charged_shot_used`
+(edge-trigger na SOLTA do carregado — `wasHomingCharging && !homingCharging`, só conta se segurou
+>0.3s, evita comentar em tap acidental), `focus_ready` (ver fila abaixo).
+
+**Fila de mensagens** (pedido: permitir uma fala depois da outra "como o botão de foco com todos
+os 4 se comunicando de prontidão"): canal novo `radioQueue` (array), separado do `radioMessage`
+singular — nasce em `toggleCommand()` quando o comando de foco ativa: cada piloto ativo (exceto
+quem está com `abilityActive`, mesma exceção do assign de alvo) fala uma linha de `focus_ready` via
+`wingmanRadio.getLine()` (lookup SEM cooldown — não é `trySpeak()`, senão só 1 dos 4 conseguiria
+falar por causa do cooldown global de 6s). HUD (`showWingmanRadioQueue`) tem fila própria + flag
+`wingmanRadioPlaying`: se já tem algo tocando, entra no fim da fila; ao terminar de sumir, encadeia
+a próxima automaticamente. `showWingmanRadio` (trigger avulso) continua interrompendo tudo e
+tocando na hora, comportamento inalterado.
+
+**Tamanho -15%** (pedido explícito): avatar 52px→44px, fonte do nome 12px→10px, fonte da fala
+13px→11px, padding/gap/cantos técnicos proporcionalmente menores.
+
+Testado ao vivo com `window.__starAnki` + `setManualStepping(true)` (stepping determinístico,
+necessário porque o `setInterval` do flipbook roda em tempo real de parede — testar com
+`step()`+`await sleep` competia com o próprio timer): confirmado via `MutationObserver` +
+inspeção de `naturalWidth`/classe `visible` que o frame 0 da estática fica visível IMEDIATAMENTE
+(síncrono, no mesmo tick da chamada), os 7 frames chegam pré-decodificados (`naturalWidth: 260`
+todos), e a rajada de prontidão do `[D]` realmente encadeia mensagens de pilotos diferentes em
+sequência (Falco "Locked and loaded!" confirmado). Zero erros de console.
+
+### v0.94.0 — Swirl Blast: 10 bugs achados por code-review (`/code-review`) + corrigidos
+
+Pedido do usuário: "cace por bugs" em cima da entrega anterior do Swirl Blast (v2 visual + homing
++ Rodada 2). Review multi-ângulo (8 agentes: scan linha-a-linha, auditoria de comportamento
+removido, rastreio cross-file, reuse/simplificação/eficiência/altitude, convenções do CLAUDE.md) +
+verificação 1-voto em cada candidato antes de reportar. 10 achados, todos corrigidos:
+
+1. **Bug real, o mais grave**: `SWIRL_HOMING_SNAP_RANGE` (26) era MENOR que o raio de órbita
+   estável da perseguição pura (`SWIRL_BLAST_SPEED / SWIRL_HOMING_TURN_RATE` ≈ 28.9) — simulação
+   numérica do agente verificador provou que um chefe/dourado travado a ~27-31u de distância e
+   ~93-103° de ângulo do disparo faz o projétil orbitar pra sempre sem cruzar o raio de snap,
+   exatamente o bug que a Rodada 2 achou e "corrigiu" antes. Nenhum dos 4 testes ao vivo daquela
+   sessão caiu nessa faixa de ressonância — passaram por sorte geométrica, não porque o fix era
+   geral. Corrigido derivando o snap range da física real: `(SWIRL_BLAST_SPEED /
+   SWIRL_HOMING_TURN_RATE) * 1.3` (margem de segurança). Reproduzido o caso exato ao vivo
+   (distância 29u, ângulo 95° — 98° cai fora do cone de trava por causa do `PASS_BEHIND` do
+   lock-on, então usei 95° pra manter o alvo travável) — antes expirava sem conectar, depois do
+   fix conecta no frame 2.
+2. Flash de disparo (`swirlBlastFlash`) calculava `flashOpacity=1.0` pra tiro homing mas o
+   `muzzleFlashes.push` tinha `startOpacity: 0.9` hardcoded, sobrescrito todo frame pelo loop
+   genérico — o "flash mais intenso quando travado" nunca aparecia. Corrigido: usa `flashOpacity`.
+3. Rotação por eixo-ângulo do homing não tinha fallback quando direção atual e desejada ficam
+   (quase) antiparalelas (cross product degenera a zero) — a velocidade congelava sem corrigir.
+   Corrigido: se o eixo degenerar, usa qualquer eixo perpendicular (world-up, ou world-right se
+   o primeiro também degenerar) como desempate.
+4. `SWIRL_SPIRAL_TUBE` era calculado a partir de `SWIRL_SCALE` mas a geometria usava o literal
+   `0.09` direto, ignorando a constante — a espessura da espiral parou de escalar quando
+   `SWIRL_SCALE` virou 1.0 na Rodada 2. Corrigido: geometria usa a constante (com piso de 0.09
+   pra não sumir em escalas pequenas).
+5. `swirlFlashConeGeo` (flash do disparo) continuava cone redondo (8 segmentos) enquanto o
+   afterimage já tinha sido migrado pra 3 segmentos triangulares — mismatch visual de 1 frame no
+   instante que devia vender a identidade triangular nova. Corrigido: 3 segmentos.
+6. Nenhum `aiValidator.expect()` cobria "o Swirl com alvo travado realmente conecta antes de
+   expirar" — exatamente a invariante que quebrou duas vezes nesta feature (achado #1 acima
+   incluso) e só foi pega por debug manual ao vivo, violando a obrigação do
+   `FLUXO_VALIDACAO_IA.md` de instrumentar invariante crítica. Corrigido: `expect()` nos dois
+   pontos de remoção por expiração (vida e alcance máximo) cobrando `false` se o projétil ainda
+   tinha `swirlHomingTarget` ativo — vira `expectativas_falhas` no log se acontecer de novo.
+7. A rotação por eixo-ângulo corrigida ficou inline só pro Swirl, enquanto o steer de mira normal
+   (assist de tiro comum) ao lado continuava com o mesmo `Vector3.lerp` que degenera — mesma
+   classe de bug, sem correção. Extraído `steerDirectionTowardTarget(dir, desired, maxAngle,
+   axisTemp)` compartilhado (com o fallback do item 3 embutido), usado pelos dois lugares agora.
+8. `swirlBlastExplosion` reimplementava a mesma matemática de espalhamento esférico aleatório
+   (theta/phi/speed) que `glassShatter` já tinha — extraído `randomSphereVelocity(min, max)`
+   compartilhado (mantive os dois em sistemas de animação separados, `muzzleFlashes` vs
+   `glassShards`, que têm ciclos de vida diferentes — só a matemática do vetor era duplicada).
+9. Comentário em `effects.js` dizia "escala Rodada 1 (0.6×)" mas os valores logo abaixo já eram
+   Rodada 2 (cheia) — corrigido o texto do comentário.
+10. `buildSwirlSpiralMaterial()` alocava um material novo por disparo só pra variar opacidade
+    entre reto/homing — trocado por 2 materiais compartilhados (`swirlSpiralMaterialBase`/
+    `Homing`) com troca de REFERÊNCIA em `updateSwirlDynamicShell`, zero alocação por disparo.
+
+**Validado ao vivo** após os fixes: os 3 casos de teste da Rodada 2 (fácil/moderado/extremo)
+continuam conectando (4-6 frames), R1 sem alvo travado continua com trajetória perfeitamente reta
+(10 frames de delta idêntico), zero erros de console, e o caso de ressonância do achado #1
+(antes expirava sem nunca acertar) agora conecta no frame 2.
+
+---
+
+### v0.95.0 — Rádio dos Aliados Fase 1 (sistema base do `Docs/# Documento de Implementação — Nova.md`)
+
+Início da implementação do documento novo (rádio pra todos os 4 pilotos → depois cartas por
+personagem, Falco → Peppy → Slippy → Miyu). Usuário escolheu começar pela Fase 1 (infra do rádio,
+itens 1+2 do doc) e mandar o TEXTO das ~54 falas triviais novas depois — o doc define a estrutura
+(30 falas/piloto, 5 por ability) mas não trazia o conteúdo das falas, então **as falas em si não
+foram tocadas nesta entrega** (as ~24-25 atuais por piloto continuam, já expandidas de uma entrega
+anterior — ver "Rádio dos Aliados — correção de bug + expansão de conteúdo" acima; o "~66 atuais"
+citado no doc novo já estava desatualizado antes mesmo de começar).
+
+- **`combat/wingman-radio.js`**: `ABILITY_EVENT_IDS` (Set exportado) classifica todo eventId como
+  ability ou trivial — os 4 que já existem hoje (`ability_ram/guard/repair/assist`) mais 7 que só
+  vão nascer nas fases de cartas por personagem (`ability_intercept/rescue/aux_shield/morale/
+  boost_dash/boombuster/focus_upgrade`), cadastrados de antemão pra já nascerem classificados
+  certo. Cooldown global virou aleatório: `nextAllowedAt` (renomeado de `lastSpokenAt`, que na
+  prática já guardava o PRÓXIMO instante liberado) sorteia entre `GLOBAL_COOLDOWN_MIN_MS` (6000,
+  igual antes) e `GLOBAL_COOLDOWN_MAX_MS` (20000, novo).
+- **`combat/wingmen.js`**: `buildRadioPayload(profile, text, eventId)` ganhou `isAbility:
+  ABILITY_EVENT_IDS.has(eventId)` no payload — os 3 call sites (`speak()`, `dismissWingman` via
+  `trySpeakAlone`, rajada de prontidão do `toggleCommand()`) passam o eventId agora. A regra 2.4
+  do doc (foco: ability quote se o piloto tem carta de upgrade e ela não está em cooldown) fica
+  **pendente** até `FOCUS_ABILITY_CARDS`/as cartas Slippy Morale e Peppy Auxílio existirem —
+  comentado no código, `focus_ready` continua sempre trivial por ora (comportamento preservado).
+- **`hud-game.js`**: painel de rádio virou uma FACTORY (`createWingmanRadioRegion(panelEl)`)
+  reaproveitada 2x — `wingmanRadioRegionTrivial` (painel original, inferior) e
+  `wingmanRadioRegionAbility` (novo `.hud-wingman-ability-panel`, superior, `top: 18%`), cada uma
+  com fila/timers/estado próprios (extraído do código original, que só existia pro painel
+  inferior — evita duplicar ~60 linhas de gerência de timer/flipbook de estática). Roteamento em
+  `showWingmanRadio()`: escolhe a região por `payload.isAbility`; regra "não pode estar nas 2
+  regiões ao mesmo tempo pro MESMO piloto" (item 2.1-2.3 do doc) via `forceHide()` na região
+  oposta quando ela já mostra esse `pilotId`. `showWingmanRadioQueue()` (rajada de prontidão) só
+  carrega falas triviais hoje, então sempre roda na região inferior — mas ainda checa/esconde a
+  região de ability se ela estiver com o mesmo piloto, pela mesma regra.
+- **`hud-styles.js`**: `.hud-wingman-ability-panel` — mesma estrutura interna reaproveitada sem
+  redefinição (`.hud-wingman-radio-corner/-avatar/-name/-line` não são escopadas ao painel pai),
+  só a caixa raiz muda: `top: 18%` em vez de `bottom`, borda/glow mais saturados, e uma entrada em
+  fatias verticais (`hud-wingman-ability-glitch-in`, steps a partir da esquerda) mais dramática
+  que a entrada do painel trivial, pra diferenciar "fala de habilidade" de "papo" à primeira vista.
+- **`selftest.mjs`**: teste do cooldown global atualizado pro range aleatório (usa
+  `GLOBAL_COOLDOWN_MAX_MS` como pior caso, exportado só pra teste); teste novo confirmando a
+  classificação de `ABILITY_EVENT_IDS` (`ability_ram`/`ability_guard` dentro, `kill`/`focus_ready`
+  fora).
+
+**Validado**: `node src/selftest.mjs` passa. Ao vivo (`preview_start` + Esquadrão completo, `state.
+phase` forçado via `window.__starAnki`): os dois painéis existem no DOM com os 7 frames de estática
+cada; setei manualmente o painel de ability (Falco, "Ramming speed!") e confirmei visualmente a
+posição superior/cor saturada/estrutura corretas; **o painel inferior foi sobrescrito por um evento
+REAL de gameplay** (Miyu, `engage_horda`, "Multiple contacts, staying sharp.") durante o teste,
+substituindo o texto que eu tinha setado manualmente — confirma o pipeline de dispatch real (não só
+o CSS) funcionando ponta a ponta pro canal trivial. Não consegui forçar um evento de ability real
+(`ability_ram`/`ability_guard`) via console nesta sessão (dependem de FSM interna do wingman não
+exposta em `window.__starAnki`) — o roteamento pro painel superior fica confirmado por leitura de
+código + teste manual de CSS/estrutura, não por um disparo de ability orgânico ao vivo; vale
+confirmar num playtest real com o usuário quando alguma habilidade ativar.
+
+**Falta pra fechar o doc**: texto das falas novas (usuário vai mandar), regra 2.4 completa (depende
+das cartas de foco), e os itens 3 (12 cartas por personagem, uma por uma) + faíscas brancas mais
+espalhadas (item final, independente).
+
+---
+
+### v0.96.0 — Falco: as 3 cartas (Combate/Intercept/Status) + sub-ícone de cooldown
+
+Segunda fase do `Docs/# Documento de Implementação — Nova.md` (ordem: rádio → Falco → Peppy →
+Slippy → Miyu). O usuário corrigiu no meio do caminho: ele queria que EU escrevesse as falas
+novas, não que mandasse o texto pronto — escritas direto em inglês, no tom confiante/cascavel já
+estabelecido de Falco: `ability_ram` ganhou +2 falas (chegando a 5, "5 falas por ability" do doc);
+`ability_intercept` nasceu com 5 falas próprias (`combat/wingman-radio.js`).
+
+**As 3 cartas novas** (`roguelike.js`, categoria ofensivo, 0/3 stacks cada, só aparecem com Falco
+recrutado — `wingmanCount <= 0` no exclude set, mesma regra das cartas "Vínculo" existentes):
+
+- **`falco-combat-chain`** ("Investida em Cadeia"): ao ACERTAR a Investida Aríete (não em timeout
+  sem conectar), se tem stacks e ainda não encadeou o máximo, procura o inimigo vivo mais próximo
+  da posição ATUAL de Falco (`FALCO_CHAIN_RADIUS = 80u`) e reinicia o state 'ram' contra ele sem
+  cooldown extra — só entra em cooldown normal quando a cadeia acaba (esgotou stacks OU não achou
+  ninguém por perto). `w.chainCount` zera a cada nova investida (não a cada elo).
+- **`falco-intercept`** ("Interceptação"): a cada `6 - stacks` segundos (cooldown PRÓPRIO,
+  independente do da Investida Aríete), acha o projétil inimigo mais perigoso
+  (`powerLevel >= POWER_LEVEL_AREA_DAMAGE`, novo `enemies.getThreateningProjectile()`) mais perto
+  do JOGADOR e destrói na hora (`enemies.removeProjectilesNear()`, raio pequeno em cima da posição
+  do projétil). Roda em QUALQUER state do wingman (não só dogfight), proteção proativa. Decisão de
+  design: o feixe visual é um array PRÓPRIO (`interceptBeams`), fora de `activeLasers` de
+  propósito — reusar `fireWingmanLaser`/`activeLasers` faria o "tiro" participar da resolução de
+  colisão normal contra inimigos de verdade (8 de dano por acidente, o projétil já foi destruído
+  instantaneamente, então o feixe é só cosmético: fade de 140ms, sem hitbox).
+- **`falco-status`** ("Fôlego de Combate"): `+2s` de `dogfightDuration` por stack (base 5.5s → até
+  11.5s com 3 stacks). `effectiveDogfightDuration(profile, opts)` novo em `combat/wingmen.js`,
+  substitui as 2 leituras diretas de `profile.combatProfile.dogfightDuration` — só Falco (id 0)
+  ganha o bônus, os outros 3 pilotos continuam com o valor de sempre.
+
+**Arquitetura de stacks**: seguido o padrão JÁ existente das cartas "Vínculo" (não o
+`ownerPilotId`/`applyWingmanCard` genérico que o doc original propunha) — os 3 contadores moram em
+`player.js` (`falcoChainStacks`/`falcoInterceptStacks`/`falcoStatusStacks`, cap 3, getters
+dedicados), lidos por `combat/wingmen.js` via `opts` no `update()` (mesmo padrão de
+`shieldNotFull`), repassados de `combat/index.js`. Reaproveitar o padrão existente em vez de somar
+um segundo sistema paralelo pro mesmo conceito.
+
+**Sub-ícone de cooldown** (item 3 do doc): novo `combat.getSubAbilityStates(cardStacks)` →
+`hud.setSquadronSubAbilities()` — círculo pequeno (`.hud-ability-subicon`) empilhado abaixo do
+hexágono principal do piloto, só aparece se o jogador tem a carta com cooldown próprio (hoje só
+Falco Intercept — Combate reusa o cooldown do Ram, Status não tem cooldown nenhum). Reaproveita
+elementos entre frames (só troca classe ready/cooling), remove sozinho se a carta sumir (reset de
+partida).
+
+**Validado ao vivo** (`window.__starAnki`, stepper determinístico): `debugMaxBuffs()` confirmado
+cravando os 3 stacks em 3; sub-ícone aparece no DOM com classe `ready`, glifo 🛑 e `cooldownTotal:
+3` (6-3 stacks) assim que o jogador tem a carta. **Intercept disparou organicamente contra um
+projétil real da Horda** (`t=1.84s` no flight log, sem eu forçar nada) — confirma o pipeline
+completo, não só a função isolada. **Chain-ram forçado via comando de foco [D]** (`toggleSquadronCommand`,
+bypassa o gate probabilístico de engajamento pra teste determinístico): Falco rammou tank #47 →
+encadeou (1/3) → rammou tank #49 → encadeou (2/3) → encadeou (3/3) contra um miniSwarm auto-spawnado
+que calhou de estar por perto → parou exatamente no cap de 3 e voltou pra formação. Zero erros de
+console (só o ServiceWorker de infraestrutura, já documentado em entregas anteriores).
+
+**Falta pra fechar Falco**: nenhuma carta pendente — as 3 estão implementadas. Falta a `getLine`
+confirmar a fala nova via playtest real com áudio (validado só por lookup de string aqui). Próximo:
+Peppy (rádio + cartas, incluindo knockback por tier como pré-requisito de Rescue).
+
+---
+
+### Overhaul visual das Configurações — console de bordo e prévia de dano (22/09/2026)
+
+- **`hud-settings.js`**: a tela completa deixou de ser uma lista longa e passou a ter cinco
+  categorias navegáveis (`Visual`, `Partida`, `Controles`, `Névoa`, `Esquadrão`). Os builders
+  compartilhados continuam os mesmos, portanto as opções rápidas da pausa não perderam nenhuma
+  função. Vida/arcade, teclado/gamepad, fog e formação/rádio ficaram agrupados pelo assunto.
+- **Escolha de dano**: o antigo select virou três cartões visuais (`Clássico`, `Mangá`, `Buraco
+  negro`) com estado selecionado e persistência imediata. A área Visual ganhou uma simulação que
+  usa o próprio `createDamageNumbers()`: reproduz uma rajada do jogador e dos três primeiros
+  aliados, inclusive a soma de hits por autor, e reinicia ao trocar o estilo ou clicar em
+  `Repetir impacto`.
+- **`index.html`**: console responsivo com cabeçalho de sistema, navegação lateral no desktop,
+  barra horizontal no mobile, painel de leitura de impacto e cartões adaptáveis. Em telas menores
+  a prévia vai para baixo das opções e todos os seletores continuam acessíveis.
+
+**Validado**: `node src/damage-feedback.test.mjs` e `node src/selftest.mjs` passam; teste ao vivo
+em `127.0.0.1:8420` confirmou troca animada Clássico → Mangá → Buraco Negro, navegação pelas
+categorias, layout em 390×844 e ausência de erros/avisos no console do navegador.
+
+---
+
+### Contadores de dano sem nomes (22/09/2026)
+
+- **`hud-damage.js`**: removidos `VOCÊ`, `FALCO`, `PEPPY`, `SLIPPY` e `MIYU` dos contadores em
+  todos os estilos (`Clássico`, `Mangá`, `Buraco Negro`). As cores e formas continuam distinguindo
+  a autoria sem ocupar espaço com texto. Rajadas somadas mostram somente `N hits`.
+
+**Validado**: `node src/damage-feedback.test.mjs` passa. O `selftest.mjs` completo está bloqueado
+por uma asserção de áudio alheia a esta alteração (`BOSS_LASER` esperado como `Laser boss.mp3`,
+mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss dourado.mp3`).
+
+---
+
+### Laboratório visual isolado de speedlines (22/09/2026)
+
+- **`speedlines-prototype.html`**: protótipo independente baseado principalmente no print real do
+  gameplay enviado pelo usuário — fundo preto, starfield profundo, grid em perspectiva, nave no
+  canto inferior esquerdo, aliados/inimigos, projéteis, retícula, radar e boss grande como stress
+  test. Não altera `index.html`, câmera, FOV, velocidade real, hitboxes, IA ou balanceamento.
+- **Duas camadas separáveis**: estrelas/poeira do mundo viram rastros progressivos reutilizando um
+  único `BufferGeometry`; speedlines abstratas periféricas usam um pool fixo de 180 linhas em
+  canvas. O centro permanece limpo por um bias ajustável e nenhuma nave/inimigo sofre smear.
+- **Controles em tempo real**: intensidade 0–100%, densidade, comprimento, espessura, brilho,
+  bias periférico, toggles independentes de ambientais/abstratas/boss, pausa, reset e presets
+  Neutro/Alta/Extrema. A intensidade inicial é 78% para que o efeito fique imediatamente notável.
+- **Validação**: `src/speedlines-prototype-model.js` concentra normalização e curvas; o laboratório
+  registra mudanças discretas no `aiValidator` e expõe `window.__speedlinesLab` para inspeção.
+  `src/speedlines-prototype.test.mjs` cobre limites, faixas e progressão monotônica das curvas.
+
+
+### v0.99.29 — Speedlines direcionais do Visual Lab no gameplay
+
+- O laboratório isolado permanece como referência; o gameplay reaproveita apenas a camada abstrata em canvas, sem duplicar estrelas/partículas ambientais.
+- `src/hud-speedlines.js` substitui visualmente o spinner legado de `.hud-motion-lines` e preserva o contrato `hud.setMotionLines(active, intensity)`.
+- Boost normal usa o preset escolhido 90/58/62/100/30/0 (intensidade/densidade/comprimento/espessura/brilho/bias); Swirl Blast e dash lateral continuam podendo elevar a intensidade a 100%. Fora desses gatilhos a intensidade é 0 e o canvas é limpo.
+- O renderer usa pool determinístico de 180 linhas, RAF somente enquanto ativo, DPR limitado a 1.5, resize responsivo e dispose completo no unmount.
+- O `aiValidator` registra apenas transições discretas de ligado/desligado/intensidade, sem log por frame.
+- O Service Worker não ganhou manifesto fixo: o módulo novo segue a estratégia network-first já existente para módulos same-origin e entra no cache ao ser solicitado.
+
+**Validação automatizada:** `node --check` nos módulos alterados, `node src/hud-speedlines.test.mjs`, `node src/speedlines-prototype.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
+**Playtest pendente:** confirmar no navegador que boost normal corresponde visualmente à referência do laboratório, Swirl/Dash atingem o pico sem o spinner legado, resize/restart não deixam canvas órfão e o console permanece limpo.

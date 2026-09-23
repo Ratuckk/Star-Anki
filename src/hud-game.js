@@ -8,6 +8,7 @@ import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 import { getSettings } from './settings.js'
 import { createDamageNumbers } from './hud-damage.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
+import { createHudSpeedlines } from './hud-speedlines.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -66,6 +67,7 @@ export function createGameHud() {
   const motionLines = document.createElement('div')
   motionLines.className = 'hud-motion-lines'
   root.appendChild(motionLines)
+  const motionLinesRenderer = createHudSpeedlines(motionLines)
 
   const lowHealthVignette = document.createElement('div')
   lowHealthVignette.className = 'hud-low-health-vignette'
@@ -230,9 +232,9 @@ export function createGameHud() {
       // estão decodificados (pré-carregados no mount, `src` nunca reatribuído) — "tocar" é só
       // alternar a classe `visible`, sem nenhum load no meio do caminho.
       panelEl.classList.add('active', 'entering')
-      let frameIdx = 0
-      setFrame(0)
-      const sprite = WINGMAN_RADIO_AVATARS[pilotId]
+      // A abertura sonora pertence à transmissão em si, não ao comando [D]. Assim qualquer
+      // quote — trivial ou de habilidade — sincroniza com os frames de estática do retrato.
+      triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId })
       const voiceCue = [
         WINGMAN_SOUND_CUES.pilot_voice_falco,
         WINGMAN_SOUND_CUES.pilot_voice_peppy,
@@ -240,9 +242,9 @@ export function createGameHud() {
         WINGMAN_SOUND_CUES.pilot_voice_miyu,
       ][pilotId]
       if (voiceCue) triggerSoundCue(voiceCue, { pilotId })
-      // A abertura sonora pertence à transmissão em si, não ao comando [D]. Assim qualquer
-      // quote — trivial ou de habilidade — sincroniza com os frames de estática do retrato.
-      triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId })
+      let frameIdx = 0
+      setFrame(0)
+      const sprite = WINGMAN_RADIO_AVATARS[pilotId]
       if (sprite) portraitEl.src = sprite
       const staticIv = setInterval(() => {
         frameIdx += 1
@@ -263,15 +265,17 @@ export function createGameHud() {
 
       const leaveStartId = setTimeout(() => {
         panelEl.classList.add('leaving')
-        const removeId = setTimeout(() => {
         triggerSoundCue(WINGMAN_SOUND_CUES.radio_disconnect, { pilotId: currentPilotId })
+        const removeId = setTimeout(() => {
           panelEl.classList.remove('active', 'leaving')
           playing = false
           currentPilotId = null
           // Fila (ex.: rajada de prontidão do foco) — encadeia a próxima fala automaticamente.
           if (queue.length > 0) {
             const next = queue.shift()
-            play(next)
+            if (next && (!next.createdAt || (performance.now() - next.createdAt) < 4000)) {
+              play(next)
+            }
           }
         }, leaveMs)
         timers.push({ type: 'timeout', id: removeId })
@@ -285,8 +289,8 @@ export function createGameHud() {
       clearTimers()
       panelEl.classList.remove('entering')
       panelEl.classList.add('leaving')
-      const removeId = setTimeout(() => {
       triggerSoundCue(WINGMAN_SOUND_CUES.radio_disconnect, { pilotId: currentPilotId })
+      const removeId = setTimeout(() => {
         panelEl.classList.remove('active', 'leaving')
         playing = false
         currentPilotId = null
@@ -298,10 +302,15 @@ export function createGameHud() {
       queue = []
       play(payload)
     }
+    function clearQueue() {
+      queue = []
+    }
     function showQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      if (playing) { queue.push(...payloads); return }
-      const [first, ...rest] = payloads
+      const now = performance.now()
+      const stamped = payloads.map((p) => ({ ...p, createdAt: p.createdAt || now }))
+      if (playing) { queue.push(...stamped); return }
+      const [first, ...rest] = stamped
       queue = rest
       play(first)
     }
@@ -312,7 +321,7 @@ export function createGameHud() {
       currentPilotId = null
       queue = []
     }
-    return { show, showQueue, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
+    return { show, showQueue, forceHide, clearQueue, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
   }
 
   const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
@@ -1087,10 +1096,10 @@ export function createGameHud() {
   })
   // Radar Tático: formato do blip por tipo de ameaça (ver kind em src/enemies/*.js), não só cor
   const MINIMAP_SHAPE_BY_KIND = {
-    blaster: 'tri', time: 'tri', tank: 'tri', detrito: 'tri', replica: 'tri', ima: 'tri',
+    blaster: 'tri', time: 'tri', detrito: 'tri', replica: 'tri', ima: 'tri',
     sentinela: 'diamond',
     miniSwarm: 'hex', sussurro: 'hex',
-    fragata: 'plus', verme: 'plus',
+    fragata: 'plus', verme: 'plus', tank: 'plus',
   }
 
   // Overhaul do menu de pausa (v0.80.0, pedido do usuário) — antes era só um "Pausado" sem
@@ -1101,6 +1110,11 @@ export function createGameHud() {
   cardChoiceOverlay.className = 'card-choice-overlay'
   cardChoiceOverlay.hidden = true
   root.appendChild(cardChoiceOverlay)
+
+  const arcadeTacticalDraft = document.createElement('div')
+  arcadeTacticalDraft.className = 'hud-arcade-tactical-draft'
+  arcadeTacticalDraft.hidden = true
+  root.appendChild(arcadeTacticalDraft)
 
   const cardChoiceHeader = document.createElement('div')
   cardChoiceHeader.className = 'card-choice-header'
@@ -1949,12 +1963,10 @@ export function createGameHud() {
     },
 
     // ============ MOTION LINES (boost / Swirl Blast) ============
-    // `intensity` (0..1) modula a opacidade via CSS custom property — usado pelo Swirl Blast
-    // (§4.6) pra forçar intensidade máxima independente do boost estar ativo ou não; omitido,
-    // o CSS cai no default de 1 (comportamento antigo, inalterado).
-    setMotionLines(active, intensity = null) {
-      motionLines.classList.toggle('active', !!active)
-      if (intensity != null) motionLines.style.setProperty('--intensity', Math.max(0, Math.min(1, intensity)))
+    // `intensity` (0..1) alimenta o renderer pooled: boost usa o preset aprovado em 90%,
+    // Swirl/dash forçam 100%. `dt` mantém transição e movimento determinísticos no stepper.
+    setMotionLines(active, intensity = 0.9, dt = 1 / 60) {
+      motionLinesRenderer.update(!!active, intensity, dt)
     },
 
     // ============ SCREEN DISTORTION (boost) ============
@@ -2285,77 +2297,18 @@ export function createGameHud() {
 
     // pedido do usuário: selecionar as cartas de upgrade pelos NÚMEROS também, igual já
     // funciona no modal de pergunta — reusa os mesmos binds quizSlot1..4 (Digit1..4 por padrão).
-    showCardChoice({ cards, stats, collectedCards, onPick }) {
+    showCardChoice({ cards, stats, collectedCards, onPick, isArcade = false, compact = false }) {
       cardChoiceList.innerHTML = ''
       cardChoiceInspector.innerHTML = ''
+      cardChoiceOverlay.classList.toggle('arcade-compact', !!(compact || isArcade))
       cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
-
-      // QOL (Item 2 — Inspetor de Build & Atributos)
-      if (stats) {
-        const statsRow = document.createElement('div')
-        statsRow.className = 'inspector-stats-row'
-        statsRow.innerHTML = `
-          <div class="inspector-stat-pill" title="Saúde Atual / Máxima">
-            <span class="stat-icon">❤️</span>
-            <span class="stat-lbl">HP</span>
-            <span class="stat-val">${stats.health}/${stats.maxHealth}</span>
-          </div>
-          <div class="inspector-stat-pill" title="Cargas de Escudo Atual / Máximo">
-            <span class="stat-icon">🛡️</span>
-            <span class="stat-lbl">Escudo</span>
-            <span class="stat-val">${stats.shield}/${stats.maxShield}</span>
-          </div>
-          <div class="inspector-stat-pill" title="Projéteis Disparados por Tiro">
-            <span class="stat-icon">🚀</span>
-            <span class="stat-lbl">Tiros</span>
-            <span class="stat-val">${stats.projectileCount}x</span>
-          </div>
-          <div class="inspector-stat-pill" title="Alvos Simultâneos da Carga Teleguiada">
-            <span class="stat-icon">🎯</span>
-            <span class="stat-lbl">Homing</span>
-            <span class="stat-val">${stats.homingTargets}</span>
-          </div>
-          <div class="inspector-stat-pill" title="Membros do Esquadrão Recrutados">
-            <span class="stat-icon">👥</span>
-            <span class="stat-lbl">Ala</span>
-            <span class="stat-val">${stats.wingmanCount}/4</span>
-          </div>
-        `
-        cardChoiceInspector.appendChild(statsRow)
-      }
-
-      if (collectedCards && collectedCards.size > 0) {
-        const entries = Array.from(collectedCards.entries()).filter(([_, count]) => count > 0)
-        if (entries.length > 0) {
-          const upgradesWrap = document.createElement('div')
-          upgradesWrap.className = 'inspector-upgrades-wrap'
-          const upgradesLabel = document.createElement('span')
-          upgradesLabel.className = 'inspector-upgrades-label'
-          upgradesLabel.textContent = 'Upgrades Instalados:'
-          upgradesWrap.appendChild(upgradesLabel)
-
-          const chipsRow = document.createElement('div')
-          chipsRow.className = 'inspector-chips-row'
-          for (const [id, count] of entries) {
-            const cardDef = CARD_MAP.get(id)
-            if (!cardDef) continue
-            const chip = document.createElement('div')
-            chip.className = `inspector-chip category-${cardDef.category}`
-            chip.title = `${cardDef.label} (x${count}): ${cardDef.description}`
-            chip.innerHTML = `
-              <span class="chip-icon">${cardDef.icon || '📦'}</span>
-              <span class="chip-name">${cardDef.label}</span>
-              <span class="chip-count">x${count}</span>
-            `
-            chipsRow.appendChild(chip)
-          }
-          upgradesWrap.appendChild(chipsRow)
-          cardChoiceInspector.appendChild(upgradesWrap)
-        }
-      }
+      arcadeTacticalDraft.innerHTML = ''
 
       const close = () => {
         cardChoiceOverlay.hidden = true
+        cardChoiceOverlay.classList.remove('arcade-compact')
+        arcadeTacticalDraft.hidden = true
+        arcadeTacticalDraft.innerHTML = ''
         cardChoiceInspector.innerHTML = ''
         cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
         closeExplDrawer()
@@ -2369,56 +2322,156 @@ export function createGameHud() {
           cardChoiceGpStop = null
         }
       }
+
       function pick(i) {
-        cardAbsorbBeam(cardChoiceList.children[i].getBoundingClientRect())
+        const targetEl = isArcade
+          ? arcadeTacticalDraft.querySelector('.hud-tactical-draft-chips')?.children[i]
+          : cardChoiceList.children[i]
+        if (targetEl) cardAbsorbBeam(targetEl.getBoundingClientRect())
         close()
         onPick(cards[i])
       }
-      cards.forEach((card, i) => {
-        const el = document.createElement('button')
-        el.className = `roguelike-card category-${card.category}`
-        el.style.setProperty('--card-stagger', `${i * 90}ms`)
-        const catLabel = CARD_CATEGORY_LABEL[card.category] ?? card.category
-        el.innerHTML = `
-          <div class="card-top-row">
-            <span class="card-category">${catLabel}</span>
-            <span class="card-key-badge">${i + 1}</span>
-          </div>
-          <div class="card-icon-wrap">
-            <span class="card-icon">${card.icon || '✨'}</span>
-          </div>
-          <h4 class="card-name">${card.label}</h4>
-          <p class="card-desc">${card.description}</p>
-        `
-        el.addEventListener('click', () => pick(i))
-        cardChoiceList.appendChild(el)
-      })
 
-      // Botão de explicação da resposta na tela de cartas (acerto)
-      const hasExpl = lastResolvedCard && (
-        (lastResolvedCard.explanation && lastResolvedCard.explanation.trim().length > 0) ||
-        lastResolvedCard.sourceUrl ||
-        (lastResolvedCard.sourcesText && lastResolvedCard.sourcesText.trim().length > 0)
-      )
-      if (hasExpl) {
-        const explRow = document.createElement('div')
-        explRow.className = 'hud-expl-card-row'
-        const explBtn = document.createElement('button')
-        explBtn.className = 'hud-expl-inline-btn hud-expl-card-btn'
-        explBtn.type = 'button'
-        explBtn.innerHTML = '📖 <span>Explicação da Resposta</span>'
-        explBtn.onclick = (e) => {
-          e.stopPropagation()
-          notifyExplanationOpened()
-          populateExplDrawer(lastResolvedCard)
-          openExplDrawer()
-          attachExplKeyHandler()
+      if (isArcade) {
+        cardChoiceOverlay.hidden = true
+        const header = document.createElement('div')
+        header.className = 'hud-tactical-draft-header'
+        header.innerHTML = '<span class="badge">DRAFT TÁTICO</span> <span>1 · 2 · 3</span>'
+        arcadeTacticalDraft.appendChild(header)
+
+        const chipsWrap = document.createElement('div')
+        chipsWrap.className = 'hud-tactical-draft-chips'
+        cards.forEach((card, i) => {
+          const btn = document.createElement('button')
+          btn.type = 'button'
+          btn.className = `hud-tactical-draft-chip category-${card.category}`
+          btn.innerHTML = `
+            <span class="chip-key">${i + 1}</span>
+            <span class="chip-icon">${card.icon || '⚡'}</span>
+            <span class="chip-content">
+              <strong class="chip-label">${card.label}</strong>
+              <span class="chip-desc">${card.description}</span>
+            </span>
+          `
+          btn.onclick = (e) => {
+            e.stopPropagation()
+            pick(i)
+          }
+          chipsWrap.appendChild(btn)
+        })
+        arcadeTacticalDraft.appendChild(chipsWrap)
+        arcadeTacticalDraft.hidden = false
+      } else {
+        // QOL (Item 2 — Inspetor de Build & Atributos)
+        if (stats) {
+          const statsRow = document.createElement('div')
+          statsRow.className = 'inspector-stats-row'
+          statsRow.innerHTML = `
+            <div class="inspector-stat-pill" title="Saúde Atual / Máxima">
+              <span class="stat-icon">❤️</span>
+              <span class="stat-lbl">HP</span>
+              <span class="stat-val">${stats.health}/${stats.maxHealth}</span>
+            </div>
+            <div class="inspector-stat-pill" title="Cargas de Escudo Atual / Máximo">
+              <span class="stat-icon">🛡️</span>
+              <span class="stat-lbl">Escudo</span>
+              <span class="stat-val">${stats.shield}/${stats.maxShield}</span>
+            </div>
+            <div class="inspector-stat-pill" title="Projéteis Disparados por Tiro">
+              <span class="stat-icon">🚀</span>
+              <span class="stat-lbl">Tiros</span>
+              <span class="stat-val">${stats.projectileCount}x</span>
+            </div>
+            <div class="inspector-stat-pill" title="Alvos Simultâneos da Carga Teleguiada">
+              <span class="stat-icon">🎯</span>
+              <span class="stat-lbl">Homing</span>
+              <span class="stat-val">${stats.homingTargets}</span>
+            </div>
+            <div class="inspector-stat-pill" title="Membros do Esquadrão Recrutados">
+              <span class="stat-icon">👥</span>
+              <span class="stat-lbl">Ala</span>
+              <span class="stat-val">${stats.wingmanCount}/4</span>
+            </div>
+          `
+          cardChoiceInspector.appendChild(statsRow)
         }
-        explRow.appendChild(explBtn)
-        cardChoiceOverlay.appendChild(explRow)
-      }
 
-      cardChoiceOverlay.hidden = false
+        if (collectedCards && collectedCards.size > 0) {
+          const entries = Array.from(collectedCards.entries()).filter(([_, count]) => count > 0)
+          if (entries.length > 0) {
+            const upgradesWrap = document.createElement('div')
+            upgradesWrap.className = 'inspector-upgrades-wrap'
+            const upgradesLabel = document.createElement('span')
+            upgradesLabel.className = 'inspector-upgrades-label'
+            upgradesLabel.textContent = 'Upgrades Instalados:'
+            upgradesWrap.appendChild(upgradesLabel)
+
+            const chipsRow = document.createElement('div')
+            chipsRow.className = 'inspector-chips-row'
+            for (const [id, count] of entries) {
+              const cardDef = CARD_MAP.get(id)
+              if (!cardDef) continue
+              const chip = document.createElement('div')
+              chip.className = `inspector-chip category-${cardDef.category}`
+              chip.title = `${cardDef.label} (x${count}): ${cardDef.description}`
+              chip.innerHTML = `
+                <span class="chip-icon">${cardDef.icon || '📦'}</span>
+                <span class="chip-name">${cardDef.label}</span>
+                <span class="chip-count">x${count}</span>
+              `
+              chipsRow.appendChild(chip)
+            }
+            upgradesWrap.appendChild(chipsRow)
+            cardChoiceInspector.appendChild(upgradesWrap)
+          }
+        }
+
+        cards.forEach((card, i) => {
+          const el = document.createElement('button')
+          el.className = `roguelike-card category-${card.category}`
+          el.style.setProperty('--card-stagger', `${i * 90}ms`)
+          const catLabel = CARD_CATEGORY_LABEL[card.category] ?? card.category
+          el.innerHTML = `
+            <div class="card-top-row">
+              <span class="card-category">${catLabel}</span>
+              <span class="card-key-badge">${i + 1}</span>
+            </div>
+            <div class="card-icon-wrap">
+              <span class="card-icon">${card.icon || '✨'}</span>
+            </div>
+            <h4 class="card-name">${card.label}</h4>
+            <p class="card-desc">${card.description}</p>
+          `
+          el.addEventListener('click', () => pick(i))
+          cardChoiceList.appendChild(el)
+        })
+
+        // Botão de explicação da resposta na tela de cartas (acerto)
+        const hasExpl = lastResolvedCard && (
+          (lastResolvedCard.explanation && lastResolvedCard.explanation.trim().length > 0) ||
+          lastResolvedCard.sourceUrl ||
+          (lastResolvedCard.sourcesText && lastResolvedCard.sourcesText.trim().length > 0)
+        )
+        if (hasExpl) {
+          const explRow = document.createElement('div')
+          explRow.className = 'hud-expl-card-row'
+          const explBtn = document.createElement('button')
+          explBtn.className = 'hud-expl-inline-btn hud-expl-card-btn'
+          explBtn.type = 'button'
+          explBtn.innerHTML = '📖 <span>Explicação da Resposta</span>'
+          explBtn.onclick = (e) => {
+            e.stopPropagation()
+            notifyExplanationOpened()
+            populateExplDrawer(lastResolvedCard)
+            openExplDrawer()
+            attachExplKeyHandler()
+          }
+          explRow.appendChild(explBtn)
+          cardChoiceOverlay.appendChild(explRow)
+        }
+
+        cardChoiceOverlay.hidden = false
+      }
 
       if (cardChoiceKeyHandler) {
         window.removeEventListener('keydown', cardChoiceKeyHandler)
@@ -2453,6 +2506,9 @@ export function createGameHud() {
         cardChoiceGpStop = null
       }
       cardChoiceOverlay.hidden = true
+      cardChoiceOverlay.classList.remove('arcade-compact')
+      arcadeTacticalDraft.hidden = true
+      arcadeTacticalDraft.innerHTML = ''
       cardChoiceOverlay.querySelectorAll('.hud-expl-card-row').forEach((el) => el.remove())
     },
 
@@ -2652,6 +2708,9 @@ export function createGameHud() {
     // piloto" (Documento de Implementação, item 2.1-2.3): se a região OPOSTA está tocando esse
     // mesmo pilotId, esconde ela primeiro (fade-out rápido, sem encadear a fila dela).
     showWingmanRadio(payload) {
+      if (payload.isAbility) {
+        wingmanRadioRegionTrivial.clearQueue()
+      }
       const region = payload.isAbility ? wingmanRadioRegionAbility : wingmanRadioRegionTrivial
       const otherRegion = payload.isAbility ? wingmanRadioRegionTrivial : wingmanRadioRegionAbility
       showRadioAfterOtherRegion(payload, region, otherRegion)
@@ -2751,6 +2810,7 @@ export function createGameHud() {
 
     unmount() {
       damageNumbers.dispose()
+      motionLinesRenderer.dispose()
       // v0.51.0: cancela TUDO que estava agendado (damage numbers, hit marker, absorb beam,
       // focus collapse, error float) e aborta o collapse se ele ainda estiver em voo. Sem
       // isso, um HUD remontado num novo jogo antes do próximo timeout vencer disparava

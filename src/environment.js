@@ -2,6 +2,14 @@ import * as THREE from 'three'
 import { ENVIRONMENT_CONFIG } from './environment-config.js'
 import { getSettings } from './settings.js'
 import { FOG_COVERAGE_TARGET, FOG_ARENA_DENSITY_MULT, FOG_DENSITY_LERP_RATE, FOG_COLOR_LERP_RATE } from './main-constants.js'
+import {
+  SPEEDLINES_APPROVED,
+  clampUnit,
+  speedlinesEnvironmentalCurve,
+  speedlinesLineCount,
+  speedlinesTrailLength,
+} from './speedlines-visual-model.js'
+import { fogPocketVisualStrength, nextFogBankOffsets } from './fog-visual-model.js'
 
 // ============ PERFIS DE FOG POR EVENTO (Overhaul 4, pilar 4) ============
 // Cor só se aplica de verdade quando getSettings().fogTacticalColors está ligado (default
@@ -91,6 +99,38 @@ function createRingTexture() {
     ctx.fillRect(x, 0, 1, 1)
   }
 
+  const texture = new THREE.CanvasTexture(canvas)
+  return texture
+}
+
+function createStarPointTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 31)
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)')
+  grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.85)')
+  grad.addColorStop(0.55, 'rgba(220, 240, 255, 0.28)')
+  grad.addColorStop(1, 'rgba(180, 210, 255, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 64, 64)
+  const texture = new THREE.CanvasTexture(canvas)
+  return texture
+}
+
+function createFogBankTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62)
+  grad.addColorStop(0, 'rgba(165, 205, 245, 0.20)')
+  grad.addColorStop(0.35, 'rgba(125, 175, 230, 0.12)')
+  grad.addColorStop(0.70, 'rgba(65, 115, 185, 0.04)')
+  grad.addColorStop(1, 'rgba(20, 50, 95, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, 128, 128)
   const texture = new THREE.CanvasTexture(canvas)
   return texture
 }
@@ -215,6 +255,8 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   const deepStarPos = new Float32Array(DEEP_STAR_COUNT * 3)
   const deepStarColors = new Float32Array(DEEP_STAR_COUNT * 3)
   const deepStarPhases = new Float32Array(DEEP_STAR_COUNT)
+  const deepStarTrailPos = new Float32Array(DEEP_STAR_COUNT * 6)
+  const deepStarTrailColors = new Float32Array(DEEP_STAR_COUNT * 6)
 
   for (let i = 0; i < DEEP_STAR_COUNT; i++) {
     const r = 260 + Math.random() * 100
@@ -234,12 +276,24 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     } else {
       deepStarColors[i * 3] = 1.0; deepStarColors[i * 3 + 1] = 1.0; deepStarColors[i * 3 + 2] = 1.0
     }
+
+    const pointOffset = i * 3
+    const trailOffset = i * 6
+    deepStarTrailPos[trailOffset] = deepStarTrailPos[trailOffset + 3] = deepStarPos[pointOffset]
+    deepStarTrailPos[trailOffset + 1] = deepStarTrailPos[trailOffset + 4] = deepStarPos[pointOffset + 1]
+    deepStarTrailPos[trailOffset + 2] = deepStarTrailPos[trailOffset + 5] = deepStarPos[pointOffset + 2]
+    deepStarTrailColors[trailOffset] = deepStarTrailColors[trailOffset + 3] = deepStarColors[pointOffset]
+    deepStarTrailColors[trailOffset + 1] = deepStarTrailColors[trailOffset + 4] = deepStarColors[pointOffset + 1]
+    deepStarTrailColors[trailOffset + 2] = deepStarTrailColors[trailOffset + 5] = deepStarColors[pointOffset + 2]
   }
 
   deepStarGeo.setAttribute('position', new THREE.BufferAttribute(deepStarPos, 3))
   deepStarGeo.setAttribute('color', new THREE.BufferAttribute(deepStarColors, 3))
+  const starTexture = createStarPointTexture()
   const deepStarMat = new THREE.PointsMaterial({
-    size: 1.5,
+    size: 1.25,
+    map: starTexture,
+    alphaTest: 0.01,
     vertexColors: true,
     transparent: true,
     opacity: 0.9,
@@ -248,6 +302,108 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   })
   const deepStars = new THREE.Points(deepStarGeo, deepStarMat)
   environmentGroup.add(deepStars)
+
+  // Rastros ambientais reais: um único buffer dinâmico, sem criar/destruir linhas durante boost.
+  const deepStarTrailGeo = new THREE.BufferGeometry()
+  const deepStarTrailAttr = new THREE.BufferAttribute(deepStarTrailPos, 3)
+  deepStarTrailAttr.setUsage(THREE.DynamicDrawUsage)
+  deepStarTrailGeo.setAttribute('position', deepStarTrailAttr)
+  deepStarTrailGeo.setAttribute('color', new THREE.BufferAttribute(deepStarTrailColors, 3))
+  const deepStarTrailMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  })
+  const deepStarTrails = new THREE.LineSegments(deepStarTrailGeo, deepStarTrailMat)
+  deepStarTrails.visible = false
+  environmentGroup.add(deepStarTrails)
+
+  // ============ 3B. CAMADA INTERMEDIÁRIA DE ESTRELAS (Responde ao Fog) ============
+  // Estrelas a média distância (38u a 145u) com fog: true.
+  // Proporciona profundidade espacial real: ao atravessar névoa ou bancos volumétricos,
+  // essas estrelas se atenuam e reaparecem progressivamente, enquanto as estrelas profundas
+  // (deepStars com fog: false) continuam dando apoio de fundo cósmico.
+  const MID_STAR_COUNT = 380
+  const midStarGeo = new THREE.BufferGeometry()
+  const midStarPos = new Float32Array(MID_STAR_COUNT * 3)
+  const midStarBasePos = new Float32Array(MID_STAR_COUNT * 3)
+  const midStarColors = new Float32Array(MID_STAR_COUNT * 3)
+
+  for (let i = 0; i < MID_STAR_COUNT; i++) {
+    const rx = (Math.random() - 0.5) * 260
+    const ry = (Math.random() - 0.5) * 160
+    const rz = (Math.random() - 0.5) * 280
+    midStarBasePos[i * 3] = rx
+    midStarBasePos[i * 3 + 1] = ry
+    midStarBasePos[i * 3 + 2] = rz
+    midStarPos[i * 3] = rx
+    midStarPos[i * 3 + 1] = ry
+    midStarPos[i * 3 + 2] = rz
+
+    const roll = Math.random()
+    if (roll < 0.3) {
+      midStarColors[i * 3] = 0.62; midStarColors[i * 3 + 1] = 0.85; midStarColors[i * 3 + 2] = 1.0
+    } else if (roll < 0.55) {
+      midStarColors[i * 3] = 1.0; midStarColors[i * 3 + 1] = 0.92; midStarColors[i * 3 + 2] = 0.78
+    } else {
+      midStarColors[i * 3] = 0.96; midStarColors[i * 3 + 1] = 0.98; midStarColors[i * 3 + 2] = 1.0
+    }
+  }
+
+  const midStarPosAttr = new THREE.BufferAttribute(midStarPos, 3)
+  midStarPosAttr.setUsage(THREE.DynamicDrawUsage)
+  midStarGeo.setAttribute('position', midStarPosAttr)
+  midStarGeo.setAttribute('color', new THREE.BufferAttribute(midStarColors, 3))
+  const midStarMat = new THREE.PointsMaterial({
+    size: 1.15,
+    map: starTexture,
+    alphaTest: 0.01,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    fog: true, // Responde ao fog da cena
+  })
+  const midStars = new THREE.Points(midStarGeo, midStarMat)
+  environmentGroup.add(midStars)
+
+  // Bancos localizados: três massas à frente no trilho, reutilizadas para não alocar por frame.
+  // São sprites com depth-test (não overlay de tela inteira), portanto ocupam um lugar legível no
+  // espaço e podem ser vistos antes de o jogador atravessar a região de densidade maior.
+  const fogBankTexture = createFogBankTexture()
+  const fogBankRoots = Array.from({ length: 3 }, (_, bankIndex) => {
+    const root = new THREE.Group()
+    const bankSpecs = [
+      [-32, 14, 32, 22, 0.75],
+      [34, -12, 36, 24, 0.85],
+      [-26, -18, 28, 18, 0.65],
+    ]
+    const bankMaterials = []
+    for (const [x, y, sx, sy, alpha] of bankSpecs) {
+      const material = new THREE.SpriteMaterial({
+        map: fogBankTexture,
+        color: 0x7894aa,
+        transparent: true,
+        opacity: 0.18 * alpha,
+        depthWrite: false,
+        depthTest: true,
+        fog: false,
+      })
+      const sprite = new THREE.Sprite(material)
+      sprite.position.set(x, y, 0)
+      sprite.scale.set(sx, sy, 1)
+      root.add(sprite)
+      bankMaterials.push({ material, alpha })
+    }
+    root.userData.bankMaterials = bankMaterials
+    root.userData.lateral = (bankIndex - 1) * 9
+    root.userData.vertical = bankIndex === 1 ? 1 : (bankIndex === 0 ? -4 : 5)
+    environmentGroup.add(root)
+    return root
+  })
 
   // ============ 4. ESTRELAS CADENTES / METEOROS ============
   const METEOR_COUNT = 3
@@ -282,6 +438,7 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
 
   // ============ 5. GRID DE SOLO ENERGIZADO ============
   let energizedPulseZ = 0
+  let warpVisualIntensity = 0
   const gridLineMat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
     transparent: true,
@@ -299,6 +456,7 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   function update(dt, playerPos, opts = {}) {
     elapsed += dt
     const boostActive = !!opts.boostActive
+    const requestedSpeedlinesIntensity = clampUnit(opts.speedlinesIntensity ?? (boostActive ? 0.9 : 0))
     const inArena = rail.isArena()
 
     // Sincroniza visibilidade conforme ENVIRONMENT_CONFIG
@@ -306,6 +464,19 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     planetGroup.visible = ENVIRONMENT_CONFIG.enableCelestialBodies
     deepStars.visible = ENVIRONMENT_CONFIG.enableMultiLayerStars
     gridPulseMesh.visible = ENVIRONMENT_CONFIG.enableEnergizedGrid
+
+    // Atualiza também quando as estrelas estão ocultas: ao religar o toggle depois que o boost
+    // acabou, a camada deve voltar neutra, não reaparecer por um frame com intensidade antiga.
+    const warpTarget = ENVIRONMENT_CONFIG.enableMultiLayerStars && ENVIRONMENT_CONFIG.enableWarpStreaks
+      ? requestedSpeedlinesIntensity
+      : 0
+    const warpRate = warpTarget > warpVisualIntensity ? 8.5 : 11
+    warpVisualIntensity += (warpTarget - warpVisualIntensity) * (1 - Math.exp(-warpRate * dt))
+    if (warpVisualIntensity < 0.002 && warpTarget === 0) warpVisualIntensity = 0
+    const environmentalCurve = speedlinesEnvironmentalCurve(warpVisualIntensity)
+    deepStarTrails.visible = ENVIRONMENT_CONFIG.enableMultiLayerStars
+      && ENVIRONMENT_CONFIG.enableWarpStreaks
+      && environmentalCurve > 0.01
 
     // 1. SkyDome & Corpos celestes acompanham a câmera para infinito
     if (camera) {
@@ -331,16 +502,57 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     }
 
     // 2. Twinkle e Warp Streaks no Starfield
+    midStars.visible = !!ENVIRONMENT_CONFIG.enableMultiLayerStars
     if (ENVIRONMENT_CONFIG.enableMultiLayerStars) {
+      midStars.position.set(0, 0, 0)
+      const refX = playerPos ? playerPos.x : (camera ? camera.position.x : 0)
+      const refY = playerPos ? playerPos.y : (camera ? camera.position.y : 0)
+      const refZ = playerPos ? playerPos.z : (camera ? camera.position.z : 0)
+      const SPAN_X = 260, HALF_X = 130
+      const SPAN_Y = 160, HALF_Y = 80
+      const SPAN_Z = 280, HALF_Z = 140
+
+      for (let i = 0; i < MID_STAR_COUNT; i++) {
+        const i3 = i * 3
+        const bx = midStarBasePos[i3]
+        const by = midStarBasePos[i3 + 1]
+        const bz = midStarBasePos[i3 + 2]
+
+        midStarPos[i3] = ((((bx - refX) % SPAN_X) + SPAN_X * 1.5) % SPAN_X) - HALF_X + refX
+        midStarPos[i3 + 1] = ((((by - refY) % SPAN_Y) + SPAN_Y * 1.5) % SPAN_Y) - HALF_Y + refY
+        midStarPos[i3 + 2] = ((((bz - refZ) % SPAN_Z) + SPAN_Z * 1.5) % SPAN_Z) - HALF_Z + refZ
+      }
+      midStarPosAttr.needsUpdate = true
+
+      const pocketStrength = !inArena && ENVIRONMENT_CONFIG.enableNebulaPockets
+        ? fogPocketVisualStrength(rail.getDistance()) : 0
+      midStarMat.opacity = 0.75 * (1 - pocketStrength * 0.55)
+      midStarMat.size = boostActive ? 1.35 : 1.10
       // Pulso suave de cintilação
       deepStarMat.size = 1.4 + Math.sin(elapsed * 2.5) * 0.35
 
-      // Efeito dobra / Warp Streaks durante o boost
-      if (ENVIRONMENT_CONFIG.enableWarpStreaks && boostActive) {
-        deepStars.scale.set(1.0, 1.0, 2.2)
-        deepStarMat.size = 2.4
-      } else {
-        deepStars.scale.lerp(_tmpScaleOne, 1 - Math.exp(-6 * dt))
+      // O protótipo aprovado usa segmentos reais em vez de escalar a nuvem inteira no eixo Z.
+      // Assim cada estrela mantém a cabeça pontual e ganha uma cauda coerente com o avanço.
+      deepStars.scale.lerp(_tmpScaleOne, 1 - Math.exp(-6 * dt))
+      deepStarMat.size += environmentalCurve * 0.45
+
+      if (deepStarTrails.visible) {
+        const frame = rail.getFrameAt(0)
+        const trailLength = speedlinesTrailLength(warpVisualIntensity, SPEEDLINES_APPROVED.length)
+        const visibleCount = Math.min(DEEP_STAR_COUNT, speedlinesLineCount(warpVisualIntensity, SPEEDLINES_APPROVED.density) * 6)
+        deepStarTrailGeo.setDrawRange(0, visibleCount * 2)
+        for (let i = 0; i < visibleCount; i++) {
+          const pointOffset = i * 3
+          const trailOffset = i * 6
+          deepStarTrailPos[trailOffset] = deepStarPos[pointOffset]
+          deepStarTrailPos[trailOffset + 1] = deepStarPos[pointOffset + 1]
+          deepStarTrailPos[trailOffset + 2] = deepStarPos[pointOffset + 2]
+          deepStarTrailPos[trailOffset + 3] = deepStarPos[pointOffset] + frame.forward.x * trailLength
+          deepStarTrailPos[trailOffset + 4] = deepStarPos[pointOffset + 1] + frame.forward.y * trailLength
+          deepStarTrailPos[trailOffset + 5] = deepStarPos[pointOffset + 2] + frame.forward.z * trailLength
+        }
+        deepStarTrailAttr.needsUpdate = true
+        deepStarTrailMat.opacity = environmentalCurve * (0.15 + 0.5 * SPEEDLINES_APPROVED.brightness / 100)
       }
     }
 
@@ -450,6 +662,26 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
       }
     }
 
+    // Volumes localizados de fog: só no rail. Arena conserva leitura limpa de Boss/Dourado.
+    const showFogBanks = !inArena && !!ENVIRONMENT_CONFIG.enableNebulaPockets && (ENVIRONMENT_CONFIG.enableVolumetricFogBanks !== false)
+    const bankOffsets = showFogBanks ? nextFogBankOffsets(rail.getDistance(), fogBankRoots.length) : []
+    for (let i = 0; i < fogBankRoots.length; i += 1) {
+      const bank = fogBankRoots[i]
+      const offset = bankOffsets[i]
+      bank.visible = showFogBanks && Number.isFinite(offset) && offset < 760
+      if (!bank.visible) continue
+      const bankFrame = rail.getFrameAt(offset)
+      bank.position.copy(bankFrame.position)
+        .addScaledVector(bankFrame.right, bank.userData.lateral)
+        .addScaledVector(bankFrame.up, bank.userData.vertical)
+      const approach = Math.max(0.35, Math.min(1, 1 - offset / 760))
+      const cameraDist = camera ? camera.position.distanceTo(bank.position) : offset
+      const proximityFade = THREE.MathUtils.clamp((cameraDist - 22) / 45, 0, 1)
+      for (const entry of bank.userData.bankMaterials) {
+        entry.material.opacity = (0.04 + approach * 0.06) * entry.alpha * proximityFade
+      }
+    }
+
     // 5. Grid de Solo Energizado
     if (gridPulseMesh) {
       gridPulseMesh.visible = !!ENVIRONMENT_CONFIG.enableEnergizedGrid && !inArena
@@ -480,6 +712,14 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
     moonMat.dispose()
     deepStarGeo.dispose()
     deepStarMat.dispose()
+    deepStarTrailGeo.dispose()
+    deepStarTrailMat.dispose()
+    midStarGeo.dispose()
+    midStarMat.dispose()
+    for (const bank of fogBankRoots) {
+      for (const entry of bank.userData.bankMaterials || []) entry.material.dispose()
+    }
+    fogBankTexture.dispose()
     meteorMat.dispose()
     for (const m of meteors) m.line.geometry.dispose()
     gridPulseGeo.dispose()

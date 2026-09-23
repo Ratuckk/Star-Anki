@@ -2,14 +2,12 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.99.33-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.99.35-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
 
 🎮 **Jogue no navegador:** [https://ratuckk.github.io/Star-Anki/](https://ratuckk.github.io/Star-Anki/)
-
-**v0.99.33:** os locks triangulares da Carga Compartilhada pertencem exclusivamente à Miyu: podem se repetir no mesmo inimigo enquanto a mira permanece nele e cada triângulo gera um disparo roxo homing saindo da nave dela, sem criar uma cópia extra no Fox.
 
 ---
 
@@ -198,50 +196,24 @@ Star-Anki/
 │       ├── detrito.js      # Asteroides e destroços físicos
 │       ├── golden.js       # Mini-chefe Anomalia Dourada
 │       └── boss.js         # Chefe principal de setor
-└── progresso/              # Patch notes e histórico detalhado de versões
+└── docs/                   # Documentação canônica, arquitetura, design e histórico
 ```
 
 ---
 
-## 📜 Histórico e Evolução
+## 📜 Histórico e Documentação
 
-### v0.99.33 — Carga Compartilhada com ownership real dos locks
-- Locks triangulares (`source: miyu`) deixam de ser consumidos pelo tiro carregado do Fox.
-- Orçamentos BASE e MIYU são independentes; o BASE preserva limites por tipo e a Miyu pode repetir seus triângulos no mesmo alvo comum enquanto a mira permanece nele.
-- Cada triângulo gera um laser roxo homing de suporte disparado fisicamente da nave da Miyu; com 3 stacks, o orçamento atual permite até 4 extras.
-- Aquisição e disparo recebem instrumentação `aiValidator` e regressão dedicada.
-
-### v0.99.32 — Antispam de rádio e fala contextual da Miyu
-- Cooldown de rádio por piloto entre 2 e 10 segundos para falas triviais, abilities e Call & Response.
-- `ability_assist` só é anunciada enquanto o jogador ainda carrega e já existe um lock visível no HUD.
-
-### v0.99.31 — Hotfix de carregamento dos Wingmen
-- Corrige quatro blocos reaplicados por engano em `src/combat/wingmen.js`: estado de posição anterior, watchdog de movimento, cálculo de velocidade do jogador e snapshot de alvos.
-- Restaura o carregamento do módulo e, portanto, o boot do jogo no navegador.
-- Preserva o hardening legítimo da v0.99.30: Wingmen continuam ignorando alvos fora do gameplay e o Focus continua validando alvos ativos.
-- Adiciona regressão estrutural para impedir novas redeclarações/reaplicações desses blocos.
-
-### v0.99.30 — Estabilidade dos Wingmen, rádio lateral e feedback de dano
-- Rádio dos quatro Wingmen volta aos painéis laterais com vozes, conexão/desconexão e estática; somente o chamado de Fox no Focus permanece acima da nave do jogador.
-- Focus recebe confirmação de todo aliado ativo sem cancelar Actions comprometidas.
-- IA de voo valida alvos realmente ativos, limita Rescue, desacelera ao chegar à formação no All-Range e possui failsafe de progresso sem teleportes.
-- Manga fica 50% menor e nasce do centro do alvo; Buraco Negro usa um círculo único e correto por alvo.
-
-
-Para detalhes minuciosos sobre o desenvolvimento e os patches de cada versão:
-- [progresso/PROGRESSO_POS_.90.35.md](progresso/PROGRESSO_POS_.90.35.md) — registro incremental criado a partir da v0.99.33.
-- [progresso/PROGRESSO_POS_.90.md](progresso/PROGRESSO_POS_.90.md) — resumo contínuo das implementações v0.90+.
-- [progresso/PROGRESSO_POS_.70.md](progresso/PROGRESSO_POS_.70.md) — histórico anterior.
-- [progresso/PROGRESSO_POS_.60.md](progresso/PROGRESSO_POS_.60.md) — v0.61.0 → v0.74.1 (congelado).
-- [progresso/PROGRESSO_POS_0.50.md](progresso/PROGRESSO_POS_0.50.md) — v0.51.9 → v0.60.0 (congelado).
-- [progresso/PROGRESSO_POS_0.30.md](progresso/PROGRESSO_POS_0.30.md) — v0.34.0 → v0.50.0 (congelado).
-- [progresso/PROGRESSO.md](progresso/PROGRESSO.md) — Histórico até v0.33.x (congelado).
-- [progresso/REGISTRO_AUDITORIA_E_CORRECOES.md](progresso/REGISTRO_AUDITORIA_E_CORRECOES.md) — Auditoria completa de bugs e otimização de desempenho (v0.76.0).
-- [BACKLOG.md](BACKLOG.md) — Registro de ideias e próximos recursos planejados.
+Para a documentação completa, consulte o **[Mapa Mestre da Documentação](docs/README.md)**:
+- **[Estado Atual e Próximos Passos](docs/progress/CURRENT.md)** — Versão, status do runtime e continuidade.
+- **[Backlog de Recursos Planejados](docs/planning/BACKLOG.md)** — Backlog oficial consolidado.
+- **[Arquitetura e Regras](docs/project/)** — Regras de engenharia, Three.js e validação.
+- **[Histórico Completo de Versões](docs/progress/archive/)** — Registros detalhados desde v0.00 até as versões mais recentes.
+- **[Auditorias Técnicas](docs/audits/archive/)** — Registros de auditorias de performance e caça a bugs.
 
 ---
 
-## 📄 Licença
+## 📄 Licença e Materiais de Terceiros
 
-Este projeto é desenvolvido para fins educacionais e de entretenimento, sob a licença [MIT](LICENSE).
-Inspirado na franquia *Star Fox* da Nintendo. Todos os direitos sobre conceitos originais pertencem a seus respectivos detentores.
+O código original e a documentação original do Star-Anki são disponibilizados sob a licença [MIT](LICENSE), salvo indicação em contrário. Assets, personagens, nomes, sprites, áudio e outros materiais de terceiros permanecem sujeitos aos direitos de seus respectivos detentores e não são relicenciados pela licença MIT deste projeto.
+
+Para detalhes completos de procedência e atribuições, consulte [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

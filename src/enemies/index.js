@@ -7,6 +7,7 @@ import {
 import { createEnemyTelemetry } from './enemy-telemetry.js'
 import { isEnemySpawnPending, isolateSpawnMaterial, releaseSpawnMaterial } from './spawn-lifecycle.js'
 import { aiValidator } from '../ai-validator.js'
+import { fogSpawnStrengthAtOffset } from '../fog-visual-model.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
@@ -18,16 +19,19 @@ import {
 import {
   MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, spawnMiniSwarmFromHorda, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm,
 } from './miniSwarm.js'
-import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, spawnTankEnemy, tankStatsForLevel, disposeTank } from './tank.js'
+import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, TANK_KILL_BONUS, spawnTankEnemy, tankStatsForLevel, disposeTank } from './tank.js'
 import {
   TIME_KIND, TIME_HIT_RADIUS, TIME_DEATH_DURATION, TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS,
   spawnTimeEnemy, spawnTimeEnemyMega, updateTimeSpin, timePassBehind, timeColor, timeFire, disposeTimeEnemy,
 } from './timeEnemy.js'
 import {
   BOSS_KIND, BOSS_COLOR, BOSS_HIT_RADIUS, BOSS_DEATH_DURATION, BOSS_LASER_HIT_RADIUS,
-  bossEnemyGeometry, bossEnemyMaterial, BOSS_SHIELD_COLOR,
+  bossEnemyGeometry, bossEnemyMaterial, BOSS_SHIELD_COLOR, BOSS_PHASES,
   spawnBossEnemy, updateBossMovement, randomBossFireInterval, fireBossVolley, updateBossLaser, explodeBoss, disposeBoss,
 } from './boss.js'
+
+// Dano percentual adicional do Swirl Blast contra chefes (Docs/Swirl Blast)
+export const SWIRL_BOSS_MAX_HP_DAMAGE_RATIO = 0.30
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
 import {
   DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS,
@@ -89,6 +93,7 @@ const GOLDEN_MINION_SPEED = 12
 // Temporários reutilizáveis de módulo para evitar GC spikes em per-frame loops
 const _enemyRel = new THREE.Vector3()
 const _epStep = new THREE.Vector3()
+const _epPrevPos = new THREE.Vector3()
 const _epToPlayer = new THREE.Vector3()
 const _epVelNorm = new THREE.Vector3()
 const _elStep = new THREE.Vector3()
@@ -160,16 +165,34 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     arenaPreviewMesh = mesh
   }
 
+  function accountSquadronExit(e, destroyed = false) {
+    if (!e?.squadronId || e.squadronExitAccounted || !activeSquadrons.has(e.squadronId)) {
+      return { squadWipe: false, squadWipeBonus: 0 }
+    }
+    e.squadronExitAccounted = true
+    const sq = activeSquadrons.get(e.squadronId)
+    sq.remaining = Math.max(0, sq.remaining - 1)
+    let squadWipe = false
+    let squadWipeBonus = 0
+    if (sq.remaining <= 0) {
+      activeSquadrons.delete(e.squadronId)
+      if (destroyed && !sq.wiped) {
+        sq.wiped = true
+        squadWipe = true
+        squadWipeBonus = 150
+        effects?.spawnMicroOrbe?.(e.mesh.position.clone())
+      }
+    }
+    aiValidator.expect('Saída de membro de esquadrão é contabilizada no máximo uma vez',
+      () => sq.remaining >= 0,
+      { squadronId: e.squadronId, remaining: sq.remaining, destroyed })
+    return { squadWipe, squadWipeBonus }
+  }
+
   function removeEnemy(e) {
     e.dying = true
     telemetry.recordEvent(e.id, e.kind, 'despawn', `Inimigo ${e.kind} #${e.id} removido da cena`, { reason: e.deathT >= 1 ? 'destruído' : 'despawn' })
-    if (e.squadronId && activeSquadrons.has(e.squadronId)) {
-      const sq = activeSquadrons.get(e.squadronId)
-      sq.remaining--
-      if (sq.remaining <= 0) {
-        activeSquadrons.delete(e.squadronId)
-      }
-    }
+    accountSquadronExit(e, false)
     if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
     // Se a remoção acontecer no meio da entrada, restaura o material original e libera o clone
     // temporário usado pela animação. Sem isso, despawn/clear durante peek/materialize vazaria material.
@@ -296,7 +319,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case SUSSURRO_KIND:
       case REPLICA_KIND:
       case IMA_KIND: return 1
-      case TANK_KIND:
+      case TANK_KIND: return enemy.ramAttackActive ? 3 : 2
       case TIME_KIND:
       case SENTINELA_KIND:
       case VERME_KIND:
@@ -347,7 +370,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   }
 
   function killPointsFor(kind) {
-    if (kind === BLASTER_KIND || kind === TANK_KIND) return BLASTER_KILL_BONUS
+    if (kind === TANK_KIND) return TANK_KILL_BONUS
+    if (kind === BLASTER_KIND) return BLASTER_KILL_BONUS
     if (kind === DETRITO_KIND) return DETRITO_KILL_BONUS
     if (kind === REPLICA_KIND) return REPLICA_KILL_BONUS
     if (kind === FRAGATA_KIND) return FRAGATA_KILL_BONUS
@@ -421,7 +445,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Inimigos genéricos puxam para cima e vão embora voando após atacarem N vezes (4 pro
       // Blaster/Tank, 6 pra Horda — pedido explícito do usuário)
       const disengageAtShots = enemy.kind === HORDA_KIND ? HORDA_SHOTS_BEFORE_LEAVE : 4
-      if (enemy.shotsFired >= disengageAtShots && (enemy.kind === BLASTER_KIND || enemy.kind === TANK_KIND || enemy.kind === HORDA_KIND)) {
+      if (enemy.shotsFired >= disengageAtShots && (enemy.kind === BLASTER_KIND || enemy.kind === HORDA_KIND)) {
         enemy.disengaging = true
         enemy.fireTimer = Infinity
       }
@@ -518,6 +542,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           // durar a sobreposição; o flag reseta assim que sai do raio.
           if (!enemy.ramHitActive) {
             enemy.ramHitActive = true
+            if (enemy.kind === BOSS_KIND && enemy.transitioning) {
+              effects?.hitSpark?.(enemy.mesh.position, BOSS_SHIELD_COLOR)
+              aiValidator.logMechanic('boss-phase', 'ram-blocked-during-transition', { bossId: enemy.id })
+              continue
+            }
             if (enemy.kind === BOSS_KIND && enemy.isShieldActive) {
               if (effects) {
                 effects.hitSpark(enemy.mesh.position, BOSS_SHIELD_COLOR)
@@ -717,7 +746,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.fireTimer -= dt
       if (enemy.fireTimer <= 0 && inFireRange) {
         let handled = false
-        if (enemy.kind === BOSS_KIND) { fireBossVolley(enemy, playerPosition, projectileCtx); handled = true }
+        if (enemy.kind === BOSS_KIND) {
+          if (!enemy.transitioning) fireBossVolley(enemy, playerPosition, projectileCtx)
+          handled = true
+        }
         else if (enemy.kind === TIME_KIND) handled = timeFire(scene, enemy, playerPosition, timeLaserCtx)
         else if (enemy.kind === SENTINELA_KIND) handled = sentinelaFire(scene, enemy, playerPosition, { pushGate: (g) => enemyGates.push(g) }, frame)
         if (!handled) fireEnemyProjectile(enemy, playerPosition)
@@ -754,7 +786,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           _epToPlayer.normalize()
           _epVelNorm.lerp(_epToPlayer, Math.min(1, GOLDEN_MINION_TURN_RATE * dt))
           if (_epVelNorm.lengthSq() > 1e-6) {
-            projectile.velocity.copy(_epVelNorm.normalize().multiplyScalar(GOLDEN_MINION_SPEED))
+            _epVelNorm.normalize()
+            projectile.velocity.copy(_epVelNorm).multiplyScalar(GOLDEN_MINION_SPEED)
             projectile.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _epVelNorm)
             const rollBank = Math.sin((projectile.traveled || 0) * 0.25) * 0.4
             projectile.mesh.rotateZ(rollBank)
@@ -762,6 +795,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
       }
 
+      _epPrevPos.copy(projectile.mesh.position)
       _epStep.copy(projectile.velocity).multiplyScalar(dt)
       projectile.mesh.position.add(_epStep)
       projectile.traveled += _epStep.length()
@@ -770,14 +804,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const maxRange = projectile.maxRange ?? ENEMY_PROJECTILE_MAX_RANGE
       const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.45 }] : [])
 
-      const wingmanHit = wingmanTargets.find((target) => target.worldPos.distanceTo(projectile.mesh.position) <= hitRadius + target.radius)
+      const wingmanHit = wingmanTargets.find((target) => distanceToSegment(target.worldPos, _epPrevPos, projectile.mesh.position) <= hitRadius + target.radius)
       if (wingmanHit) {
         wingmanHitIds.push(wingmanHit.id)
         removeEnemyProjectile(projectile)
         continue
       }
 
-      const projHit = shipPoints.some((pt) => pt.worldPos.distanceTo(projectile.mesh.position) <= hitRadius + pt.radius)
+      const projHit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, _epPrevPos, projectile.mesh.position) <= hitRadius + pt.radius)
       if (projHit) {
         hits += 1
         damage = Math.max(damage, projectile.shieldDamage ?? 1)
@@ -836,6 +870,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   function updateEnemyGates(dt, playerPosition, opts = {}) {
     let hits = 0
     let damage = 1
+    let shieldDamage = 0
+    let hullDamage = 0
     let powerLevel = POWER_LEVEL_BASIC
     const wingmanHitIds = []
     const wingmanTargets = opts.wingmanTargets || []
@@ -861,10 +897,12 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Resolve colisão no instante da passagem pelo plano do jogador (uma única vez)
       if (alongDir <= 0 && !gate.hitResolved) {
         gate.hitResolved = true
-        const { hit } = resolveGateHit(gate, playerPosition, opts)
-        if (hit) {
+        const gateHit = resolveGateHit(gate, playerPosition, opts)
+        if (gateHit.hit) {
           hits += 1
-          damage = Math.max(damage, gate.shieldDamage ?? 1)
+          shieldDamage = Math.max(shieldDamage, gateHit.shieldDamage || 0)
+          hullDamage = Math.max(hullDamage, gateHit.hullDamage || 0)
+          damage = Math.max(damage, gateHit.shieldDamage || gateHit.hullDamage || 1)
           powerLevel = Math.max(powerLevel, gate.powerLevel ?? POWER_LEVEL_BASIC)
         }
       }
@@ -874,7 +912,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         removeEnemyGate(gate)
       }
     }
-    return { hits, damage, powerLevel, wingmanHitIds }
+    return { hits, damage, shieldDamage, hullDamage, powerLevel, wingmanHitIds }
   }
 
   // ============ OVERHAUL DE SPAWN EM 3 FASES (peek/materialize/settle) ============
@@ -904,6 +942,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // posição real — desvio médio estatisticamente nulo, não precisa desfazer no frame seguinte.
   const SPAWN_WOBBLE_DURATION_S = 0.2
   const SPAWN_WOBBLE_MAGNITUDE = 0.15
+  const SPAWN_FOG_INTEGRATION_THRESHOLD = 0.12
+  const SPAWN_FOG_WISP_THRESHOLD = 0.55
   // Ideia 4 do documento (orientação de aproximação — mesh nasce com offset de rotação e
   // converge pra orientação correta) NÃO implementada nesta entrega: a maioria dos inimigos já
   // recalcula orientação a cada frame no próprio update de movimento (lookAt ou similar), que
@@ -913,6 +953,36 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // Mini-swarm/Ima nunca ganham peek mesmo tendo hitRadius acima do limiar — são enxame, o peek
   // "poluiria" a tela quando vários nascem juntos (tabela §2.2 do documento).
   const SPAWN_NO_PEEK_KINDS = new Set([MINI_SWARM_KIND, IMA_KIND])
+
+  function spawnFogVisualStrengthFor(enemy) {
+    if (!enemy?.mesh || rail.isArena()) return 0
+    const frame = rail.getFrameAt(0)
+    _enemyRel.copy(enemy.mesh.position).sub(frame.position)
+    const forwardOffset = Math.max(0, _enemyRel.dot(frame.forward))
+    return fogSpawnStrengthAtOffset(rail.getDistance(), forwardOffset)
+  }
+
+  function triggerFogSpawnMaterialization(enemy) {
+    const strength = Math.max(0, Math.min(1, enemy?.spawnFogVisualStrength || 0))
+    if (!effects || strength < SPAWN_FOG_INTEGRATION_THRESHOLD || enemy?.spawnedInDenseFog) return false
+    const radius = hitRadiusFor(enemy)
+    effects.fogCondensationInward?.(enemy.mesh.position, colorFor(enemy), radius)
+    if (strength >= SPAWN_FOG_WISP_THRESHOLD) {
+      effects.fogWispCondensation?.(enemy.mesh.position, colorFor(enemy))
+    }
+    if (!enemy.spawnFogIntegrationLogged) {
+      enemy.spawnFogIntegrationLogged = true
+      aiValidator.expect(
+        'Spawn integrado ao fog usa força visual normalizada e posição finita',
+        () => strength >= 0 && strength <= 1 && [enemy.mesh.position.x, enemy.mesh.position.y, enemy.mesh.position.z].every(Number.isFinite),
+        { enemyId: enemy.id, kind: enemy.kind, strength },
+      )
+      aiValidator.logMechanic('fog-spawn', 'materialize-from-visible-bank', {
+        enemyId: enemy.id, kind: enemy.kind, strength,
+      })
+    }
+    return true
+  }
 
   function getSpawnDurations(enemy) {
     const hitRadius = hitRadiusFor(enemy)
@@ -954,16 +1024,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
         enemy.mesh.scale.setScalar(targetScale * 0.1)
-        // Materialização começa AGORA (peek já cobriu a antecipação) — condensação inward
-        // dispara na entrada da fase, não no spawn original.
+        // Materialização começa AGORA (peek já cobriu a antecipação). O trail de mini-swarm
+        // continua sendo identidade própria; a condensação de fog só aparece quando o ponto de
+        // spawn está dentro do MESMO banco visual que o ambiente desenha.
         const hordaSplitDenseFog = enemy.spawnedInDenseFog
-        if (effects && !hordaSplitDenseFog) {
-          if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
-            effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-          } else if (effects.fogCondensationInward) {
-            effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
-          }
+        if (effects && !hordaSplitDenseFog && enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+          effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
         }
+        triggerFogSpawnMaterialization(enemy)
       }
     } else if (enemy.spawnPhase === 'materialize') {
       const eased = THREE.MathUtils.smoothstep(localT, 0, 1)
@@ -1008,6 +1076,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.spawnAnimationChannel = null
         enemy.spawnOpacityWasTransparent = false
         enemy.settleFlashFired = false
+        enemy.spawnFogVisualStrength = null
+        enemy.spawnFogIntegrationLogged = false
         // Wobble pós-spawn (aplicado no último instante antes do render — ver applySpawnWobbles)
         enemy.wobbleTimer = SPAWN_WOBBLE_DURATION_S
         enemy.wobbleMagnitude = SPAWN_WOBBLE_MAGNITUDE
@@ -1024,6 +1094,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.targetScale = enemy.scale || enemy.mesh.scale.x || 1.0
       const durations = getSpawnDurations(enemy)
       enemy.spawnDurations = durations
+      enemy.spawnFogVisualStrength = spawnFogVisualStrengthFor(enemy)
+      enemy.spawnFogIntegrationLogged = false
       const hasPeek = durations.peek > 0
       enemy.spawnPhase = hasPeek ? 'peek' : 'materialize'
       enemy.spawnPhaseTimer = 0
@@ -1040,17 +1112,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       if (hasPeek && effects?.spawnAnticipation && !hordaSplitDenseFog) {
         effects.spawnAnticipation(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy) * 0.6, durations.peek)
       }
-      // Fog tático (Overhaul 4, pilar 3) — filhote de Horda nascido em fog denso pula toda
-      // condensação visual (nasce "literalmente invisível", ver spawnedInDenseFog/fadeInMaterial
-      // em miniSwarm.js) — a única leitura de que ele existe é o fade-in de opacidade + o som.
-      // Materialização dispara já aqui quando NÃO há peek (senão dispara ao entrar na fase).
-      if (effects && !hordaSplitDenseFog && !hasPeek) {
-        if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
-          effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-        } else if (effects.fogCondensationInward) {
-          effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
-        }
+      // Filhote de Horda nascido em fog denso preserva a regra de invisibilidade. Nos demais
+      // spawns sem peek, o trail próprio do mini-swarm continua; a condensação adicional só é
+      // emitida se o spawn caiu espacialmente dentro de um banco de fog visível.
+      if (effects && !hordaSplitDenseFog && !hasPeek && enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+        effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
       }
+      if (!hasPeek) triggerFogSpawnMaterialization(enemy)
     }
     enemies.push(enemy)
     telemetry.recordEvent(enemy.id, enemy.kind, 'spawn', `Inimigo ${enemy.kind} #${enemy.id} surgiu em cena`, {
@@ -1176,6 +1244,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnTitanicDetrito(opts = {}) {
@@ -1263,7 +1332,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const sources = []
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i]
-        if (e.kind === IMA_KIND && !e.dying && !isEnemySpawnPending(e) && e.mesh) {
+        if (e.kind === IMA_KIND && !e.dying && !e.fadingOut && !isEnemySpawnPending(e) && e.mesh) {
           sources.push({ position: e.mesh.position, radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })
         }
       }
@@ -1285,13 +1354,25 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     // Wobble pós-spawn (Ideia 6) — chamada por game-loop.js NO ÚLTIMO INSTANTE antes do
     // renderer.render(), nunca dentro de update() normal. Ver comentário em SPAWN_WOBBLE_*.
+    restoreSpawnWobbles() {
+      for (const e of enemies) {
+        if (!e.mesh || !e.renderWobbleOffset) continue
+        e.mesh.position.sub(e.renderWobbleOffset)
+        e.renderWobbleOffset.set(0, 0, 0)
+      }
+    },
+
     applySpawnWobbles() {
       for (const e of enemies) {
         if (e.wobbleTimer > 0 && e.mesh) {
+          if (!e.renderWobbleOffset) e.renderWobbleOffset = new THREE.Vector3()
           const mag = e.wobbleMagnitude * (e.wobbleTimer / SPAWN_WOBBLE_DURATION_S)
-          e.mesh.position.x += (Math.random() * 2 - 1) * mag
-          e.mesh.position.y += (Math.random() * 2 - 1) * mag
-          e.mesh.position.z += (Math.random() * 2 - 1) * mag
+          e.renderWobbleOffset.set(
+            (Math.random() * 2 - 1) * mag,
+            (Math.random() * 2 - 1) * mag,
+            (Math.random() * 2 - 1) * mag,
+          )
+          e.mesh.position.add(e.renderWobbleOffset)
         }
       }
     },
@@ -1335,6 +1416,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return {
         hits: p.hits + l.hits + g.hits,
         damage: Math.max(p.damage, l.damage, g.damage),
+        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0),
+        shieldDamage: g.hits > 0 ? g.shieldDamage : 0,
+        hullDamage: g.hits > 0 ? g.hullDamage : 0,
         powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
         wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || [])],
       }
@@ -1356,6 +1440,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         if (e.fadingOut) continue
         if (isEnemySpawnPending(e)) continue
         if (e.spawnInvincibleTimer > 0) continue
+        if (e.kind === BOSS_KIND && e.transitioning) continue
         if (e.mesh.position.distanceTo(center) > radius) continue
         if (e.kind === BOSS_KIND && e.isShieldActive) continue
         e.hp -= damage
@@ -1395,6 +1480,14 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
       const enemyHit = enemies.find((e) => !e.dying && !e.fadingOut && !isEnemySpawnPending(e) && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
+        if (enemyHit.kind === BOSS_KIND && enemyHit.transitioning) {
+          effects?.hitSpark?.(enemyHit.mesh.position, BOSS_SHIELD_COLOR)
+          return {
+            kind: enemyHit.kind, killed: false, blocked: true, transitionBlocked: true,
+            worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+            enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false, goldenSpecialHit: false,
+          }
+        }
         // Chefe: escudo refletor azul — a cada 7s ergue escudo por 3s que reflete tiros
         if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {
           if (effects) {
@@ -1474,19 +1567,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             if (effects) effects.explosion(enemyHit.mesh.position, killColor, 1.6, { rings: true })
 
             // Rastreamento de abates de esquadrão
-            if (enemyHit.squadronId && activeSquadrons.has(enemyHit.squadronId)) {
-              const sq = activeSquadrons.get(enemyHit.squadronId)
-              sq.remaining--
-              if (sq.remaining <= 0 && !sq.wiped) {
-                sq.wiped = true
-                activeSquadrons.delete(enemyHit.squadronId)
-                squadWipe = true
-                squadWipeBonus = 150
-                enemyKillPoints += squadWipeBonus
-                if (effects && effects.spawnMicroOrbe) {
-                  effects.spawnMicroOrbe(enemyHit.mesh.position.clone())
-                }
-              }
+            const squadResult = accountSquadronExit(enemyHit, true)
+            if (squadResult.squadWipe) {
+              squadWipe = true
+              squadWipeBonus = squadResult.squadWipeBonus
+              enemyKillPoints += squadWipeBonus
             }
           }
         } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
@@ -1527,14 +1612,26 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     resolvePiercingProjectileHits(prevPos, currPos, meta = {}) {
       const damage = meta.damage ?? 1
       const hitBuffer = meta.hitBuffer || 0
+      const projectileRadius = Math.max(0, meta.projectileRadius || 0)
+      const bossHpRatio = Math.max(0, meta.bossHpRatio || 0)
       const piercedTargets = meta.piercedTargets || new Set()
       const hits = []
 
       for (const enemyHit of enemies) {
         if (enemyHit.dying || enemyHit.fadingOut || isEnemySpawnPending(enemyHit) || enemyHit.spawnInvincibleTimer > 0) continue
         if (piercedTargets.has(enemyHit.id)) continue
-        if (distanceToSegment(enemyHit.mesh.position, prevPos, currPos) > hitRadiusFor(enemyHit) + hitBuffer) continue
+        if (distanceToSegment(enemyHit.mesh.position, prevPos, currPos) > hitRadiusFor(enemyHit) + hitBuffer + projectileRadius) continue
         piercedTargets.add(enemyHit.id)
+        if (enemyHit.kind === BOSS_KIND && enemyHit.transitioning) {
+          effects?.hitSpark?.(enemyHit.mesh.position, BOSS_SHIELD_COLOR)
+          hits.push({
+            kind: enemyHit.kind, killed: false, blocked: true, transitionBlocked: true,
+            worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+            enemyKillPoints: 0, timeReductionMs: null, bossDefeated: false,
+            squadWipe: false, squadWipeBonus: 0, stopProjectile: true, damageApplied: 0,
+          })
+          continue
+        }
 
         // §3.2.1 — detrito sempre morre, o dano numérico não se aplica; o Swirl continua voando.
         if (enemyHit.kind === DETRITO_KIND) {
@@ -1546,7 +1643,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           if (effects) effects.explosion(enemyHit.mesh.position, colorFor(enemyHit), 1.6, { rings: true })
           hits.push({
             kind: enemyHit.kind, killed: true, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
-            enemyKillPoints, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
+            damage: 0, damageApplied: 0, enemyKillPoints, timeReductionMs: null, bossDefeated: false, squadWipe: false, squadWipeBonus: 0,
+            stopProjectile: false, destroyedShield: false,
           })
           continue
         }
@@ -1566,8 +1664,24 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           }
         }
 
-        enemyHit.hp -= damage
-        telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${damage} de dano perfurante (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage, hp: enemyHit.hp })
+        const prevHp = enemyHit.hp
+        let effectiveFloor = 0
+        if (enemyHit.kind === BOSS_KIND) {
+          if (enemyHit.transitioning) {
+            effectiveFloor = enemyHit.transitionFloorHp
+          } else if (Array.isArray(BOSS_PHASES) && enemyHit.phase < BOSS_PHASES.length - 1) {
+            effectiveFloor = enemyHit.maxHp * BOSS_PHASES[enemyHit.phase + 1].enterAtHpFrac
+          }
+        }
+
+        const targetDamage = enemyHit.kind === BOSS_KIND
+          ? damage + (Number.isFinite(meta.bossHpRatio) ? Math.ceil((enemyHit.maxHp || 0) * meta.bossHpRatio) : Math.ceil((enemyHit.maxHp || 0) * SWIRL_BOSS_MAX_HP_DAMAGE_RATIO))
+          : damage
+        const targetHp = Math.max(effectiveFloor, enemyHit.hp - targetDamage)
+        const appliedDamage = Math.max(0, prevHp - targetHp)
+        enemyHit.hp -= appliedDamage
+        if (enemyHit.kind === TANK_KIND) enemyHit.requestStagger?.('swirl')
+        telemetry.recordEvent(enemyHit.id, enemyHit.kind, 'damage', `Recebeu ${appliedDamage} de dano perfurante (HP restante: ${Math.max(0, enemyHit.hp)})`, { damage: appliedDamage, hp: enemyHit.hp })
         const killed = enemyHit.hp <= 0
         let enemyKillPoints = 0
         let timeReductionMs = null
@@ -1600,17 +1714,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
             triggerHordaSplitIfNeeded(enemyHit)
             if (effects) effects.explosion(enemyHit.mesh.position, colorFor(enemyHit), 1.6, { rings: true })
 
-            if (enemyHit.squadronId && activeSquadrons.has(enemyHit.squadronId)) {
-              const sq = activeSquadrons.get(enemyHit.squadronId)
-              sq.remaining--
-              if (sq.remaining <= 0 && !sq.wiped) {
-                sq.wiped = true
-                activeSquadrons.delete(enemyHit.squadronId)
-                squadWipe = true
-                squadWipeBonus = 150
-                enemyKillPoints += squadWipeBonus
-                if (effects && effects.spawnMicroOrbe) effects.spawnMicroOrbe(enemyHit.mesh.position.clone())
-              }
+            const squadResult = accountSquadronExit(enemyHit, true)
+            if (squadResult.squadWipe) {
+              squadWipe = true
+              squadWipeBonus = squadResult.squadWipeBonus
+              enemyKillPoints += squadWipeBonus
             }
           }
         } else if (enemyHit.kind === BLASTER_KIND && !enemyHit.wingBroken) {
@@ -1621,6 +1729,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
         hits.push({
           kind: enemyHit.kind, killed, worldPos: enemyHit.mesh.position.clone(), meshRef: enemyHit.mesh,
+          damage: appliedDamage, damageApplied: appliedDamage,
           enemyKillPoints, timeReductionMs, bossDefeated, squadWipe, squadWipeBonus,
           stopProjectile: stopsProjectile, destroyedShield,
         })
@@ -1629,7 +1738,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Dourado vive em golden.js (array/estado próprio) — mesmo pipeline multi-hit, Set
       // separado do de cima por encapsulamento (golden.js não precisa saber do Set genérico).
       const goldenPierced = meta.goldenPiercedTargets || new Set()
-      hits.push(...golden.resolvePiercingHit(prevPos, currPos, damage, goldenPierced))
+      const numericHitBuffer = (Number.isFinite(meta.hitBuffer) ? meta.hitBuffer : 0) + (Number.isFinite(meta.projectileRadius) ? meta.projectileRadius : 0)
+      hits.push(...golden.resolvePiercingHit(prevPos, currPos, damage, goldenPierced, numericHitBuffer, {
+        projectileRadius: meta.projectileRadius,
+        bossHpRatio: meta.bossHpRatio,
+      }))
 
       return hits
     },
@@ -1639,7 +1752,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres)
       return enemies.reduce((n, e) => {
         if (e.dying || e.fadingOut || e.kind === DETRITO_KIND || e.kind === IMA_KIND) return n
-        return n + (e.kind === HORDA_KIND ? 3 : 1)
+        return n + (e.kind === HORDA_KIND ? 3 : e.kind === TANK_KIND ? 2 : 1)
       }, 0)
     },
 
@@ -1771,6 +1884,11 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const b = enemies.find((e) => e.kind === BOSS_KIND)
       return b ? b.mesh.position.clone() : null
     },
+    consumeGoldenDefeated: () => (golden.consumeDefeated ? golden.consumeDefeated() : null),
+    hasAliveGolden: () => (golden.hasAlive ? golden.hasAlive() : false),
+    isGoldenDying: () => (golden.isDying ? golden.isDying() : false),
+    getGoldenWorldPos: () => (golden.getWorldPos ? golden.getWorldPos() : null),
+    getGoldenSnapshot: () => (golden.getSnapshots ? golden.getSnapshots()[0] || null : null),
 
     getTelemetry: () => telemetry.getSnapshot(),
     getCombatLog: (limit) => telemetry.getCombatLog(limit),
