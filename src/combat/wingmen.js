@@ -611,6 +611,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   let hasPreviousPlayerPosition = false
   const previousPlayerPosition = new THREE.Vector3()
   let hasPreviousPlayerPosition = false
+  const previousPlayerPosition = new THREE.Vector3()
+  let hasPreviousPlayerPosition = false
 
   function activeRadioPilotIds() {
     return activeWingmen.map((wingman) => wingman.profile.id)
@@ -882,6 +884,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       railCatchupActive: false,
       motionWatch: createWingmanStallWatch(spawnPos),
       motionWatch: createWingmanStallWatch(spawnPos),
+      motionWatch: createWingmanStallWatch(spawnPos),
       auxShieldVisual,
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
@@ -1014,10 +1017,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function getAliveEnemies() {
     const alive = []
     if (enemies && enemies.getAlive) {
-      for (const e of enemies.getAlive()) if (!e.dying && e.mesh) alive.push(e)
+      for (const e of enemies.getAlive()) if (isWingmanCombatTargetReady(e)) alive.push(e)
     }
     if (enemies && enemies.getGoldenAlive) {
-      for (const g of enemies.getGoldenAlive()) if (!g.dying && g.mesh) alive.push(g)
+      for (const g of enemies.getGoldenAlive()) if (isWingmanCombatTargetReady(g)) alive.push(g)
     }
     return alive
   }
@@ -1333,6 +1336,12 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     previousPlayerPosition.copy(playerPos)
     hasPreviousPlayerPosition = true
     const formationMotionGain = inArena ? computeFormationMotionGain(playerMotionSpeed) : 1
+    const playerMotionSpeed = hasPreviousPlayerPosition && dt > 0
+      ? previousPlayerPosition.distanceTo(playerPos) / dt
+      : 0
+    previousPlayerPosition.copy(playerPos)
+    hasPreviousPlayerPosition = true
+    const formationMotionGain = inArena ? computeFormationMotionGain(playerMotionSpeed) : 1
     // Overhaul de Personalidade, Ideia 5 — estado do jogador, computado uma vez por frame em
     // game-loop.js (único lugar com session/killChainCount/isNoDeck no escopo) e repassado até
     // aqui via opts.reactivity. Fallback all-false cobre chamadas sem esse campo (debug/testes).
@@ -1480,6 +1489,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // O rádio lateral consome as mensagens acumuladas e mantém os canais trivial/ability do HUD.
     // fora do loop e acrescenta a resposta Call & Response que estiver vencida neste frame.
     const radioMessages = pendingRadioMessages.splice(0)
+    const readyCombatTargets = new Set(getAliveEnemies())
     const readyCombatTargets = new Set(getAliveEnemies())
     const readyCombatTargets = new Set(getAliveEnemies())
     const eligibleResponderIds = activeWingmen

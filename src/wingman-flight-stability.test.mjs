@@ -23,6 +23,7 @@ const readySet = new Set([ready])
 assert.equal(isWingmanCombatTargetReady(ready, readySet), true)
 assert.equal(isWingmanCombatTargetReady(pending, readySet), false, 'alvo fora da lista gameplay-ready não pode sustentar dogfight')
 assert.equal(isWingmanCombatTargetReady({ ...ready, fadingOut: true }, null), false)
+assert.equal(isWingmanCombatTargetReady({ ...ready, spawnInvincibleTimer: .2 }, null), false, 'spawn ainda invulnerável não pode virar alvo')
 assert.equal(isWingmanCombatTargetReady({ ...ready, mesh: { parent: null } }, null), false)
 
 const watch = createWingmanStallWatch({ x: 0, y: 0, z: 0 })
