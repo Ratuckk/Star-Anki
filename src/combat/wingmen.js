@@ -29,6 +29,7 @@ import {
   isFiniteWingmanPosition,
   navigationIntentForWingman,
 } from './wingman-navigation.js'
+import { createWingmanWorldRadio, WINGMAN_ABILITY_GLOW_DURATION_S } from './wingman-world-radio.js'
 
 function hexToCss(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -531,18 +532,53 @@ function buildWingmanShip(profile) {
 export function createSquadronSystem(scene, rail, effects, enemies) {
   const telemetry = createWingmanTelemetry()
   const wingmanRadio = createWingmanRadio()
-  // Mensagens de rádio disparadas FORA do laço de update() (dano externo ao jogador vindo de
-  // game-loop.js, ou dismiss de piloto que esvazia o esquadrão) ficam aqui até o próximo update()
-  // pegar e devolver no wingmanResult — 1 frame de atraso, imperceptível pra um popup de texto.
-  let pendingRadioMessage = null
-  // isAbility decide em qual região do HUD a fala aparece (hud-game.js: painel superior/ability
-  // vs. inferior/trivial) — classificado por eventId via ABILITY_EVENT_IDS, nunca por engano.
+  const worldRadio = createWingmanWorldRadio(scene)
+  // Falas triviais/semânticas disparadas fora do loop ficam numa lista, não num único slot.
+  // Assim dois pilotos diferentes podem falar no mesmo frame e o HUD distribui cada payload
+  // diretamente no espaço permanente do respectivo personagem.
+  const pendingRadioMessages = []
+
   function buildRadioPayload(profile, text, eventId, meta = {}) {
     return { pilotId: profile.id, name: profile.name, color: hexToCss(profile.accentColor), text, isAbility: ABILITY_EVENT_IDS.has(eventId), eventId, ...meta }
   }
+
   function speak(profile, eventId) {
     const text = wingmanRadio.trySpeak(profile.id, eventId, performance.now(), { activePilotIds: activeRadioPilotIds() })
     return text ? buildRadioPayload(profile, text, eventId) : null
+  }
+
+  function announceAbility(wingman, eventId) {
+    // A ativação da habilidade nunca depende do cooldown das triviais. Mesmo se o texto faltar
+    // por regressão de conteúdo, o brilho de 1.5s continua ocorrendo e o aiValidator denuncia.
+    worldRadio.triggerAbilityGlow(wingman.mesh, wingman.profile.accentColor, WINGMAN_ABILITY_GLOW_DURATION_S)
+    const text = wingmanRadio.speakAbility(
+      wingman.profile.id,
+      eventId,
+      performance.now(),
+      { activePilotIds: activeRadioPilotIds() },
+    )
+    aiValidator.expect(
+      'Habilidade de Wingman possui quote in-world e brilho de 1.5s',
+      () => typeof text === 'string' && text.length > 0 && WINGMAN_ABILITY_GLOW_DURATION_S === 1.5,
+      { pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S },
+    )
+    if (text) {
+      worldRadio.showWingman(wingman.mesh, buildRadioPayload(wingman.profile, text, eventId, { inWorld: true }))
+    }
+    aiValidator.logMechanic('wingman-world-radio', 'ability-announced', {
+      pilotId: wingman.profile.id,
+      eventId,
+      glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S,
+      hasQuote: !!text,
+    })
+    return text
+  }
+
+  function announceWorld(wingman, eventId) {
+    const text = wingmanRadio.getLine(wingman.profile.id, eventId)
+    if (!text) return null
+    worldRadio.showWingman(wingman.mesh, buildRadioPayload(wingman.profile, text, eventId, { inWorld: true }))
+    return text
   }
   // Rádio: qual evento de "engajei" falar depende do tipo de inimigo — chefe/dourado e alguns
   // inimigos com identidade mais forte (Horda, Fragata) têm fala própria; o resto cai no genérico
@@ -560,7 +596,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   let wasPlayerLowHealth = false // edge-detect pro evento player_low_health (só dispara na virada)
   let wasBoostActive = false // edge-detect pro evento boost_used
   let wasHomingCharging = false // edge-detect pro evento charged_shot_used (dispara ao SOLTAR)
-  let pendingRadioQueue = null // rajada de "prontidão" do comando de foco — ver toggleCommand()
   // Slippy (Ideia 4): buffer do roll do JOGADOR pra imitar com 0.3s de atraso — um só histórico
   // no nível do sistema (o valor de origem é o mesmo pra quem quer que o leia), não por instância.
   const playerRollHistory = []
@@ -600,14 +635,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         reason: transition.reason, cooldownPolicy,
       })
       const semanticRadio = classifyWingmanTransitionForRadio(transition)
-      if (semanticRadio && (!pendingRadioMessage || semanticRadio.urgent)) {
+      if (semanticRadio) {
         const context = { activePilotIds: activeRadioPilotIds() }
         const now = performance.now()
         const text = semanticRadio.urgent
           ? wingmanRadio.forceSpeak(wingman.profile.id, semanticRadio.eventId, now, context)
           : wingmanRadio.trySpeak(wingman.profile.id, semanticRadio.eventId, now, context)
         if (text) {
-          pendingRadioMessage = buildRadioPayload(wingman.profile, text, semanticRadio.eventId, { semanticTransition: true })
+          pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, semanticRadio.eventId, { semanticTransition: true }))
           aiValidator.logMechanic('wingman-radio-semantic', semanticRadio.eventId, { pilotId: wingman.profile.id, source: transition.source, transitionEvent: transition.event, from, to, urgent: semanticRadio.urgent })
         }
       }
@@ -899,7 +934,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     // vazio — só 1x por partida (ver wingman-radio.js → trySpeakAlone).
     if (activeWingmen.length === 0) {
       const text = wingmanRadio.trySpeakAlone(w.profile.id)
-      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'alone')
+      if (text) pendingRadioMessages.push(buildRadioPayload(w.profile, text, 'alone'))
     }
   }
 
@@ -922,7 +957,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     const retreating = w.state === 'retreating'
     if (retreating) {
       const text = wingmanRadio.forceSpeak(w.profile.id, 'retreat', performance.now(), { activePilotIds: activeRadioPilotIds() })
-      if (text) pendingRadioMessage = buildRadioPayload(w.profile, text, 'retreat')
+      if (text) pendingRadioMessages.push(buildRadioPayload(w.profile, text, 'retreat'))
     }
     aiValidator.expect(
       'Integridade de aliado fica dentro dos limites após hit',
@@ -1093,26 +1128,36 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       triggerSoundCue(WINGMAN_SOUND_CUES.command_focus_toggle, { targetCount: squadronFocusTargets.length, hasLocked: validLocked.length > 0 })
 
-      // Rádio — rajada de "prontidão": TODOS os pilotos ativos confirmam em fila (não é 1 sorteado
-      // como os outros eventos, e não passa pelo cooldown global do dispatcher — usa getLine(),
-      // que é um lookup puro). Só quem realmente recebeu a ordem fala (abilityActive continua de
-      // fora, ver comentário acima).
-      // Regra 2.4 do Documento de Implementação: Slippy com Morale ou Peppy com Auxílio e
-      // cooldown disponível usam `ability_focus_upgrade` no canal superior; os demais mantêm
-      // `focus_ready` no rádio trivial. As filas são separadas no HUD pelo campo isAbility.
-      const readyQueue = []
+      // Focus é comunicação in-world: Fox chama acima da nave do jogador e cada piloto que
+      // recebeu a ordem responde acima da própria nave. Nada desta sequência ocupa os slots
+      // triviais laterais.
+      worldRadio.showFoxFocus(playerPos, {
+        text: validLocked.length > 0 ? 'All units, focus on my target!' : 'All units, focus fire!',
+        targetCount: squadronFocusTargets.length,
+        hasLocked: validLocked.length > 0,
+      })
+      let focusReplyCount = 0
       for (const w of activeWingmen) {
         if (!focusRecipients.has(w.profile.id)) continue
         const slippyFocusUpgrade = w.profile.id === 2 && moraleDamageBonus > 0
         const peppyFocusUpgrade = w.profile.id === 1 && peppyAuxShieldStacks > 0 && w.abilityCooldown <= 0
         const eventId = slippyFocusUpgrade || peppyFocusUpgrade ? 'ability_focus_upgrade' : 'focus_ready'
         const text = wingmanRadio.getLine(w.profile.id, eventId)
-        if (text) readyQueue.push(buildRadioPayload(w.profile, text, eventId))
+        if (!text) continue
+        focusReplyCount += 1
+        worldRadio.showWingman(w.mesh, buildRadioPayload(w.profile, text, eventId, { inWorld: true, focusResponse: true }))
       }
-      if (readyQueue.length > 0) {
-        wingmanRadio.cancelPendingResponse('focus-command-queue')
-        pendingRadioQueue = readyQueue
-      }
+      aiValidator.expect(
+        'Focus mostra uma resposta in-world para cada Wingman que recebeu a ordem',
+        () => focusReplyCount === focusRecipients.size,
+        { recipients: [...focusRecipients], focusReplyCount, targetCount: squadronFocusTargets.length },
+      )
+      aiValidator.logMechanic('wingman-world-radio', 'focus-broadcast', {
+        fox: true,
+        recipients: [...focusRecipients],
+        focusReplyCount,
+        hasLocked: validLocked.length > 0,
+      })
 
       return {
         mode: 'focus',
@@ -1129,8 +1174,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   function clearSquadron() {
     squadronFocusTargets = []
     wingmanRadio.reset()
-    pendingRadioMessage = null
-    pendingRadioQueue = null
+    pendingRadioMessages.length = 0
+    worldRadio.clear()
     activeSeparationPairs.clear()
     closeSeparationSince.clear()
     reportedFormationClumps.clear()
@@ -1258,6 +1303,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function update(dt, playerPos, frame, opts = {}) {
     elapsed += dt
+    worldRadio.update(dt, playerPos, frame)
     const boostActive = !!opts.boostActive
     const homingCharging = !!opts.homingCharging
     const shieldNotFull = !!opts.shieldNotFull
@@ -1406,52 +1452,55 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     let rescueCancels = 0
     const healOrbSpawns = []
     const completedRetreatIds = []
-    // Rádio (Ideia 3): consome qualquer mensagem disparada fora deste laço (dano externo, dismiss
-    // — ver pendingRadioMessage acima) antes de tentar os eventos do próprio frame.
-    let radioMessage = pendingRadioMessage
-    pendingRadioMessage = null
-    // Rajada de "prontidão" do comando de foco (radioQueue) — ver toggleCommand(). Canal
-    // separado do radioMessage único porque aqui são VÁRIAS falas em fila, não uma só.
-    let radioQueue = pendingRadioQueue
-    pendingRadioQueue = null
-    if (!radioMessage && !radioQueue) {
-      const eligibleResponderIds = activeWingmen.filter((wingman) => wingman.state !== 'damaged-passive' && wingman.state !== 'retreating').map((wingman) => wingman.profile.id)
-      const reply = wingmanRadio.takeDueResponse(performance.now(), eligibleResponderIds)
-      if (reply) {
-        const responder = activeWingmen.find((wingman) => wingman.profile.id === reply.pilotId)
-        if (responder) {
-          aiValidator.expect('Call & Response nunca usa o mesmo piloto como chamador e respondente', () => reply.pilotId !== reply.openerPilotId, { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
-          aiValidator.logMechanic('wingman-radio-call-response', 'reply-delivered', { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
-          telemetry.recordEvent(responder.profile.name, 'radio', 'Resposta de rádio para ' + reply.triggerEventId, { elapsed, threadId: reply.threadId, openerPilotId: reply.openerPilotId, triggerEventId: reply.triggerEventId })
-          const opener = WINGMAN_PROFILES[reply.openerPilotId]
-          const replyText = opener ? `↳ ${opener.name}: ${reply.text}` : `↳ ${reply.text}`
-          radioMessage = buildRadioPayload(responder.profile, replyText, 'radio_response', { threadId: reply.threadId, inReplyTo: reply.triggerEventId, openerPilotId: reply.openerPilotId, isCallResponse: true })
-        }
+    // O HUD novo aceita mensagens simultâneas por piloto. Consome todas as triviais acumuladas
+    // fora do loop e acrescenta a resposta Call & Response que estiver vencida neste frame.
+    const radioMessages = pendingRadioMessages.splice(0)
+    const eligibleResponderIds = activeWingmen
+      .filter((wingman) => wingman.state !== 'damaged-passive' && wingman.state !== 'retreating')
+      .map((wingman) => wingman.profile.id)
+    const reply = wingmanRadio.takeDueResponse(performance.now(), eligibleResponderIds)
+    if (reply) {
+      const responder = activeWingmen.find((wingman) => wingman.profile.id === reply.pilotId)
+      if (responder) {
+        aiValidator.expect('Call & Response nunca usa o mesmo piloto como chamador e respondente', () => reply.pilotId !== reply.openerPilotId, { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
+        aiValidator.logMechanic('wingman-radio-call-response', 'reply-delivered', { threadId: reply.threadId, openerPilotId: reply.openerPilotId, responderPilotId: reply.pilotId, triggerEventId: reply.triggerEventId })
+        telemetry.recordEvent(responder.profile.name, 'radio', 'Resposta de rádio para ' + reply.triggerEventId, { elapsed, threadId: reply.threadId, openerPilotId: reply.openerPilotId, triggerEventId: reply.triggerEventId })
+        radioMessages.push(buildRadioPayload(responder.profile, reply.text, 'radio_response', {
+          threadId: reply.threadId,
+          inReplyTo: reply.triggerEventId,
+          openerPilotId: reply.openerPilotId,
+          isCallResponse: true,
+        }))
       }
+    }
+
+    function queueTrivial(profile, eventId) {
+      const payload = speak(profile, eventId)
+      if (payload) radioMessages.push(payload)
+      return payload
     }
     // player_low_health dispara só na VIRADA (false→true), não every frame — um piloto aleatório
     // comenta.
     const isPlayerLowHealthNow = !!reactivity.playerLowHealth
-    if (isPlayerLowHealthNow && !wasPlayerLowHealth && !radioMessage && activeWingmen.length > 0) {
+    if (isPlayerLowHealthNow && !wasPlayerLowHealth && activeWingmen.length > 0) {
       const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
-      radioMessage = speak(w.profile, 'player_low_health')
+      queueTrivial(w.profile, 'player_low_health')
     }
     wasPlayerLowHealth = isPlayerLowHealthNow
-    // boost_used / charged_shot_used — mesmo padrão: sorteia 1 piloto ativo, respeita o cooldown
-    // global do dispatcher (speak() já checa) e o "só 1 por frame" (!radioMessage).
-    if (justStartedBoost && !radioMessage && activeWingmen.length > 0) {
+    // Cada piloto tem cooldown trivial próprio; eventos simultâneos não se bloqueiam.
+    if (justStartedBoost && activeWingmen.length > 0) {
       const slippy = activeWingmen.find((w) => w.profile.id === 2 && w.state !== 'damaged-passive' && w.state !== 'retreating')
       if (slippy && (opts.slippyBoostStacks || 0) > 0) {
-        radioMessage = speak(slippy.profile, 'ability_boost_dash')
+        announceAbility(slippy, 'ability_boost_dash')
         effects?.propulsionBurst?.(slippy.mesh.position, frame.forward)
       } else {
         const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
-        radioMessage = speak(w.profile, 'boost_used')
+        queueTrivial(w.profile, 'boost_used')
       }
     }
-    if (justReleasedCharge && !radioMessage && activeWingmen.length > 0) {
+    if (justReleasedCharge && activeWingmen.length > 0) {
       const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
-      radioMessage = speak(w.profile, 'charged_shot_used')
+      queueTrivial(w.profile, 'charged_shot_used')
     }
 
     for (let idx = 0; idx < activeWingmen.length; idx++) {
@@ -1511,7 +1560,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               source: 'falco-intercept', event: 'intercept-fired',
             })
             telemetry.recordEvent(w.profile.name, 'ability', 'Falco interceptou um projétil pesado antes que chegasse no jogador!', { elapsed })
-            if (!radioMessage) radioMessage = speak(w.profile, 'ability_intercept')
+            announceAbility(w, 'ability_intercept')
           }
         }
       }
@@ -1524,7 +1573,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         })
         if (transition.decision === 'accepted') {
           telemetry.recordEvent(w.profile.name, 'ability', 'Peppy iniciou Rescue contra a cambalhota do jogador', { elapsed })
-          if (!radioMessage) radioMessage = speak(w.profile, 'ability_rescue')
+          announceAbility(w, 'ability_rescue')
         }
       }
 
@@ -1535,7 +1584,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         })
         if (transition.decision === 'accepted') {
           telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Auxílio: barreira frontal durante repulsão', { elapsed })
-          if (!radioMessage) radioMessage = speak(w.profile, 'ability_aux_shield')
+          announceAbility(w, 'ability_aux_shield')
         }
       }
 
@@ -1549,7 +1598,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           const shots = fireMiyuBoombuster(w, playerPos, miyuBoombusterStacks)
           if (shots > 0) {
             telemetry.recordEvent(w.profile.name, 'ability', `Boombuster lançou ${shots} orbe(s) homing magenta`, { elapsed })
-            if (!radioMessage) radioMessage = speak(w.profile, 'ability_boombuster')
+            announceAbility(w, 'ability_boombuster')
           }
         }
       }
@@ -1691,7 +1740,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
-              if (!radioMessage) radioMessage = speak(w.profile, 'ability_guard')
+              announceAbility(w, 'ability_guard')
             }
           } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
             const transition = stateController.startAction(w, WINGMAN_ACTIONS.ASSIST, {
@@ -1699,7 +1748,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
-              if (!radioMessage) radioMessage = speak(w.profile, 'ability_assist')
+              announceAbility(w, 'ability_assist')
               triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
             }
           }
@@ -1727,7 +1776,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                 })
                 if (transition.decision === 'accepted') {
                   telemetry.recordEvent(w.profile.name, 'combat', `[FOCO] Engajou em dogfight contra ${w.targetEnemy.kind} #${w.targetEnemy.id}`, { elapsed })
-                  if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(w.targetEnemy.kind, 'engage_focus'))
+                  const focusEventId = engageEventFor(w.targetEnemy.kind, 'engage_focus')
+                  announceWorld(w, focusEventId)
                   w.burstRemaining = 4
                   w.burstTimer = 0.2
                 }
@@ -1793,7 +1843,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
                   })
                   if (transition.decision === 'accepted') {
                     telemetry.recordEvent(w.profile.name, 'combat', `Engajou em dogfight contra ${candidate.kind} #${candidate.id} a ${w.mesh.position.distanceTo(candidate.mesh.position).toFixed(1)}u`, { elapsed })
-                    if (!radioMessage) radioMessage = speak(w.profile, engageEventFor(candidate.kind, 'engage_dogfight'))
+                    queueTrivial(w.profile, engageEventFor(candidate.kind, 'engage_dogfight'))
                     w.burstRemaining = 5
                     w.burstTimer = 0.35
                     triggerSoundCue(WINGMAN_SOUND_CUES.dogfight_engage, { wingmanId: w.profile.id, name: w.profile.name, enemyKind: candidate.kind })
@@ -1819,7 +1869,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
         if (enemyLost) {
           telemetry.recordEvent(w.profile.name, 'combat', `Fim do dogfight (alvo perdido ou tempo esgotado). Retornando à formação`, { elapsed })
-          if (!radioMessage) radioMessage = speak(w.profile, 'return_formation')
+          queueTrivial(w.profile, 'return_formation')
           stateController.requestBehavior(w, WINGMAN_BEHAVIORS.PATROL, {
             source: 'dogfight', event: 'dogfight-ended', origin: 'dogfight-ended',
           })
@@ -1844,7 +1894,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', `Falco iniciou Investida Aríete contra ${ramTarget.kind} #${ramTarget.id}!`, { elapsed })
-              if (!radioMessage) radioMessage = speak(w.profile, 'ability_ram')
+              announceAbility(w, 'ability_ram')
               triggerSoundCue(WINGMAN_SOUND_CUES.falco_ram, { worldPos: w.mesh.position })
             }
           } else {
@@ -2193,9 +2243,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           if (hit.killed) {
             enemyKills++
             enemyKillPoints += (hit.enemyKillPoints || 0)
-            if (laser.owner && !radioMessage) {
+            if (laser.owner) {
               const killEvent = hit.bossDefeated ? 'boss_kill' : hit.goldenSpecialHit ? 'golden_kill' : 'kill'
-              radioMessage = speak(laser.owner.profile, killEvent)
+              queueTrivial(laser.owner.profile, killEvent)
             }
           }
           if (hit.bossDefeated) {
@@ -2224,7 +2274,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               })
               triggerSoundCue(WINGMAN_SOUND_CUES.slippy_repair, { worldPos: orbPos })
               telemetry.recordEvent(owner.profile.name, 'ability', 'Tiro certeiro de Slippy gerou Orbe de Reparo de Campo no impacto!', { elapsed })
-              if (!radioMessage) radioMessage = speak(owner.profile, 'ability_repair')
+              announceAbility(owner, 'ability_repair')
             }
           }
           scene.remove(laser.mesh)
@@ -2266,8 +2316,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       rescueCancels,
       healOrbSpawns,
       completedRetreatIds,
-      radioMessage,
-      radioQueue,
+      radioMessage: radioMessages.length === 1 ? radioMessages[0] : null,
+      radioQueue: radioMessages.length > 1 ? radioMessages : null,
     }
   }
 
@@ -2276,10 +2326,10 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // (game-loop.js, no momento em que player.takeDamage() resolve), por isso guarda em
   // pendingRadioMessage pro próximo update() devolver.
   function triggerPlayerTookDamage() {
-    if (activeWingmen.length === 0 || pendingRadioMessage) return
+    if (activeWingmen.length === 0) return
     const w = activeWingmen[Math.floor(Math.random() * activeWingmen.length)]
     const msg = speak(w.profile, 'player_take_damage')
-    if (msg) pendingRadioMessage = msg
+    if (msg) pendingRadioMessages.push(msg)
   }
 
   // Disparo manual sincronizado de suporte: companheiros em formação acompanham o fogo do líder
