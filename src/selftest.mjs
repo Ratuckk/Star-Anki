@@ -16,6 +16,7 @@ import './forgot-stage3.test.mjs'
 import './forgot-stage4.test.mjs'
 import './lockon-priority.test.mjs'
 import './wingman-bughunt.test.mjs'
+import './enemy-supercheck.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
