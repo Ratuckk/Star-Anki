@@ -65,6 +65,14 @@ patch_file('scripts/apply-forgot-wingmen-v09934.py', [
         '''"""  return WINGMAN_RAIL_CATCHUP_MAX_BONUS * t\n""",
 """  return Math.min(WINGMAN_RAIL_CATCHUP_MAX_BONUS, WINGMAN_RAIL_CATCHUP_MAX_BONUS * t)\n""")''',
     ),
+    (
+        '''replace_once('src/combat/wingmen.js',
+"""        member.mesh.position.add(member.separationCorrection)\n""",
+"""        member.mesh.position.add(member.separationCorrection)\n        // Formation attraction yields for this frame while physical depenetration is active.\n        member.separationYield = Math.min(0.65, correctionLength / 2.5)\n""")''',
+        '''replace_once('src/combat/wingmen.js',
+"""      if (member.separationCorrection.lengthSq() > 0) member.mesh.position.add(member.separationCorrection)\n""",
+"""      if (member.separationCorrection.lengthSq() > 0) {\n        member.mesh.position.add(member.separationCorrection)\n        // Formation attraction yields for this frame while physical depenetration is active.\n        member.separationYield = Math.min(0.65, correctionLength / 2.5)\n      }\n""")''',
+    ),
 ])
 
 print('forgot migrators repaired for current main anchors')
