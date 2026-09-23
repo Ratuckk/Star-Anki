@@ -45,6 +45,23 @@ jobs:
       - name: Apply runtime integration
         run: node tools/apply-speedlines-v09929.mjs
 
+      - name: Harden generated structural assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/hud-speedlines.test.mjs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace(
+            "assert.match(hudFacade, /hud.setMotionLiness*=s*(active, intensity = null)/, 'fachada deve substituir setMotionLines legado')",
+            "assert.ok(hudFacade.includes('hud.setMotionLines = (active, intensity = null) => {'), 'fachada deve substituir setMotionLines legado')",
+          )
+          s = s.replace(
+            "assert.match(runtimeSource, /querySelector('.hud-motion-lines')?.remove()/, 'spinner legado precisa sair do DOM')",
+            "assert.ok(runtimeSource.includes(\"querySelector('.hud-motion-lines')?.remove()\"), 'spinner legado precisa sair do DOM')",
+          )
+          p.write_text(s, encoding='utf-8')
+          PY
+
       - name: Syntax checks
         run: |
           node --check src/hud-speedlines.js
