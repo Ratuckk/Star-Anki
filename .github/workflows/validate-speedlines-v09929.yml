@@ -32,6 +32,13 @@ jobs:
           s = s.replace("      canvas.style.height = `${height}px`", "      canvas.style.height = height + 'px'")
           s = s.replace("      ctx.strokeStyle = `hsla(${line.hue}, 90%, 82%, ${alpha})`", "      ctx.strokeStyle = 'hsla(' + line.hue + ', 90%, 82%, ' + alpha + ')'")
           s = s.replace("    const signature = `${nextIsActive ? 1 : 0}:${Math.round(state.intensity)}`", "    const signature = (nextIsActive ? 1 : 0) + ':' + Math.round(state.intensity)")
+
+          marker = "const progressPath = 'progresso/PROGRESSO_POS_.90.md'"
+          end_marker = "console.log('apply-speedlines-v09929.mjs: OK')"
+          start = s.index(marker)
+          end = s.index(end_marker, start)
+          safe_tail = """const progressPath = 'progresso/PROGRESSO_POS_.90.md'\nlet progress = fs.readFileSync(progressPath, 'utf8')\nif (!progress.includes('### v0.99.29 — Speedlines direcionais do Visual Lab no gameplay')) {\n  const progressEntry = [\n    '',\n    '',\n    '### v0.99.29 — Speedlines direcionais do Visual Lab no gameplay',\n    '',\n    '- O laboratório isolado permanece como referência; o gameplay reaproveita apenas a camada abstrata em canvas, sem duplicar estrelas/partículas ambientais.',\n    '- `src/hud-speedlines.js` substitui visualmente o spinner legado de `.hud-motion-lines` e preserva o contrato `hud.setMotionLines(active, intensity)`.',\n    '- Boost normal usa o preset escolhido 90/58/62/100/30/0 (intensidade/densidade/comprimento/espessura/brilho/bias); Swirl Blast e dash lateral continuam podendo elevar a intensidade a 100%. Fora desses gatilhos a intensidade é 0 e o canvas é limpo.',\n    '- O renderer usa pool determinístico de 180 linhas, RAF somente enquanto ativo, DPR limitado a 1.5, resize responsivo e dispose completo no unmount.',\n    '- O `aiValidator` registra apenas transições discretas de ligado/desligado/intensidade, sem log por frame.',\n    '- O Service Worker não ganhou manifesto fixo: o módulo novo segue a estratégia network-first já existente para módulos same-origin e entra no cache ao ser solicitado.',\n    '',\n    '**Validação automatizada:** `node --check` nos módulos alterados, `node src/hud-speedlines.test.mjs`, `node src/speedlines-prototype.test.mjs`, `node src/selftest.mjs` e `git diff --check`.',\n    '',\n    '**Playtest pendente:** confirmar no navegador que boost normal corresponde visualmente à referência do laboratório, Swirl/Dash atingem o pico sem o spinner legado, resize/restart não deixam canvas órfão e o console permanece limpo.',\n    '',\n  ].join('\\n')\n  fs.writeFileSync(progressPath, progress + progressEntry)\n}\n\n"""
+          s = s[:start] + safe_tail + s[end:]
           p.write_text(s, encoding='utf-8')
           PY
 
