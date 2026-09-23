@@ -38,6 +38,18 @@ personagem — ver entregas v0.95.0/v0.96.0 abaixo, primeiras deste documento):
 
 ## Histórico de Entregas pós-v0.90.0
 
+### v0.99.28 — Rádio distribuído, Focus/abilities in-world e expansão de 120 quotes
+
+- **Rádio lateral exclusivamente trivial:** o HUD deixa de usar os dois painéis seriais antigos. Abaixo da bandeja de cartas roguelike existem quatro slots independentes e permanentes (Falco/Peppy/Slippy/Miyu); falas triviais e respostas Call & Response entram no slot de quem falou, sem uma transmissão apagar as demais.
+- **Concorrência real:** cooldown de fala comum passa a ser por piloto, não global. Call & Response também aceita threads simultâneas de chamadores diferentes; entregar/cancelar uma conversa não apaga as outras.
+- **Focus in-world:** ao ativar Focus, Fox transmite acima da nave do jogador usando o novo retrato `assets/wingman-radio/fox.png`; todos os Wingmen que receberam a ordem respondem acima das próprias naves, em vez de entrar na fila lateral.
+- **Abilities in-world:** Ram, Intercept, Guard, Rescue, Aux Shield, Repair, Boost Dash, Assist e Boombuster anunciam a ativação acima da nave do respectivo piloto e nunca usam o rádio lateral.
+- **Feedback de habilidade:** toda ativação acima cria uma aura aditiva na cor do piloto por exatamente **1,5 s**, seguindo a nave durante o efeito.
+- **Conteúdo:** adicionados **120 quotes triviais novos**, exatamente 30 por piloto, preservando os pools anteriores e sem contar ability quotes.
+- **Validação de conteúdo/roteamento:** nova suíte `wingman-radio-overhaul.test.mjs` valida 30 novos por piloto, ausência de duplicatas entre os 30 novos, cooldown independente, abilities fora do cooldown trivial, threads paralelas e integração estrutural do rádio in-world/slots.
+
+**Validado:** sintaxe dos módulos alterados, suíte de rádio/Call & Response, suíte nova de overhaul, playtest-polish, selftest completo e `git diff --check`.
+
 ### v0.99.27 — Tactical Freedom: formação sem coleira e recovery técnico
 
 - **Regroup por distância removido:** `regroup` deixa de existir como Behavior autoritativo. Distância euclidiana do jogador não muda estado, não cancela Action e não força retorno à formação.

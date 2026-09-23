@@ -35,6 +35,6 @@ const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.ur
 assert.match(wingmenSource, /abilityLabel: 'Carga Compartilhada',[\s\S]{0,100}abilityCooldownBase: 6,[\s\S]{0,80}abilityCooldownFloor: 3/, 'Carga Compartilhada deve ter cooldown base de 6s')
 assert.ok(!wingmenSource.includes('enterEmergencyRegroup') && !wingmenSource.includes('WINGMAN_MAX_DISTANCE_ARENA'), 'distância não pode mais acionar regroup/reset')
 assert.ok(wingmenSource.includes('computeRailLongitudinalLag') && wingmenSource.includes('computeRailCatchupBoost'), 'Rail deve usar catch-up longitudinal suave')
-assert.ok(wingmenSource.includes('isCallResponse: true') && wingmenSource.includes('replyText'), 'resposta Call & Response precisa ser visualmente identificável')
+assert.ok(wingmenSource.includes('isCallResponse: true') && wingmenSource.includes('openerPilotId: reply.openerPilotId'), 'resposta Call & Response precisa preservar vínculo com o chamador')
 
 console.log('playtest-polish.test.mjs: OK')
