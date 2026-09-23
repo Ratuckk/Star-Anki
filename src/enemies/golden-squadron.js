@@ -106,11 +106,13 @@ export function getFighterHpForLevel(level) {
   return GOLDEN_FIGHTER_BASE_HP + Math.floor((lvl - 1) * 0.5)
 }
 
-export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
-  let level = initialLevel
+export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, opts = {}) {
+  const rng = (opts && typeof opts.rng === 'function') ? opts.rng : Math.random
+  let level = Math.max(1, Math.min(9, Math.round(initialLevel || 1)))
   let fighters = []
   let elapsed = 0
   let replenishTimer = getReplenishIntervalForLevel(level)
+  let replacementReady = false
   let orderCooldownTimer = 2.5
   let currentOrder = SQUADRON_ORDER.NONE
   let lastOrder = SQUADRON_ORDER.NONE
@@ -141,6 +143,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     const fighter = {
       id: nextId(),
       kind: GOLDEN_FIGHTER_KIND,
+      radius: GOLDEN_FIGHTER_HIT_RADIUS,
       mesh,
       hp,
       maxHp: hp,
@@ -154,6 +157,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       deathT: 0,
       hasFiredInAttack: false,
       disorganizedTimer: 0,
+      ramHitActive: false,
     }
 
     fighters.push(fighter)
@@ -173,6 +177,26 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     }
   }
 
+  // Encerramento autoritativo e consistente da ordem global e de seus participantes
+  function finishCurrentOrder(cooldown) {
+    if (orderState && orderState.participants) {
+      for (const p of orderState.participants) {
+        if (!p.dying && p.currentOrder === currentOrder) {
+          p.currentOrder = SQUADRON_ORDER.NONE
+          if (p.state === FIGHTER_STATE.PREPARING || p.state === FIGHTER_STATE.ATTACKING || p.state === FIGHTER_STATE.PASSING) {
+            p.state = FIGHTER_STATE.REGROUPING
+          }
+        }
+      }
+    }
+    currentOrder = SQUADRON_ORDER.NONE
+    orderState = null
+    const cd = typeof cooldown === 'number'
+      ? cooldown
+      : (ORDER_COOLDOWN_MIN_S + rng() * (ORDER_COOLDOWN_MAX_S - ORDER_COOLDOWN_MIN_S))
+    orderCooldownTimer = cd
+  }
+
   function killFighter(f, killerSource = 'combat') {
     if (f.dying) return
     f.dying = true
@@ -189,11 +213,14 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     if (orderState && orderState.participants && orderState.participants.some((p) => p.id === f.id)) {
       orderState.participants = orderState.participants.filter((p) => p.id !== f.id)
       if (currentOrder === SQUADRON_ORDER.PINCER && orderState.participants.length < 1) {
-        currentOrder = SQUADRON_ORDER.NONE
-        orderState = null
+        finishCurrentOrder()
+      } else if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState.participants.length === 0) {
+        finishCurrentOrder()
+      } else if (currentOrder === SQUADRON_ORDER.STRAFING_RUN && orderState.participants.length === 0) {
+        finishCurrentOrder()
       } else if (currentOrder === SQUADRON_ORDER.COORDINATED_FIRE) {
-        if (orderState.participants.length === 0 && !orderState.commanderFired) {
-          // Apenas o comandante restará
+        if (orderState.participants.length === 0 && orderState.commanderFired) {
+          finishCurrentOrder()
         }
       }
     }
@@ -202,6 +229,10 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
   // Inicializa o esquadrão completo para a dificuldade atual
   function initSquadron(commanderPos, forwardDir) {
     fighters = []
+    currentOrder = SQUADRON_ORDER.NONE
+    orderState = null
+    replenishTimer = getReplenishIntervalForLevel(level)
+    replacementReady = false
     const cap = getSquadronCapForLevel(level)
     for (let i = 0; i < cap; i++) {
       const slotDef = FORMATION_SLOTS[i % FORMATION_SLOTS.length]
@@ -214,7 +245,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
 
   // Compositor de ordens: inicia uma ordem contextual
   function startOrder(orderType, commander, playerPosition) {
-    const activeFighters = fighters.filter((f) => !f.dying && f.state === FIGHTER_STATE.FORMATION)
+    const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
     const maxOffensive = getOffensiveCapForLevel(level)
 
     if (orderType === SQUADRON_ORDER.STRAFING_RUN) {
@@ -232,7 +263,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       for (const f of eligible) {
         f.state = FIGHTER_STATE.PREPARING
         f.currentOrder = SQUADRON_ORDER.STRAFING_RUN
-        f.stateTimer = 0.5 + Math.random() * 0.2
+        f.stateTimer = 0.5 + rng() * 0.2
         f.hasFiredInAttack = false
         f.attackContext = {
           targetPos: playerPosition.clone(),
@@ -264,8 +295,8 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       fLeft.hasFiredInAttack = false
       fLeft.attackContext = {
         flankSide: -1,
-        flankOffset: -20 + (Math.random() * 4 - 2),
-        elevationOffset: 3 + Math.random() * 2,
+        flankOffset: -20 + (rng() * 4 - 2),
+        elevationOffset: 3 + rng() * 2,
         targetPos: playerPosition.clone(),
       }
 
@@ -275,15 +306,16 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       fRight.hasFiredInAttack = false
       fRight.attackContext = {
         flankSide: 1,
-        flankOffset: 22 + (Math.random() * 4 - 2),
-        elevationOffset: -2 + Math.random() * 2,
+        flankOffset: 22 + (rng() * 4 - 2),
+        elevationOffset: -2 + rng() * 2,
         targetPos: playerPosition.clone(),
       }
       return true
     }
 
     if (orderType === SQUADRON_ORDER.COORDINATED_FIRE) {
-      const eligible = activeFighters.slice(0, Math.min(activeFighters.length, maxOffensive + 1))
+      // Contrato: estritamente até maxOffensive caças. O Comandante entra na sequência separadamente sem adicionar slot extra.
+      const eligible = activeFighters.slice(0, maxOffensive)
       if (eligible.length === 0) return false
 
       currentOrder = SQUADRON_ORDER.COORDINATED_FIRE
@@ -347,7 +379,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       // Se estava em formação ou preparando, a formação foi invalidada
       if (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.PREPARING) {
         f.state = FIGHTER_STATE.DISORGANIZED
-        f.disorganizedTimer = 0.5 + Math.random() * 0.4
+        f.disorganizedTimer = 0.5 + rng() * 0.4
         f.currentOrder = SQUADRON_ORDER.NONE
       } else if (f.state === FIGHTER_STATE.ATTACKING || f.state === FIGHTER_STATE.PASSING) {
         // Deixa completar a passagem e depois regressar fisicamente à nova posição
@@ -358,17 +390,23 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       }
     }
 
-    // Cancela ordens ativas dependentes de formação
+    // Cancela ordens ativas dependentes de formação de forma autoritativa
     if (currentOrder !== SQUADRON_ORDER.NONE) {
-      currentOrder = SQUADRON_ORDER.NONE
-      orderState = null
-      orderCooldownTimer = 3.0
+      finishCurrentOrder(3.0)
     }
 
     aiValidator.expect('Fighters do not teleport with commander',
       () => fighters.every((f) => f.dying || f.mesh.position.distanceTo(newCommanderPos) > 1.0),
       { fighterCount: fighters.length },
     )
+  }
+
+  // Contabilização autoritativa de participantes ofensivos (independentemente de PREPARING / ATTACKING / PASSING)
+  function getOffensiveParticipants() {
+    if (currentOrder !== SQUADRON_ORDER.NONE && orderState && Array.isArray(orderState.participants)) {
+      return orderState.participants.filter((p) => !p.dying)
+    }
+    return fighters.filter((f) => !f.dying && f.state === FIGHTER_STATE.ATTACKING)
   }
 
   function update(dt, commander, playerPosition, ctx, opts = {}) {
@@ -390,29 +428,63 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     if (_vRight.lengthSq() < 0.001) _vRight.set(1, 0, 0)
     _vUp.crossVectors(_vRight, _vForward).normalize()
 
-    // 2. Reposição gradual: uma nave por ciclo, visual e com cue de áudio
-    const aliveFighters = fighters.filter((f) => !f.dying)
-    if (aliveFighters.length < maxSquad && !commander.dying && commander.laserTelegraphTimer <= 0) {
-      replenishTimer -= dt
-      if (replenishTimer <= 0) {
-        const spawnOffset = _vRight.clone().multiplyScalar((Math.random() < 0.5 ? -1 : 1) * 3.5).addScaledVector(_vForward, -4.0)
-        const spawnPos = commanderPos.clone().add(spawnOffset)
-        spawnFighter(spawnPos)
-        replenishTimer = getReplenishIntervalForLevel(level)
+    // Encerra LASER_FLANK imediatamente se o laser expirou antes do passo de reposição
+    if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
+      if (commander.laserTelegraphTimer <= 0 || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+        finishCurrentOrder()
       }
     }
 
+    // 2. Reposição gradual respeitando janela tática segura
+    const aliveFighters = fighters.filter((f) => !f.dying)
+    if (aliveFighters.length < maxSquad && !commander.dying) {
+      if (!replacementReady) {
+        replenishTimer -= dt
+        if (replenishTimer <= 0) {
+          replacementReady = true
+        }
+      }
+
+      // Janela tática segura: comandante vivo, sem laser, sem ordem ofensiva ativa
+      const isSafeWindow =
+        commander.laserTelegraphTimer <= 0 &&
+        currentOrder === SQUADRON_ORDER.NONE &&
+        !commander.dying
+
+      if (replacementReady && isSafeWindow) {
+        const spawnOffset = _vRight.clone().multiplyScalar((rng() < 0.5 ? -1 : 1) * 3.5).addScaledVector(_vForward, -4.0)
+        const spawnPos = commanderPos.clone().add(spawnOffset)
+        spawnFighter(spawnPos)
+        replenishTimer = getReplenishIntervalForLevel(level)
+        replacementReady = false
+      }
+    } else {
+      replacementReady = false
+    }
+
     // 3. Orquestração de ordens táticas pelo Comandante
-    const organizedFighters = fighters.filter((f) => !f.dying && f.state === FIGHTER_STATE.FORMATION)
-    if (currentOrder === SQUADRON_ORDER.NONE && orderCooldownTimer <= 0 && playerPosition && !commander.dying) {
-      const distToPlayer = commanderPos.distanceTo(playerPosition)
-      // Seleção contextual sem loop fixo e sem repetição estrita
-      if (organizedFighters.length >= 2 && maxOffensive >= 2 && lastOrder !== SQUADRON_ORDER.PINCER && Math.random() < 0.5) {
-        startOrder(SQUADRON_ORDER.PINCER, commander, playerPosition)
-      } else if (organizedFighters.length >= 1 && lastOrder !== SQUADRON_ORDER.STRAFING_RUN && (distToPlayer > 55 || Math.random() < 0.5)) {
-        startOrder(SQUADRON_ORDER.STRAFING_RUN, commander, playerPosition)
-      } else if (organizedFighters.length >= 1 && lastOrder !== SQUADRON_ORDER.COORDINATED_FIRE) {
-        startOrder(SQUADRON_ORDER.COORDINATED_FIRE, commander, playerPosition)
+    const organizedFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
+    if (currentOrder === SQUADRON_ORDER.NONE && orderCooldownTimer <= 0 && playerPosition && !commander.dying && commander.laserTelegraphTimer <= 0) {
+      const eligibleOrders = []
+      if (organizedFighters.length >= 2 && maxOffensive >= 2 && lastOrder !== SQUADRON_ORDER.PINCER) {
+        eligibleOrders.push(SQUADRON_ORDER.PINCER)
+      }
+      if (organizedFighters.length >= 1 && lastOrder !== SQUADRON_ORDER.STRAFING_RUN) {
+        eligibleOrders.push(SQUADRON_ORDER.STRAFING_RUN)
+      }
+      if (organizedFighters.length >= 1 && lastOrder !== SQUADRON_ORDER.COORDINATED_FIRE) {
+        eligibleOrders.push(SQUADRON_ORDER.COORDINATED_FIRE)
+      }
+      if (eligibleOrders.length === 0) {
+        if (organizedFighters.length >= 2 && maxOffensive >= 2) eligibleOrders.push(SQUADRON_ORDER.PINCER)
+        if (organizedFighters.length >= 1) {
+          eligibleOrders.push(SQUADRON_ORDER.STRAFING_RUN)
+          eligibleOrders.push(SQUADRON_ORDER.COORDINATED_FIRE)
+        }
+      }
+      if (eligibleOrders.length > 0) {
+        const chosen = eligibleOrders[Math.floor(rng() * eligibleOrders.length)]
+        startOrder(chosen, commander, playerPosition)
       }
     }
 
@@ -442,14 +514,8 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
             orderState.stepTimer = COORDINATED_FIRE_INTERVAL_S
             orderState.stepIndex++
           } else {
-            // Ordem concluída: participantes retornam à formação
-            for (const f of participants) {
-              f.state = FIGHTER_STATE.REGROUPING
-              f.currentOrder = SQUADRON_ORDER.NONE
-            }
-            currentOrder = SQUADRON_ORDER.NONE
-            orderState = null
-            orderCooldownTimer = ORDER_COOLDOWN_MIN_S + Math.random() * (ORDER_COOLDOWN_MAX_S - ORDER_COOLDOWN_MIN_S)
+            // Ordem concluída de forma autoritativa
+            finishCurrentOrder()
           }
         }
       }
@@ -571,7 +637,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
             if (_vForward.lengthSq() > 0.01) f.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _vForward)
           } else {
             // Strafing ou Pincer: manobra preparatória de abertura
-            const flankSide = f.attackContext?.flankSide || (Math.random() < 0.5 ? -1 : 1)
+            const flankSide = f.attackContext?.flankSide || (rng() < 0.5 ? -1 : 1)
             _vDesiredVel.copy(_vRight).multiplyScalar(flankSide * 12.0).addScaledVector(_vForward, -4.0)
             f.velocity.lerp(_vDesiredVel, dt * 4.0)
             f.mesh.position.addScaledVector(f.velocity, dt)
@@ -650,20 +716,67 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
       }
     }
 
-    aiValidator.expect('Golden active attackers do not exceed offensive cap',
-      () => activeAttackers <= maxOffensive,
-      { activeAttackers, maxOffensive, level },
+    // Auditoria autoritativa de participantes ofensivos (cobre PREPARING, ATTACKING, PASSING)
+    const offensiveParticipants = getOffensiveParticipants()
+    aiValidator.expect('Golden offensive participants do not exceed offensive cap',
+      () => offensiveParticipants.length <= maxOffensive,
+      { offensiveCount: offensiveParticipants.length, maxOffensive, level, currentOrder },
     )
 
     // Finaliza strafing/pincer se todos os participantes retornaram
     if ((currentOrder === SQUADRON_ORDER.STRAFING_RUN || currentOrder === SQUADRON_ORDER.PINCER) && orderState) {
       const activeOrderParticipants = orderState.participants.filter((p) => !p.dying && (p.state === FIGHTER_STATE.ATTACKING || p.state === FIGHTER_STATE.PREPARING || p.state === FIGHTER_STATE.PASSING))
       if (activeOrderParticipants.length === 0) {
-        currentOrder = SQUADRON_ORDER.NONE
-        orderState = null
-        orderCooldownTimer = ORDER_COOLDOWN_MIN_S + Math.random() * (ORDER_COOLDOWN_MAX_S - ORDER_COOLDOWN_MIN_S)
+        finishCurrentOrder()
       }
     }
+
+    // Finaliza LASER_FLANK de forma autoritativa se o laser terminou ou se participantes morreram
+    if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
+      if (commander.laserTelegraphTimer <= 0 || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+        finishCurrentOrder()
+      }
+    }
+  }
+
+  // Dano por colisão de aríete com caças subordinados — método autoritativo
+  function applyRamDamage(shipPoints, ramDamage) {
+    let ramKills = 0
+    let ramKillPoints = 0
+    const ramFeedback = []
+
+    if (ramDamage <= 0 || !shipPoints || shipPoints.length === 0) {
+      return { ramKills, ramKillPoints, ramFeedback }
+    }
+
+    for (const f of fighters) {
+      if (f.dying) continue
+      const inFighterRamRange = shipPoints.some((pt) => pt.worldPos.distanceTo(f.mesh.position) <= GOLDEN_FIGHTER_RAM_RADIUS + pt.radius)
+      if (inFighterRamRange) {
+        if (!f.ramHitActive) {
+          f.ramHitActive = true
+          f.hp -= ramDamage
+          const killed = f.hp <= 0
+          if (effects) effects.flashMesh(f.mesh)
+          ramFeedback.push({
+            worldPos: f.mesh.position.clone(),
+            meshRef: f.mesh,
+            damage: ramDamage,
+            killed,
+            points: killed ? GOLDEN_FIGHTER_KILL_POINTS : 0,
+          })
+          if (killed) {
+            ramKills += 1
+            ramKillPoints += GOLDEN_FIGHTER_KILL_POINTS
+            killFighter(f, 'ram')
+          }
+        }
+      } else {
+        f.ramHitActive = false
+      }
+    }
+
+    return { ramKills, ramKillPoints, ramFeedback }
   }
 
   function resolveHit(prevPos, currPos, damage, isHoming, hitBuffer, fx) {
@@ -725,10 +838,24 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
   }
 
   function onCommanderDying() {
-    // Quando o comandante morre, elimina subordinados sem deixar órfãos
+    // Quando o comandante morre, remove subordinados imediatamente com VFX sem deixar órfãos na cena
     for (const f of [...fighters]) {
-      if (!f.dying) killFighter(f, 'commander_death')
+      if (!f.dying) {
+        f.dying = true
+        f.state = FIGHTER_STATE.DYING
+        f.deathT = 1.0
+        triggerSoundCue(ENEMY_SOUND_CUES.generic_death, { enemyId: f.id, kind: GOLDEN_FIGHTER_KIND, worldPos: f.mesh.position.clone() })
+        if (effects) {
+          effects.explosion(f.mesh.position, GOLDEN_FIGHTER_COLOR, 1.3, { rings: true })
+          effects.shockwave(f.mesh.position, GOLDEN_FIGHTER_COLOR, 0.6)
+        }
+      }
+      removeFighterMesh(f)
     }
+    fighters = []
+    currentOrder = SQUADRON_ORDER.NONE
+    orderState = null
+    replacementReady = false
   }
 
   function clear() {
@@ -736,6 +863,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     fighters = []
     currentOrder = SQUADRON_ORDER.NONE
     orderState = null
+    replacementReady = false
     replenishTimer = getReplenishIntervalForLevel(level)
   }
 
@@ -744,13 +872,20 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
   }
 
   return {
-    setLevel(lvl) { level = lvl },
+    setLevel(lvl) {
+      level = Math.max(1, Math.min(9, Math.round(lvl || 1)))
+      replenishTimer = getReplenishIntervalForLevel(level)
+      replacementReady = false
+    },
     getLevel: () => level,
     initSquadron,
+    startOrder,
     spawnFighter,
     update,
     onCommanderTeleported,
     coordinateLaserFlank,
+    finishCurrentOrder,
+    applyRamDamage,
     onCommanderDying,
     resolveHit,
     resolvePiercingHit,
@@ -760,6 +895,8 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1) {
     getMinimapBlips: () => fighters.filter((f) => !f.dying).map((f) => ({ type: 'enemy', kind: GOLDEN_FIGHTER_KIND, worldPos: f.mesh.position })),
     getSnapshots: () => fighters.filter((f) => !f.dying).map((f) => ({ id: f.id, worldPos: f.mesh.position.clone(), hp: f.hp, maxHp: f.maxHp })),
     getCurrentOrder: () => currentOrder,
+    getOrderState: () => orderState,
+    getOffensiveParticipants,
     clear,
     dispose,
   }

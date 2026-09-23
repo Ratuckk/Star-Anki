@@ -214,14 +214,6 @@ const STANDOFF = 48
 const flightTime = STANDOFF / (GATE_SPEED + RAIL_SPEED)
 assert.ok(flightTime >= 1.1 && flightTime <= 1.3, `Tempo de voo da moldura deve ser ~1.2s, obteve ${flightTime.toFixed(2)}s`)
 
-// Desengajamento de mini-naves do Dourado ao aproximar ou ultrapassar
-function shouldMinionStopHoming(dist, dotHeading, traveled) {
-  return dist < 14 || dotHeading < 0.2 || traveled > 55
-}
-assert.strictEqual(shouldMinionStopHoming(35, 0.95, 10), false, 'Longe e na frente deve continuar teleguiando')
-assert.strictEqual(shouldMinionStopHoming(12, 0.9, 20), true, 'Perto (< 14u) deve parar de teleguiar')
-assert.strictEqual(shouldMinionStopHoming(25, -0.4, 30), true, 'Ultrapassando deve parar de teleguiar')
-
 // ============ TESTES v0.67.0: SOFTLOCK BOSS & DEBUG RESET ============
 
 // 1. Propagação de abate de chefe por tiros de Wingmen

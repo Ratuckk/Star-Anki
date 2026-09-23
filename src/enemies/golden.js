@@ -35,7 +35,7 @@ function goldenCooldownShrinkFor(level) {
 
 // Faixa útil de combate centralizada (v0.99.36)
 export const GOLDEN_COMBAT_FAR_DIST = 75   // Acima de 75u: aproximação acelerada
-export const GOLDEN_COMBAT_IDEAL_MIN = 32  // 32u a 70u: pressão tática e weaving
+export const GOLDEN_COMBAT_IDEAL_MIN = 32  // 32u a 70u: pressão tática e weaving sem aproximação direta
 export const GOLDEN_COMBAT_IDEAL_MAX = 70
 export const GOLDEN_COMBAT_CLOSE_DIST = 28 // Abaixo de 28u: dash de reposicionamento e quebra de mira
 
@@ -74,11 +74,8 @@ const goldenLaserMaterial = new THREE.MeshBasicMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
 })
 
-function randomGoldenFireInterval() {
-  return (GOLDEN_FIRE_INTERVAL_MIN + Math.random() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
-}
-
-export function createGoldenSystem(scene, rail, effects, nextId) {
+export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
+  const rng = (opts && typeof opts.rng === 'function') ? opts.rng : Math.random
   const goldenTargets = []
   let elapsed = 0
   let currentIsDenseFog = false
@@ -86,13 +83,18 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
   let goldenDefeatedWorldPos = null
   let currentLevel = 1
 
-  // Instância modular do Esquadrão
-  const squadron = createGoldenSquadron(scene, effects, nextId, currentLevel)
+  function randomGoldenFireInterval() {
+    return (GOLDEN_FIRE_INTERVAL_MIN + rng() * (GOLDEN_FIRE_INTERVAL_MAX - GOLDEN_FIRE_INTERVAL_MIN)) / 1000
+  }
+
+  // Instância modular do Esquadrão com injeção de RNG
+  const squadron = createGoldenSquadron(scene, effects, nextId, currentLevel, { rng })
 
   function removeGoldenTarget(g) {
     g.dying = true
     scene.remove(g.mesh)
-    goldenTargets.splice(goldenTargets.indexOf(g), 1)
+    const idx = goldenTargets.indexOf(g)
+    if (idx !== -1) goldenTargets.splice(idx, 1)
   }
 
   // Laser grande do Dourado
@@ -115,8 +117,8 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
   }
 
   return {
-    spawn(opts = {}) {
-      const { distanceMin = 48, distanceMax = 108, level = 1 } = opts
+    spawn(spawnOpts = {}) {
+      const { distanceMin = 48, distanceMax = 108, level = 1 } = spawnOpts
       currentLevel = level
       squadron.setLevel(level)
       const shrink = goldenCooldownShrinkFor(level)
@@ -124,9 +126,9 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       const teleportCooldownS = GOLDEN_TELEPORT_COOLDOWN_S * shrink
       const hp = GOLDEN_HP + Math.max(0, (level || 1) - 1) * GOLDEN_HP_PER_LEVEL
       const frame = rail.getFrameAt(0)
-      const azimuth = Math.random() * Math.PI * 2
-      const elevation = (Math.random() * 2 - 1) * THREE.MathUtils.degToRad(50)
-      const distance = distanceMin + Math.random() * (distanceMax - distanceMin)
+      const azimuth = rng() * Math.PI * 2
+      const elevation = (rng() * 2 - 1) * THREE.MathUtils.degToRad(50)
+      const distance = distanceMin + rng() * (distanceMax - distanceMin)
       const offset = new THREE.Vector3(
         Math.sin(azimuth) * Math.cos(elevation),
         Math.sin(elevation),
@@ -143,7 +145,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         kind: GOLDEN_KIND,
         radius: GOLDEN_HIT_RADIUS,
         hp, maxHp: hp, fireTimer: randomGoldenFireInterval(),
-        laserCooldown: GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
+        laserCooldown: GOLDEN_LASER_INTERVAL_MIN + rng() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
         laserTelegraphTimer: 0,
         laserTargetPos: null,
         dashCooldownS, teleportCooldownS,
@@ -160,16 +162,16 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
       squadron.initSquadron(mesh.position, frame.forward)
     },
 
-    update(dt, playerPosition, ctx, ramDamage = 0, opts = {}) {
+    update(dt, playerPosition, ctx, ramDamage = 0, updateOpts = {}) {
       elapsed += dt
-      currentIsDenseFog = !!opts.isDenseFog
+      currentIsDenseFog = !!updateOpts.isDenseFog
       const pulse = 1 + Math.sin(elapsed * GOLDEN_PULSE_SPEED) * GOLDEN_PULSE_AMOUNT
       let ramGoldenDefeated = false
       let ramGoldenWorldPos = null
       let bossCollisionWorldPos = null
       let goldenHits = 0
       const ramFeedback = []
-      const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
+      const shipPoints = (updateOpts && updateOpts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
 
       for (const g of [...goldenTargets]) {
         if (g.dying) {
@@ -233,39 +235,57 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           g.dashTimer -= dt
           g.mesh.position.addScaledVector(g.dashDir, GOLDEN_DASH_SPEED * dt)
           g.mesh.rotation.z += dt * 12
-        } else {
-          // Zona 3: Muito perto (< 28u) -> Dash tático para atravessar linha de mira e criar novo ângulo
-          if (distToPlayer <= GOLDEN_COMBAT_CLOSE_DIST && g.dashCooldownTimer <= 0 && distToPlayer > 1e-4) {
-            g.dashCooldownTimer = g.dashCooldownS
-            g.dashTimer = GOLDEN_DASH_DURATION_S
-            const dirNorm = toPlayer.clone().normalize()
-            const up = new THREE.Vector3(0, 1, 0)
-            let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
-            if (lateral.lengthSq() < 0.01) lateral.set(1, 0, 0)
-            if (Math.random() < 0.5) lateral.negate()
-            g.dashDir.copy(lateral)
-            if (effects) {
-              if (effects.goldenDashVFX) {
-                effects.goldenDashVFX(g.mesh.position, g.dashDir)
-              } else {
-                effects.shockwave(g.mesh.position, GOLDEN_COLOR, 0.7)
+        } else if (distToPlayer > 1e-4) {
+          const dirNorm = toPlayer.clone().normalize()
+          const up = new THREE.Vector3(0, 1, 0)
+          let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
+          if (lateral.lengthSq() < 0.01) lateral.set(1, 0, 0)
+
+          if (distToPlayer < GOLDEN_COMBAT_CLOSE_DIST) {
+            // Zona 5: Muito perto (< 28u) -> Dash tático para quebrar mira e reposicionar
+            if (g.dashCooldownTimer <= 0) {
+              g.dashCooldownTimer = g.dashCooldownS
+              g.dashTimer = GOLDEN_DASH_DURATION_S
+              if (rng() < 0.5) lateral.negate()
+              g.dashDir.copy(lateral)
+              if (effects) {
+                if (effects.goldenDashVFX) {
+                  effects.goldenDashVFX(g.mesh.position, g.dashDir)
+                } else {
+                  effects.shockwave(g.mesh.position, GOLDEN_COLOR, 0.7)
+                }
               }
+            } else {
+              // Dash em recarga: recuo tático imediato
+              g.mesh.position.addScaledVector(dirNorm, -12.0 * dt)
+              const weave = Math.sin(elapsed * 3.8) * 12.0
+              g.mesh.position.addScaledVector(lateral, weave * dt)
             }
-          } else if (distToPlayer > GOLDEN_COMBAT_FAR_DIST) {
+          } else if (distToPlayer < GOLDEN_COMBAT_IDEAL_MIN) {
+            // Zona 4: Transição baixa (28u - 32u) -> Afastamento suave para preservar a faixa ideal
+            const t = (GOLDEN_COMBAT_IDEAL_MIN - distToPlayer) / (GOLDEN_COMBAT_IDEAL_MIN - GOLDEN_COMBAT_CLOSE_DIST)
+            const radialSpeed = -8.0 * t
+            const weave = Math.sin(elapsed * 3.5) * 14.0
+            g.mesh.position.addScaledVector(dirNorm, radialSpeed * dt)
+            g.mesh.position.addScaledVector(lateral, weave * dt)
+          } else if (distToPlayer <= GOLDEN_COMBAT_IDEAL_MAX) {
+            // Zona 3: Faixa ideal (32u - 70u) -> Standoff tático!
+            // Sem avanço direto pro jogador; mantém faixa com lateralidade/weaving e suave centralização
+            const radialSpeed = (distToPlayer - 51.0) * 0.25
+            const weave = Math.sin(elapsed * 3.2) * 12.0
+            g.mesh.position.addScaledVector(dirNorm, radialSpeed * dt)
+            g.mesh.position.addScaledVector(lateral, weave * dt)
+          } else if (distToPlayer <= GOLDEN_COMBAT_FAR_DIST) {
+            // Zona 2: Transição alta (70u - 75u) -> Desaceleração suave entrando na faixa
+            const t = (distToPlayer - GOLDEN_COMBAT_IDEAL_MAX) / (GOLDEN_COMBAT_FAR_DIST - GOLDEN_COMBAT_IDEAL_MAX)
+            const radialSpeed = GOLDEN_CHASE_FAR_SPEED * t
+            const weave = Math.sin(elapsed * 2.8) * 10.0
+            g.mesh.position.addScaledVector(dirNorm, radialSpeed * dt)
+            g.mesh.position.addScaledVector(lateral, weave * dt)
+          } else {
             // Zona 1: Muito longe (> 75u) -> Interceptação acelerada
-            const dirNorm = toPlayer.clone().normalize()
-            const up = new THREE.Vector3(0, 1, 0)
-            let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
             const weave = Math.sin(elapsed * 2.5) * 8.0
             g.mesh.position.addScaledVector(dirNorm, GOLDEN_CHASE_FAR_SPEED * dt)
-            g.mesh.position.addScaledVector(lateral, weave * dt)
-          } else if (distToPlayer > 1e-4) {
-            // Zona 2: Faixa ideal (32u - 70u) -> Pressão com lateralidade e weaving
-            const dirNorm = toPlayer.clone().normalize()
-            const up = new THREE.Vector3(0, 1, 0)
-            let lateral = new THREE.Vector3().crossVectors(dirNorm, up).normalize()
-            const weave = Math.sin(elapsed * 3.2) * 12.0
-            g.mesh.position.addScaledVector(dirNorm, GOLDEN_CHASE_SPEED * dt)
             g.mesh.position.addScaledVector(lateral, weave * dt)
           }
         }
@@ -294,44 +314,49 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
           if (g.laserTelegraphTimer <= 0) {
             if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos, ctx)
             g.laserTargetPos = null
-            g.laserCooldown = GOLDEN_LASER_INTERVAL_MIN + Math.random() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN)
+            g.laserCooldown = GOLDEN_LASER_INTERVAL_MIN + rng() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN)
           }
         } else {
           g.laserCooldown -= dt
           if (g.laserCooldown <= 0) {
-            g.laserTargetPos = playerPosition.clone()
-            g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
-            // Convoca os caças para o Cerco do Laser nos flancos
-            squadron.coordinateLaserFlank(g.mesh.position, playerPosition, GOLDEN_LASER_TELEGRAPH_S)
-            if (effects) effects.chargeCircle(() => g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
-            triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_charge, { worldPos: g.mesh.position, targetPos: g.laserTargetPos })
+            // Política A: laser aguarda janela segura sem ordem ofensiva ativa
+            if (squadron.getCurrentOrder() === SQUADRON_ORDER.NONE) {
+              g.laserTargetPos = playerPosition.clone()
+              g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
+              // Convoca os caças para o Cerco do Laser nos flancos
+              squadron.coordinateLaserFlank(g.mesh.position, playerPosition, GOLDEN_LASER_TELEGRAPH_S)
+              if (effects) effects.chargeCircle(() => g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
+              triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_charge, { worldPos: g.mesh.position, targetPos: g.laserTargetPos })
+            } else {
+              // Mantém o laser pronto aguardando a ordem ativa terminar sem corromper estados
+              g.laserCooldown = 0
+            }
           }
         }
 
         // Atualização autoritativa do Esquadrão
-        squadron.update(dt, g, playerPosition, ctx, opts)
+        squadron.update(dt, g, playerPosition, ctx, updateOpts)
       }
 
-      // Colisão de Ram com caças subordinados
+      // Colisão de Ram com caças subordinados via método autoritativo do esquadrão
+      let squadronRamKills = 0
+      let squadronRamKillPoints = 0
       if (ramDamage > 0) {
-        for (const f of squadron.getAlive()) {
-          if (f.dying) continue
-          const inFighterRamRange = shipPoints.some((pt) => pt.worldPos.distanceTo(f.mesh.position) <= GOLDEN_FIGHTER_RAM_RADIUS + pt.radius)
-          if (inFighterRamRange) {
-            f.hp -= ramDamage
-            ramFeedback.push({ worldPos: f.mesh.position.clone(), meshRef: f.mesh, damage: ramDamage, killed: f.hp <= 0 })
-            if (effects) effects.flashMesh(f.mesh)
-            if (f.hp <= 0) {
-              f.dying = true
-              f.deathT = 0
-              triggerSoundCue(ENEMY_SOUND_CUES.generic_death, { enemyId: f.id, kind: GOLDEN_FIGHTER_KIND, worldPos: f.mesh.position.clone() })
-              if (effects) effects.explosion(f.mesh.position, GOLDEN_COLOR, 1.2, { rings: true })
-            }
-          }
-        }
+        const squadRam = squadron.applyRamDamage(shipPoints, ramDamage)
+        squadronRamKills = squadRam.ramKills
+        squadronRamKillPoints = squadRam.ramKillPoints
+        ramFeedback.push(...squadRam.ramFeedback)
       }
 
-      return { ramGoldenDefeated, ramGoldenWorldPos, bossCollisionWorldPos, goldenHits, ramFeedback }
+      return {
+        ramGoldenDefeated,
+        ramGoldenWorldPos,
+        bossCollisionWorldPos,
+        goldenHits,
+        ramFeedback,
+        ramKills: squadronRamKills,
+        ramKillPoints: squadronRamKillPoints,
+      }
     },
 
     resolveHit(prevPos, currPos, damage, isHoming, hitBuffer, fx) {
@@ -364,7 +389,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         if (goldenHit.dashCooldownTimer <= 0.6) {
           goldenHit.dashCooldownTimer = goldenHit.dashCooldownS
           goldenHit.dashTimer = GOLDEN_DASH_DURATION_S
-          const lateral = new THREE.Vector3(Math.random() < 0.5 ? -1 : 1, (Math.random() - 0.5) * 0.4, 0).normalize()
+          const lateral = new THREE.Vector3(rng() < 0.5 ? -1 : 1, (rng() - 0.5) * 0.4, 0).normalize()
           goldenHit.dashDir.copy(lateral)
           if (fx) fx.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 0.6)
         }
@@ -435,7 +460,7 @@ export function createGoldenSystem(scene, rail, effects, nextId) {
         } else if (goldenHit.dashCooldownTimer <= 0.6) {
           goldenHit.dashCooldownTimer = goldenHit.dashCooldownS
           goldenHit.dashTimer = GOLDEN_DASH_DURATION_S
-          const lateral = new THREE.Vector3(Math.random() < 0.5 ? -1 : 1, (Math.random() - 0.5) * 0.4, 0).normalize()
+          const lateral = new THREE.Vector3(rng() < 0.5 ? -1 : 1, (rng() - 0.5) * 0.4, 0).normalize()
           goldenHit.dashDir.copy(lateral)
           if (effects) effects.shockwave(goldenHit.mesh.position, GOLDEN_COLOR, 0.6)
         }

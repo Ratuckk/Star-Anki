@@ -33,6 +33,7 @@ import {
 // Dano percentual adicional do Swirl Blast contra chefes (Docs/Swirl Blast)
 export const SWIRL_BOSS_MAX_HP_DAMAGE_RATIO = 0.30
 import { createGoldenSystem, goldenGeometry, goldenMaterial } from './golden.js'
+import { GOLDEN_FIGHTER_KIND, GOLDEN_FIGHTER_HIT_RADIUS } from './golden-squadron.js'
 import {
   DETRITO_KIND, DETRITO_COLOR, DETRITO_HIT_RADIUS, DETRITO_DEATH_DURATION, DETRITO_KILL_BONUS,
   spawnDetrito, spawnTitanicDetrito, updateDetritoSpin, detritoHitRadius, disposeDetrito,
@@ -291,6 +292,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
   // ============ dispatch por kind (cada classe expõe seu pedaço, ver arquivo próprio) ============
   function hitRadiusFor(enemy) {
     switch (enemy.kind) {
+      case GOLDEN_FIGHTER_KIND: return GOLDEN_FIGHTER_HIT_RADIUS
       case BLASTER_KIND: return BLASTER_HIT_RADIUS
       case BOSS_KIND: return BOSS_HIT_RADIUS
       case TIME_KIND: return TIME_HIT_RADIUS
@@ -1401,6 +1403,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         ...result,
         ramFeedback: [...result.ramFeedback, ...(goldenRamResult?.ramFeedback || [])],
         hits: result.hits + (goldenRamResult?.goldenHits || 0),
+        ramKills: result.ramKills + (goldenRamResult?.ramKills || 0),
+        ramKillPoints: result.ramKillPoints + (goldenRamResult?.ramKillPoints || 0),
         ramGoldenDefeated: goldenRamResult?.ramGoldenDefeated || false,
         ramGoldenWorldPos: goldenRamResult?.ramGoldenWorldPos || null,
         bossCollisionWorldPos,

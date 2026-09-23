@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - chore/reorganize-and-forgot-v09935
 
 permissions:
   contents: read
@@ -51,6 +50,7 @@ jobs:
           node src/lockon-priority.test.mjs
           node src/combat-lockon-swirl.test.mjs
           node src/tank.test.mjs
+          node src/golden-squadron.test.mjs
 
       - name: Run Wingman Suites
         run: |
@@ -77,6 +77,10 @@ jobs:
       - name: Run Wingman Runtime Fuzz Audit
         run: |
           node tools/wingman-runtime-fuzz-audit.mjs
+
+      - name: Run Golden Squadron Runtime Fuzz
+        run: |
+          node tools/golden-squadron-runtime-fuzz.mjs
 
       - name: Run Markdown Documentation Link Audit
         run: |
