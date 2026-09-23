@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   validate:
-    if: ${{ !contains(github.event.head_commit.message, '[validated-radio-v09928]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[validated-radio-v09928]') && !contains(github.event.head_commit.message, '[migration-diagnostic-v09928]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout validation branch
@@ -21,7 +21,20 @@ jobs:
 
       - name: Apply deterministic integration migration
         run: |
-          node tools/apply-radio-overhaul-v09928.mjs
+          set +e
+          node tools/apply-radio-overhaul-v09928.mjs > validation-migration-error.txt 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            git add validation-migration-error.txt
+            git config user.name "star-anki-validation"
+            git config user.email "noreply@github.com"
+            git commit -m "[migration-diagnostic-v09928] captura falha do migrador"
+            git push origin HEAD:validation/radio-world-slots-120quotes
+            cat validation-migration-error.txt
+            exit "$status"
+          fi
+          rm -f validation-migration-error.txt
           base64 -d assets/wingman-radio/fox.png.base64tmp > assets/wingman-radio/fox.png
           test -s assets/wingman-radio/fox.png
 
@@ -63,6 +76,7 @@ jobs:
           rm -f .github/workflows/validate-radio-overhaul-v09928.yml
           rm -f README_TEMP_SHOULD_NOT_EXIST
           rm -f assets/wingman-radio/fox.png.base64tmp
+          rm -f validation-migration-error.txt
           git add -A
           git config user.name "star-anki-validation"
           git config user.email "noreply@github.com"
