@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def patch_file(path, replacements):
@@ -11,6 +12,15 @@ def patch_file(path, replacements):
             raise RuntimeError(f'repair marker missing in {path}: {old[:120]!r}')
         text = text.replace(old, new, 1)
     p.write_text(text, encoding='utf-8')
+
+
+def regex_patch(path, pattern, replacement):
+    p = Path(path)
+    text = p.read_text(encoding='utf-8')
+    out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    if count != 1:
+        raise RuntimeError(f'repair regex missing in {path}: {pattern[:120]!r}')
+    p.write_text(out, encoding='utf-8')
 
 
 # The migration scripts were drafted against an earlier local snapshot. Normalize only their
@@ -29,6 +39,14 @@ patch_file('scripts/apply-forgot-core-v09934.py', [
         '''sub_once('src/combat/projectiles.js', r"const SWIRL_BLAST_DAMAGE = 6\\s*//[^\\n]*\\n", "const SWIRL_BLAST_DAMAGE = 6      // dano base por alvo comum\\nconst SWIRL_PROJECTILE_RADIUS = 3.0\\nconst SWIRL_BOSS_HP_RATIO = 0.25\\nconst SWIRL_TRAIL_SPACING = 3.2\\nconst SWIRL_TRAIL_EMISSIONS_PER_FRAME_CAP = 14\\n")''',
     ),
 ])
+
+# The old player block referenced names from a pre-refactor player implementation. A dedicated
+# integration migrator adds the channel-aware method using current shield/session state instead.
+regex_patch(
+    'scripts/apply-forgot-core-v09934.py',
+    r"# ---------------------------------------------------------------------------\n# Player: explicit shield-vs-hull damage contract.*?(?=# ---------------------------------------------------------------------------\n# Golden Swirl collision)",
+    "# Player channel-aware damage is applied by apply-forgot-integration-v09934.py.\n\n",
+)
 
 patch_file('scripts/apply-forgot-wingmen-v09934.py', [
     (
