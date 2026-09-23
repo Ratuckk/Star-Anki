@@ -33,15 +33,12 @@ jobs:
           npm init -y >/dev/null 2>&1
           npm install --no-save --no-package-lock three@0.169.0
 
-      - name: Apply forgot stage 5
+      - name: Apply enemy supercheck
         run: |
-          if [ -f scripts/apply-forgot-stage5-v09934.py ]; then
-            python scripts/apply-forgot-stage5-v09934.py
+          if [ -f scripts/apply-forgot-stage6-v09934.py ]; then
+            python scripts/apply-forgot-stage6-v09934.py
           else
-            echo "Stage 5 migrator not present yet; validating current snapshot only."
-          fi
-          if [ -f scripts/repair-forgot-stage5-v09934.py ]; then
-            python scripts/repair-forgot-stage5-v09934.py
+            echo "Stage 6 migrator not present yet; validating current snapshot only."
           fi
 
       - name: Syntax check changed JavaScript
@@ -50,7 +47,7 @@ jobs:
             [ -z "$file" ] || node --check "$file"
           done
 
-      - name: Run focused wingman suites
+      - name: Run wingman regression suites
         run: |
           node src/wingman-state-controller.test.mjs
           node src/wingman-radio-callresponse.test.mjs
@@ -58,19 +55,19 @@ jobs:
           node src/wingman-formation-separation.test.mjs
           node src/wingman-navigation.test.mjs
           node src/miyu-assist-locks.test.mjs
-          [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
+          node src/wingman-bughunt.test.mjs
 
-      - name: Run forgot focused suites
+      - name: Run forgot regression suites
         run: |
           node src/tank.test.mjs
           node src/forgot-stage2.test.mjs
           node src/forgot-stage3.test.mjs
           node src/forgot-stage4.test.mjs
-          [ ! -f src/lockon-priority.test.mjs ] || node src/lockon-priority.test.mjs
+          node src/lockon-priority.test.mjs
+          [ ! -f src/enemy-supercheck.test.mjs ] || node src/enemy-supercheck.test.mjs
 
       - name: Run state fuzz audit
-        run: |
-          [ ! -f tools/state-fuzz-audit.mjs ] || node tools/state-fuzz-audit.mjs
+        run: node tools/state-fuzz-audit.mjs
 
       - name: Run full selftest
         run: node src/selftest.mjs
@@ -87,5 +84,5 @@ jobs:
             echo "No source changes produced."
             exit 0
           fi
-          git commit -m "[forgot-applied] test: lockon wingman bughunt and fuzz coverage"
+          git commit -m "[forgot-applied] test: cover enemy supercheck contracts"
           git push origin HEAD:validation/forgot-backlog-v09934
