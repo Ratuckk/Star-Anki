@@ -22,6 +22,19 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Fix temporary migrator escaping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply-speedlines-v09929.mjs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace("      canvas.style.width = `${width}px`", "      canvas.style.width = width + 'px'")
+          s = s.replace("      canvas.style.height = `${height}px`", "      canvas.style.height = height + 'px'")
+          s = s.replace("      ctx.strokeStyle = `hsla(${line.hue}, 90%, 82%, ${alpha})`", "      ctx.strokeStyle = 'hsla(' + line.hue + ', 90%, 82%, ' + alpha + ')'")
+          s = s.replace("    const signature = `${nextIsActive ? 1 : 0}:${Math.round(state.intensity)}`", "    const signature = (nextIsActive ? 1 : 0) + ':' + Math.round(state.intensity)")
+          p.write_text(s, encoding='utf-8')
+          PY
+
       - name: Apply runtime integration
         run: node tools/apply-speedlines-v09929.mjs
 
