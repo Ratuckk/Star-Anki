@@ -783,14 +783,21 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
     // cone, dispara reto na direção mirada (mesmo visual, sem homingTarget).
     fireHomingShot(origin, direction, maxTargets, isMaxCharge = false) {
       const inRange = (e) => origin.distanceTo(e.mesh.position) <= MAX_HOMING_RANGE
-      const locked = lockon.takeLockedTargets(inRange)
+      const lockedGroups = lockon.takeLockedTargetGroups
+        ? lockon.takeLockedTargetGroups(inRange)
+        : { base: lockon.takeLockedTargets(inRange), miyu: [] }
+      const locked = lockedGroups.base
+      const miyuTargets = lockedGroups.miyu
+      const playerTargetBudget = Math.max(0, Math.min(maxTargets, player.config.homingMaxTargets ?? maxTargets))
       let targetList
       let straightShot = false
       if (locked.length > 0) {
-        targetList = locked.slice(0, Math.max(0, maxTargets))
-      } else {
-        targetList = lockon.getEnemiesInAimCone(origin, direction, maxTargets).filter(inRange)
+        targetList = locked.slice(0, playerTargetBudget)
+      } else if (miyuTargets.length === 0) {
+        targetList = lockon.getEnemiesInAimCone(origin, direction, playerTargetBudget).filter(inRange)
         if (targetList.length === 0) straightShot = true
+      } else {
+        targetList = []
       }
       const damage = isMaxCharge ? HOMING_PROJECTILE_DAMAGE_MAX_CHARGE : HOMING_PROJECTILE_DAMAGE
       const homingSpeed = isMaxCharge ? HOMING_PROJECTILE_SPEED * 1.25 : HOMING_PROJECTILE_SPEED
@@ -820,18 +827,14 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
       const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : direction.clone()
       if (effects) {
         effects.muzzleFlash(origin, firstDir)
-        if (isMaxCharge && effects.maxChargeRings) {
-          effects.maxChargeRings(origin, firstDir)
-        } else {
-          effects.smokeRing(origin, firstDir)
-        }
+        if (isMaxCharge && effects.maxChargeRings) effects.maxChargeRings(origin, firstDir)
+        else effects.smokeRing(origin, firstDir)
       }
-      const shotsFired = targetList.length + (straightShot ? 1 : 0)
-      if (shotsFired > 0) {
-        triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: shotsFired, isMaxCharge, origin })
-      }
-      return shotsFired
+      const playerShotsFired = targetList.length + (straightShot ? 1 : 0)
+      if (playerShotsFired > 0) triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: playerShotsFired, isMaxCharge, origin })
+      return { playerShotsFired, miyuTargets }
     },
+
 
     // Swirl Blast — habilidade base (Docs/# Swirl Blast). Etapa 7: Sound Cue próprio (§4.7).
     // `bossTarget` (novo, overhaul v2): entidade chefe/dourado travada no release — quem chama

@@ -61,13 +61,18 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     },
 
     fireHomingShot: (origin, direction, maxTargets, isMaxCharge) => {
-      const lockedBeforeFiring = lockon.getLockedEntities()
-      const fired = projectiles.fireHomingShot(origin, direction, maxTargets, isMaxCharge)
-      if (fired) {
-        squadron.fireMiyuAssistShots?.(lockedBeforeFiring, player.config.homingMaxTargets)
-        player.getTelemetry?.()?.recordEvent('homing', `Tiro teleguiado disparado! Carga máx: ${isMaxCharge}, Alvos: ${maxTargets}`, { isMaxCharge, maxTargets })
+      const shotResult = projectiles.fireHomingShot(origin, direction, maxTargets, isMaxCharge)
+      const playerShotsFired = typeof shotResult === 'number' ? shotResult : (shotResult?.playerShotsFired || 0)
+      const miyuTargets = Array.isArray(shotResult?.miyuTargets) ? shotResult.miyuTargets : []
+      const miyuShotsFired = squadron.fireMiyuAssistShots?.(miyuTargets) || 0
+      const totalShotsFired = playerShotsFired + miyuShotsFired
+      if (totalShotsFired > 0) {
+        player.getTelemetry?.()?.recordEvent('homing',
+          'Tiro teleguiado disparado! Carga max: ' + isMaxCharge + ', Fox: ' + playerShotsFired + ', Miyu: ' + miyuShotsFired,
+          { isMaxCharge, maxTargets, playerShotsFired, miyuShotsFired, miyuLocks: miyuTargets.length },
+        )
       }
-      return fired
+      return totalShotsFired
     },
     // overhaul v2 (pedido do usuário): homing contra chefe/dourado ("chefes inclui o dourado")
     // travado no instante do disparo — locks ainda não foram limpos aqui (game-loop.js só chama

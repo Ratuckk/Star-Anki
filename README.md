@@ -2,14 +2,14 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.99.32-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.99.33-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
 
 🎮 **Jogue no navegador:** [https://ratuckk.github.io/Star-Anki/](https://ratuckk.github.io/Star-Anki/)
 
-**v0.99.32:** rádio dos Wingmen passa a aplicar cooldown de 2–10 s por piloto a qualquer transmissão normal/ability/Call & Response; a fala da Carga Compartilhada da Miyu só ocorre enquanto o jogador está carregando e já existe um lock visível (triângulo) em inimigo.
+**v0.99.33:** os locks triangulares da Carga Compartilhada pertencem exclusivamente à Miyu: podem se repetir no mesmo inimigo enquanto a mira permanece nele e cada triângulo gera um disparo roxo homing saindo da nave dela, sem criar uma cópia extra no Fox.
 
 ---
 
@@ -205,6 +205,16 @@ Star-Anki/
 
 ## 📜 Histórico e Evolução
 
+### v0.99.33 — Carga Compartilhada com ownership real dos locks
+- Locks triangulares (`source: miyu`) deixam de ser consumidos pelo tiro carregado do Fox.
+- Orçamentos BASE e MIYU são independentes; o BASE preserva limites por tipo e a Miyu pode repetir seus triângulos no mesmo alvo comum enquanto a mira permanece nele.
+- Cada triângulo gera um laser roxo homing de suporte disparado fisicamente da nave da Miyu; com 3 stacks, o orçamento atual permite até 4 extras.
+- Aquisição e disparo recebem instrumentação `aiValidator` e regressão dedicada.
+
+### v0.99.32 — Antispam de rádio e fala contextual da Miyu
+- Cooldown de rádio por piloto entre 2 e 10 segundos para falas triviais, abilities e Call & Response.
+- `ability_assist` só é anunciada enquanto o jogador ainda carrega e já existe um lock visível no HUD.
+
 ### v0.99.31 — Hotfix de carregamento dos Wingmen
 - Corrige quatro blocos reaplicados por engano em `src/combat/wingmen.js`: estado de posição anterior, watchdog de movimento, cálculo de velocidade do jogador e snapshot de alvos.
 - Restaura o carregamento do módulo e, portanto, o boot do jogo no navegador.
@@ -219,7 +229,9 @@ Star-Anki/
 
 
 Para detalhes minuciosos sobre o desenvolvimento e os patches de cada versão:
-- [progresso/PROGRESSO_POS_.70.md](progresso/PROGRESSO_POS_.70.md) — **Arquivo atual**, v0.75.0 em diante.
+- [progresso/PROGRESSO_POS_.90.35.md](progresso/PROGRESSO_POS_.90.35.md) — registro incremental criado a partir da v0.99.33.
+- [progresso/PROGRESSO_POS_.90.md](progresso/PROGRESSO_POS_.90.md) — resumo contínuo das implementações v0.90+.
+- [progresso/PROGRESSO_POS_.70.md](progresso/PROGRESSO_POS_.70.md) — histórico anterior.
 - [progresso/PROGRESSO_POS_.60.md](progresso/PROGRESSO_POS_.60.md) — v0.61.0 → v0.74.1 (congelado).
 - [progresso/PROGRESSO_POS_0.50.md](progresso/PROGRESSO_POS_0.50.md) — v0.51.9 → v0.60.0 (congelado).
 - [progresso/PROGRESSO_POS_0.30.md](progresso/PROGRESSO_POS_0.30.md) — v0.34.0 → v0.50.0 (congelado).
