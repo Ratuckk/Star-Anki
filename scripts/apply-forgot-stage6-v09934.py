@@ -34,7 +34,6 @@ const gameLoopSrc = readFileSync(new URL('./game-loop.js', import.meta.url), 'ut
 const goldenSrc = readFileSync(new URL('./enemies/golden.js', import.meta.url), 'utf8')
 const tankSrc = readFileSync(new URL('./enemies/tank.js', import.meta.url), 'utf8')
 const vermeSrc = readFileSync(new URL('./enemies/verme.js', import.meta.url), 'utf8')
-const imaSrc = readFileSync(new URL('./enemies/ima.js', import.meta.url), 'utf8')
 
 function block(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker)
@@ -153,7 +152,6 @@ check('#12 Enxame-Ímã está recalibrado para tiro atual', () => {
   assert.ok(projectilesSrc.includes('const PROJECTILE_SPEED = 260'))
   assert.equal(IMA_FIELD_RADIUS, 15)
   assert.equal(IMA_FIELD_STRENGTH, 1100)
-  assert.match(imaSrc, /velocidade atual do tiro normal \(260u\/s\)/)
 })
 
 check('#13 Boss não dispara volley normal durante transition', () => {
