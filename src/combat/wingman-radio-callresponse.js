@@ -294,15 +294,11 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
       }
     }
 
-    const index = pending.findIndex((thread) => now >= thread.dueAt)
+    const index = pending.findIndex((thread) =>
+      now >= thread.dueAt && eligibleResponderIds.includes(thread.responderPilotId)
+    )
     if (index < 0) return null
     const thread = pending[index]
-    if (!eligibleResponderIds.includes(thread.responderPilotId)) {
-      pending.splice(index, 1)
-      stats.canceled += 1
-      stats.lastCancelReason = 'responder-unavailable'
-      return null
-    }
 
     pending.splice(index, 1)
     stats.delivered += 1

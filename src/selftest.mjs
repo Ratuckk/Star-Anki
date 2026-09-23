@@ -587,12 +587,12 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingm
   assert.strictEqual(samePilotBlocked, null, 'cooldown trivial continua valendo por piloto')
 
   const abilityDuringCooldown = radio.speakAbility(0, 'ability_ram', 1600)
-  assert.ok(typeof abilityDuringCooldown === 'string', 'ability deve falar in-world mesmo durante cooldown trivial do piloto')
+  assert.strictEqual(abilityDuringCooldown, null, 'ability também deve respeitar o cooldown do piloto')
 
-  // O cooldown trivial continua aleatório entre 6s e 20s por piloto; usar o MÁXIMO garante que o
-  // cooldown de Falco já passou não importa qual valor foi sorteado na fala anterior.
+  // v0.99.32: toda transmissão comum/ability usa a mesma janela aleatória de 2s a 10s por piloto.
+  // Usar o MÁXIMO garante que o cooldown já passou independentemente do valor sorteado.
   const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + GLOBAL_COOLDOWN_MAX_MS)
-  assert.ok(typeof line3 === 'string', 'depois do cooldown trivial máximo (20s) passar, o mesmo piloto deve voltar a falar')
+  assert.ok(typeof line3 === 'string', 'depois do cooldown máximo (10s) passar, o mesmo piloto deve voltar a falar')
 
   const missingPilot = radio.trySpeak(99, 'kill', 50000)
   assert.strictEqual(missingPilot, null, 'pilotId inexistente deve devolver null, não lançar erro')
