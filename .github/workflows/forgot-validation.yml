@@ -33,14 +33,13 @@ jobs:
           npm init -y >/dev/null 2>&1
           npm install --no-save --no-package-lock three@0.169.0
 
-      - name: Normalize migration anchors
-        run: python scripts/repair-forgot-migrators-v09934.py
-
-      - name: Apply core forgot fixes
-        run: python scripts/apply-forgot-core-v09934.py
-
-      - name: Apply wingman forgot fixes
-        run: python scripts/apply-forgot-wingmen-v09934.py
+      - name: Apply forgot stage 2
+        run: |
+          if [ -f scripts/apply-forgot-stage2-v09934.py ]; then
+            python scripts/apply-forgot-stage2-v09934.py
+          else
+            echo "Stage 2 migrator not present yet; validating current snapshot only."
+          fi
 
       - name: Syntax check changed JavaScript
         run: |
@@ -57,6 +56,12 @@ jobs:
           node src/wingman-navigation.test.mjs
           node src/miyu-assist-locks.test.mjs
 
+      - name: Run forgot focused suites
+        run: |
+          [ ! -f src/tank.test.mjs ] || node src/tank.test.mjs
+          [ ! -f src/forgot-stage2.test.mjs ] || node src/forgot-stage2.test.mjs
+          [ ! -f src/wingman-bughunt.test.mjs ] || node src/wingman-bughunt.test.mjs
+
       - name: Run full selftest
         run: node src/selftest.mjs
 
@@ -72,5 +77,5 @@ jobs:
             echo "No source changes produced."
             exit 0
           fi
-          git commit -m "[forgot-applied] fix: reconcile core and wingman backlog"
+          git commit -m "[forgot-applied] fix: integrate tank damage and runtime contracts"
           git push origin HEAD:validation/forgot-backlog-v09934
