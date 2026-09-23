@@ -1789,7 +1789,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return list.concat(golden.getHitboxTargets())
     },
 
-    getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut && !isEnemySpawnPending(e)),
+    getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut && !isEnemySpawnPending(e))
+      .concat(golden.getSquadronAlive ? golden.getSquadronAlive() : []),
     getGoldenAlive: () => golden.getAlive(),
     // Contrato de rota para aliados: apenas obstáculos inertes entram aqui. Não é uma lista de
     // combate nem altera colisão/dano; classes futuras que bloqueiem navegação devem ser incluídas

@@ -11,7 +11,10 @@ Este documento serve como índice canônico e centralizador de todas as pendênc
 
 ## 1. Gameplay & Combate
 
-### 1.1 Concluído na v0.99.35
+### 1.1 Concluído na v0.99.36
+- [x] **Overhaul do Dourado e Esquadrão:** Dourado comandante com faixas úteis de combate, caças subordinados persistentes com HP, slots de formação, 4 ordens táticas (Strafing, Pinça, Cerco do Laser, Fogo Coordenado), desorganização ao teleporte e reposição gradual ([`docs/specs/completed/overhaul-dourado-esquadrao.md`](docs/specs/completed/overhaul-dourado-esquadrao.md)).
+
+### 1.2 Concluído na v0.99.35
 - [x] **Arcade Draft Bullet-Time:** Janela de desaceleração de 1,5s com retorno automático a 1.0x (gameplay, naves, tiros e wingmen ativos sem pausar o jogo).
 - [x] **Swirl Blast Overhaul:** Hitbox volumétrica de 3.0u swept, 6 de dano-base + 30% do `maxHp` do Boss, penetração de detritos sem impacto e proteção contra dano duplo consecutivo.
 - [x] **Lock-on Prioritário:** Boss ativo > maior `maxHp` > menor ID, desacoplado do cone visual de mira e concentrando travas na ameaça máxima.
@@ -20,8 +23,7 @@ Este documento serve como índice canônico e centralizador de todas as pendênc
 - [x] **Boss Dourado:** Buffer de acerto piercing corrigido, fail-safe `consumeGoldenDefeated` e guarda idempotente na cutscene de morte.
 - [x] **Damage Feedback de Detritos:** Dano confirmado exige estritamente `damage > 0`; destruições por contato/ambiente sem HP não emitem dano zero.
 
-### 1.2 Próximas Entregas (Specs Prontas)
-- [ ] **Overhaul do Dourado e Esquadrão:** Minions dedicados, mecânicas de perseguição e fases escaladas ([`docs/specs/ready/overhaul-dourado-esquadrao.md`](docs/specs/ready/overhaul-dourado-esquadrao.md)).
+### 1.3 Próximas Entregas (Specs Prontas)
 - [ ] **Mira Direcional por Movimento:** Retículo adaptativo guiado por inércia e vetor de velocidade ([`docs/specs/ready/mira-direcional-por-movimento.md`](docs/specs/ready/mira-direcional-por-movimento.md)).
 - [ ] **Cutscene de Vida Perdida:** Transição dramática e recuperação sem quebra de fluxo ([`docs/specs/ready/cutscene-vida-perdida.md`](docs/specs/ready/cutscene-vida-perdida.md)).
 - [ ] **Boss Colmeia-Mãe:** Arena orgânica com enxames em espiral e pontos fracos expostos ([`docs/specs/ready/boss-colmeia-mae.md`](docs/specs/ready/boss-colmeia-mae.md)).

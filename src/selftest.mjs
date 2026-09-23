@@ -15,6 +15,7 @@ import './tank.test.mjs'
 import './wingman-bughunt.test.mjs'
 import './miyu-assist-locks.test.mjs'
 import './arcade-draft-bullet-time.test.mjs'
+import './golden-squadron.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
