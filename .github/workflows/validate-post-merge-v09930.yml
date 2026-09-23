@@ -19,6 +19,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Fix temporary migrator escaping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply-post-merge-v09930.mjs')
+          s = p.read_text()
+          s = s.replace("assert.ok(hudGame.includes(required), `rádio lateral precisa preservar áudio ${required}`)", "assert.ok(hudGame.includes(required), 'rádio lateral precisa preservar áudio ' + required)")
+          p.write_text(s)
+          PY
+          node --check tools/apply-post-merge-v09930.mjs
       - name: Apply v0.99.30 patch
         run: node tools/apply-post-merge-v09930.mjs
       - name: Syntax checks
