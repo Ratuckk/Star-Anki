@@ -26,7 +26,10 @@ jobs:
           node-version: 20
 
       - name: Apply audited fixes in validation workspace
-        run: node tools/apply-bughunt-fixes-v09932.mjs
+        shell: bash
+        run: |
+          node tools/apply-bughunt-fixes-v09932.mjs
+          node tools/apply-bughunt-fixes-v09932-round2.mjs
 
       - name: Syntax check every runtime/test module
         shell: bash
