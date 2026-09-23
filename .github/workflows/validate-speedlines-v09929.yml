@@ -1,0 +1,54 @@
+name: validate-speedlines-v09929
+
+on:
+  push:
+    branches:
+      - validation/speedlines-v09929
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply runtime integration
+        run: node tools/apply-speedlines-v09929.mjs
+
+      - name: Syntax checks
+        run: |
+          node --check src/hud-speedlines.js
+          node --check src/hud.js
+          node --check src/hud-speedlines.test.mjs
+          node --check src/speedlines-prototype-model.js
+          node --check src/speedlines-prototype.js
+
+      - name: Focused speedlines tests
+        run: |
+          node src/hud-speedlines.test.mjs
+          node src/speedlines-prototype.test.mjs
+
+      - name: Regression suite
+        run: node src/selftest.mjs
+
+      - name: Diff validation
+        run: git diff --check
+
+      - name: Commit validated tree
+        run: |
+          git config user.name "star-anki-validator"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/hud-speedlines.js src/hud-speedlines.test.mjs src/hud.js src/version.js progresso/PROGRESSO_POS_.90.md
+          git status --short
+          git commit -m "[validated-speedlines-v09929] integra speedlines direcionais no gameplay"
+          git push origin HEAD:${GITHUB_REF_NAME}
