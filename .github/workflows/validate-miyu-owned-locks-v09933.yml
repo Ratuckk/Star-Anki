@@ -16,8 +16,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply v0.99.33 migration
-        run: python scripts/apply-miyu-owned-locks-v09933.py
+      - name: Repair and apply v0.99.33 migration
+        run: |
+          python scripts/fix-miyu-migrator-v09933.py
+          python scripts/apply-miyu-owned-locks-v09933.py
 
       - name: Syntax checks
         run: |
@@ -45,6 +47,7 @@ jobs:
       - name: Commit validated clean tree
         run: |
           rm -f scripts/apply-miyu-owned-locks-v09933.py
+          rm -f scripts/fix-miyu-migrator-v09933.py
           rm -f .github/workflows/validate-miyu-owned-locks-v09933.yml
           git add -A
           git config user.name "Star-Anki Validation Bot"
