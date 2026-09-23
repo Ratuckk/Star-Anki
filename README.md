@@ -2,7 +2,7 @@
 
 > **Um jogo de combate espacial 3D arcade inspirado no clássico Star Fox, projetado para estudo de alta retenção através de Recordação Ativa (Active Recall) e Repetição Espaçada (SRS).**
 
-[![Versão](https://img.shields.io/badge/versão-v0.78.0-blue.svg)](src/version.js)
+[![Versão](https://img.shields.io/badge/versão-v0.99.30-blue.svg)](src/version.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Three.js](https://img.shields.io/badge/WebGL-Three.js-black?logo=three.js)](https://threejs.org/)
 [![Status](https://img.shields.io/badge/status-ativo-success.svg)]()
@@ -47,7 +47,7 @@ O sistema de estudo do Star-Anki foi projetado respeitando rigorosamente a regra
 - **Giro Completo / Rolamento (Barrel Roll - `Z` ou `C`):** Manobra defensiva que concede frames de invencibilidade e reflete projéteis inimigos quando combinada com cartas de deflexão.
 - **Propulsor de Aceleração (`A`):** Impulso frontal para escapar de encurralamentos ou colidir usando a carta de Aríete.
 - **Freio Reverso / Repulsor (`S`):** Desaceleração tática com jatos frontais reversos para alinhar disparos em alvos que passam velozes.
-- **Esquadrão Aliado Autônomo:** Até 4 companheiros de equipe (*Falco, Peppy, Slippy, Phantom*) que realizam voos planados realistas, cobrem os flancos e travam mira nos inimigos. Modo foco (`F`) permite direcionar todo o fogo do esquadrão a um alvo prioritário. Cada piloto também tem uma habilidade única com cooldown próprio (Falco: Investida Aríete, Peppy: Guarda, Slippy: Reparo de Campo, Phantom: Carga Compartilhada), com ícones de status ao lado do placar e cartas roguelike dedicadas pra reduzir cada cooldown.
+- **Esquadrão Aliado Autônomo:** Até 4 companheiros de equipe (*Falco, Peppy, Slippy, Miyu*) que realizam voos planados realistas, cobrem os flancos e travam mira nos inimigos. Modo foco (`F`) permite direcionar todo o fogo do esquadrão a um alvo prioritário. Cada piloto também tem uma habilidade única com cooldown próprio (Falco: Investida Aríete, Peppy: Guarda, Slippy: Reparo de Campo, Phantom: Carga Compartilhada), com ícones de status ao lado do placar e cartas roguelike dedicadas pra reduzir cada cooldown.
 
 ---
 
@@ -202,6 +202,13 @@ Star-Anki/
 ---
 
 ## 📜 Histórico e Evolução
+
+### v0.99.30 — Estabilidade dos Wingmen, rádio lateral e feedback de dano
+- Rádio dos quatro Wingmen volta aos painéis laterais com vozes, conexão/desconexão e estática; somente o chamado de Fox no Focus permanece acima da nave do jogador.
+- Focus recebe confirmação de todo aliado ativo sem cancelar Actions comprometidas.
+- IA de voo valida alvos realmente ativos, limita Rescue, desacelera ao chegar à formação no All-Range e possui failsafe de progresso sem teleportes.
+- Manga fica 50% menor e nasce do centro do alvo; Buraco Negro usa um círculo único e correto por alvo.
+
 
 Para detalhes minuciosos sobre o desenvolvimento e os patches de cada versão:
 - [progresso/PROGRESSO_POS_.70.md](progresso/PROGRESSO_POS_.70.md) — **Arquivo atual**, v0.75.0 em diante.

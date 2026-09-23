@@ -508,7 +508,7 @@ const hudFacade = readFileSync(new URL('./hud.js', import.meta.url), 'utf8')
 assert.ok(!hudFacade.includes('createWingmanRadioSlots'), 'grid de quatro blocos não pode voltar ao runtime')
 const hudGame = readFileSync(new URL('./hud-game.js', import.meta.url), 'utf8')
 for (const required of ['radio_connect', 'radio_disconnect', 'pilot_voice_falco', 'pilot_voice_peppy', 'pilot_voice_slippy', 'pilot_voice_miyu']) {
-  assert.ok(hudGame.includes(required), `rádio lateral precisa preservar áudio ${required}`)
+  assert.ok(hudGame.includes(required), 'rádio lateral precisa preservar áudio ' + required)
 }
 const worldRadio = readFileSync(new URL('./combat/wingman-world-radio.js', import.meta.url), 'utf8')
 assert.match(worldRadio, /WINGMAN_ABILITY_GLOW_DURATION_S\\s*=\\s*1\\.5/)
