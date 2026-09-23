@@ -5,12 +5,13 @@ import {
   POWER_LEVEL_BASIC,
 } from './shared.js'
 import { createEnemyTelemetry } from './enemy-telemetry.js'
+import { isEnemySpawnPending, isolateSpawnMaterial, releaseSpawnMaterial } from './spawn-lifecycle.js'
 import { aiValidator } from '../ai-validator.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   BLASTER_KIND, BLASTER_HIT_RADIUS, BLASTER_DEATH_DURATION, BLASTER_KILL_BONUS,
   BLASTER_SPAWN_DISTANCE_MIN, BLASTER_SPAWN_DISTANCE_MAX, BLASTER_BOX_X, BLASTER_BOX_Y,
-  BLASTER_PROFILES,
+  BLASTER_PROFILES, blasterStatsForLevel,
   spawnBlaster, blasterColor, disposeBlaster,
   triggerBlasterRecoil, breakBlasterWing,
 } from './blaster.js'
@@ -170,6 +171,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       }
     }
     if (e.kind === VERME_KIND) severChainAt(e, enemies, rail)
+    // Se a remoção acontecer no meio da entrada, restaura o material original e libera o clone
+    // temporário usado pela animação. Sem isso, despawn/clear durante peek/materialize vazaria material.
+    releaseSpawnMaterial(e)
     if (e.kind === SUSSURRO_KIND && e.mesh && e.mesh.material) {
       e.mesh.material.dispose()
     }
@@ -461,11 +465,6 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const hitRadius = hitRadiusFor(enemy)
       const deathDuration = deathDurationFor(enemy)
       const baseScale = enemy.mesh.scale.x || 1
-      // grace period de invencibilidade pós-spawn (hoje só os filhotes da Horda usam, ver
-      // MINI_SWARM_SPAWN_INVINCIBLE_S em miniSwarm.js) — decai uma vez por frame aqui, checado
-      // no toque simples/aríete abaixo e em resolveProjectileHit/applyAreaDamage mais adiante.
-      if (enemy.spawnInvincibleTimer > 0) enemy.spawnInvincibleTimer = Math.max(0, enemy.spawnInvincibleTimer - dt)
-      if (enemy.wobbleTimer > 0) enemy.wobbleTimer = Math.max(0, enemy.wobbleTimer - dt)
       if (enemy.dying) {
         enemy.deathT += dt / deathDuration
         const t = Math.max(0, 1 - enemy.deathT)
@@ -477,7 +476,20 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // processFadeOuts (chamado 1x por frame, fora deste loop); aqui só pula o resto do
       // processamento normal (movimento/tiro/colisão), igual já é feito com `dying`.
       if (enemy.fadingOut) continue
-      enemy.deathScale = baseScale
+
+      // A entrada é um lifecycle real: enquanto peek/materialize/settle ainda existem, o mesh
+      // pode animar, mas IA, tiro, colisão, dano, lock-on e campos de gameplay ainda não existem.
+      // Quando settle termina neste frame, updateSpawnAnimation limpa spawnPhase e o inimigo já
+      // pode participar normalmente do restante do mesmo tick.
+      updateSpawnAnimation(enemy, dt)
+      if (isEnemySpawnPending(enemy)) continue
+
+      // grace period de invencibilidade PÓS-spawn (hoje só os filhotes da Horda usam, ver
+      // MINI_SWARM_SPAWN_INVINCIBLE_S em miniSwarm.js). Antes ela decaía durante a própria
+      // materialização; agora os 0.4s prometidos contam somente depois que a entrada terminou.
+      if (enemy.spawnInvincibleTimer > 0) enemy.spawnInvincibleTimer = Math.max(0, enemy.spawnInvincibleTimer - dt)
+      if (enemy.wobbleTimer > 0) enemy.wobbleTimer = Math.max(0, enemy.wobbleTimer - dt)
+      enemy.deathScale = enemy.mesh.scale.x || baseScale
 
       const ramExtra = ramDamage > 0 ? 5.0 : 0
       const isColliding = !(enemy.spawnInvincibleTimer > 0)
@@ -557,92 +569,6 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         enemy.thrownActive = false
       }
 
-      // ============ SPAWN EM 3 FASES (peek/materialize/settle) ============
-      if (enemy.spawnPhase) {
-        enemy.spawnPhaseTimer += dt
-        const phaseDuration = enemy.spawnDurations[enemy.spawnPhase] || 0.1
-        const localT = Math.min(1, enemy.spawnPhaseTimer / phaseDuration)
-        const targetScale = enemy.targetScale ?? 1.0
-
-        if (enemy.spawnPhase === 'peek') {
-          if (localT >= 1) {
-            enemy.spawnPhase = 'materialize'
-            enemy.spawnPhaseTimer = 0
-            const mat = enemy.mesh.material
-            if (mat && !Array.isArray(mat)) {
-              const baseEmissive = mat.emissiveIntensity || 0
-              if (baseEmissive > 0.5) {
-                enemy.spawnOriginalEmissive = baseEmissive
-                enemy.spawnAnimationChannel = 'emissive'
-                mat.emissiveIntensity = 0
-              } else {
-                enemy.spawnAnimationChannel = 'opacity'
-                enemy.spawnOpacityWasTransparent = !!mat.transparent
-                mat.transparent = true
-                mat.opacity = 0
-              }
-            }
-            enemy.mesh.scale.setScalar(targetScale * 0.1)
-            // Materialização começa AGORA (peek já cobriu a antecipação) — condensação inward
-            // dispara na entrada da fase, não no spawn original.
-            const hordaSplitDenseFog = enemy.spawnedInDenseFog
-            if (effects && !hordaSplitDenseFog) {
-              if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
-                effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
-              } else if (effects.fogCondensationInward) {
-                effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
-              }
-            }
-          }
-        } else if (enemy.spawnPhase === 'materialize') {
-          const eased = THREE.MathUtils.smoothstep(localT, 0, 1)
-          const scale = THREE.MathUtils.lerp(targetScale * 0.1, targetScale * 1.05, eased)
-          enemy.mesh.scale.setScalar(scale)
-          const mat = enemy.mesh.material
-          if (mat && !Array.isArray(mat)) {
-            if (enemy.spawnAnimationChannel === 'emissive') {
-              mat.emissiveIntensity = (enemy.spawnOriginalEmissive || 0) * eased
-            } else if (enemy.spawnAnimationChannel === 'opacity') {
-              mat.opacity = eased
-            }
-          }
-          if (localT >= 1) {
-            enemy.spawnPhase = 'settle'
-            enemy.spawnPhaseTimer = 0
-            enemy.settleFlashFired = false
-          }
-        } else if (enemy.spawnPhase === 'settle') {
-          const settleEased = 1 - (1 - localT) * (1 - localT)
-          const scale = THREE.MathUtils.lerp(targetScale * 1.05, targetScale, settleEased)
-          enemy.mesh.scale.setScalar(scale)
-          if (!enemy.settleFlashFired) {
-            enemy.settleFlashFired = true
-            if (effects && effects.hitSpark) effects.hitSpark(enemy.mesh.position, colorFor(enemy))
-          }
-          if (localT >= 1) {
-            const mat = enemy.mesh.material
-            if (mat && !Array.isArray(mat)) {
-              if (enemy.spawnAnimationChannel === 'emissive') {
-                mat.emissiveIntensity = enemy.spawnOriginalEmissive || 0
-              } else if (enemy.spawnAnimationChannel === 'opacity') {
-                mat.opacity = 1
-                mat.transparent = enemy.spawnOpacityWasTransparent
-              }
-            }
-            enemy.mesh.scale.setScalar(targetScale)
-            enemy.spawnPhase = null
-            enemy.spawnDurations = null
-            enemy.spawnOriginalEmissive = null
-            enemy.spawnAnimationChannel = null
-            enemy.spawnOpacityWasTransparent = false
-            enemy.settleFlashFired = false
-            // Wobble pós-spawn (aplicado no último instante antes do render — ver applySpawnWobbles)
-            enemy.wobbleTimer = SPAWN_WOBBLE_DURATION_S
-            enemy.wobbleMagnitude = SPAWN_WOBBLE_MAGNITUDE
-          }
-        }
-      }
-
       // fila de mini-inimigos: patrulha + mergulho (reto/zigue-zague/espiral) — nunca atira, se
       // remove sozinha (não usa o pass-behind genérico abaixo)
       if (enemy.kind === MINI_SWARM_KIND) {
@@ -714,11 +640,20 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           updateSussurro(enemy, dt, rail, isDenseFog)
           if (sussurroShouldSummon(enemy)) {
             const count = 2 + Math.floor(Math.random() * 2)
+            const summonLevel = currentDifficultyLevel()
+            const expectedHp = blasterStatsForLevel(summonLevel).hp
+            const reinforcements = []
             for (let i = 0; i < count; i += 1) {
-              const reinforcement = spawnBlaster(scene, rail, nextEnemyId++)
+              const reinforcement = spawnBlaster(scene, rail, nextEnemyId++, { level: summonLevel })
               reinforcement.fireTimer = randomEnemyFireInterval()
-              enemies.push(reinforcement)
+              registerSpawn(reinforcement)
+              reinforcements.push(reinforcement)
             }
+            aiValidator.expect(
+              'Sussurro invoca Blasters no nível atual e pelo pipeline normal de spawn',
+              () => reinforcements.length === count && reinforcements.every((r) => r.maxHp === expectedHp && r.spawnRailDist != null && isEnemySpawnPending(r)),
+              { count, summonLevel, expectedHp, actualHp: reinforcements.map((r) => r.maxHp) },
+            )
           }
         }
         const relative = _enemyRel.copy(enemy.mesh.position).sub(frame.position)
@@ -993,6 +928,93 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     }
   }
 
+  function updateSpawnAnimation(enemy, dt) {
+    if (!enemy.spawnPhase) return
+    enemy.spawnPhaseTimer += dt
+    const phaseDuration = enemy.spawnDurations[enemy.spawnPhase] || 0.1
+    const localT = Math.min(1, enemy.spawnPhaseTimer / phaseDuration)
+    const targetScale = enemy.targetScale ?? 1.0
+
+    if (enemy.spawnPhase === 'peek') {
+      if (localT >= 1) {
+        enemy.spawnPhase = 'materialize'
+        enemy.spawnPhaseTimer = 0
+        const mat = enemy.mesh.material
+        if (mat && !Array.isArray(mat)) {
+          const baseEmissive = mat.emissiveIntensity || 0
+          if (baseEmissive > 0.5) {
+            enemy.spawnOriginalEmissive = baseEmissive
+            enemy.spawnAnimationChannel = 'emissive'
+            mat.emissiveIntensity = 0
+          } else {
+            enemy.spawnAnimationChannel = 'opacity'
+            enemy.spawnOpacityWasTransparent = !!mat.transparent
+            mat.transparent = true
+            mat.opacity = 0
+          }
+        }
+        enemy.mesh.scale.setScalar(targetScale * 0.1)
+        // Materialização começa AGORA (peek já cobriu a antecipação) — condensação inward
+        // dispara na entrada da fase, não no spawn original.
+        const hordaSplitDenseFog = enemy.spawnedInDenseFog
+        if (effects && !hordaSplitDenseFog) {
+          if (enemy.kind === MINI_SWARM_KIND && effects.flankSpawnTrail) {
+            effects.flankSpawnTrail(enemy.mesh.position, null, colorFor(enemy))
+          } else if (effects.fogCondensationInward) {
+            effects.fogCondensationInward(enemy.mesh.position, colorFor(enemy), hitRadiusFor(enemy))
+          }
+        }
+      }
+    } else if (enemy.spawnPhase === 'materialize') {
+      const eased = THREE.MathUtils.smoothstep(localT, 0, 1)
+      const scale = THREE.MathUtils.lerp(targetScale * 0.1, targetScale * 1.05, eased)
+      enemy.mesh.scale.setScalar(scale)
+      const mat = enemy.mesh.material
+      if (mat && !Array.isArray(mat)) {
+        if (enemy.spawnAnimationChannel === 'emissive') {
+          mat.emissiveIntensity = (enemy.spawnOriginalEmissive || 0) * eased
+        } else if (enemy.spawnAnimationChannel === 'opacity') {
+          mat.opacity = eased
+        }
+      }
+      if (localT >= 1) {
+        enemy.spawnPhase = 'settle'
+        enemy.spawnPhaseTimer = 0
+        enemy.settleFlashFired = false
+      }
+    } else if (enemy.spawnPhase === 'settle') {
+      const settleEased = 1 - (1 - localT) * (1 - localT)
+      const scale = THREE.MathUtils.lerp(targetScale * 1.05, targetScale, settleEased)
+      enemy.mesh.scale.setScalar(scale)
+      if (!enemy.settleFlashFired) {
+        enemy.settleFlashFired = true
+        if (effects && effects.hitSpark) effects.hitSpark(enemy.mesh.position, colorFor(enemy))
+      }
+      if (localT >= 1) {
+        const mat = enemy.mesh.material
+        if (mat && !Array.isArray(mat)) {
+          if (enemy.spawnAnimationChannel === 'emissive') {
+            mat.emissiveIntensity = enemy.spawnOriginalEmissive || 0
+          } else if (enemy.spawnAnimationChannel === 'opacity') {
+            mat.opacity = 1
+            mat.transparent = enemy.spawnOpacityWasTransparent
+          }
+        }
+        enemy.mesh.scale.setScalar(targetScale)
+        releaseSpawnMaterial(enemy)
+        enemy.spawnPhase = null
+        enemy.spawnDurations = null
+        enemy.spawnOriginalEmissive = null
+        enemy.spawnAnimationChannel = null
+        enemy.spawnOpacityWasTransparent = false
+        enemy.settleFlashFired = false
+        // Wobble pós-spawn (aplicado no último instante antes do render — ver applySpawnWobbles)
+        enemy.wobbleTimer = SPAWN_WOBBLE_DURATION_S
+        enemy.wobbleMagnitude = SPAWN_WOBBLE_MAGNITUDE
+      }
+    }
+  }
+
   function registerSpawn(enemy) {
     if (!enemy) return null
     enemy.spawnRailDist = rail.getDistance()
@@ -1006,6 +1028,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       enemy.spawnPhase = hasPeek ? 'peek' : 'materialize'
       enemy.spawnPhaseTimer = 0
       enemy.settleFlashFired = false
+      // O canal emissive/opacidade mexe em Material. Como várias classes compartilham a mesma
+      // instância entre inimigos, isola temporariamente só quem realmente terá peek (é o único
+      // caminho que anima propriedades do material); no fim do settle o original volta.
+      if (hasPeek) isolateSpawnMaterial(enemy)
       // Fase peek: mesh ainda não "existe" de verdade — escala zero, só o anel de antecipação
       // marca o ponto. Sem peek (inimigo pequeno demais), pula direto pra materialize com a
       // escala mínima de sempre.
@@ -1237,7 +1263,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const sources = []
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i]
-        if (e.kind === IMA_KIND && !e.dying && e.mesh) {
+        if (e.kind === IMA_KIND && !e.dying && !isEnemySpawnPending(e) && e.mesh) {
           sources.push({ position: e.mesh.position, radius: IMA_FIELD_RADIUS, strength: IMA_FIELD_STRENGTH })
         }
       }
@@ -1328,6 +1354,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       for (const e of enemies) {
         if (e.dying) continue
         if (e.fadingOut) continue
+        if (isEnemySpawnPending(e)) continue
         if (e.spawnInvincibleTimer > 0) continue
         if (e.mesh.position.distanceTo(center) > radius) continue
         if (e.kind === BOSS_KIND && e.isShieldActive) continue
@@ -1366,7 +1393,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const isHoming = !!projectileMeta.isHoming
       const hitBuffer = projectileMeta.hitBuffer || 0
 
-      const enemyHit = enemies.find((e) => !e.dying && !e.fadingOut && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
+      const enemyHit = enemies.find((e) => !e.dying && !e.fadingOut && !isEnemySpawnPending(e) && !(e.spawnInvincibleTimer > 0) && distanceToSegment(e.mesh.position, prevPos, currPos) <= hitRadiusFor(e) + hitBuffer)
       if (enemyHit) {
         // Chefe: escudo refletor azul — a cada 7s ergue escudo por 3s que reflete tiros
         if (enemyHit.kind === BOSS_KIND && enemyHit.isShieldActive) {
@@ -1504,7 +1531,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const hits = []
 
       for (const enemyHit of enemies) {
-        if (enemyHit.dying || enemyHit.fadingOut || enemyHit.spawnInvincibleTimer > 0) continue
+        if (enemyHit.dying || enemyHit.fadingOut || isEnemySpawnPending(enemyHit) || enemyHit.spawnInvincibleTimer > 0) continue
         if (piercedTargets.has(enemyHit.id)) continue
         if (distanceToSegment(enemyHit.mesh.position, prevPos, currPos) > hitRadiusFor(enemyHit) + hitBuffer) continue
         piercedTargets.add(enemyHit.id)
@@ -1649,13 +1676,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return list.concat(golden.getHitboxTargets())
     },
 
-    getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut),
+    getAlive: () => enemies.filter((e) => !e.dying && !e.fadingOut && !isEnemySpawnPending(e)),
     getGoldenAlive: () => golden.getAlive(),
     // Contrato de rota para aliados: apenas obstáculos inertes entram aqui. Não é uma lista de
     // combate nem altera colisão/dano; classes futuras que bloqueiem navegação devem ser incluídas
     // explicitamente com seu raio real, sem expor inimigos móveis por engano.
     getAvoidanceObstacles: () => enemies
-      .filter((e) => e.kind === DETRITO_KIND && !e.dying && !e.fadingOut && e.mesh)
+      .filter((e) => e.kind === DETRITO_KIND && !e.dying && !e.fadingOut && !isEnemySpawnPending(e) && e.mesh)
       .map((e) => ({ id: e.id, kind: e.kind, mesh: e.mesh, radius: hitRadiusFor(e), driftVel: e.driftVel || null })),
     // raio "de trava" pro lock-on/HUD (QoL #2) — golden já expõe `.radius` próprio, o resto usa
     // o mesmo hitRadius da colisão (hitRadiusFor), incluindo o chefe (que não tinha radius

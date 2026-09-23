@@ -4,7 +4,7 @@ import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 
 // ============ SENTINELA — inimigo quadrado inédito, só modo trilho ============
 // v0.34.0: pedido do usuário — persegue o jogador mantendo distância (nunca passa por ele),
-// dispara 4 "molduras" quadradas (borda causa dano, centro vazado é seguro pra atravessar) e
+// dispara 6 "molduras" quadradas (borda causa dano, centro vazado é seguro pra atravessar) e
 // depois vai embora. Só existe em trilho (guard no spawn, igual ao mini-swarm).
 export const SENTINELA_KIND = 'sentinela'
 export const SENTINELA_COLOR = 0x00d4ff
@@ -22,9 +22,9 @@ const BOX_Y = 4
 
 const ENGAGE_STANDOFF = 62 // 48 * 1.3 — pedido do usuário (inimigos 20% mais distantes; Sentinela +30% à parte, já que este valor é a distância de combate inteira dela, não só o spawn)
 const LATERAL_TRACK_RATE = .2 // rastreamento lateral suave do jogador
-const LEAVE_SPEED = 32 // velocidade de fuga após o 4º disparo
+const LEAVE_SPEED = 32 // velocidade de fuga após o 6º disparo
 export const SENTINELA_SHOTS_TOTAL = 6
-export const SENTINELA_FIRE_INTERVAL = 2 // intervalo entre os 4 disparos
+export const SENTINELA_FIRE_INTERVAL = 2 // intervalo entre os 6 disparos
 
 export const SENTINELA_STATE_ENGAGING = 'engaging'
 export const SENTINELA_STATE_LEAVING = 'leaving'
@@ -157,9 +157,9 @@ export function spawnSentinela(scene, rail, id, level = 1) {
   return enemy
 }
 
-// Em ENGAGING: profundidade cravada em ENGAGE_STANDOFF (48u) à frente do frame da nave.
+// Em ENGAGING: profundidade cravada em ENGAGE_STANDOFF (62u) à frente do frame da nave.
 // Como avança rigidamente com o frame da pista, NUNCA se aproxima da nave antes de terminar
-// os 4 disparos! Ao terminar os 4 ataques, empina para cima e acelera para frente até sumir.
+// os 6 disparos! Ao terminar os 6 ataques, empina para cima e acelera para frente até sumir.
 export function updateSentinelaMovement(enemy, dt, frame, rail) {
   if (enemy.state === SENTINELA_STATE_LEAVING) {
     enemy.screenY += 12 * dt
@@ -168,7 +168,7 @@ export function updateSentinelaMovement(enemy, dt, frame, rail) {
     return
   }
 
-  // Trava de profundidade absoluta: não aproxima de jeito nenhum antes dos 4 disparos
+  // Trava de profundidade absoluta: não aproxima de jeito nenhum antes dos 6 disparos
   enemy.depth = ENGAGE_STANDOFF
 
   const lateral = rail.getPlayerLateral ? rail.getPlayerLateral() : { x: 0, y: 0 }
