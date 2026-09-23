@@ -1,6 +1,6 @@
 # Forgot — itens esquecidos ou ainda não implementados
 
-> Este arquivo consolida o que ficou faltando ou parcialmente implementado nos levantamentos recentes: **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)**, **10 (Fog)**, a **superchecagem dos inimigos** e a **caça extensiva de bugs dos Wingmen levantada pelo Antigravity**. Sugestões opcionais não são tratadas como requisitos aprovados. Itens já corrigidos ficam marcados como concluídos para não voltarem acidentalmente ao backlog.
+> Este arquivo consolida o que ficou faltando ou parcialmente implementado nos levantamentos recentes: **3 (Swirl Blast)**, **5 (obtenção de cartas no modo Arcade)**, **10 (Fog)**, a **superchecagem dos inimigos**, a **caça extensiva de bugs dos Wingmen levantada pelo Antigravity** e **evidências adicionais de fuzz/runtime dos Wingmen**. Sugestões opcionais não são tratadas como requisitos aprovados. Itens já corrigidos ficam marcados como concluídos para não voltarem acidentalmente ao backlog.
 
 ## 3 — Swirl Blast
 
@@ -388,6 +388,73 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 
 ---
 
+## Evidência adicional de fuzz/runtime dos Wingmen
+
+> Dump adicional de verificação: **3.644 expectativas avaliadas, 3.612 aprovadas e 32 falhas**. Esta seção registra somente o que o dump comprova e separa fatos observados de hipóteses de causa.
+
+### Falha reproduzida A — Wingmen permanecem praticamente sobrepostos
+
+- [ ] **29 das 32 falhas são da expectativa “Wingmen não permanecem praticamente sobrepostos por mais de 0.5s”.**
+  - As distâncias observadas nos eventos de falha variam de aproximadamente **0,0166 a 0,535 unidades**, com tempo de proximidade entre aproximadamente **0,5001 s e 0,5167 s**.
+  - O problema não está restrito a um único par de pilotos: todos os pares aparecem em alguma falha.
+  - O par **1–2** é o mais recorrente no dump, com 8 ocorrências; 0–3 e 2–3 aparecem 5 vezes cada; 0–2 e 1–3 aparecem 4 vezes cada; 0–1 aparece 3 vezes.
+  - **17/29** falhas ocorreram com ambos em `patrol`; **20/29** ocorreram com ambos usando `navigation: formation`.
+  - Também há falhas envolvendo `escort`, `damaged-passive`, `ram` e `dogfight`, portanto a correção não pode ficar restrita à formação-base.
+
+- [ ] **Revisar a autoridade entre formation target, separation e catch-up.**
+  - O dump mostra separação iniciando em alguns momentos, mas ainda registra `wingman-formation-clump/sobreposicao-persistente` depois.
+  - A correção deve impedir que dois sistemas de navegação deem comandos incompatíveis no mesmo frame ou façam ambos os Wingmen convergirem para praticamente o mesmo ponto.
+  - A separação precisa ter prioridade/autoridade suficiente para resolver sobreposição mesmo durante `escort`, `damaged-passive`, `attack-lane` e catch-up.
+
+- [ ] **Adicionar histerese/debounce ao rail catch-up para impedir “thrashing”.**
+  - Na timeline capturada há **16 `catchup-started` e 16 `catchup-ended`**.
+  - Perto de `t≈494647–494947`, o catch-up liga e desliga repetidamente em intervalos muito curtos conforme o `longitudinalLag` cruza o limiar.
+  - Há boosts muito altos no mesmo trecho, incluindo aproximadamente **41,8** e **69,33**, que merecem validação de clamp e estabilidade.
+  - Isto é uma **hipótese de contribuição ao clumping**, não uma causa comprovada pelo dump: testar antes de alterar comportamento.
+
+- [ ] **Revisar o churn de obstacle avoidance.**
+  - A timeline contém **131 eventos `wingman-obstacle-avoidance / curva-preditiva-iniciada`**.
+  - Muitos envolvem repetidamente os mesmos pilotos/obstáculos com poucos frames de diferença.
+  - Verificar se isso é apenas telemetria verbosa ou se a curva preditiva está sendo reiniciada continuamente sem hysteresis/cooldown, competindo com formation/separation/catch-up.
+  - Não reduzir a evasão só para silenciar o log; primeiro medir impacto real na trajetória.
+
+### Critérios de aceitação para a formação/separação
+
+- [ ] A expectativa existente de “não permanecer praticamente sobreposto por mais de 0,5 s” deve passar em fuzz prolongado sem simplesmente afrouxar o threshold do teste.
+- [ ] O teste deve cobrir `patrol+patrol`, `escort+patrol`, `damaged-passive+patrol`, `ram+patrol` e casos com `attack-lane`/`support-player`.
+- [ ] Todos os seis pares possíveis entre os quatro pilotos devem ser exercitados.
+- [ ] `formation-separation` não pode ser imediatamente anulada por formation target, catch-up ou obstacle avoidance no frame seguinte.
+- [ ] Catch-up deve possuir histerese suficiente para não alternar start/end a cada poucos frames ao redor do mesmo limiar.
+- [ ] Qualquer boost de catch-up deve possuir limite seguro e não produzir salto/teleporte/convergência abrupta entre Wingmen.
+
+### Falha reproduzida B — feedback de dano inválido de Detrito
+
+- [ ] **3 das 32 falhas são da expectativa “Feedback de dano confirmado tem valor, posição e autoria válidos”.**
+  - Nas três ocorrências o contexto é exatamente `kind: "detrito"`, `damage: 0` e `pilotId: null`.
+  - Tempos observados: aproximadamente `218986.3`, `327934.7` e `409124.9`.
+  - O dump comprova que um evento tratado como **dano confirmado** está sendo emitido sem valor de dano e sem autoria de piloto.
+
+- [ ] **Definir a semântica correta do evento antes de corrigir.**
+  - Se `damage === 0` significa que nenhum dano foi aplicado, o evento de “dano confirmado” não deve ser emitido como hit válido.
+  - Se o Detrito realmente deveria causar dano naquele contato, corrigir o pipeline upstream que perdeu/zerou o valor.
+  - `pilotId: null` pode ser legítimo para dano ambiental; nesse caso o contrato do evento/teste deve representar autoria ambiental explicitamente em vez de inventar um piloto.
+  - Não mascarar a falha preenchendo valores fictícios apenas para satisfazer o teste.
+
+### Critérios de aceitação para feedback de dano
+
+- [ ] Um evento de dano confirmado precisa carregar um valor coerente com o dano realmente aplicado.
+- [ ] Dano ambiental deve ter autoria explicitamente representável (`sourceKind`, `environmental` ou contrato equivalente) sem exigir `pilotId` artificial.
+- [ ] Eventos de contato que resultam em zero dano devem ser classificados como bloqueio/contato/absorção, ou simplesmente não entrar no pipeline de “damage confirmed”, conforme a semântica escolhida.
+- [ ] Adicionar caso automatizado específico para Detrito cobrindo jogador, Wingman e qualquer outro receptor válido do pipeline de dano.
+
+### Sinais secundários do dump — investigar, não tratar como causa confirmada
+
+- [ ] Existe pelo menos um evento `wingman-navigation-stall / velocity-recovered` para piloto 2 em `damaged-passive`; manter telemetria e verificar se reaparece em execuções longas.
+- [ ] O volume de evasões preditivas e alternâncias de catch-up sugere competição entre controladores de movimento; instrumentar prioridade/owner do steering por frame antes de fazer refactor grande.
+- [ ] Preservar no próximo dump contadores agregados por `state`, `navigationIntent`, par de pilotos, motivo de separation e motivo de catch-up start/end para facilitar comparação antes/depois.
+
+---
+
 ## Resumo do que realmente permanece pendente
 
 ### Swirl Blast
@@ -440,3 +507,11 @@ Alternativas ainda possíveis, caso essa direção seja rejeitada em playtest:
 - [ ] Resetar todo estado transitório relevante em `clearSquadron()`.
 - [ ] Remover riscos de NaN e alocações desnecessárias nos hot loops auditados.
 - [ ] Implementar e executar a suíte `wingman-bughunt.test.mjs` + regressões globais.
+
+### Wingmen — evidência fuzz/runtime adicional
+- [ ] Corrigir sobreposição persistente dos Wingmen sem afrouxar a expectativa de 0,5 s.
+- [ ] Fazer separation ter autoridade consistente contra formation/catch-up/obstacle avoidance e outros intents.
+- [ ] Eliminar thrashing de rail catch-up com histerese/debounce e clamp de boost.
+- [ ] Investigar reinicializações excessivas de obstacle avoidance e sua competição com outros steerings.
+- [ ] Corrigir/definir o contrato do feedback de dano de Detrito (`damage: 0`, `pilotId: null`).
+- [ ] Reexecutar fuzz prolongado e exigir `expectativas_falhas: []` para considerar esta rodada concluída.
