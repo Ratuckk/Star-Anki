@@ -189,6 +189,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     showArenaPreview: (kind) => enemies.showArenaPreview(kind),
     clearArenaPreview: () => enemies.clearArenaPreview(),
     applySpawnWobbles: () => enemies.applySpawnWobbles(),
+    restoreSpawnWobbles: () => enemies.restoreSpawnWobbles?.(),
     clearOtherEnemies: () => enemies.clearOtherEnemies(),
     clearProjectiles: () => projectiles.clearAll(),
 
@@ -254,6 +255,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         allowBossOrbHit: opts.allowBossOrbHit !== false,
         globalDamageBonus: squadron.getMoraleDamageBonus?.() || 0,
         hitSparkColor: (squadron.getMoraleDamageBonus?.() || 0) > 0 ? 0x39ff6a : undefined,
+        swirlDt: opts.swirlProjectileDt,
       })
       targets.update(dt)
 
@@ -262,6 +264,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       // lasers e molduras devem iniciar o knockback baseado em powerLevel.
       let enemyProjectileHits = 0
       let enemyDamage = 1
+      let enemyGenericDamage = 0
+      let enemyShieldDamage = 0
+      let enemyHullDamage = 0
       // Nível de poder do maior hit de PROJÉTIL/laser/moldura no frame (ver PROJECTILE_POWER_LEVEL
       // em enemies/shared.js) — toque físico direto (kamikaze/aríete) não conta aqui, tem seu
       // próprio tumble via bossCollisionWorldPos (rail.triggerBossCollisionTumble).
@@ -315,11 +320,15 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         for (const profileId of projResult.wingmanHitIds || []) {
           const hit = squadron.applyDamageToWingman?.(profileId)
           if (hit?.applied) effects?.hitSpark?.(wingmanTargets.find((target) => target.id === profileId)?.worldPos || playerPosition, 0xff5a24)
+          if (hit?.enteredRetreat) player.markWingmanDown?.(profileId)
         }
         enemyHits += projResult.hits
         enemyProjectileHits += projResult.hits
         if (projResult.hits > 0) {
           enemyDamage = Math.max(enemyDamage, projResult.damage)
+          enemyGenericDamage = Math.max(enemyGenericDamage, projResult.genericDamage || 0)
+          enemyShieldDamage = Math.max(enemyShieldDamage, projResult.shieldDamage || 0)
+          enemyHullDamage = Math.max(enemyHullDamage, projResult.hullDamage || 0)
           enemyHitPowerLevel = Math.max(enemyHitPowerLevel, projResult.powerLevel)
         }
       }
@@ -386,6 +395,9 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         enemyHits,
         enemyProjectileHits,
         enemyDamage,
+        enemyGenericDamage,
+        enemyShieldDamage,
+        enemyHullDamage,
         enemyHitPowerLevel,
         goldenSpecialHit: goldenSpecialHit || ramGoldenDefeated || Boolean(wingmanResult.goldenSpecialHit),
         goldenSpecialHitIsHoming,

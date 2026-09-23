@@ -315,7 +315,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       case SUSSURRO_KIND:
       case REPLICA_KIND:
       case IMA_KIND: return 1
-      case TANK_KIND:
+      case TANK_KIND: return enemy.ramAttackActive ? 3 : 2
       case TIME_KIND:
       case SENTINELA_KIND:
       case VERME_KIND:
@@ -441,7 +441,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       // Inimigos genéricos puxam para cima e vão embora voando após atacarem N vezes (4 pro
       // Blaster/Tank, 6 pra Horda — pedido explícito do usuário)
       const disengageAtShots = enemy.kind === HORDA_KIND ? HORDA_SHOTS_BEFORE_LEAVE : 4
-      if (enemy.shotsFired >= disengageAtShots && (enemy.kind === BLASTER_KIND || enemy.kind === TANK_KIND || enemy.kind === HORDA_KIND)) {
+      if (enemy.shotsFired >= disengageAtShots && (enemy.kind === BLASTER_KIND || enemy.kind === HORDA_KIND)) {
         enemy.disengaging = true
         enemy.fireTimer = Infinity
       }
@@ -1381,6 +1381,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       return {
         hits: p.hits + l.hits + g.hits,
         damage: Math.max(p.damage, l.damage, g.damage),
+        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0),
         shieldDamage: g.hits > 0 ? g.shieldDamage : 0,
         hullDamage: g.hits > 0 ? g.hullDamage : 0,
         powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),

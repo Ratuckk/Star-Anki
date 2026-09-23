@@ -128,6 +128,7 @@ export function createGameLoop(deps) {
     if (state.stopped) return
     const rawDt = forcedRawDt != null ? forcedRawDt : Math.min((now - state.lastTime) / 1000, 0.1)
     const baseDt = state.debugFlags.slowMoActive ? rawDt * 0.25 : rawDt
+    const swirlCinematicActive = state.swirlSlowMoMs > 0
     // Bullet-time no Card Choice (Arcade) — Docs/Bullet-time no Card Choice (Arcade).md, §3.1.
     // Só no modo arcade, só na tela de 3 cartas, e só com a pausa total desligada nas
     // Configurações. Calculado ANTES do early-return de cardChoice (logo abaixo) — é essa
@@ -568,6 +569,9 @@ export function createGameLoop(deps) {
       homingHasLockedTarget,
       reactivity,
       isDenseFog,
+      // O mundo desacelera no super-ataque, mas o projétil Swirl conserva velocidade em tempo
+      // real. O slow-mo de DEBUG continua vencendo para manter a ferramenta previsível.
+      swirlProjectileDt: state.debugFlags.slowMoActive ? dt : (swirlCinematicActive ? rawDt : dt),
     })
 
     // ============ HIT MARKER ============
@@ -805,7 +809,13 @@ export function createGameLoop(deps) {
     if (events.enemyHits > 0 && !player.isInvincible() && !state.debugFlags.godMode) {
       state.hitShakeTimer = HIT_SHAKE_DURATION_MS
 
-      const result = player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
+      const hasChannelDamage = (events.enemyShieldDamage || 0) > 0 || (events.enemyHullDamage || 0) > 0
+      const result = hasChannelDamage && player.takeDamageChannels
+        ? player.takeDamageChannels({
+            shieldDamage: events.enemyShieldDamage || 0,
+            hullDamage: events.enemyHullDamage || 0,
+          })
+        : player.takeDamage(Math.max(state.enemyDamageValue, events.enemyDamage || 1))
       // Pontuação: ser atingido quebra a cadeia do mesmo modo que errar uma pergunta. Só roda no
       // hit efetivamente resolvido (não em invencibilidade, que já retorna antes deste bloco).
       const comboBeforeDamage = session.comboMultiplier
@@ -1181,7 +1191,11 @@ export function createGameLoop(deps) {
     // Wobble pós-spawn (Overhaul de spawn/despawn) — aplicado no ÚLTIMO instante antes do
     // render, nunca antes (hit-test/lock-on/IA do frame já leram a posição "real" sem jitter).
     combat.applySpawnWobbles?.()
-    renderer.render(scene, camera)
+    try {
+      renderer.render(scene, camera)
+    } finally {
+      combat.restoreSpawnWobbles?.()
+    }
   }
 
   function tick(now) {

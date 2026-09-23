@@ -90,6 +90,33 @@ const BOOST_BRAKE_DRAIN_MS = BOOST_RECHARGE_MS * 2
 // normal, só pela ação de debug (mantido aqui pra ficar perto de onde é consumido).
 const DEBUG_MAX_UNCAPPED_STACKS = 4
 
+export function resolveDamageChannels({ temporaryShield = 0, shield = 0, shieldDamage = 0, hullDamage = 0 } = {}) {
+  let temp = Math.max(0, Number(temporaryShield) || 0)
+  let regular = Math.max(0, Number(shield) || 0)
+  let remainingShieldDamage = Math.max(0, Number(shieldDamage) || 0)
+  const hullPayload = Math.max(0, Number(hullDamage) || 0)
+  const hadShieldChannel = remainingShieldDamage > 0 && (temp > 0 || regular > 0)
+
+  const absorbedTemporary = Math.min(temp, remainingShieldDamage)
+  temp -= absorbedTemporary
+  remainingShieldDamage -= absorbedTemporary
+  const absorbedRegular = Math.min(regular, remainingShieldDamage)
+  regular -= absorbedRegular
+  remainingShieldDamage -= absorbedRegular
+
+  const shieldBroke = hadShieldChannel && temp + regular <= 0
+  const hullDamageApplied = (!hadShieldChannel || shieldBroke) ? hullPayload : 0
+  return {
+    temporaryShield: temp,
+    shield: regular,
+    absorbedTemporary,
+    absorbedRegular,
+    absorbedByShield: absorbedTemporary + absorbedRegular > 0,
+    shieldBroke,
+    hullDamageApplied,
+  }
+}
+
 // estado do JOGADOR: vida/vidas, escudo, invencibilidade, boost, cooldowns e os stats que as
 // cartas roguelike mutam (projectileCount, fireCooldown, aimAssistAngle, homingMaxTargets...).
 // Não inclui posição/movimento (rail.js), nem projéteis/armas de verdade (combat.js) — só o
@@ -592,6 +619,67 @@ export function createPlayerSystem(session) {
         amount, absorbedByShield, absorbedByTemporaryShield, shieldBroke, outOfLives, health: session.health, lives: session.lives,
       })
       return { absorbedByShield: absorbedByShield || absorbedByTemporaryShield, absorbedByTemporaryShield, shieldBroke, outOfLives }
+    },
+
+    takeDamageChannels({ shieldDamage = 0, hullDamage = 0 } = {}) {
+      if (invincibleTimer > 0) {
+        return { hit: false, absorbedByShield: false, absorbedByTemporaryShield: false, shieldBroke: false, outOfLives: false, hullDamageApplied: 0 }
+      }
+      const resolved = resolveDamageChannels({
+        temporaryShield: temporaryShieldValue,
+        shield: shieldValue,
+        shieldDamage,
+        hullDamage,
+      })
+      const shieldWasTouched = resolved.absorbedByShield
+      if (shieldWasTouched) shieldRegenDelayTimer = shieldRegenDelayMs + (wrongAnswerCount >= 3 ? 150 : 0)
+      temporaryShieldValue = resolved.temporaryShield
+      shieldValue = resolved.shield
+
+      aiValidator.expect(
+        'Dano por canais preserva escudo temporário/normal dentro dos limites',
+        () => temporaryShieldValue >= 0 && temporaryShieldValue <= PEPPY_GUARD_EXTRA_STACKS_CAP && shieldValue >= 0 && shieldValue <= shieldMax,
+        { shieldDamage, hullDamage, temporaryShieldValue, shieldValue, shieldMax },
+      )
+
+      if (shieldWasTouched) {
+        triggerSoundCue(resolved.shieldBroke ? PLAYER_SOUND_CUES.shield_break : PLAYER_SOUND_CUES.shield_absorb, {
+          remainingShield: shieldValue, damage: shieldDamage,
+        })
+      }
+
+      let outOfLives = false
+      if (resolved.hullDamageApplied > 0) {
+        invincibleTimer = Math.max(invincibleTimer, invincibilityDurationMs)
+        session.health = Math.max(0, session.health - resolved.hullDamageApplied)
+        outOfLives = applyHealthLoss()
+        triggerSoundCue(PLAYER_SOUND_CUES.hull_damage, {
+          damage: resolved.hullDamageApplied, health: session.health, lives: session.lives,
+        })
+        if (session.health <= 0) {
+          triggerSoundCue(outOfLives ? PLAYER_SOUND_CUES.game_over : PLAYER_SOUND_CUES.life_lost,
+            outOfLives ? { score: session.score || 0 } : { livesRemaining: session.lives })
+        }
+      }
+
+      const hit = shieldWasTouched || resolved.hullDamageApplied > 0
+      telemetry?.recordEvent('damage', `Dano por canais: escudo ${shieldDamage}, casco ${hullDamage}`, {
+        shieldDamage, hullDamage, hullDamageApplied: resolved.hullDamageApplied,
+        absorbedByShield: shieldWasTouched, shieldBroke: resolved.shieldBroke,
+        health: session.health, lives: session.lives,
+      })
+      aiValidator.logMechanic('sentinela-damage-channels', 'resolved', {
+        shieldDamage, hullDamage, hullDamageApplied: resolved.hullDamageApplied,
+        shieldBroke: resolved.shieldBroke, remainingShield: shieldValue,
+      })
+      return {
+        hit,
+        absorbedByShield: shieldWasTouched,
+        absorbedByTemporaryShield: resolved.absorbedTemporary > 0,
+        shieldBroke: resolved.shieldBroke,
+        outOfLives,
+        hullDamageApplied: resolved.hullDamageApplied,
+      }
     },
 
     applyHealthLoss,
