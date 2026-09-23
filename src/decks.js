@@ -11,11 +11,36 @@ export const REVIEW_DECK_ID = '__review__'
 const REVIEW_MIN_CARDS = 8
 const REVIEW_MAX_CARDS = 40
 
+function normalizeEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+  if (typeof entry.id !== 'string' || !entry.id.trim()) return null
+  if (typeof entry.text !== 'string') return null
+  const savedAt = Number(entry.savedAt)
+  return {
+    id: entry.id,
+    name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : 'Baralho sem nome',
+    text: entry.text,
+    savedAt: Number.isFinite(savedAt) && savedAt >= 0 ? savedAt : 0,
+  }
+}
+
 function readAll() {
   try {
+    if (typeof localStorage === 'undefined') return []
     const raw = localStorage.getItem(DECKS_KEY)
     const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    const result = []
+    const seen = new Set()
+    // Se uma gravação antiga/corrompida repetiu um id, mantém a ocorrência mais recente. IDs
+    // duplicados fariam Editar/Excluir operar no item errado, pois getDeck usa find().
+    for (let i = parsed.length - 1; i >= 0; i -= 1) {
+      const entry = normalizeEntry(parsed[i])
+      if (!entry || seen.has(entry.id)) continue
+      seen.add(entry.id)
+      result.push(entry)
+    }
+    return result.reverse()
   } catch {
     return []
   }
@@ -23,15 +48,18 @@ function readAll() {
 
 function writeAll(list) {
   try {
+    if (typeof localStorage === 'undefined') return false
     localStorage.setItem(DECKS_KEY, JSON.stringify(list))
+    return true
   } catch {
-    // quota excedida ou localStorage desabilitado — falha silenciosa de propósito
+    return false
   }
 }
 
 function migrateLegacyDeck() {
   let legacyText = null
   try {
+    if (typeof localStorage === 'undefined') return
     legacyText = localStorage.getItem(LEGACY_DECK_KEY)
   } catch {
     return
@@ -39,10 +67,13 @@ function migrateLegacyDeck() {
   if (!legacyText) return
 
   const list = readAll()
+  let migrationSafe = list.length > 0
   if (list.length === 0) {
     list.push({ id: makeId(), name: 'Baralho importado', text: legacyText, savedAt: Date.now() })
-    writeAll(list)
+    migrationSafe = writeAll(list)
   }
+  // Nunca apaga a única cópia legado se a gravação no formato novo falhou.
+  if (!migrationSafe) return
   try {
     localStorage.removeItem(LEGACY_DECK_KEY)
   } catch {
@@ -55,15 +86,19 @@ function makeId() {
 }
 
 function describe(entry) {
-  const built = buildDeck(entry.text)
-  if (built.warning) return { id: entry.id, name: entry.name, savedAt: entry.savedAt, valid: false, warning: built.warning }
-  return {
-    id: entry.id,
-    name: entry.name,
-    savedAt: entry.savedAt,
-    valid: true,
-    shooterCount: built.shooterCards.length,
-    painelCount: built.painelCards.length,
+  try {
+    const built = buildDeck(entry.text)
+    if (built.warning) return { id: entry.id, name: entry.name, savedAt: entry.savedAt, valid: false, warning: built.warning }
+    return {
+      id: entry.id,
+      name: entry.name,
+      savedAt: entry.savedAt,
+      valid: true,
+      shooterCount: built.shooterCards.length,
+      painelCount: built.painelCards.length,
+    }
+  } catch {
+    return { id: entry.id, name: entry.name, savedAt: entry.savedAt, valid: false, warning: 'Conteúdo do baralho salvo está corrompido.' }
   }
 }
 
@@ -100,18 +135,28 @@ export function buildMergedDeck(ids) {
 }
 
 export function addDeck(name, text) {
-  const built = buildDeck(text)
+  let built
+  try {
+    built = buildDeck(text)
+  } catch {
+    return { error: 'Não foi possível interpretar o conteúdo deste baralho.' }
+  }
   if (built.warning) return { error: built.warning }
 
   const list = readAll()
   const entry = { id: makeId(), name: name?.trim() || 'Baralho sem nome', text, savedAt: Date.now() }
   list.push(entry)
-  writeAll(list)
+  if (!writeAll(list)) return { error: 'Não foi possível salvar o baralho neste navegador. Verifique armazenamento/permissões e tente novamente.' }
   return { entry: describe(entry) }
 }
 
 export function updateDeck(id, { name, text }) {
-  const built = buildDeck(text)
+  let built
+  try {
+    built = buildDeck(text)
+  } catch {
+    return { error: 'Não foi possível interpretar o conteúdo deste baralho.' }
+  }
   if (built.warning) return { error: built.warning }
 
   const list = readAll()
@@ -119,12 +164,17 @@ export function updateDeck(id, { name, text }) {
   if (idx === -1) return { error: 'Baralho não encontrado.' }
 
   list[idx] = { ...list[idx], name: name?.trim() || list[idx].name, text, savedAt: Date.now() }
-  writeAll(list)
+  if (!writeAll(list)) return { error: 'Não foi possível salvar as alterações neste navegador.' }
   return { entry: describe(list[idx]) }
 }
 
 export function removeDeck(id) {
-  writeAll(readAll().filter((d) => d.id !== id))
+  const list = readAll()
+  if (!list.some((d) => d.id === id)) return { ok: true }
+  if (!writeAll(list.filter((d) => d.id !== id))) {
+    return { error: 'Não foi possível excluir o baralho do armazenamento deste navegador.' }
+  }
+  return { ok: true }
 }
 
 // Fase 9: junta as perguntas com pelo menos 1 erro registrado, de TODOS os baralhos salvos
