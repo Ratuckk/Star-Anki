@@ -1121,3 +1121,17 @@ mas o trabalho de áudio em andamento aponta para `som mira disparo laser boss d
 - **Validação**: `src/speedlines-prototype-model.js` concentra normalização e curvas; o laboratório
   registra mudanças discretas no `aiValidator` e expõe `window.__speedlinesLab` para inspeção.
   `src/speedlines-prototype.test.mjs` cobre limites, faixas e progressão monotônica das curvas.
+
+
+### v0.99.29 — Speedlines direcionais do Visual Lab no gameplay
+
+- O laboratório isolado permanece como referência; o gameplay reaproveita apenas a camada abstrata em canvas, sem duplicar estrelas/partículas ambientais.
+- `src/hud-speedlines.js` substitui visualmente o spinner legado de `.hud-motion-lines` e preserva o contrato `hud.setMotionLines(active, intensity)`.
+- Boost normal usa o preset escolhido 90/58/62/100/30/0 (intensidade/densidade/comprimento/espessura/brilho/bias); Swirl Blast e dash lateral continuam podendo elevar a intensidade a 100%. Fora desses gatilhos a intensidade é 0 e o canvas é limpo.
+- O renderer usa pool determinístico de 180 linhas, RAF somente enquanto ativo, DPR limitado a 1.5, resize responsivo e dispose completo no unmount.
+- O `aiValidator` registra apenas transições discretas de ligado/desligado/intensidade, sem log por frame.
+- O Service Worker não ganhou manifesto fixo: o módulo novo segue a estratégia network-first já existente para módulos same-origin e entra no cache ao ser solicitado.
+
+**Validação automatizada:** `node --check` nos módulos alterados, `node src/hud-speedlines.test.mjs`, `node src/speedlines-prototype.test.mjs`, `node src/selftest.mjs` e `git diff --check`.
+
+**Playtest pendente:** confirmar no navegador que boost normal corresponde visualmente à referência do laboratório, Swirl/Dash atingem o pico sem o spinner legado, resize/restart não deixam canvas órfão e o console permanece limpo.
