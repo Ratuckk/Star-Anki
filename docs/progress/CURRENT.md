@@ -1,9 +1,14 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.36
-> **Branch:** `feat/v0.99.36-golden-squadron`
-> **Base do fechamento pré-merge:** `06b04624197523a3e7827743b30b6a3d5787885e` (main após merge da v0.99.35)
-> **Última atualização:** 2026-09-23
+> **Versão:** v0.99.36 — Dourado + Esquadrão integrado em main
+> **Branch:** `main`
+> **Merge Commit:** `3c014a74f56dfd90428c6370372d90527f5c9716` (PR #15 — feat(v0.99.36): overhaul Golden commander and persistent fighter squadron)
+> **Data de Integração:** 2026-09-24
+> **CI Correspondente:** Run `35946376454` (PR #15, pass) e Run `35955313898` (push main, pass)
+> **Entregas Posteriores em PR Aberta (Não integradas a main):**
+> - **PR A (#16):** `feat/tank-natural-spawn` (CI Run `35955622327` pass)
+> - **PR B (#17):** `fix/lockon-miyu-arcade-fog-polish` (CI Run `35955874845` pass)
+> - **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7f`)
 
 ---
 
