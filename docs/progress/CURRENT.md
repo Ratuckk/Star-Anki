@@ -1,18 +1,51 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.36 — Dourado + Esquadrão integrado em main
-> **Branch:** `main`
-> **Merge Commit:** `3c014a74f56dfd90428c6370372d90527f5c9716` (PR #15 — feat(v0.99.36): overhaul Golden commander and persistent fighter squadron)
-> **Data de Integração:** 2026-09-24
-> **CI Correspondente:** Run `35946376454` (PR #15, pass) e Run `35955313898` (push main, pass)
-> **Entregas Posteriores em PR Aberta (Não integradas a main):**
-> - **PR A (#16):** `feat/tank-natural-spawn` (Head: `f5fa0f32a99db35d4d588fa08eeabb71c792de9b`, CI Run `35997550149` pass)
-> - **PR B (#17):** `fix/lockon-miyu-arcade-fog-polish` (Head: `44a760cbcdb25e88137d0ca705d2f30f98c5dc85`, CI Run `35998006056` pass)
-> - **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
+> **Versão:** v0.99.36 — Dourado + Tank Natural Spawn + Pacote Polish integrados em main
+> **Branch Atual:** `main`
+> **Última Atualização:** 2026-09-24
+> **Histórico Recente de Integrações em `main`:**
+> - **PR #15 (Dourado + Esquadrão):** Merge `3c014a74f56dfd90428c6370372d90527f5c9716` (CI Run `35946376454` pass)
+> - **PR #16 (Tank Natural Spawn):** Merge `327bf50b24a8c5c1a2d1e32dcec230e360e08bc5` (CI Run `35997550149` pass)
+> - **PR #17 (Lock-on / Miyu / Reticle / Arcade / Fog Polish):** Merge `bdd8a879651ff4da411ec38a4c99745d9a93683f` (CI Run `36001243157` pass)
+> **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
+> **Pendências Abertas:** Homologação visual em tela/monitor de Fog, retícula progressiva e VFX/screen-space markers da Miyu.
 
 ---
 
 ## 1. IMPLEMENTADO RECENTEMENTE
+- **Pacote de Polimento: Lock-on, Miyu Assist, Retícula, Arcade e Fog (PR #17):**
+  - **Autoridade da Retícula & Lock-on:**
+    - Mira real (`isTargetInCone`) governa a aquisição com vetores normalizados; alvos prioritários (Boss/Dourado/maior HP) só são travados se estiverem dentro do cone da mira.
+    - Valores reais do código: `AIM_HINT_ANGLE = 7°`, `AIM_ACQUIRE_ANGLE = 7.5°`, `AIM_MAINTAIN_ANGLE = 12°`, `MAX_LOCK_RANGE = 90u`, `MIN_LOCK_RANGE = 10u`.
+    - Screen-space layout de multi-locks em pixels CSS (1 central, 2 horizontal offset ±14px, 3+ anel orbital 16px) e descarte rigoroso de alvos atrás da câmera (`depth <= 0.1`) e fora do frustum.
+  - **Miyu Assist & Multi-lock Empilhado:**
+    - Orçamentos independentes BASE vs MIYU (Fox obedece caps normais; Miyu empilha multi-locks no mesmo alvo mirado).
+    - Cooldown base de 9s, floor de 3s e delay inicial de ~6s pós-spawn.
+    - Rádio `ability_assist` disparado exclusivamente com `miyuShotsFired > 0` após projétil real criado (0 falas em ready, charge, cancel ou lost target).
+    - Projéteis e efeitos de muzzle nascem fisicamente na nave da Miyu; jogador Fox isolado visual e sonoramente quando apenas Miyu dispara.
+  - **Retícula com Escala Progressiva:**
+    - Expansão visual progressiva e contínua de 1.0 a ~1.45 por `chargeFrac`, com reset instantâneo para 1.0 ao disparar, cancelar, perder charge ou pausar/reiniciar.
+  - **Arcade Draft Mode com 3 Modos:**
+    - Modos `pause` (dt = 0), `slowmo` (janela de 1.5s a 0.18x retornando a 1.0x) e `normal` (tempo real 1.0x com VFX completo).
+    - Migração retroativa automática de configurações legadas: `arcadeCardChoicePauses = true` migra para `pause`; `false` migra para `slowmo`.
+    - Persistência e sincronização bidirecional no LocalStorage; preview ao vivo nas configurações totalmente isolada do gameplay real.
+  - **Fog Volumétrico Multicamadas:**
+    - Camadas volumétricas com envelope espacial (`insideEnvelope >= 0.40`), persistência interna e fade suave de saída.
+  - **Documentação e Testes:**
+    - Documento canônico: [`docs/progress/post-v09936-polish.md`](post-v09936-polish.md). Suíte: `src/lockon-miyu-reticle-fog.test.mjs` (7 blocos).
+
+- **Tank no Spawn Natural (PR #16):**
+  - **Integração no Ciclo Normal sobre Trilhos:**
+    - Tank avaliado no seletor condicional do `game-loop.js` após a Horda com chance nominal de 5% (`TANK_SPAWN_CHANCE = 0.05`).
+    - Probabilidade efetiva dependente do estado de erros acumulados ($S(w) = 0.12 + \min(0.20, w \times 0.04)$): inicial de ~1.43% ($w=0$), reduzindo até ~1.11% no cap da Sentinela ($w \ge 5$).
+    - 100% de preservação das probabilidades nominais e efetivas de todos os 7 inimigos especiais pré-existentes.
+  - **Orçamento e Limites de População:**
+    - Ocupa 2 vagas (`TANK_POPULATION_WEIGHT = 2`, exige `room >= 2`).
+    - Teto de no máximo 2 unidades simultâneas no trilho (`TANK_MAX_ACTIVE_ON_RAIL = 2`).
+    - Restituição imediata das 2 vagas na destruição/despawn.
+    - Bloqueio via `debugFlags.disableAutoSpawn` preservando comandos manuais de debug.
+  - **Documentação e Testes:**
+    - Documento canônico: [`docs/progress/tank-natural-spawn.md`](tank-natural-spawn.md). Suíte: `src/tank-spawn-integration.test.mjs` (6 blocos).
 - **Overhaul do Inimigo Dourado e Esquadrão de Caças (v0.99.36):**
   - **Dourado como Comandante Agressivo:**
     - Faixas úteis de combate com intenção de pilotagem: aproximação acelerada (>75u), pressão tática e weaving contínuo (32u a 70u), e dash tático por proximidade (<28u) para cruzar a linha de mira do jogador.
