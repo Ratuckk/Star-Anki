@@ -245,7 +245,7 @@ const testFrame = {
 
   function computeChargeScale(fireHeldMs) {
     if (fireHeldMs < homingChargeMinMs) return 1.0
-    const frac = THREE.MathUtils.clamp((fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs), 0, 1)
+    const frac = Math.max(0, Math.min(1, Number(fireHeldMs - homingChargeMinMs) / (homingChargeMaxMs - homingChargeMinMs) || 0))
     return 1.0 + frac * 0.45
   }
 
@@ -261,6 +261,12 @@ const testFrame = {
 
   const beyondMaxScale = computeChargeScale(3000)
   assert.equal(beyondMaxScale, 1.45, 'Segurar além do máximo não ultrapassa o limite calibrado')
+
+  // Verificação estrita de desacoplamento: hud-game.js não deve usar THREE
+  const { readFileSync } = await import('node:fs')
+  const hudGameSource = readFileSync(new URL('./hud-game.js', import.meta.url), 'utf8')
+  assert.ok(!hudGameSource.includes('THREE.MathUtils.clamp'), 'hud-game.js não deve usar THREE.MathUtils.clamp')
+  assert.ok(hudGameSource.includes('Math.max(0, Math.min(1, Number(chargeFrac) || 0))'), 'hud-game.js deve usar clamp nativo Number(chargeFrac)')
 
   console.log('✔ Reticle Progressive Charge Scaling passed')
 }

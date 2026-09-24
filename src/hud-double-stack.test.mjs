@@ -414,7 +414,14 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Authoritative Seams
     'cutscenes cinemáticas devem ocultar o cluster superior central'
   )
 
-  console.log('✔ Responsive CSS contracts passed')
+  // Regressão Crítica: nenhum arquivo HUD pode referenciar THREE sem import (causava crash local de ReferenceError em setReticleCharge)
+  const hudGameSource = readFileSync(new URL('./hud-game.js', import.meta.url), 'utf8')
+  assert.ok(
+    !/\bTHREE\b/.test(hudGameSource),
+    'hud-game.js não deve referenciar THREE diretamente (deve usar Math nativo)'
+  )
+
+  console.log('✔ Responsive CSS contracts & HUD clean globals passed')
 }
 
 console.log('--- TODOS OS TESTES DO HUD DOUBLE STACK PASSARAM COM SUCESSO! ---')

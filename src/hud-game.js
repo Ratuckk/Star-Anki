@@ -2087,7 +2087,7 @@ export function createGameHud() {
     // Item 6C: Retícula cresce progressivamente durante o carregamento do tiro teleguiado
     // (chargeFrac de 0 a 1 -> escala de 1.0 a ~1.45). Reseta imediatamente no release/cancelamento.
     setReticleCharge(chargeFrac, { charging = false, maxed = false, miyuAssistActive = false } = {}) {
-      const frac = THREE.MathUtils.clamp(chargeFrac || 0, 0, 1)
+      const frac = Math.max(0, Math.min(1, Number(chargeFrac) || 0))
       const scale = charging ? (1.0 + frac * 0.45) : 1.0
       reticle.style.setProperty('--reticle-charge-scale', scale.toFixed(3))
       reticleRing.classList.toggle('charging', !!charging && frac > 0)
