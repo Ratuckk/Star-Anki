@@ -136,14 +136,16 @@ export function createGameLoop(deps) {
     // Configurações. Calculado ANTES do early-return de cardChoice (logo abaixo) — é essa
     // condição que decide se aquele bloco continua pausando ou deixa o frame seguir.
     const isArcadeCardChoice = state.phase === 'cardChoice' && isNoDeck
-    const arcadeCardChoicePauses = isArcadeCardChoice && !!getSettings().arcadeCardChoicePauses
+    const settings = getSettings()
+    const draftMode = settings.arcadeDraftMode || (settings.arcadeCardChoicePauses ? 'pause' : 'slowmo')
+    const arcadeCardChoicePauses = isArcadeCardChoice && (draftMode === 'pause' || settings.arcadeCardChoicePauses === true)
 
-    if (isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0) {
+    if (isArcadeCardChoice && !arcadeCardChoicePauses && draftMode === 'slowmo' && state.arcadeBulletTimeTimer > 0) {
       state.arcadeBulletTimeTimer = Math.max(0, state.arcadeBulletTimeTimer - rawDt)
     }
 
     const inArcadeCardChoiceBulletTime =
-      isArcadeCardChoice && !arcadeCardChoicePauses && state.arcadeBulletTimeTimer > 0
+      isArcadeCardChoice && !arcadeCardChoicePauses && draftMode === 'slowmo' && state.arcadeBulletTimeTimer > 0
 
     // Precedência entre as 3 fontes de câmera lenta (só uma decide o dt por frame, nunca
     // compõem): slowMo de DEBUG sempre vence (ferramenta de dev, previsível); bullet-time do
@@ -337,29 +339,40 @@ export function createGameLoop(deps) {
         }
         const chargeFrac = Math.min(1, (state.fireHeldMs - player.config.homingChargeMinMs) / (player.config.homingChargeMaxMs - player.config.homingChargeMinMs))
         effects.setChargeGlow(true, chargeFrac, nosePos, _fireDirection, { miyuAssistActive: assistMult > 1 })
+        hud.setReticleCharge(chargeFrac, { charging: true, maxed: atMax, miyuAssistActive: assistMult > 1 })
 
         combat.sweepLockOn(nosePos, _fireDirection, currentHomingAllowedTargets(state.fireHeldMs), player.config.homingMaxTargets)
         // O HUD trabalha em pixels CSS: projeta o diâmetro real do hit radius no plano da
         // câmera, em vez de reduzir todo inimigo a uma faixa fixa de tamanhos.
         camera.getWorldDirection(_lockCameraForward)
-        const lockedBars = combat.getLockedEnemySnapshots().map((s) => {
-          const depth = Math.max(0.001, _lockToTarget.copy(s.worldPos).sub(camera.position).dot(_lockCameraForward))
+        const lockedBars = []
+        for (const s of combat.getLockedEnemySnapshots()) {
+          const depth = _lockToTarget.copy(s.worldPos).sub(camera.position).dot(_lockCameraForward)
+          if (depth <= 0.1) continue
+          const ndcL = s.worldPos.clone().project(camera)
+          if (ndcL.z > 1.0 || ndcL.x < -1.5 || ndcL.x > 1.5 || ndcL.y < -1.5 || ndcL.y > 1.5) continue
+
           const projectedSizePx = (s.sizeHint * window.innerHeight) /
             (Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * depth)
-          const ndcL = s.worldPos.project(camera)
-          return {
+          lockedBars.push({
             id: s.id,
+            entityId: s.entityId,
             xFrac: THREE.MathUtils.clamp((ndcL.x + 1) / 2, 0, 1),
             yFrac: THREE.MathUtils.clamp((1 - ndcL.y) / 2, 0, 1),
             projectedSizePx: Math.max(2, projectedSizePx),
             source: s.source,
-          }
-        })
+            groupIndex: s.groupIndex ?? 0,
+            groupCount: s.groupCount ?? 1,
+          })
+        }
         hud.setLockedEnemyMarkers(lockedBars)
       } else {
         effects.setChargeGlow(false)
+        hud.setReticleCharge(0, { charging: false, maxed: false })
         state.chargeMaxSignaled = false
         state.chargeLoopSignaled = false
+        combat.clearLockedEnemies()
+        hud.setLockedEnemyMarkers([])
       }
     } else {
       if (state.chargeLoopSignaled) stopSoundCueLoop(PLAYER_SOUND_CUES.charge_loop)
@@ -393,6 +406,7 @@ export function createGameLoop(deps) {
       }
       state.fireHeldMs = 0
       effects.setChargeGlow(false)
+      hud.setReticleCharge(0, { charging: false, maxed: false })
       combat.clearLockedEnemies()
       hud.setLockedEnemyMarkers([])
     }
@@ -765,6 +779,7 @@ export function createGameLoop(deps) {
 
     effects.update(dt, playerPos, noseFrame.forward, {
       camera,
+      rawDt,
       shieldValue: player.getShieldValue(),
       shieldMax: player.getShieldMax(),
       boostActive: player.isPropulsionActive(),

@@ -999,7 +999,7 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
-  function hitSpark(position, colorHex = 0xffffff) {
+  function hitSpark(position, colorHex = 0xffffff, opts = {}) {
     const geometry = new THREE.BufferGeometry()
     const positions = new Float32Array(HIT_SPARK_PARTICLES * 3)
     const velocities = new Float32Array(HIT_SPARK_PARTICLES * 3)
@@ -1020,7 +1020,13 @@ export function createEffectsSystem(scene, opts = {}) {
     const points = new THREE.Points(geometry, material)
     points.frustumCulled = false
     scene.add(points)
-    hitSparks.push({ points, velocities, life: 0 })
+    hitSparks.push({
+      points,
+      velocities,
+      life: 0,
+      duration: opts.duration || HIT_SPARK_DURATION,
+      unscaled: !!opts.unscaled,
+    })
   }
 
   function flashMesh(mesh, durationSec = FLASH_DURATION) {
@@ -1064,12 +1070,18 @@ export function createEffectsSystem(scene, opts = {}) {
     projectileTrails.push({ mesh, life: 0 })
   }
 
-  function shockwave(position, colorHex = 0xffaa55, scale = 1) {
+  function shockwave(position, colorHex = 0xffaa55, scale = 1, opts = {}) {
     const mesh = makeRingMesh(colorHex, 0.18)
     mesh.position.copy(position)
     mesh.scale.setScalar(0.3)
     scene.add(mesh)
-    shockwaves.push({ mesh, life: 0, maxScale: SHOCKWAVE_MAX_SCALE * scale })
+    shockwaves.push({
+      mesh,
+      life: 0,
+      maxScale: SHOCKWAVE_MAX_SCALE * scale,
+      duration: opts.duration || SHOCKWAVE_DURATION,
+      unscaled: !!opts.unscaled,
+    })
   }
 
   function telegraph(position, colorHex = 0xff5a3d) {
@@ -1117,7 +1129,7 @@ export function createEffectsSystem(scene, opts = {}) {
     glassShards.push({ shards, life: 0 })
   }
 
-  function bloomSprite(position, colorHex, size = 1) {
+  function bloomSprite(position, colorHex, size = 1, opts = {}) {
     const material = new THREE.MeshBasicMaterial({
       color: colorHex, transparent: true, opacity: 0.6,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
@@ -1126,7 +1138,13 @@ export function createEffectsSystem(scene, opts = {}) {
     mesh.position.copy(position)
     mesh.scale.setScalar(BLOOM_START_SCALE * size)
     scene.add(mesh)
-    bloomSprites.push({ mesh, life: 0, size })
+    bloomSprites.push({
+      mesh,
+      life: 0,
+      size,
+      duration: opts.duration || BLOOM_DURATION,
+      unscaled: !!opts.unscaled,
+    })
   }
 
   function contrailParticle(position, colorHex = 0x7fe0ff) {
@@ -1264,11 +1282,25 @@ export function createEffectsSystem(scene, opts = {}) {
     }
   }
 
-  function cardAcquiredPulse(position, category = 'ofensivo') {
+  function cardAcquiredPulse(position, category = 'ofensivo', opts = {}) {
     const colorHex = category === 'ofensivo' ? 0xff4d6d : (category === 'defensivo' ? 0x3ea6ff : 0xffd700)
-    shockwave(position, colorHex, 2.2)
-    bloomSprite(position, colorHex, 2.5)
-    hitSpark(position, colorHex)
+    // Preserva o comportamento exato em slow-motion (dt reduzido), e em full-speed garante duração
+    // e coreografia visual completas no tempo real (unscaled) sem corte abrupto pelo enterCombat
+    const isFullSpeed = opts.fullSpeed ?? (opts.unscaled ?? false)
+    const shockwaveDuration = isFullSpeed ? 0.85 : SHOCKWAVE_DURATION
+    const bloomDuration = isFullSpeed ? 0.75 : BLOOM_DURATION
+    const sparkDuration = isFullSpeed ? 0.55 : HIT_SPARK_DURATION
+
+    shockwave(position, colorHex, isFullSpeed ? 2.5 : 2.2, { duration: shockwaveDuration, unscaled: isFullSpeed })
+    bloomSprite(position, colorHex, isFullSpeed ? 2.8 : 2.5, { duration: bloomDuration, unscaled: isFullSpeed })
+    hitSpark(position, colorHex, { duration: sparkDuration, unscaled: isFullSpeed })
+
+    if (isFullSpeed && typeof setTimeout !== 'undefined') {
+      setTimeout(() => {
+        shockwave(position, 0xffffff, 1.6, { duration: 0.65, unscaled: true })
+        bloomSprite(position, colorHex, 1.8, { duration: 0.60, unscaled: true })
+      }, 160)
+    }
   }
 
   function respawnBurst(position) {
@@ -1644,19 +1676,20 @@ export function createEffectsSystem(scene, opts = {}) {
 
     for (let i = hitSparks.length - 1; i >= 0; i--) {
       const s = hitSparks[i]
-      s.life += dt
-      const t = s.life / HIT_SPARK_DURATION
+      const sparkDt = s.unscaled ? (opts.rawDt || dt) : dt
+      s.life += sparkDt
+      const t = s.life / (s.duration || HIT_SPARK_DURATION)
       if (t >= 1) {
         scene.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose()
         hitSparks.splice(i, 1); continue
       }
       const attr = s.points.geometry.attributes.position
       const arr = attr.array
-      const drag = Math.max(0, 1 - dt * 4)
+      const drag = Math.max(0, 1 - sparkDt * 4)
       for (let j = 0; j < arr.length; j += 3) {
-        arr[j] += s.velocities[j] * dt
-        arr[j+1] += s.velocities[j+1] * dt
-        arr[j+2] += s.velocities[j+2] * dt
+        arr[j] += s.velocities[j] * sparkDt
+        arr[j+1] += s.velocities[j+1] * sparkDt
+        arr[j+2] += s.velocities[j+2] * sparkDt
         s.velocities[j] *= drag; s.velocities[j+1] *= drag; s.velocities[j+2] *= drag
       }
       attr.needsUpdate = true
@@ -1869,8 +1902,8 @@ export function createEffectsSystem(scene, opts = {}) {
 
     for (let i = shockwaves.length - 1; i >= 0; i--) {
       const s = shockwaves[i]
-      s.life += dt
-      const t = s.life / SHOCKWAVE_DURATION
+      s.life += s.unscaled ? (opts.rawDt || dt) : dt
+      const t = s.life / (s.duration || SHOCKWAVE_DURATION)
       if (t >= 1) {
         scene.remove(s.mesh); s.mesh.material.dispose()
         shockwaves.splice(i, 1); continue
@@ -1951,8 +1984,8 @@ export function createEffectsSystem(scene, opts = {}) {
 
     for (let i = bloomSprites.length - 1; i >= 0; i--) {
       const b = bloomSprites[i]
-      b.life += dt
-      const t = b.life / BLOOM_DURATION
+      b.life += b.unscaled ? (opts.rawDt || dt) : dt
+      const t = b.life / (b.duration || BLOOM_DURATION)
       if (t >= 1) {
         scene.remove(b.mesh); b.mesh.material.dispose()
         bloomSprites.splice(i, 1); continue

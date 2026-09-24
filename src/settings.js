@@ -24,10 +24,9 @@ const DEFAULTS = {
   // Sussurro/Dourado/Horda/Detrito reagem a fog denso (mais escondidos/discretos) — ver §3 do
   // Overhaul 4. Efeitos sonoros continuam tocando normalmente mesmo com isso desligado.
   fogTacticalEffects: true,
-  // Bullet-time no Card Choice do modo arcade (Docs/Bullet-time no Card Choice (Arcade).md) —
-  // default true preserva o comportamento de hoje (pausa total). Desligado, a tela de 3 cartas
-  // no arcade vira câmera lenta em vez de pausa (jogo continua rodando, só bem mais devagar) —
-  // ver game-loop.js, ARCADE_CARD_CHOICE_TIME_SCALE.
+  // Bullet-time no Card Choice do modo arcade:
+  // 'pause' (pausa total) | 'slowmo' (câmera lenta 1.5s) | 'normal' (tempo real 1.0x com VFX completo)
+  arcadeDraftMode: 'pause',
   arcadeCardChoicePauses: true,
   // Rádio dos aliados (Overhaul de Personalidade, Ideia 3) — pilotos falam frases curtas em
   // momentos-chave (engajar, abate, aviso de vida baixa, etc). Puramente cosmético, sem efeito
@@ -91,10 +90,13 @@ function sanitizeSettings(raw = {}) {
     ? raw.shipVisual : DEFAULTS.shipVisual
   settings.vitalsHudStyle = ['classic', 'orbital'].includes(raw.vitalsHudStyle)
     ? raw.vitalsHudStyle : DEFAULTS.vitalsHudStyle
+  settings.arcadeDraftMode = ['pause', 'slowmo', 'normal'].includes(raw.arcadeDraftMode)
+    ? raw.arcadeDraftMode : (raw.arcadeCardChoicePauses === false ? 'slowmo' : DEFAULTS.arcadeDraftMode)
 
   for (const key of BOOLEAN_KEYS) {
     settings[key] = typeof raw[key] === 'boolean' ? raw[key] : DEFAULTS[key]
   }
+  settings.arcadeCardChoicePauses = settings.arcadeDraftMode === 'pause'
   return settings
 }
 
@@ -112,7 +114,13 @@ export function getSettings() {
 
 export function setSetting(key, value) {
   if (!Object.prototype.hasOwnProperty.call(DEFAULTS, key)) return getSettings()
-  const current = sanitizeSettings({ ...ensureCache(), [key]: value })
+  let patch = { [key]: value }
+  if (key === 'arcadeCardChoicePauses') {
+    patch.arcadeDraftMode = value ? 'pause' : 'slowmo'
+  } else if (key === 'arcadeDraftMode') {
+    patch.arcadeCardChoicePauses = value === 'pause'
+  }
+  const current = sanitizeSettings({ ...ensureCache(), ...patch })
   cachedSettings = current
   writeAll(current)
   // O sistema de áudio encerra loops em curso quando muda para rádio/desligado.

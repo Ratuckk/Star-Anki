@@ -2007,6 +2007,17 @@ export function createGameHud() {
       reticleRing.classList.toggle('aiming', !!active)
     },
 
+    // Item 6C: Retícula cresce progressivamente durante o carregamento do tiro teleguiado
+    // (chargeFrac de 0 a 1 -> escala de 1.0 a ~1.45). Reseta imediatamente no release/cancelamento.
+    setReticleCharge(chargeFrac, { charging = false, maxed = false, miyuAssistActive = false } = {}) {
+      const frac = THREE.MathUtils.clamp(chargeFrac || 0, 0, 1)
+      const scale = charging ? (1.0 + frac * 0.45) : 1.0
+      reticle.style.setProperty('--reticle-charge-scale', scale.toFixed(3))
+      reticleRing.classList.toggle('charging', !!charging && frac > 0)
+      reticleRing.classList.toggle('charge-maxed', !!maxed)
+      reticleRing.classList.toggle('charge-miyu', !!miyuAssistActive)
+    },
+
     // Fase 9 (ideia all-range 2): horizonte artificial — passar null esconde (fora do
     // all-range). pitch/roll em radianos, vindos de rail.getArenaAttitude().
     setHorizon(pitch, roll) {
@@ -2214,6 +2225,25 @@ export function createGameHud() {
         el.style.top = `${item.yFrac * 100}%`
         el.style.setProperty('--marker-size', `${item.projectedSizePx}px`)
         el.classList.toggle('is-assist', item.source === 'miyu')
+
+        // Item 1: Separação visual de multi-locks em screen-space (HUD-space),
+        // preservando o centro projetado autoritativo do alvo sem distorções 3D.
+        const groupCount = item.groupCount || 1
+        const groupIndex = item.groupIndex || 0
+        let offsetX = 0
+        let offsetY = 0
+        if (groupCount === 2) {
+          const spread = Math.min(14, Math.max(6, (item.projectedSizePx || 30) * 0.22))
+          offsetX = (groupIndex === 0 ? -1 : 1) * spread
+          offsetY = 0
+        } else if (groupCount >= 3) {
+          const radius = Math.min(22, Math.max(7, (item.projectedSizePx || 30) * 0.28))
+          const angle = (groupIndex / groupCount) * Math.PI * 2 - Math.PI / 2
+          offsetX = Math.cos(angle) * radius
+          offsetY = Math.sin(angle) * radius
+        }
+        el.style.setProperty('--marker-offset-x', `${offsetX.toFixed(1)}px`)
+        el.style.setProperty('--marker-offset-y', `${offsetY.toFixed(1)}px`)
       }
       for (const [id, el] of lockMarkerPool) {
         if (!seen.has(id)) { el.remove(); lockMarkerPool.delete(id) }

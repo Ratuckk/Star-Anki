@@ -7,6 +7,7 @@ import { recordResult, saveHistory } from './storage.js'
 import { pickRandomCards } from './roguelike.js'
 import { WRONG_FEEDBACK_MS } from './main-constants.js'
 import { aiValidator } from './ai-validator.js'
+import { getSettings } from './settings.js'
 
 // Cartas "Vínculo" → id do piloto (mesma ordem de WINGMAN_PROFILES em combat/wingmen.js:
 // 0 Falco, 1 Peppy, 2 Slippy, 3 Miyu).
@@ -25,7 +26,7 @@ export function createQuestionFlow(deps) {
     applyHealthLoss, endSector,
   } = deps
 
-  function applyRoguelikeCard(card) {
+  function applyRoguelikeCard(card, opts = {}) {
     player.applyCard(card)
     combat.setFireCooldown(player.config.fireCooldown)
     const recoveredWingmanId = card.id === 'wingman' ? player.consumeRecoveredWingmanId?.() : null
@@ -33,7 +34,7 @@ export function createQuestionFlow(deps) {
     else combat.setWingmanCount(player.getWingmanCount())
     hud.setLives(session.lives, player.getMaxLives())
     if (deps.effects && deps.rail && deps.effects.cardAcquiredPulse) {
-      deps.effects.cardAcquiredPulse(deps.rail.getPlayerPosition(), card.category)
+      deps.effects.cardAcquiredPulse(deps.rail.getPlayerPosition(), card.category, { fullSpeed: !!opts.fullSpeed })
     }
     if (card.id === 'extra-life' && deps.effects?.extraLifeHeal && deps.rail) {
       deps.effects.extraLifeHeal(deps.rail.getPlayerPosition())
@@ -77,10 +78,11 @@ export function createQuestionFlow(deps) {
       },
       collectedCards: player.getCollectedCards ? player.getCollectedCards() : new Map(),
       onPick: (card) => {
+        const fullSpeed = isArcade && (getSettings().arcadeDraftMode === 'normal' || state.arcadeBulletTimeTimer <= 0)
         if (isArcade) {
           state.arcadeBulletTimeTimer = 0
         }
-        applyRoguelikeCard(card)
+        applyRoguelikeCard(card, { fullSpeed })
         onDone()
       },
     })

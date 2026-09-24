@@ -856,14 +856,16 @@ export function createProjectileSystem(scene, effects, player, enemies, targets,
           bouncesLeft: player.config.ricochetCount ?? 0,
         })
       }
-      const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : direction.clone()
-      if (effects) {
-        effects.muzzleFlash(origin, firstDir)
-        if (isMaxCharge && effects.maxChargeRings) effects.maxChargeRings(origin, firstDir)
-        else effects.smokeRing(origin, firstDir)
-      }
       const playerShotsFired = targetList.length + (straightShot ? 1 : 0)
-      if (playerShotsFired > 0) triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: playerShotsFired, isMaxCharge, origin })
+      if (playerShotsFired > 0) {
+        const firstDir = targetList[0] ? targetList[0].mesh.position.clone().sub(origin).normalize() : direction.clone()
+        if (effects) {
+          effects.muzzleFlash(origin, firstDir)
+          if (isMaxCharge && effects.maxChargeRings) effects.maxChargeRings(origin, firstDir)
+          else effects.smokeRing(origin, firstDir)
+        }
+        triggerSoundCue(PLAYER_SOUND_CUES.homing_fire, { count: playerShotsFired, isMaxCharge, origin })
+      }
       return { playerShotsFired, miyuTargets }
     },
 

@@ -139,7 +139,7 @@ export const WINGMAN_PROFILES = [
     modelType: 'stealth',
     abilityId: 'assist',
     abilityLabel: 'Carga Compartilhada',
-    abilityCooldownBase: 6,
+    abilityCooldownBase: 9,
     abilityCooldownFloor: 3,
   },
 ]
@@ -907,7 +907,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       damageMaterials: collectMaterials(mesh),
       damageColors: null,
       miyuCloakTimer: 0,
-      miyuAssistRadioPending: false,
       miyuMaterials: profile.id === 3 ? collectMaterials(mesh) : null,
     }
     initializeWingmanControl(wingman, {
@@ -916,7 +915,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
       shield: initialShieldMax,
       maxShield: initialShieldMax,
       shieldRegenDelay: 0,
-      primaryCooldown: abilityCooldownFor(profile) * 0.5,
+      primaryCooldown: profile.id === 3 ? (abilityCooldownFor(profile) * 0.5 + 1.5) : (abilityCooldownFor(profile) * 0.5),
       interceptCooldown: 0,
       rescueCooldown: 0,
       boombusterCooldown: 0,
@@ -1309,7 +1308,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
   // Carga Compartilhada: cada lock triangular pertence EXCLUSIVAMENTE à Miyu.
   // Cada triângulo vira um laser roxo homing nascido fisicamente na nave dela.
   function fireMiyuAssistShots(miyuTargets) {
-    const miyu = activeWingmen.find((w) => w.profile.id === 3 && w.abilityActive && w.escortKind === 'assist')
+    const miyu = activeWingmen.find((w) => w.profile.id === 3 && w.state !== 'retreating' && w.hp > 0)
     if (!miyu || !Array.isArray(miyuTargets)) return 0
     let shots = 0
     const targetCounts = new Map()
@@ -1329,6 +1328,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     aiValidator.expect('Cada lock triangular da Miyu gera no máximo um disparo próprio',
       () => shots <= miyuTargets.length, { shots, miyuLocks: miyuTargets.length })
     if (shots > 0) {
+      announceAbility(miyu, 'ability_assist', { triggerGlow: false })
       aiValidator.logMechanic('miyu-assist-shot', 'triangular-locks-fired-from-miyu', {
         shots, miyuLocks: miyuTargets.length,
         repeatedTargets: [...targetCounts.values()].filter((count) => count > 1).length,
@@ -1637,27 +1637,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
           w.auxShieldVisual.material.opacity = 0.58 + Math.sin(elapsed * 5) * 0.16
         }
       }
-      if (
-        w.profile.id === 3 &&
-        w.miyuAssistRadioPending &&
-        w.abilityActive &&
-        w.escortKind === 'assist' &&
-        homingCharging &&
-        homingHasLockedTarget
-      ) {
-        const announced = announceAbility(w, 'ability_assist', { triggerGlow: false })
-        if (announced) {
-          w.miyuAssistRadioPending = false
-          aiValidator.expect(
-            'Miyu só anuncia Carga Compartilhada com carga ativa e lock visível',
-            () => homingCharging && homingHasLockedTarget,
-            { pilotId: w.profile.id, homingCharging, homingHasLockedTarget },
-          )
-          aiValidator.logMechanic('miyu-assist-radio', 'lock-visible-announcement', {
-            pilotId: w.profile.id, homingCharging, homingHasLockedTarget,
-          })
-        }
-      }
 
       const criticalFlash = w.hp <= WINGMAN_LOW_HP && Math.floor(elapsed * 7) % 2 === 0
       w.damageMaterials.forEach((material, materialIndex) => {
@@ -1878,10 +1857,8 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
-              // A sincronização e o glow começam agora, mas a fala só pode sair quando o mesmo
-              // lock que desenha o triângulo já existir no HUD.
+              // Sincronização visual e SFX começam agora; a fala só sairá se e quando Miyu disparar de verdade
               triggerAbilityGlow(w)
-              w.miyuAssistRadioPending = true
               triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
             }
           }
@@ -2187,7 +2164,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         } else if (w.escortKind === 'assist') {
           if (!homingCharging || w.abilityTimer > ASSIST_MAX_S) {
             telemetry.recordEvent(w.profile.name, 'ability', 'Carga Compartilhada de Miyu concluída, retornando à formação', { elapsed })
-            w.miyuAssistRadioPending = false
             stateController.finishAction(w, {
               source: 'miyu-assist', event: 'assist-completed', outcome: homingCharging ? 'timeout' : 'released', engagementCooldown: 4.0,
             })
