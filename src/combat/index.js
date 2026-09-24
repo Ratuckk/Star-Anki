@@ -177,6 +177,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnHorda: () => enemies.spawnHorda(),
 
     getEnemyCount: () => enemies.getEnemyCount(),
+    getActiveTankCount: () => (enemies.getActiveTankCount ? enemies.getActiveTankCount() : 0),
     getEnemySnapshots: () => enemies.getEnemySnapshots(),
     getBossSnapshot: () => enemies.getBossSnapshot(),
     getGoldenSnapshot: () => enemies.getGoldenSnapshot(),

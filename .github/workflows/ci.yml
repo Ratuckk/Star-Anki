@@ -50,6 +50,7 @@ jobs:
           node src/lockon-priority.test.mjs
           node src/combat-lockon-swirl.test.mjs
           node src/tank.test.mjs
+          node src/tank-spawn-integration.test.mjs
           node src/golden-squadron.test.mjs
 
       - name: Run Wingman Suites

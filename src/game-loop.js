@@ -31,7 +31,7 @@ import {
   REVIEW_ENEMY_INTERVAL_MULT,
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
-  HORDA_SPAWN_CHANCE,
+  HORDA_SPAWN_CHANCE, TANK_SPAWN_CHANCE, TANK_MAX_ACTIVE_ON_RAIL,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
@@ -41,6 +41,7 @@ import {
   SWIRL_SLOW_MO_MS, SWIRL_SLOW_MO_FACTOR, SWIRL_FOV_BUMP_MS,
   ARCADE_CARD_CHOICE_TIME_SCALE,
 } from './main-constants.js'
+import { TANK_POPULATION_WEIGHT } from './enemies/tank.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
@@ -942,6 +943,7 @@ export function createGameLoop(deps) {
         state.normalSpawnTimer -= dt * 1000
         if (state.normalSpawnTimer <= 0) {
           state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
+          const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
           const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
           if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
             if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
@@ -958,8 +960,13 @@ export function createGameLoop(deps) {
             combat.spawnSussurro()
           } else if (Math.random() < HORDA_SPAWN_CHANCE) {
             combat.spawnHorda()
+          } else if (
+            room >= TANK_POPULATION_WEIGHT &&
+            (combat.getActiveTankCount ? combat.getActiveTankCount() : 0) < TANK_MAX_ACTIVE_ON_RAIL &&
+            Math.random() < TANK_SPAWN_CHANCE
+          ) {
+            combat.spawnTankEnemy()
           } else {
-            const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
             if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {
               const formations = ['vFormation', 'sweepLine', 'trailColumn', 'pincer']
               const picked = formations[Math.floor(Math.random() * formations.length)]
