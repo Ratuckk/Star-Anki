@@ -1717,6 +1717,8 @@ export function injectHudExtraStyles() {
 /* Ocultação limpa de miras, barras e status de combate durante cutscenes cinemáticas */
 .cinematic-active .reticle,
 .cinematic-active .hud-status,
+.cinematic-active .hud-double-stack,
+.cinematic-active .hud-top-center-cluster,
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-vitals-orbital,
@@ -2382,6 +2384,251 @@ export function injectHudExtraStyles() {
 @keyframes hud-threat-pulse {
   from { transform: scale(0.92); opacity: 0.85; }
   to   { transform: scale(1.28); opacity: 1.0; }
+}
+
+/* ============ HUD DOUBLE STACK ARCHITECTURE ============ */
+:root {
+  --hud-left-stack-x: clamp(238px, 17vw, 290px);
+}
+
+.hud-double-stack {
+  position: absolute;
+  pointer-events: none;
+  z-index: 22;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  transition: opacity 0.35s ease;
+}
+
+/* Pilha Esquerda (Score + Streak/Kills + Combo) */
+.hud-stack-left {
+  top: clamp(14px, 1.6vh, 18px);
+  left: var(--hud-left-stack-x);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(10px, 1.2vh, 16px);
+}
+
+.hud-stack-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #7fe0ff;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  margin-bottom: 2px;
+}
+
+.hud-score-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.hud-score-value {
+  font-size: clamp(34px, 2.8vw, 48px);
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95), 0 0 16px rgba(255, 255, 255, 0.25);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.hud-score-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  background: rgba(10, 16, 26, 0.78);
+  border: 1px solid #1e293b;
+  border-left: 2px solid #38bdf8;
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hud-metric-label {
+  color: #94a3b8;
+  letter-spacing: 0.04em;
+}
+
+.hud-metric-val {
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-combo-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.hud-combo-value {
+  font-size: clamp(22px, 1.8vw, 30px);
+  font-weight: 900;
+  line-height: 1.1;
+  color: #38bdf8;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.6), 0 1px 4px rgba(0, 0, 0, 0.9);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
+}
+
+.hud-combo-bar {
+  width: 100%;
+  min-width: 48px;
+  height: 3px;
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+  border-radius: 2px;
+}
+
+/* Pilha Direita (Mission Time + Nível) */
+.hud-stack-right {
+  top: clamp(14px, 1.6vh, 18px);
+  right: clamp(18px, 1.8vw, 26px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  gap: clamp(10px, 1.2vh, 16px);
+}
+
+.hud-mission-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.hud-mission-time-value {
+  font-size: clamp(34px, 2.8vw, 48px);
+  font-weight: 900;
+  line-height: 1;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 14px rgba(56, 189, 248, 0.55), 0 2px 8px rgba(0, 0, 0, 0.95);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 5px;
+}
+
+.hud-mission-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.hud-mission-status-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #7fe0ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.hud-mission-ticks {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.hud-mission-ticks .hud-tick {
+  width: 7px;
+  height: 3px;
+  border-radius: 1px;
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.hud-mission-ticks .hud-tick.active {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+}
+
+.hud-level-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.hud-level-value {
+  font-size: clamp(24px, 2.0vw, 32px);
+  font-weight: 900;
+  line-height: 1.1;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 255, 255, 0.3);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 3px;
+}
+
+.hud-level-bar {
+  width: 32px;
+  height: 3px;
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+  border-radius: 2px;
+}
+
+/* Cluster Superior Central (Wingmen + Swirl + Cadeia) */
+.hud-top-center-cluster {
+  position: absolute;
+  top: clamp(8px, 1.2vh, 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 22;
+  transition: opacity 0.35s ease;
+}
+
+.hud-center-combat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* Responsividade Double Stack */
+@media (max-width: 1366px) {
+  :root {
+    --hud-left-stack-x: clamp(234px, 18vw, 260px);
+  }
+  .hud-score-value,
+  .hud-mission-time-value {
+    font-size: 32px;
+  }
+  .hud-combo-value,
+  .hud-level-value {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 1280px) {
+  :root {
+    --hud-left-stack-x: 232px;
+  }
+  .hud-score-value,
+  .hud-mission-time-value {
+    font-size: 28px;
+  }
+  .hud-combo-value,
+  .hud-level-value {
+    font-size: 18px;
+  }
+  .hud-stack-label {
+    font-size: 9px;
+  }
 }
 `
   document.head.appendChild(style)

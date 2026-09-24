@@ -287,6 +287,7 @@ export function createBossFlow(deps) {
     // Momento de impacto "Arcade Neon" (v0.73.0) — dispara IMEDIATAMENTE, antes da cutscene de
     // morte mais sedada abaixo (que já existia e continua intacta). Zera a cadeia de abates
     // junto, mesmo comportamento do protótipo de design aprovado pelo usuário.
+    session.totalKills = (session.totalKills || 0) + 1
     hud.showBossKO?.(BOSS_DEFEAT_BONUS)
     state.killChainCount = 0
     state.killChainTimer = 0
@@ -319,6 +320,7 @@ export function createBossFlow(deps) {
 
   function handleGoldenDefeated(hitWorldPos) {
     if (state.phase === 'deathCutscene' && state.deathCutsceneKind === 'golden') return
+    session.totalKills = (session.totalKills || 0) + 1
     combat.clearOtherEnemies()
     environment?.setFogProfile?.('goldenDeath')
     state.deathCutsceneKind = 'golden'

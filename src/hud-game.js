@@ -405,27 +405,86 @@ export function createGameHud() {
     }
   }
 
-  const topbarRow = document.createElement('div')
-  topbarRow.className = 'hud-topbar-row'
-  root.appendChild(topbarRow)
+  // ============ DOUBLE STACK: PILHA ESQUERDA (SCORE + STREAK/KILLS + COMBO) ============
+  const stackLeft = document.createElement('div')
+  stackLeft.className = 'hud-double-stack hud-stack-left'
+  stackLeft.innerHTML = `
+    <div class="hud-score-block">
+      <div class="hud-stack-label">SCORE</div>
+      <div class="hud-score-value">0</div>
+      <div class="hud-score-metrics">
+        <div class="hud-metric-pill" data-metric="streak">
+          <span class="hud-metric-label">Streak</span>
+          <span class="hud-metric-val">0</span>
+        </div>
+        <div class="hud-metric-pill" data-metric="kills">
+          <span class="hud-metric-label">Kills</span>
+          <span class="hud-metric-val">0</span>
+        </div>
+      </div>
+    </div>
+    <div class="hud-combo-block">
+      <div class="hud-stack-label">COMBO</div>
+      <div class="hud-combo-value">x1.0</div>
+      <div class="hud-combo-bar"></div>
+    </div>
+  `
+  root.appendChild(stackLeft)
+  const scoreValEl = stackLeft.querySelector('.hud-score-value')
+  const streakValEl = stackLeft.querySelector('[data-metric="streak"] .hud-metric-val')
+  const killsValEl = stackLeft.querySelector('[data-metric="kills"] .hud-metric-val')
+  const comboValEl = stackLeft.querySelector('.hud-combo-value')
 
+  // ============ DOUBLE STACK: PILHA DIREITA (MISSION TIME + NÍVEL) ============
+  const stackRight = document.createElement('div')
+  stackRight.className = 'hud-double-stack hud-stack-right'
+  stackRight.innerHTML = `
+    <div class="hud-mission-block">
+      <div class="hud-stack-label">MISSION TIME</div>
+      <div class="hud-mission-time-value">00:00</div>
+      <div class="hud-mission-sub">
+        <span class="hud-mission-status-label">NORMAL</span>
+        <div class="hud-mission-ticks" aria-hidden="true">
+          <span class="hud-tick active"></span>
+          <span class="hud-tick active"></span>
+          <span class="hud-tick active"></span>
+          <span class="hud-tick active"></span>
+          <span class="hud-tick active"></span>
+          <span class="hud-tick active"></span>
+          <span class="hud-tick"></span>
+          <span class="hud-tick"></span>
+          <span class="hud-tick"></span>
+          <span class="hud-tick"></span>
+        </div>
+      </div>
+    </div>
+    <div class="hud-level-block">
+      <div class="hud-stack-label">NÍVEL</div>
+      <div class="hud-level-value">01</div>
+      <div class="hud-level-bar"></div>
+    </div>
+  `
+  root.appendChild(stackRight)
+  const missionTimeValEl = stackRight.querySelector('.hud-mission-time-value')
+  const levelValEl = stackRight.querySelector('.hud-level-value')
+
+  // Elemento legado de status mantido oculto para compatibilidade defensiva
   const status = document.createElement('div')
   status.className = 'hud-status'
-  topbarRow.appendChild(status)
+  status.hidden = true
+  root.appendChild(status)
 
-  // ============ ÍCONES DE COOLDOWN DO ESQUADRÃO (Opção B: emblemas hexagonais) ============
-  // 4 slots fixos (Falco/Peppy/Slippy/Miyu, mesma ordem de WINGMAN_PROFILES) ao lado do
-  // placar — ver PLANO_HABILIDADES_ESQUADRAO.md. A posição nunca "pula" quando um piloto novo
-  // é recrutado porque os 4 slots sempre existem, só o estado visual muda (bloqueado → pronto).
+  // ============ CLUSTER SUPERIOR CENTRAL (WINGMEN + SWIRL + CADEIA DE ABATES) ============
+  const topCenterCluster = document.createElement('div')
+  topCenterCluster.className = 'hud-top-center-cluster'
+  root.appendChild(topCenterCluster)
+
+  // 4 slots fixos (Falco/Peppy/Slippy/Miyu, mesma ordem de WINGMAN_PROFILES)
   const SQUAD_ABILITY_ICONS = { ram: '☄️', guard: '🔰', repair: '🩹', assist: '🔗' }
   const abilityRow = document.createElement('div')
   abilityRow.className = 'hud-squad-abilities'
-  topbarRow.appendChild(abilityRow)
-  // v0.74.1 fix: o número de cooldown morava DENTRO de .hud-ability-hex, que tem clip-path de
-  // hexágono — o badge ficava ancorado no canto inferior-direito da caixa, uma região que o
-  // recorte hexagonal CORTA FORA (o hexágono não chega nos cantos). Resultado: o número nunca
-  // aparecia de verdade, só não tinha sido notado porque antes só mostrava nos 3s finais. Agora
-  // o badge é irmão do hexágono (não filho), num wrapper `.hud-ability-slot` sem clip-path.
+  topCenterCluster.appendChild(abilityRow)
+
   const abilityHexEls = [0, 1, 2, 3].map(() => {
     const slot = document.createElement('div')
     slot.className = 'hud-ability-slot'
@@ -445,19 +504,16 @@ export function createGameHud() {
       sweep: hex.querySelector('.hud-ability-sweep'),
       num: slot.querySelector('.hud-ability-num'),
       subcolumn: slot.querySelector('.hud-ability-subcolumn'),
-      subIconEls: new Map(), // id da carta → { el, iconEl } — reaproveitado entre chamadas
+      subIconEls: new Map(),
     }
   })
   let prevAbilitySignature = ''
 
-  // ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============
-  // Empilhado numa coluna (`.hud-squad-column`) que ocupa o mesmo slot no `topbarRow` que o
-  // widget sozinho ocupava antes — pedido do usuário pra colocar o contador do Swirl Blast
-  // "embaixo do mesmo local de onde fica o foco de aliados", sem mexer na posição horizontal.
-  const squadColumn = document.createElement('div')
-  squadColumn.className = 'hud-squad-column'
-  topbarRow.appendChild(squadColumn)
+  const centerCombatRow = document.createElement('div')
+  centerCombatRow.className = 'hud-center-combat-row'
+  topCenterCluster.appendChild(centerCombatRow)
 
+  // Widget de comando do esquadrão [D] (Foco)
   const squadCommandWidget = document.createElement('div')
   squadCommandWidget.className = 'hud-squad-command-widget ready'
   squadCommandWidget.innerHTML = `
@@ -470,15 +526,11 @@ export function createGameHud() {
     </div>
     <span class="hud-cmd-timer">PRONTO</span>
   `
-  squadColumn.appendChild(squadCommandWidget)
+  centerCombatRow.appendChild(squadCommandWidget)
   const squadCmdFill = squadCommandWidget.querySelector('.hud-cmd-meter-fill')
   const squadCmdTimer = squadCommandWidget.querySelector('.hud-cmd-timer')
 
-  // ============ CONTADOR DE COOLDOWN DO SWIRL BLAST (pedido do usuário) ============
-  // Mesma estrutura/estados visuais do widget de FOCO acima (ready/cooling), só que pro
-  // cooldown de 6-12s do Swirl Blast (ver player.js getSwirlCooldownMs/getSwirlCooldownTotalMs).
-  // Sem estado "active" — o Swirl não tem janela de duração como o comando do esquadrão, só
-  // dispara e entra em cooldown.
+  // Contador de cooldown do Swirl Blast
   const swirlCooldownWidget = document.createElement('div')
   swirlCooldownWidget.className = 'hud-squad-command-widget hud-swirl-widget ready'
   swirlCooldownWidget.innerHTML = `
@@ -491,13 +543,11 @@ export function createGameHud() {
     </div>
     <span class="hud-cmd-timer">PRONTO</span>
   `
-  squadColumn.appendChild(swirlCooldownWidget)
+  centerCombatRow.appendChild(swirlCooldownWidget)
   const swirlCmdFill = swirlCooldownWidget.querySelector('.hud-cmd-meter-fill')
   const swirlCmdTimer = swirlCooldownWidget.querySelector('.hud-cmd-timer')
 
-  // ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============
-  // Terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — ver
-  // documento de design de feedback de combate (opção 1 de 5, escolhida pelo usuário).
+  // Cadeia de abates — "Arcade Neon"
   const KILL_CHAIN_MAX_SEGS = 8
   const killChainRow = document.createElement('div')
   killChainRow.className = 'hud-kill-chain'
@@ -506,7 +556,7 @@ export function createGameHud() {
     <span class="hud-kill-chain-x">x0</span>
     <div class="hud-kill-chain-segs"></div>
   `
-  topbarRow.appendChild(killChainRow)
+  centerCombatRow.appendChild(killChainRow)
   const killChainXEl = killChainRow.querySelector('.hud-kill-chain-x')
   const killChainSegsEl = killChainRow.querySelector('.hud-kill-chain-segs')
   const killChainSegEls = Array.from({ length: KILL_CHAIN_MAX_SEGS }, () => {
@@ -1555,9 +1605,26 @@ export function createGameHud() {
   return {
     sceneRoot,
 
-    setStatus({ health, maxHealth = health, score, combo, difficultyLevel }) {
-      status.textContent = `Pontos: ${Math.round(score)} · Combo x${combo.toFixed(2)}`
-        + (difficultyLevel ? ` · Nível ${difficultyLevel}/9` : '')
+    setStatus({ health, maxHealth = health, score = 0, combo = 1, streak = 0, kills = 0, missionTimeMs = 0, difficultyLevel = 1 } = {}) {
+      const roundedScore = Math.max(0, Math.round(score || 0))
+      scoreValEl.textContent = roundedScore.toLocaleString('pt-BR')
+      streakValEl.textContent = String(Math.max(0, streak | 0))
+      killsValEl.textContent = String(Math.max(0, kills | 0))
+
+      const c = Number(combo ?? 1)
+      const comboFormatted = (c % 1 === 0) ? `x${c}.0` : `x${c.toFixed((c * 10) % 1 === 0 ? 1 : 2)}`
+      comboValEl.textContent = comboFormatted
+
+      const totalSec = Math.max(0, Math.floor((missionTimeMs || 0) / 1000))
+      const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
+      const ss = String(totalSec % 60).padStart(2, '0')
+      missionTimeValEl.textContent = `${mm}:${ss}`
+
+      levelValEl.textContent = String(Math.max(1, difficultyLevel | 0)).padStart(2, '0')
+
+      if (status) {
+        status.textContent = `Pontos: ${roundedScore} · Combo ${comboFormatted} · Nível ${difficultyLevel}/9`
+      }
       const roundedHealth = Math.round(health)
       const isCrit = maxHealth > 0 && health / maxHealth <= LOW_HEALTH_THRESHOLD_FRAC
       if (!useOrbitalVitals) {
@@ -1575,6 +1642,27 @@ export function createGameHud() {
       }
       if (prevHealth != null && roundedHealth < prevHealth) flashVitalsHit()
       prevHealth = roundedHealth
+    },
+
+    setScoreStats({ score = 0, streak = 0, kills = 0 } = {}) {
+      const roundedScore = Math.max(0, Math.round(score || 0))
+      scoreValEl.textContent = roundedScore.toLocaleString('pt-BR')
+      streakValEl.textContent = String(Math.max(0, streak | 0))
+      killsValEl.textContent = String(Math.max(0, kills | 0))
+    },
+
+    setMissionStatus({ elapsedMs = 0, level = 1 } = {}) {
+      const totalSec = Math.max(0, Math.floor((elapsedMs || 0) / 1000))
+      const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
+      const ss = String(totalSec % 60).padStart(2, '0')
+      missionTimeValEl.textContent = `${mm}:${ss}`
+      levelValEl.textContent = String(Math.max(1, level | 0)).padStart(2, '0')
+    },
+
+    setCombo(combo = 1) {
+      const c = Number(combo ?? 1)
+      const comboFormatted = (c % 1 === 0) ? `x${c}.0` : `x${c.toFixed((c * 10) % 1 === 0 ? 1 : 2)}`
+      comboValEl.textContent = comboFormatted
     },
 
     setLives(lives, maxLives = lives) {

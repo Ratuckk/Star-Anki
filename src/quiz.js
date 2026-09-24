@@ -49,6 +49,9 @@ export function createSession(deck, opts = {}) {
     health: startingHealth,
     lives: startingLives,
     comboMultiplier: 1.0,
+    correctStreak: 0,
+    totalKills: 0,
+    missionTimeMs: 0,
     score: 0,
     log: [],
     allShooterCards: shooterCards,
@@ -112,10 +115,12 @@ export function resolveAnswer(session, outcome) {
     points = 100 * session.comboMultiplier * timeBonus * accuracyBonus
     // arredonda para 2 casas para evitar deriva de ponto flutuante nas somas sucessivas de 0.15
     session.comboMultiplier = Math.min(COMBO_CAP, Math.round((session.comboMultiplier + COMBO_STEP) * 100) / 100)
+    session.correctStreak = (session.correctStreak || 0) + 1
   } else {
     // >> AJUSTADO: erro/timeout não tira mais saúde do jogador — só quebra o combo e conta pra
     // estatística / sobe a dificuldade (main.js). A vida só é perdida por DANO DE INIMIGO. <<
     session.comboMultiplier = 1.0
+    session.correctStreak = 0
 
     // QOL (Item 9 — Fast Active-Recall): se o jogador errou, reenfileira o card ~3 posições à frente
     // na fila da mesma sessão para reforço imediato do aprendizado (apenas se session.queue existir)
@@ -153,6 +158,7 @@ export function resolveAnswer(session, outcome) {
   return {
     points,
     comboMultiplier: session.comboMultiplier,
+    correctStreak: session.correctStreak,
     healthRemaining: session.health,
     comboBroken: type !== 'correct',
   }
