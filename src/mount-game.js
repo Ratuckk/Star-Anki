@@ -506,7 +506,16 @@ export function mountGame(session, deck, menu) {
 
   // ============ KICKOFF ============
   enterCombat()
-  hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier })
+  hud.setStatus({
+    health: session.health,
+    maxHealth: player.getMaxHealth(),
+    score: session.score,
+    combo: session.comboMultiplier,
+    streak: session.correctStreak || 0,
+    kills: session.totalKills || 0,
+    missionTimeMs: session.missionTimeMs || 0,
+    difficultyLevel: 1,
+  })
   hud.setLives(session.lives, player.getMaxLives())
   hud.setShield(player.getShieldValue(), player.getShieldMax())
   hud.updateCollectedCards(player.getCollectedCards())

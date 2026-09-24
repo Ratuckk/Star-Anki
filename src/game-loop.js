@@ -48,6 +48,34 @@ import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
 import { createDamageOrbitTracker } from './combat/damage-orbit-tracker.js'
 import { sampleSwirlCamera } from './swirl-camera-model.js'
+import { recordKills } from './quiz.js'
+
+export function shouldAdvanceMissionTime({
+  paused = false,
+  phase = 'combat',
+  isNoDeck = false,
+  arcadeDraftMode = 'pause',
+  arcadeCardChoicePauses = false,
+  cutsceneActive = false,
+} = {}) {
+  if (paused) return false
+  if (phase === 'wrongPause') return false
+  if (phase === 'bossQuestionPause' || phase === 'questionPause') return false
+
+  const isArcadeCardChoice = phase === 'cardChoice' && isNoDeck
+  const draftMode = arcadeDraftMode || (arcadeCardChoicePauses ? 'pause' : 'slowmo')
+  const shouldPauseCardChoice = phase === 'cardChoice' && (!isNoDeck || draftMode === 'pause' || arcadeCardChoicePauses === true)
+  if (shouldPauseCardChoice) return false
+
+  if (cutsceneActive) return false
+  if (phase === 'launchCutscene' || phase === 'arenaCutscene' || phase === 'deathCutscene') return false
+
+  return true
+}
+
+export function shouldDisplayMinimap({ isArena = false, phase = 'combat' } = {}) {
+  return Boolean(isArena || phase === 'bossFight' || phase === 'goldenArena')
+}
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -212,6 +240,8 @@ export function createGameLoop(deps) {
     if (cutscenes.updateLaunchCutscene(rawDt, inputState)) return
     if (cutscenes.updateArenaCutscene(dt)) return
     if (cutscenes.updateDeathCutscene(rawDt)) return
+
+    session.missionTimeMs = (session.missionTimeMs || 0) + rawDt * 1000
 
     state.hitShakeTimer = Math.max(0, state.hitShakeTimer - dt * 1000)
     rail.setShakeIntensity(state.hitShakeTimer > 0 ? SHIP_SHAKE_MAGNITUDE * (state.hitShakeTimer / HIT_SHAKE_DURATION_MS) : 0)
@@ -813,8 +843,11 @@ export function createGameLoop(deps) {
 
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
+    if (events.enemyKills > 0) {
+      recordKills(session, events.enemyKills)
+      state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
+    }
     if (events.timeReductionMs) state.cycleTimer = Math.max(0, state.cycleTimer - events.timeReductionMs)
-    if (events.enemyKills > 0) state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
 
     // cutscene em câmera lenta do chefe explodindo antes de sair da arena — handler extraído
     // pra flow-boss.js.
@@ -1104,7 +1137,16 @@ export function createGameLoop(deps) {
     if (difficultyLevel > state.lastDifficultyLevel) hud.showTierIncrease(difficultyLevel)
     state.lastDifficultyLevel = difficultyLevel
 
-    hud.setStatus({ health: session.health, maxHealth: player.getMaxHealth(), score: session.score, combo: session.comboMultiplier, difficultyLevel })
+    hud.setStatus({
+      health: session.health,
+      maxHealth: player.getMaxHealth(),
+      score: session.score,
+      combo: session.comboMultiplier,
+      streak: session.correctStreak || 0,
+      kills: session.totalKills || 0,
+      missionTimeMs: session.missionTimeMs || 0,
+      difficultyLevel,
+    })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax(), player.getTemporaryShieldValue?.() || 0)
     // HUD orbital (settings.vitalsHudStyle): âncora dos arcos = projeção na tela da nave, mesmo
@@ -1152,7 +1194,10 @@ export function createGameLoop(deps) {
     // relativa ao jogador (frame.right/forward) em vez de eixos XZ do mundo — necessário fora da
     // arena porque o trilho curva em 3D, então "mundo fixo, ícone do jogador gira" vira ilegível.
     // O jogador fica sempre fixo no centro apontando "pra cima"; o mundo é que gira ao redor dele.
-    {
+    const isArenaMode = shouldDisplayMinimap({ isArena: rail.isArena(), phase: state.phase })
+    if (!isArenaMode) {
+      hud.setMinimap(false, { blips: [], allies: [], alert: false })
+    } else {
       const mapRadius = 190
       const alertRadius = 32
       let alert = false

@@ -7,6 +7,8 @@
 > - **PR #15 (Dourado + Esquadrão):** Merge `3c014a74f56dfd90428c6370372d90527f5c9716` (CI Run `35946376454` pass)
 > - **PR #16 (Tank Natural Spawn):** Merge `327bf50b24a8c5c1a2d1e32dcec230e360e08bc5` (CI Run `35997550149` pass)
 > - **PR #17 (Lock-on / Miyu / Reticle / Arcade / Fog Polish):** Merge `bdd8a879651ff4da411ec38a4c99745d9a93683f` (CI Run `36001243157` pass)
+> - **PR #18 (HUD Double Stack Architecture):** `EM PR` na branch `feat/score-hud-double-stack` (CI Run `36012240426` pass). Aguarda revisão humana.
+> **Registro Cronológico Pós-v0.99.35:** [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md)
 > **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
 > **Pendências Abertas:** Homologação visual em tela/monitor de Fog, retícula progressiva e VFX/screen-space markers da Miyu.
 

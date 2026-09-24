@@ -1529,12 +1529,13 @@
   }
   .hud-legend {
     position: absolute;
-    right: 12px;
-    top: 70px;
+    right: clamp(16px, 2vw, 24px);
+    top: clamp(140px, 18vh, 165px);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     pointer-events: none;
+    z-index: 25;
   }
   .hud-legend-item {
     display: flex;
@@ -1744,8 +1745,8 @@
      moldura pulsa vermelho enquanto algo hostil está perto o bastante pra doer. */
   .hud-minimap {
     position: absolute;
-    top: 12px;
-    right: 12px;
+    top: clamp(28%, 32%, 35%);
+    right: clamp(16px, 2vw, 24px);
     width: 130px;
     height: 130px;
     background: rgba(11, 13, 18, 0.7);
@@ -1754,6 +1755,10 @@
     pointer-events: none;
     overflow: hidden;
     transition: border-color 200ms ease;
+    z-index: 25;
+  }
+  .hud-minimap[hidden] {
+    display: none !important;
   }
   .hud-minimap.alert {
     border-color: #ff2d4d;

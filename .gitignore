@@ -1,2 +1,3 @@
 .claude/scheduled_tasks.lock
 node_modules/
+implementor temp/
