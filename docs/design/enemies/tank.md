@@ -10,6 +10,7 @@
 ## 1. PAPEL TÁTICO & IDENTIDADE
 - **Unidade Pesada Regular:** O Tank não é boss, não inicia all-range, não possui barra de vida exclusiva de tela cheia nem fases com invulnerabilidade.
 - **Orçamento:** Ocupa 2 vagas no limite de população de combate e concede 75 pontos ao ser destruído.
+- **Spawn Automático no Trilho:** Chance nominal de 5% (`TANK_SPAWN_CHANCE = 0.05`), com probabilidade efetiva dependente de estado (~1.43% inicial com zero erros até ~1.11% no cap da Sentinela com 5+ erros), posicionado no seletor após os inimigos especiais para preservar integralmente o balanceamento existente, respeitando orçamento de população (`room >= 2`) e teto de no máximo 2 Tanks ativos simultaneamente no trilho (`TANK_MAX_ACTIVE_ON_RAIL = 2`).
 
 ---
 

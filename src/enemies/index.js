@@ -19,7 +19,7 @@ import {
 import {
   MINI_SWARM_KIND, spawnMiniSwarm as spawnMiniSwarmGroup, spawnMiniSwarmFromHorda, updateMiniSwarm, miniSwarmHitRadius, disposeMiniSwarm,
 } from './miniSwarm.js'
-import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, TANK_KILL_BONUS, spawnTankEnemy, tankStatsForLevel, disposeTank } from './tank.js'
+import { TANK_KIND, TANK_COLOR, TANK_HIT_RADIUS, TANK_DEATH_DURATION, TANK_DEFAULT_HP, TANK_KILL_BONUS, TANK_POPULATION_WEIGHT, spawnTankEnemy, tankStatsForLevel, disposeTank } from './tank.js'
 import {
   TIME_KIND, TIME_HIT_RADIUS, TIME_DEATH_DURATION, TIME_REDUCTION_MIN_MS, TIME_REDUCTION_MAX_MS,
   spawnTimeEnemy, spawnTimeEnemyMega, updateTimeSpin, timePassBehind, timeColor, timeFire, disposeTimeEnemy,
@@ -1753,11 +1753,16 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     getEnemyCount() {
       // Horda conta como 3 vagas do teto (pedido do usuário — ela é grande/forte o bastante pra
-      // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres)
+      // "valer" por 3 inimigos comuns, e só spawna se sobrarem pelo menos 3 vagas livres).
+      // Tank conta como TANK_POPULATION_WEIGHT (2 vagas) conforme ADR-0003 e design doc.
       return enemies.reduce((n, e) => {
         if (e.dying || e.fadingOut || e.kind === DETRITO_KIND || e.kind === IMA_KIND) return n
-        return n + (e.kind === HORDA_KIND ? 3 : e.kind === TANK_KIND ? 2 : 1)
+        return n + (e.kind === HORDA_KIND ? 3 : e.kind === TANK_KIND ? TANK_POPULATION_WEIGHT : 1)
       }, 0)
+    },
+
+    getActiveTankCount() {
+      return enemies.filter((e) => e.kind === TANK_KIND && !e.dying && !e.fadingOut).length
     },
 
     getEnemySnapshots: () => enemies
