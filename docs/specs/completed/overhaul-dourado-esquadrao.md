@@ -1,5 +1,10 @@
 # STAR-ANKI — OVERHAUL DO INIMIGO DOURADO E ESQUADRÃO DE CAÇAS
 
+> **Status:** CONCLUÍDO NA v0.99.36
+> **Data:** 2026-09-23
+> **Implementação:** `src/enemies/golden-squadron.js` e `src/enemies/golden.js`
+> **Suíte de Testes:** `src/golden-squadron.test.mjs` e `tools/golden-squadron-runtime-fuzz.mjs`
+
 ## 1. OBJETIVO
 
 Realizar um overhaul completo do inimigo Dourado implementado em `src/enemies/golden.js`.

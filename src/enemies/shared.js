@@ -93,11 +93,11 @@ export function randomSpawnPositionOnPath(rail, distanceMin, distanceMax, boxX, 
 
 // spawn "no mapa" em modo arena: ponto aleatório numa casca esférica ao redor do CENTRO da
 // arena (não do jogador!) — espalha os inimigos pelo mapa em vez de colar do lado da nave
-export function randomSpawnAroundArena(rail, distanceMin, distanceMax) {
+export function randomSpawnAroundArena(rail, distanceMin, distanceMax, rng = Math.random) {
   const center = rail.getArenaCenter()
-  const azimuth = Math.random() * Math.PI * 2
-  const elevation = (Math.random() * 2 - 1) * ARENA_SPAWN_ELEVATION_MAX
-  const distance = distanceMin + Math.random() * (distanceMax - distanceMin)
+  const azimuth = rng() * Math.PI * 2
+  const elevation = (rng() * 2 - 1) * ARENA_SPAWN_ELEVATION_MAX
+  const distance = distanceMin + rng() * (distanceMax - distanceMin)
   const offset = new THREE.Vector3(
     Math.sin(azimuth) * Math.cos(elevation),
     Math.sin(elevation),

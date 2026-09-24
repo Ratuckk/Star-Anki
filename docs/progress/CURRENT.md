@@ -1,15 +1,38 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.35
-> **Branch:** `chore/reorganize-and-forgot-v09935`
-> **Base do fechamento pré-merge:** `bfad055e7bcb07f57e396a511b3258c15f0f2a91`
-> **Último candidato auditado pré-PR:** `83a1ba832368b066dcb4eda1676202b0559f61c1`
-> **Status da CI (GitHub Actions):** Run `#35912947333` aprovada (Success)
+> **Versão:** v0.99.36
+> **Branch:** `feat/v0.99.36-golden-squadron`
+> **Base do fechamento pré-merge:** `06b04624197523a3e7827743b30b6a3d5787885e` (main após merge da v0.99.35)
 > **Última atualização:** 2026-09-23
 
 ---
 
 ## 1. IMPLEMENTADO RECENTEMENTE
+- **Overhaul do Inimigo Dourado e Esquadrão de Caças (v0.99.36):**
+  - **Dourado como Comandante Agressivo:**
+    - Faixas úteis de combate com intenção de pilotagem: aproximação acelerada (>75u), pressão tática e weaving contínuo (32u a 70u), e dash tático por proximidade (<28u) para cruzar a linha de mira do jogador.
+    - Preservação integral do moveset essencial: chase, weaving, dash lateral, dash reativo a dano, teleporte reativo a dano com cooldown, disparo convencional, laser grande com telegraph circular, colisão corporal/ram, scaling de HP e áudios/VFX.
+  - **Esquadrão de Caças Subordinados Persistentes:**
+    - Mini-naves descontinuadas como projéteis homing; transformadas em entidades de combate persistentes, destrutíveis e com HP próprio (`6 + Math.floor((lvl - 1) * 0.5)`).
+    - Formação orgânica com 6 slots tridimensionais ao redor do comandante com steering amortecido (sem snaps rígidos e sem teleportes).
+    - Teto estrito por dificuldade (2/2/3/3/4/4/5/5/6) e teto de atacantes ofensivos simultâneos (1 a 3).
+    - Reposição gradual por ciclo de dificuldade (~15s no nível 1 até ~8s no nível 9), limitada a 1 nave por ciclo, visual e com cue de áudio `golden_drone_launch`.
+  - **Compositor de Ordens Táticas Contextuais:**
+    - *Strafing Run:* caças mergulham contra o jogador, disparam projétil leve de energia, ultrapassam sem colidir suicidamente e curvam de volta ao comandante.
+    - *Pinça (Pincer):* 2 caças abrem flancos assimétricos em vetores convergentes, mantendo rotas de fuga justas para o jogador.
+    - *Cerco do Laser:* durante o telegraph de 2,5s do laser gigante, caças assumem flancos espaciais sem fechar todas as saídas.
+    - *Fogo Coordenado:* sequência de disparos escalonada no tempo (intervalos de 280ms) intercalando caças e o comandante sem disparos simultâneos no mesmo frame.
+  - **Teleporte e Desorganização:**
+    - Ao teleporte do Dourado, os caças **não teleportam**; permanecem no espaço e entram em `DISORGANIZED`, voando fisicamente até a nova posição com aceleração de aproximação antes de reagrupar.
+  - **Integração de Combate e Dano:**
+    - Cada caça destruído conta como inimigo abatido no pipeline padrão (30 pontos, kill feedback, explosão visual sem cataclismo de boss).
+    - Swirl Blast perfura múltiplos caças com dano volumétrico swept sem ser interrompido (`stopProjectile: false`), enquanto o Comandante interrompe o Swirl (`stopProjectile: true`).
+    - Lock-on prioritário: Dourado permanece a prioridade máxima (maxHp 70+ e multi-locks infinitos), com caças atuando como alvos secundários com teto unitário.
+    - Morte do Comandante limpa subordinados imediatamente sem deixar entidades órfãs.
+  - **Testes Automatizados e Fuzz de Runtime:**
+    - Criada suíte dedicada `src/golden-squadron.test.mjs` cobrindo 13 áreas funcionais (35.1 a 35.13).
+    - Criado `tools/golden-squadron-runtime-fuzz.mjs` com simulação contínua de 3600 frames (60s a 60 fps) validando zero falhas, zero NaNs, zero violações de teto ou limite ofensivo e zero clumping persistente.
+
 - **Fechamento e Auditoria Pré-Merge da v0.99.35:**
   - **Arcade Draft Bullet-Time com Retorno a 1.0x:**
     - O timer de 1,5s (`state.arcadeBulletTimeTimer`) agora decrementa utilizando `rawDt` e governa autoritativamente a desaceleração (`ARCADE_CARD_CHOICE_TIME_SCALE`).
@@ -97,11 +120,12 @@
 ---
 
 ## 7. SPECS ATIVAS & PRONTAS
+- **Concluídas Recentemente:**
+  - [`docs/specs/completed/overhaul-dourado-esquadrao.md`](../specs/completed/overhaul-dourado-esquadrao.md)
 - **Ativas:**
   - [`docs/specs/active/enemy-fsm-overhaul.md`](../specs/active/enemy-fsm-overhaul.md)
   - [`docs/specs/active/gravity-recovery-and-integration.md`](../specs/active/gravity-recovery-and-integration.md)
 - **Prontas para Implementação:**
-  - [`docs/specs/ready/overhaul-dourado-esquadrao.md`](../specs/ready/overhaul-dourado-esquadrao.md)
   - [`docs/specs/ready/mira-direcional-por-movimento.md`](../specs/ready/mira-direcional-por-movimento.md)
   - [`docs/specs/ready/cutscene-vida-perdida.md`](../specs/ready/cutscene-vida-perdida.md)
   - [`docs/specs/ready/boss-colmeia-mae.md`](../specs/ready/boss-colmeia-mae.md)
@@ -111,15 +135,16 @@
 ---
 
 ## 8. TESTES RECENTES
-- `node src/selftest.mjs`: **35/35 suítes e contratos aprovados (100%)**
+- `node src/selftest.mjs`: **34/34 suítes e contratos aprovados (100%), incluindo golden-squadron.test.mjs**
+- `node src/golden-squadron.test.mjs`: **13/13 testes unitários aprovados cobrindo os contratos 35.1 a 35.13**
+- `node tools/golden-squadron-runtime-fuzz.mjs`: **3.600 frames a 60 fps (60s), 12.778 expectativas avaliadas, 0 falhas, 0 NaNs, 0 violações de teto/ofensivo/slots**
 - `node tools/wingman-runtime-fuzz-audit.mjs`: **39.755 expectativas, 0 falhas, 0 NaNs, 0 clumping persistente**
 - `node tools/state-fuzz-audit.mjs`: **FUZZ_SUMMARY failures=0 (6/6 verificações de estresse)**
-- `node tools/full-project-audit.mjs`: **AUDIT_SUMMARY errors=0 warnings=0 (102 arquivos)**
-- `node src/arcade-draft-bullet-time.test.mjs`: **7/7 critérios aprovados**
-- `node src/wingman-global-radio.test.mjs`: **7/7 critérios aprovados**
+- `node tools/full-project-audit.mjs`: **AUDIT_SUMMARY errors=0 warnings=0 (118 arquivos de código)**
+- `node tools/docs-link-audit.mjs`: **200 links relativos estritos verificados, 0 quebrados**
 
 ---
 
 ## 9. PRÓXIMO PONTO DE CONTINUIDADE
-1. Concluir a revisão desta branch `chore/reorganize-and-forgot-v09935` e submetê-la a merge.
-2. Iniciar a próxima entrega de gameplay aprovada: **Overhaul do Dourado e Esquadrão de Caças** ([`docs/specs/ready/overhaul-dourado-esquadrao.md`](../specs/ready/overhaul-dourado-esquadrao.md)) ou **Mira Direcional por Movimento** ([`docs/specs/ready/mira-direcional-por-movimento.md`](../specs/ready/mira-direcional-por-movimento.md)).
+1. Revisão e abertura de Pull Request para a branch `feat/v0.99.36-golden-squadron`.
+2. Após aprovação humana e merge, avançar para a próxima entrega: **Mira Direcional por Movimento** ([`docs/specs/ready/mira-direcional-por-movimento.md`](../specs/ready/mira-direcional-por-movimento.md)).
