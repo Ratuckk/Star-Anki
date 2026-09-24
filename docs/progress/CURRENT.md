@@ -6,9 +6,9 @@
 > **Data de Integração:** 2026-09-24
 > **CI Correspondente:** Run `35946376454` (PR #15, pass) e Run `35955313898` (push main, pass)
 > **Entregas Posteriores em PR Aberta (Não integradas a main):**
-> - **PR A (#16):** `feat/tank-natural-spawn` (CI Run `35955622327` pass)
-> - **PR B (#17):** `fix/lockon-miyu-arcade-fog-polish` (CI Run `35955874845` pass)
-> - **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7f`)
+> - **PR A (#16):** `feat/tank-natural-spawn` (Head: `f5fa0f32a99db35d4d588fa08eeabb71c792de9b`, CI Run `35997550149` pass)
+> - **PR B (#17):** `fix/lockon-miyu-arcade-fog-polish` (Head: `44a760cbcdb25e88137d0ca705d2f30f98c5dc85`, CI Run `35998006056` pass)
+> - **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
 
 ---
 
