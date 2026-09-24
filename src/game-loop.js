@@ -48,6 +48,34 @@ import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
 import { createDamageOrbitTracker } from './combat/damage-orbit-tracker.js'
 import { sampleSwirlCamera } from './swirl-camera-model.js'
+import { recordKills } from './quiz.js'
+
+export function shouldAdvanceMissionTime({
+  paused = false,
+  phase = 'combat',
+  isNoDeck = false,
+  arcadeDraftMode = 'pause',
+  arcadeCardChoicePauses = false,
+  cutsceneActive = false,
+} = {}) {
+  if (paused) return false
+  if (phase === 'wrongPause') return false
+  if (phase === 'bossQuestionPause' || phase === 'questionPause') return false
+
+  const isArcadeCardChoice = phase === 'cardChoice' && isNoDeck
+  const draftMode = arcadeDraftMode || (arcadeCardChoicePauses ? 'pause' : 'slowmo')
+  const shouldPauseCardChoice = phase === 'cardChoice' && (!isNoDeck || draftMode === 'pause' || arcadeCardChoicePauses === true)
+  if (shouldPauseCardChoice) return false
+
+  if (cutsceneActive) return false
+  if (phase === 'launchCutscene' || phase === 'arenaCutscene' || phase === 'deathCutscene') return false
+
+  return true
+}
+
+export function shouldDisplayMinimap({ isArena = false, phase = 'combat' } = {}) {
+  return Boolean(isArena || phase === 'bossFight' || phase === 'goldenArena')
+}
 
 // Cadeia de abates ("Arcade Neon", v0.73.0) — quanto tempo sem abate novo até o contador zerar
 const KILL_CHAIN_DECAY_S = 3.0
@@ -816,7 +844,7 @@ export function createGameLoop(deps) {
     if (events.enemyKillPoints) session.score += events.enemyKillPoints
     if (events.bonusKillPoints) session.score += events.bonusKillPoints
     if (events.enemyKills > 0) {
-      session.totalKills = (session.totalKills || 0) + events.enemyKills
+      recordKills(session, events.enemyKills)
       state.cycleTimer = Math.max(0, state.cycleTimer - events.enemyKills * ENEMY_KILL_CYCLE_ADVANCE_MS)
     }
     if (events.timeReductionMs) state.cycleTimer = Math.max(0, state.cycleTimer - events.timeReductionMs)
@@ -1166,7 +1194,7 @@ export function createGameLoop(deps) {
     // relativa ao jogador (frame.right/forward) em vez de eixos XZ do mundo — necessário fora da
     // arena porque o trilho curva em 3D, então "mundo fixo, ícone do jogador gira" vira ilegível.
     // O jogador fica sempre fixo no centro apontando "pra cima"; o mundo é que gira ao redor dele.
-    const isArenaMode = rail.isArena() || state.phase === 'bossFight' || state.phase === 'goldenArena'
+    const isArenaMode = shouldDisplayMinimap({ isArena: rail.isArena(), phase: state.phase })
     if (!isArenaMode) {
       hud.setMinimap(false, { blips: [], allies: [], alert: false })
     } else {

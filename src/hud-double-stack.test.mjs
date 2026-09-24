@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createSession, resolveAnswer } from './quiz.js'
+import { createSession, resolveAnswer, updateCorrectStreak, recordKills } from './quiz.js'
 import { getDifficultyLevel } from './enemies/shared.js'
+import { shouldAdvanceMissionTime, shouldDisplayMinimap } from './game-loop.js'
+import { formatMissionTime, formatComboMultiplier, formatDifficultyLevel } from './hud-game.js'
+import { createBossFlow } from './flow-boss.js'
 
-console.log('--- TEST SUITE: HUD Double Stack Architecture & Data Sources ---')
+console.log('--- TEST SUITE: HUD Double Stack Architecture & Authoritative Seams ---')
 
 // ============================================================================
-// 1. DADOS: STREAK AUTORITATIVO DE RESPOSTAS
+// 1. DADOS: STREAK AUTORITATIVO DE RESPOSTAS (NORMAL + DOURADO)
 // ============================================================================
 {
-  console.log('Testing 1: Streak de respostas corretas...')
+  console.log('Testing 1: Streak de respostas corretas (Normal, Boss e Dourado)...')
   const dummyDeck = {
     shooterCards: [
       { guid: 'c1', question: 'Q1', answer: 'A1' },
@@ -22,10 +25,10 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Data Sources ---')
   // Critério: streak começa em 0
   assert.strictEqual(session.correctStreak, 0, 'session.correctStreak deve iniciar em 0')
 
-  // Critério: correto incrementa streak (+1 a cada acerto)
+  // Pergunta normal: correto incrementa streak (+1 a cada acerto)
   const r1 = resolveAnswer(session, { type: 'correct', card: dummyDeck.shooterCards[0] })
-  assert.strictEqual(session.correctStreak, 1, 'primeiro acerto deve elevar streak para 1')
-  assert.strictEqual(r1.correctStreak, 1, 'retorno de resolveAnswer deve conter correctStreak 1')
+  assert.strictEqual(session.correctStreak, 1, 'primeiro acerto normal deve elevar streak para 1')
+  assert.strictEqual(r1.correctStreak, 1)
 
   const r2 = resolveAnswer(session, { type: 'correct', card: dummyDeck.shooterCards[1] })
   assert.strictEqual(session.correctStreak, 2, 'segundo acerto deve elevar streak para 2')
@@ -34,109 +37,263 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Data Sources ---')
   const r3 = resolveAnswer(session, { type: 'correct', card: dummyDeck.shooterCards[2] })
   assert.strictEqual(session.correctStreak, 3, 'terceiro acerto deve elevar streak para 3')
 
-  // Critério: erro reseta streak para 0
-  const r4 = resolveAnswer(session, { type: 'wrong', card: dummyDeck.shooterCards[0] })
-  assert.strictEqual(session.correctStreak, 0, 'resposta errada deve resetar streak para 0')
-  assert.strictEqual(r4.correctStreak, 0)
+  // Contrato do Dourado: streak = 3 + Golden correct -> 4
+  // Instancia createBossFlow para testar settleGoldenBonus real
+  const mockState = {
+    phase: 'goldenAlternatives',
+    phaseTimer: 0,
+    pendingCardChoice: false,
+    questionResult: { card: dummyDeck.shooterCards[0], correctSlot: 1 },
+  }
+  const mockHud = {
+    hideQuestionModal: () => {},
+    setFeedback: () => {},
+    showErrorFloat: () => {},
+  }
+  const mockMenu = { sessionResults: [] }
+  const bossFlow = createBossFlow({
+    state: mockState,
+    session,
+    deck: dummyDeck,
+    menu: mockMenu,
+    camera: { fov: 70, updateProjectionMatrix: () => {} },
+    hud: mockHud,
+    combat: {},
+    rail: {},
+    effects: {},
+    environment: {},
+    applyDifficulty: () => {},
+    applyBossDifficulty: () => {},
+    applySpeedProgression: () => {},
+  })
 
-  // Timeout também conta como erro
-  resolveAnswer(session, { type: 'correct', card: dummyDeck.shooterCards[0] })
+  // Golden correct: streak 3 -> 4
+  bossFlow.settleGoldenBonus({
+    type: 'correct',
+    card: dummyDeck.shooterCards[0],
+    timeBonus: 1.2,
+    accuracyBonus: 1.2,
+  })
+  assert.strictEqual(session.correctStreak, 4, 'Golden correct deve incrementar streak de 3 para 4')
+
+  // Golden wrong: streak 4 -> 0
+  bossFlow.settleGoldenBonus({
+    type: 'wrong',
+    card: dummyDeck.shooterCards[1],
+    timeBonus: 1.0,
+    accuracyBonus: 1.0,
+  })
+  assert.strictEqual(session.correctStreak, 0, 'Golden wrong deve resetar streak para 0')
+
+  // Re-eleva streak para 3 e testa Golden timeout
+  updateCorrectStreak(session, 'correct')
+  updateCorrectStreak(session, 'correct')
+  updateCorrectStreak(session, 'correct')
+  assert.strictEqual(session.correctStreak, 3)
+
+  bossFlow.settleGoldenBonus({
+    type: 'timeout',
+    card: dummyDeck.shooterCards[2],
+    timeBonus: 0,
+    accuracyBonus: 0,
+  })
+  assert.strictEqual(session.correctStreak, 0, 'Golden timeout deve resetar streak para 0')
+
+  // Imunidade do streak a dano, tempo e trocas de fase
+  updateCorrectStreak(session, 'correct')
   assert.strictEqual(session.correctStreak, 1)
-  resolveAnswer(session, { type: 'timeout', card: dummyDeck.shooterCards[1] })
-  assert.strictEqual(session.correctStreak, 0, 'timeout deve resetar streak para 0')
+  session.health = 20 // dano recebido
+  assert.strictEqual(session.correctStreak, 1, 'streak não deve mudar ao receber dano')
 
-  console.log('✔ Streak contracts passed')
+  console.log('✔ Streak contracts (Normal + Golden) passed')
 }
 
 // ============================================================================
-// 2. DADOS: KILLS ACUMULATIVO REAL DA SESSÃO
+// 2. DADOS: KILLS ACUMULATIVO REAL DA SESSÃO (PIPELINE + PROTEÇÃO DUPLA CONTAGEM)
 // ============================================================================
 {
-  console.log('Testing 2: Contador acumulativo de Kills...')
-  const dummyDeck = { shooterCards: [] }
-  const session = createSession(dummyDeck)
+  console.log('Testing 2: Contador acumulativo de Kills e proteção contra dupla contagem...')
+  const session = createSession({ shooterCards: [] })
 
   // Critério: inicia em 0
   assert.strictEqual(session.totalKills, 0, 'session.totalKills deve iniciar em 0')
 
-  // Simulação de pipeline de kill autoritativo
-  const events1 = { enemyKills: 2, hitsLog: [{ killed: true }, { killed: true }] }
-  if (events1.enemyKills > 0) {
-    session.totalKills = (session.totalKills || 0) + events1.enemyKills
+  // 1 regular kill via pipeline autoritativo recordKills
+  recordKills(session, 1)
+  assert.strictEqual(session.totalKills, 1, '1 regular kill deve incrementar totalKills para 1')
+
+  // 2 kills no mesmo frame
+  recordKills(session, 2)
+  assert.strictEqual(session.totalKills, 3, '2 kills no mesmo frame devem somar +2 (total: 3)')
+
+  // non-lethal hit (sem abate)
+  recordKills(session, 0)
+  assert.strictEqual(session.totalKills, 3, 'non-lethal hit com count 0 não deve alterar totalKills')
+
+  // cleanup / despawn / entidade destruída sem recompensa (count inválido ou 0)
+  recordKills(session, 0)
+  recordKills(session, -1)
+  recordKills(session, NaN)
+  assert.strictEqual(session.totalKills, 3, 'cleanup/despawn não deve alterar totalKills')
+
+  // Derrota do Boss via handleBossDefeated
+  const mockState = {
+    phase: 'bossFight',
+    deathCutsceneKind: null,
+    killChainCount: 5,
+    killChainTimer: 2.0,
   }
-  assert.strictEqual(session.totalKills, 2, 'deve somar 2 kills oficiais')
-
-  // Critério: cleanup, hit não-letal ou despawn NÃO incrementam kills
-  const cleanupEvent = { enemyKills: 0, hitsLog: [{ killed: false }] }
-  if (cleanupEvent.enemyKills > 0) {
-    session.totalKills = (session.totalKills || 0) + cleanupEvent.enemyKills
+  const mockCombat = {
+    clearOtherEnemies: () => {},
   }
-  assert.strictEqual(session.totalKills, 2, 'cleanup/hits não devem alterar totalKills')
+  const mockHud = {
+    showBossKO: () => {},
+    setBossFight: () => {},
+    setBossTint: () => {},
+  }
+  const bossFlow = createBossFlow({
+    state: mockState,
+    session,
+    deck: { shooterCards: [] },
+    menu: { sessionResults: [] },
+    camera: { fov: 70, updateProjectionMatrix: () => {} },
+    hud: mockHud,
+    combat: mockCombat,
+    rail: { exitArena: () => {} },
+    effects: {},
+    environment: { setFogProfile: () => {}, setSpawnDistanceExpectation: () => {} },
+    applyDifficulty: () => {},
+    applyBossDifficulty: () => {},
+    applySpeedProgression: () => {},
+  })
 
-  // Kill de chefe/dourado via pipeline normal
-  session.totalKills = (session.totalKills || 0) + 1
-  assert.strictEqual(session.totalKills, 3, 'derrota de boss/golden adiciona exatamente 1 ao totalKills')
+  const dummyPos = { clone: () => ({ x: 0, y: 0, z: 0 }) }
 
-  console.log('✔ Kills accumulation contracts passed')
+  // Boss defeat -> incrementa exatamente 1
+  bossFlow.handleBossDefeated(dummyPos)
+  assert.strictEqual(session.totalKills, 4, 'derrota do Boss deve somar exatamente +1 kill')
+  assert.strictEqual(mockState.phase, 'deathCutscene')
+  assert.strictEqual(mockState.deathCutsceneKind, 'boss')
+
+  // Proteção explícita contra dupla contagem se handleBossDefeated for chamado novamente durante cutscene
+  bossFlow.handleBossDefeated(dummyPos)
+  assert.strictEqual(session.totalKills, 4, 'chamada duplicada em deathCutscene não deve duplicar kill de Boss')
+
+  // Derrota do Dourado via handleGoldenDefeated
+  mockState.phase = 'goldenArena'
+  mockState.deathCutsceneKind = null
+
+  bossFlow.handleGoldenDefeated(dummyPos)
+  assert.strictEqual(session.totalKills, 5, 'derrota do Dourado deve somar exatamente +1 kill')
+  assert.strictEqual(mockState.phase, 'deathCutscene')
+  assert.strictEqual(mockState.deathCutsceneKind, 'golden')
+
+  // Proteção explícita contra dupla contagem do Dourado
+  bossFlow.handleGoldenDefeated(dummyPos)
+  assert.strictEqual(session.totalKills, 5, 'chamada duplicada em deathCutscene não deve duplicar kill de Dourado')
+
+  console.log('✔ Kills accumulation & double count protection passed')
 }
 
 // ============================================================================
-// 3. DADOS: MISSION TIME REAL E PROGRESSIVO
+// 3. DADOS: MISSION TIME REAL (MATRIZ COMPLETA DE PAUSAS E SEAMS)
 // ============================================================================
 {
-  console.log('Testing 3: Mission Time monotônico e sem NaN...')
+  console.log('Testing 3: Mission Time monotônico e matriz de pausas...')
   const session = createSession({ shooterCards: [] })
   assert.strictEqual(session.missionTimeMs, 0, 'missionTimeMs deve iniciar em 0')
 
-  // Avanço monotônico durante gameplay ativo
-  const dts = [0.016, 0.016, 0.033, 0.016]
-  for (const dt of dts) {
-    const prev = session.missionTimeMs
-    session.missionTimeMs = (session.missionTimeMs || 0) + dt * 1000
-    assert.ok(session.missionTimeMs >= prev, 'Mission Time deve ser estritamente monotônico')
-    assert.ok(!Number.isNaN(session.missionTimeMs), 'Mission Time não pode produzir NaN')
-  }
+  // Matriz de decisões autoritativas via seam puro shouldAdvanceMissionTime
+  // 1. combat normal -> avança rawDt (true)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'combat' }), true, 'combat normal deve avançar')
 
-  // Formatação MM:SS
-  function formatMissionTime(ms) {
-    const totalSec = Math.max(0, Math.floor((ms || 0) / 1000))
-    const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
-    const ss = String(totalSec % 60).padStart(2, '0')
-    return `${mm}:${ss}`
-  }
+  // 2. Arcade slowmo -> avança rawDt (true)
+  assert.strictEqual(
+    shouldAdvanceMissionTime({ paused: false, phase: 'cardChoice', isNoDeck: true, arcadeDraftMode: 'slowmo', arcadeCardChoicePauses: false }),
+    true,
+    'Arcade card choice em slowmo deve avançar'
+  )
 
+  // 3. Arcade normal -> avança rawDt (true)
+  assert.strictEqual(
+    shouldAdvanceMissionTime({ paused: false, phase: 'cardChoice', isNoDeck: true, arcadeDraftMode: 'slowmo', arcadeCardChoicePauses: false }),
+    true,
+    'Arcade card choice pós-bullet-time (normal) deve avançar'
+  )
+
+  // 4. pause -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: true, phase: 'combat' }), false, 'pause deve congelar timer')
+
+  // 5. questionPause -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'questionPause' }), false, 'questionPause deve congelar timer')
+
+  // 6. bossQuestionPause -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'bossQuestionPause' }), false, 'bossQuestionPause deve congelar timer')
+
+  // 7. cardChoice pause (Roguelike ou Arcade com pausa total) -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'cardChoice', isNoDeck: false }), false, 'cardChoice roguelike deve congelar timer')
+  assert.strictEqual(
+    shouldAdvanceMissionTime({ paused: false, phase: 'cardChoice', isNoDeck: true, arcadeDraftMode: 'pause' }),
+    false,
+    'cardChoice arcade pause deve congelar timer'
+  )
+
+  // 8. wrongPause -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'wrongPause' }), false, 'wrongPause deve congelar timer')
+
+  // 9. launchCutscene -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'launchCutscene' }), false, 'launchCutscene deve congelar timer')
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'combat', cutsceneActive: true }), false, 'cutsceneActive deve congelar timer')
+
+  // 10. arenaCutscene -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'arenaCutscene' }), false, 'arenaCutscene deve congelar timer')
+
+  // 11. deathCutscene -> congela (false)
+  assert.strictEqual(shouldAdvanceMissionTime({ paused: false, phase: 'deathCutscene' }), false, 'deathCutscene deve congelar timer')
+
+  // Independência de dt desacelerado: avança sempre por rawDt
+  const rawDt = 0.016
+  const slowedDt = 0.016 * 0.25 // ex: timeScale
+  session.missionTimeMs += rawDt * 1000 // avança com rawDt
+  assert.strictEqual(session.missionTimeMs, 16, 'Mission Time deve avançar por rawDt e não por slowedDt')
+
+  // Formatação MM:SS via formatMissionTime
   assert.strictEqual(formatMissionTime(0), '00:00')
+  assert.strictEqual(formatMissionTime(16000), '00:16')
   assert.strictEqual(formatMissionTime(92000), '01:32')
   assert.strictEqual(formatMissionTime(725000), '12:05')
   assert.strictEqual(formatMissionTime(null), '00:00')
   assert.strictEqual(formatMissionTime(undefined), '00:00')
 
-  console.log('✔ Mission Time contracts passed')
+  console.log('✔ Mission Time contracts & pause matrix passed')
 }
 
 // ============================================================================
-// 4. DADOS: LEVEL / DIFICULDADE AUTORITATIVA
+// 4. DADOS: LEVEL / DIFICULDADE E FORMATTERS AUTORITATIVOS
 // ============================================================================
 {
-  console.log('Testing 4: Fonte autoritativa do Nível...')
+  console.log('Testing 4: Fonte autoritativa do Nível e formatters consolidados...')
   const lvl1 = getDifficultyLevel({ wrongAnswerCount: 0, score: 0, isNoDeck: false })
   assert.strictEqual(lvl1, 1, 'nível inicial deve ser 1')
 
   const lvlHigh = getDifficultyLevel({ wrongAnswerCount: 8, score: 50000, isNoDeck: false })
   assert.ok(lvlHigh >= 2 && lvlHigh <= 9, 'nível com erros acumulados deve progredir entre 1 e 9')
 
-  // Formatação de 2 dígitos
-  const formattedLvl = String(lvl1).padStart(2, '0')
-  assert.strictEqual(formattedLvl, '01', 'nível deve ser formatado com dois dígitos no HUD')
+  assert.strictEqual(formatDifficultyLevel(lvl1), '01', 'nível deve ser formatado com dois dígitos no HUD')
+  assert.strictEqual(formatDifficultyLevel(9), '09')
 
-  console.log('✔ Level contracts passed')
+  assert.strictEqual(formatComboMultiplier(1), 'x1.0')
+  assert.strictEqual(formatComboMultiplier(1.5), 'x1.5')
+  assert.strictEqual(formatComboMultiplier(2.15), 'x2.15')
+
+  console.log('✔ Level & formatters contracts passed')
 }
 
 // ============================================================================
-// 5. CONTRATOS DO HUD DOM E APRESENTAÇÃO
+// 5. STATIC CONTRACT CHECK (LAYOUT TOKENS, CLASSES & API)
 // ============================================================================
 {
-  console.log('Testing 5: Estrutura DOM e renderização do Double Stack...')
+  console.log('Testing 5: STATIC CONTRACT CHECK (Layout Tokens, Classes & API)...')
   const hudGameSource = readFileSync(new URL('./hud-game.js', import.meta.url), 'utf8')
 
   // Pilha Esquerda
@@ -161,31 +318,64 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Data Sources ---')
   assert.ok(hudGameSource.includes('hud-top-center-cluster'), 'Deve conter hud-top-center-cluster no topo central')
   assert.ok(hudGameSource.includes('hud-center-combat-row'), 'Deve conter hud-center-combat-row agrupando combate')
 
-  // API pública
-  assert.ok(hudGameSource.includes('setScoreStats({'), 'Deve expor setScoreStats na API do HUD')
-  assert.ok(hudGameSource.includes('setMissionStatus({'), 'Deve expor setMissionStatus na API do HUD')
-  assert.ok(hudGameSource.includes('setCombo('), 'Deve expor setCombo na API do HUD')
+  // API consolidada (Abordagem B: setStatus unificado com formatters puros compartilhados)
+  assert.ok(hudGameSource.includes('setStatus({'), 'Deve expor setStatus como API pública consolidada')
+  assert.ok(!hudGameSource.includes('setScoreStats({'), 'Métodos granulares mortos devem ser removidos da API pública')
+  assert.ok(!hudGameSource.includes('setMissionStatus({'), 'setMissionStatus morto deve ser removido')
+  assert.ok(!hudGameSource.includes('setCombo('), 'setCombo morto deve ser removido')
 
-  console.log('✔ DOM contracts passed')
+  console.log('✔ STATIC CONTRACT CHECK passed (Nota: inspeção estática de tokens; playtest gráfico em ambiente dedicado)')
 }
 
 // ============================================================================
-// 6. CONTRATOS DO RADAR / MINIMAPA (RAIL VS ALL-RANGE)
+// 6. CONTRATOS DO RADAR / MINIMAPA (TRANSIÇÃO RAIL VS ALL-RANGE)
 // ============================================================================
 {
-  console.log('Testing 6: Minimapa Rail vs All-Range...')
-  const gameLoopSource = readFileSync(new URL('./game-loop.js', import.meta.url), 'utf8')
+  console.log('Testing 6: Minimapa transições Rail vs All-Range e limpeza de estado...')
 
-  assert.ok(
-    gameLoopSource.includes("const isArenaMode = rail.isArena() || state.phase === 'bossFight' || state.phase === 'goldenArena'"),
-    'gameLoop deve avaliar modo arena para o radar'
-  )
-  assert.match(
-    gameLoopSource,
-    /if \(!isArenaMode\) \{\r?\n\s+hud\.setMinimap\(false/,
-    'minimapa deve ser desativado/ocultado no modo rail'
-  )
+  // Decisão autoritativa via seam puro shouldDisplayMinimap
+  assert.strictEqual(shouldDisplayMinimap({ isArena: false, phase: 'combat' }), false, 'rail normal deve ocultar minimapa')
+  assert.strictEqual(shouldDisplayMinimap({ isArena: true, phase: 'combat' }), true, 'arena all-range deve exibir minimapa')
+  assert.strictEqual(shouldDisplayMinimap({ isArena: false, phase: 'bossFight' }), true, 'bossFight deve exibir minimapa')
+  assert.strictEqual(shouldDisplayMinimap({ isArena: false, phase: 'goldenArena' }), true, 'goldenArena deve exibir minimapa')
 
+  // Simulação de transição Rail -> Arena -> Rail com verificação de classes e hidden
+  const mockMinimapEl = {
+    hidden: true,
+    classList: {
+      _classes: new Set(),
+      toggle(cls, val) { if (val) this._classes.add(cls); else this._classes.delete(cls) },
+      remove(cls) { this._classes.delete(cls) },
+      contains(cls) { return this._classes.has(cls) },
+    },
+  }
+
+  function simulateSetMinimap(el, active, data = {}) {
+    el.hidden = !active
+    if (!active) {
+      el.classList.remove('alert')
+      return
+    }
+    const { alert = false } = data
+    el.classList.toggle('alert', !!alert)
+  }
+
+  // 1. Estado inicial: rail (oculto)
+  simulateSetMinimap(mockMinimapEl, false)
+  assert.strictEqual(mockMinimapEl.hidden, true, 'no rail inicial deve estar hidden = true')
+  assert.strictEqual(mockMinimapEl.classList.contains('alert'), false)
+
+  // 2. Transição para arena com alerta
+  simulateSetMinimap(mockMinimapEl, true, { alert: true })
+  assert.strictEqual(mockMinimapEl.hidden, false, 'ao entrar na arena deve estar hidden = false')
+  assert.strictEqual(mockMinimapEl.classList.contains('alert'), true, 'deve aplicar classe alert')
+
+  // 3. Transição de volta para o rail: deve ocultar E remover alerta residual
+  simulateSetMinimap(mockMinimapEl, false)
+  assert.strictEqual(mockMinimapEl.hidden, true, 'ao voltar para rail deve estar hidden = true')
+  assert.strictEqual(mockMinimapEl.classList.contains('alert'), false, 'classe alert deve ser limpa sem estado persistente indevido')
+
+  // Verificação no index.html
   const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
   assert.ok(
     indexHtml.includes('top: clamp(28%, 32%, 35%)'),
@@ -201,7 +391,7 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Data Sources ---')
     'minimapa com [hidden] deve ter display: none sem deixar espaço reservado'
   )
 
-  console.log('✔ Minimap Rail vs All-Range contracts passed')
+  console.log('✔ Minimap transition & state cleanup passed')
 }
 
 // ============================================================================

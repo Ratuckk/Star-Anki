@@ -107,6 +107,22 @@ export function buildBonusQuestion(card, allCards) {
   return buildAlternatives(card, allCards)
 }
 
+export function updateCorrectStreak(session, outcomeType) {
+  if (outcomeType === 'correct') {
+    session.correctStreak = (session.correctStreak || 0) + 1
+  } else {
+    session.correctStreak = 0
+  }
+  return session.correctStreak
+}
+
+export function recordKills(session, count = 1) {
+  const n = Number(count)
+  if (!Number.isFinite(n) || n <= 0) return session.totalKills || 0
+  session.totalKills = (session.totalKills || 0) + Math.floor(n)
+  return session.totalKills
+}
+
 export function resolveAnswer(session, outcome) {
   const { type, timeBonus = 1.0, accuracyBonus = 1.0, card } = outcome
   let points = 0
@@ -115,12 +131,12 @@ export function resolveAnswer(session, outcome) {
     points = 100 * session.comboMultiplier * timeBonus * accuracyBonus
     // arredonda para 2 casas para evitar deriva de ponto flutuante nas somas sucessivas de 0.15
     session.comboMultiplier = Math.min(COMBO_CAP, Math.round((session.comboMultiplier + COMBO_STEP) * 100) / 100)
-    session.correctStreak = (session.correctStreak || 0) + 1
+    updateCorrectStreak(session, 'correct')
   } else {
     // >> AJUSTADO: erro/timeout não tira mais saúde do jogador — só quebra o combo e conta pra
     // estatística / sobe a dificuldade (main.js). A vida só é perdida por DANO DE INIMIGO. <<
     session.comboMultiplier = 1.0
-    session.correctStreak = 0
+    updateCorrectStreak(session, type || 'wrong')
 
     // QOL (Item 9 — Fast Active-Recall): se o jogador errou, reenfileira o card ~3 posições à frente
     // na fila da mesma sessão para reforço imediato do aprendizado (apenas se session.queue existir)

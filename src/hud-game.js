@@ -47,6 +47,22 @@ const WINGMAN_ABILITY_LEAVE_MS = 420
 // `playFocusCollapse` virou cancelável: se o modal fosse fechado durante os ~350ms da animação
 // de convergência (chefe morrendo no mesmo frame do trigger, debug forçando outcome), o
 // setTimeout do collapse reabria o modal sozinho depois do overlay já escondido.
+export function formatMissionTime(ms = 0) {
+  const totalSec = Math.max(0, Math.floor((ms || 0) / 1000))
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
+  const ss = String(totalSec % 60).padStart(2, '0')
+  return `${mm}:${ss}`
+}
+
+export function formatComboMultiplier(combo = 1) {
+  const c = Number(combo ?? 1)
+  return (c % 1 === 0) ? `x${c}.0` : `x${c.toFixed((c * 10) % 1 === 0 ? 1 : 2)}`
+}
+
+export function formatDifficultyLevel(level = 1) {
+  return String(Math.max(1, level | 0)).padStart(2, '0')
+}
+
 export function createGameHud() {
   injectHudExtraStyles()
 
@@ -1611,16 +1627,10 @@ export function createGameHud() {
       streakValEl.textContent = String(Math.max(0, streak | 0))
       killsValEl.textContent = String(Math.max(0, kills | 0))
 
-      const c = Number(combo ?? 1)
-      const comboFormatted = (c % 1 === 0) ? `x${c}.0` : `x${c.toFixed((c * 10) % 1 === 0 ? 1 : 2)}`
+      const comboFormatted = formatComboMultiplier(combo)
       comboValEl.textContent = comboFormatted
-
-      const totalSec = Math.max(0, Math.floor((missionTimeMs || 0) / 1000))
-      const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
-      const ss = String(totalSec % 60).padStart(2, '0')
-      missionTimeValEl.textContent = `${mm}:${ss}`
-
-      levelValEl.textContent = String(Math.max(1, difficultyLevel | 0)).padStart(2, '0')
+      missionTimeValEl.textContent = formatMissionTime(missionTimeMs)
+      levelValEl.textContent = formatDifficultyLevel(difficultyLevel)
 
       if (status) {
         status.textContent = `Pontos: ${roundedScore} · Combo ${comboFormatted} · Nível ${difficultyLevel}/9`
@@ -1642,27 +1652,6 @@ export function createGameHud() {
       }
       if (prevHealth != null && roundedHealth < prevHealth) flashVitalsHit()
       prevHealth = roundedHealth
-    },
-
-    setScoreStats({ score = 0, streak = 0, kills = 0 } = {}) {
-      const roundedScore = Math.max(0, Math.round(score || 0))
-      scoreValEl.textContent = roundedScore.toLocaleString('pt-BR')
-      streakValEl.textContent = String(Math.max(0, streak | 0))
-      killsValEl.textContent = String(Math.max(0, kills | 0))
-    },
-
-    setMissionStatus({ elapsedMs = 0, level = 1 } = {}) {
-      const totalSec = Math.max(0, Math.floor((elapsedMs || 0) / 1000))
-      const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
-      const ss = String(totalSec % 60).padStart(2, '0')
-      missionTimeValEl.textContent = `${mm}:${ss}`
-      levelValEl.textContent = String(Math.max(1, level | 0)).padStart(2, '0')
-    },
-
-    setCombo(combo = 1) {
-      const c = Number(combo ?? 1)
-      const comboFormatted = (c % 1 === 0) ? `x${c}.0` : `x${c.toFixed((c * 10) % 1 === 0 ? 1 : 2)}`
-      comboValEl.textContent = comboFormatted
     },
 
     setLives(lives, maxLives = lives) {
@@ -2352,7 +2341,10 @@ export function createGameHud() {
     // game-loop.js), então o marcador do jogador não precisa mais de rotação por JS.
     setMinimap(active, data) {
       minimap.hidden = !active
-      if (!active) return
+      if (!active) {
+        minimap.classList.remove('alert')
+        return
+      }
       const { blips = [], allies = [], alert = false } = data
       minimap.classList.toggle('alert', !!alert)
 

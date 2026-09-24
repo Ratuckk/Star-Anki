@@ -14,7 +14,7 @@ import {
   BOSS_EVERY_QUESTIONS, BOSS_NO_DECK_SCORE_INTERVAL,
   ARENA_MAX_SPAWN_DISTANCE, TRACK_MAX_SPAWN_DISTANCE,
 } from './main-constants.js'
-import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion } from './quiz.js'
+import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion, updateCorrectStreak, recordKills } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
 import { getDifficultyLevel } from './enemies/shared.js'
 
@@ -263,6 +263,7 @@ export function createBossFlow(deps) {
   function settleGoldenBonus(outcome) {
     hud.hideQuestionModal()
     const correct = outcome.type === 'correct'
+    updateCorrectStreak(session, outcome.type)
 
     recordResult(session.history, outcome.card.guid, correct)
     saveHistory(session.history)
@@ -284,10 +285,11 @@ export function createBossFlow(deps) {
   }
 
   function handleBossDefeated(hitWorldPos) {
+    if (state.phase === 'deathCutscene' && state.deathCutsceneKind === 'boss') return
     // Momento de impacto "Arcade Neon" (v0.73.0) — dispara IMEDIATAMENTE, antes da cutscene de
     // morte mais sedada abaixo (que já existia e continua intacta). Zera a cadeia de abates
     // junto, mesmo comportamento do protótipo de design aprovado pelo usuário.
-    session.totalKills = (session.totalKills || 0) + 1
+    recordKills(session, 1)
     hud.showBossKO?.(BOSS_DEFEAT_BONUS)
     state.killChainCount = 0
     state.killChainTimer = 0
@@ -320,7 +322,7 @@ export function createBossFlow(deps) {
 
   function handleGoldenDefeated(hitWorldPos) {
     if (state.phase === 'deathCutscene' && state.deathCutsceneKind === 'golden') return
-    session.totalKills = (session.totalKills || 0) + 1
+    recordKills(session, 1)
     combat.clearOtherEnemies()
     environment?.setFogProfile?.('goldenDeath')
     state.deathCutsceneKind = 'golden'
