@@ -8,13 +8,19 @@
 > - **PR #16 (Tank Natural Spawn):** Merge `327bf50b24a8c5c1a2d1e32dcec230e360e08bc5` (CI Run `35997550149` pass)
 > - **PR #17 (Lock-on / Miyu / Reticle / Arcade / Fog Polish):** Merge `bdd8a879651ff4da411ec38a4c99745d9a93683f` (CI Run `36001243157` pass)
 > - **PR #18 (HUD Double Stack Architecture):** Merge `7a6d10354486578bc1ba0d606b1d84a9410083af` (CI Run `36017039624` pass)
+> - **PR #19 (Hotfix Runtime ReferenceError THREE em setReticleCharge):** Merge `8b499bddbed11d00b70747ceef9ca621ed6f5414` (CI Run `36031499957` pass)
 > **Registro Cronológico Pós-v0.99.35:** [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md)
 > **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
-> **Pendências Abertas:** Homologação visual em tela/monitor do HUD Double Stack (1280x720, 1366x768, 1920x1080), Fog volumétrico, retícula progressiva e markers/screen-space da Miyu.
+> **Pendências Abertas:** Fog volumétrico, retícula progressiva e markers/screen-space da Miyu (HUD Double Stack homologado graficamente via CDP em 1280x720, 1366x768, 1920x1080 e 1280x800).
 
 ---
 
 ## 1. IMPLEMENTADO RECENTEMENTE
+- **Hotfix Bloqueador de Runtime — ReferenceError THREE em setReticleCharge (PR #19):**
+  - Substituição da chamada `THREE.MathUtils.clamp` por clamp JS puro `Math.max(0, Math.min(1, Number(chargeFrac) || 0))` em `src/hud-game.js`.
+  - Eliminação definitiva da exceção fatal no loop principal a cada frame em ambiente de navegador real.
+  - Testes de regressão adicionados e homologação gráfica em navegador real com 0 erros/exceções.
+
 - **HUD Double Stack Architecture & Authoritative Seams (PR #18):**
   - **Pilha Esquerda (Score + Métricas + Combo):**
     - Score autoritativo em tipografia pesada (`session.score`).

@@ -105,7 +105,26 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
   2. *Ticks de Mission Time:* Mantidos estáticos/decorativos sem countdown regressivo ou alertas críticos fictícios.
   3. *Linha Central de Combate:* Swirl e Kill Chain reunidos logo abaixo dos wingmen para estabilidade de layout.
 * **Pendência Declarada:**
-  - `TESTADO AUTOMATICAMENTE: SIM | VALIDADO VISUALMENTE: NÃO` (inspeção estática de tokens e AST aprovada; validação visual humana recomendada nas resoluções 1280×720, 1366×768 e 1920×1080).
+  - `TESTADO AUTOMATICAMENTE: SIM | VALIDADO VISUALMENTE: SIM` (inspeção estática e validação gráfica via CDP em Edge real executadas em 1280×720, 1366×768, 1920×1080 e 1280×800).
+
+---
+
+### 2.5 PR #19 — Hotfix Bloqueador: ReferenceError THREE em setReticleCharge
+* **Estado:** `MERGED EM MAIN`
+* **Data do Merge:** 2026-09-24
+* **Branch Original:** `fix/hud-reference-error-three`
+* **Merge Commit:** `8b499bddbed11d00b70747ceef9ca621ed6f5414`
+* **PR:** [PR #19](https://github.com/Ratuckk/Star-Anki/pull/19)
+* **CI Run (PR):** `36026650851` (pass em 13s)
+* **CI Run (main pós-merge):** `36031499957` (pass em 22s)
+* **Problema Resolvido:**
+  - `game-loop.js` invoca `hud.setReticleCharge(0, ...)` no loop principal a cada frame.
+  - Em `src/hud-game.js`, `setReticleCharge()` utilizava `THREE.MathUtils.clamp(...)`, porém `THREE` não estava importado no módulo (já que a camada de HUD é desacoplada do Three.js).
+  - Isso gerava `ReferenceError: THREE is not defined` no primeiro frame da partida em navegadores reais, quebrando a renderização contínua.
+* **Correção:**
+  - Substituição da dependência Three.js por clamp JavaScript puro: `const frac = Math.max(0, Math.min(1, Number(chargeFrac) || 0))`.
+  - Adição de testes de regressão em `src/hud-double-stack.test.mjs` e `src/lockon-miyu-reticle-fog.test.mjs` garantindo ausência de chamadas a `THREE` nos módulos de HUD e validação do clamp nativo.
+  - Validação completa em navegador real (Edge headless CDP) com zero exceções e zero erros de console durante gameplay ativo em resoluções 1280×720, 1366×768, 1920×1080 e 1280×800.
 
 ---
 
