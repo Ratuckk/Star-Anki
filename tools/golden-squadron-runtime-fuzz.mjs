@@ -40,6 +40,7 @@ import {
   SQUADRON_ORDER,
 } from '../src/enemies/golden-squadron.js'
 import { aiValidator } from '../src/ai-validator.js'
+import assert from 'node:assert/strict'
 
 function createPrng(seed = 1337) {
   let s = seed >>> 0
@@ -62,7 +63,8 @@ const allOrdersWitnessedGlobal = new Set()
 const scenarioReports = []
 let globalFailures = 0
 
-function runScenario({ level, seed, frames }) {
+function runScenario({ level, seed, frames, recordToGlobal = true }) {
+  aiValidator.reset()
   const rng = createPrng(seed)
   const scene = new THREE.Scene()
   let nextEntityId = 1
@@ -128,7 +130,9 @@ function runScenario({ level, seed, frames }) {
 
   function recordFailure(msg, ctxObj = {}) {
     failures++
-    globalFailures++
+    if (recordToGlobal) {
+      globalFailures++
+    }
     console.error(`  [FALHA Nível ${level}] ${msg}`, ctxObj)
   }
 
@@ -212,7 +216,9 @@ function runScenario({ level, seed, frames }) {
     const currentOrder = squadron.getCurrentOrder()
     if (currentOrder !== SQUADRON_ORDER.NONE) {
       ordersWitnessed.add(currentOrder)
-      allOrdersWitnessedGlobal.add(currentOrder)
+      if (recordToGlobal) {
+        allOrdersWitnessedGlobal.add(currentOrder)
+      }
     }
 
     // Verificação de unicidade de slots e finitude de coordenadas
@@ -295,7 +301,7 @@ function runScenario({ level, seed, frames }) {
     }
   }
 
-  // Integra expectativas do aiValidator
+  // Integra expectativas do aiValidator deste cenário e reseta imediatamente
   const valReport = aiValidator.buildReport()
   expectationsEvaluated += valReport.total_expectativas_avaliadas
   if (valReport.expectativas_falhas.length > 0) {
@@ -303,6 +309,7 @@ function runScenario({ level, seed, frames }) {
       recordFailure(`aiValidator: ${failItem.description}`, failItem.context)
     }
   }
+  aiValidator.reset()
 
   goldenSys.dispose()
 
@@ -329,7 +336,9 @@ function runScenario({ level, seed, frames }) {
     failures,
   }
 
-  scenarioReports.push(report)
+  if (recordToGlobal) {
+    scenarioReports.push(report)
+  }
   return report
 }
 
@@ -345,6 +354,35 @@ console.log(`  > Concluído: ${rep5.expectations} expectativas, ${rep5.failures}
 console.log('\n--- Executando Cenário 3: Dificuldade 9 (Cap 6, Ofensivo 3, Reposição 8s) ---')
 const rep9 = runScenario({ level: 9, seed: BASE_SEED + 2, frames: FRAMES_PER_SCENARIO })
 console.log(`  > Concluído: ${rep9.expectations} expectativas, ${rep9.failures} falhas, ordens: [${rep9.ordersWitnessed.join(', ')}]`)
+
+// Verificação de determinismo estrito: re-executa Cenário 2 com seed idêntica e compara
+console.log('\n--- Verificando Determinismo Estrito (Re-execução do Cenário 2 com Seed Idêntica) ---')
+const rerunRep5 = runScenario({ level: 5, seed: BASE_SEED + 1, frames: FRAMES_PER_SCENARIO, recordToGlobal: false })
+
+function extractCanonicalDigest(r) {
+  return {
+    level: r.level,
+    seed: r.seed,
+    frames: r.frames,
+    expectations: r.expectations,
+    ordersWitnessed: r.ordersWitnessed.slice().sort(),
+    maxSquadObserved: r.maxSquadObserved,
+    maxOffensiveObserved: r.maxOffensiveObserved,
+    kills: r.kills,
+    replenishments: r.replenishments,
+    capViolations: r.capViolations,
+    offensiveViolations: r.offensiveViolations,
+    deadReferenceViolations: r.deadReferenceViolations,
+    clumpViolations: r.clumpViolations,
+    naNs: r.naNs,
+    failures: r.failures,
+  }
+}
+
+const digestOriginal = extractCanonicalDigest(rep5)
+const digestRerun = extractCanonicalDigest(rerunRep5)
+assert.deepStrictEqual(digestOriginal, digestRerun)
+console.log('  > [DETERMINISMO COMPROVADO] Ambas as execuções produziram exatamente o mesmo resumo estruturado!')
 
 // Validação das 4 ordens obrigatórias
 const requiredOrders = [

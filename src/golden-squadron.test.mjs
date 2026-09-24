@@ -330,7 +330,7 @@ test('35.7 Ordem 1 — Strafing Run: Ciclo completo e transições válidas', ()
 })
 
 // ============ 35.8 PINÇA (PINCER) NÃO-VÁCUO ============
-test('35.8 Ordem 2 — Pinça: Prova explícita de que ambos caças atacam com separação espacial', () => {
+test('35.8 Ordem 2 — Pinça: Prova explícita de que ambos caças atacam com separação espacial via FSM real', () => {
   const scene = new THREE.Scene()
   let id = 1
   const squadron = createGoldenSquadron(scene, null, () => id++, 5) // nível 5 -> cap 4, ofensivo 2
@@ -345,46 +345,48 @@ test('35.8 Ordem 2 — Pinça: Prova explícita de que ambos caças atacam com s
   const ctx = makeMockCtx()
   const playerPos = new THREE.Vector3(0, 0, 0)
 
-  let witnessedPincer = false
+  // Inicia diretamente a ordem de Pinça via API exposta sem fallback artificial
+  const started = squadron.startOrder(SQUADRON_ORDER.PINCER, commander, playerPos)
+  assert.equal(started, true, 'startOrder(PINCER) deve iniciar com sucesso')
+  assert.equal(squadron.getCurrentOrder(), SQUADRON_ORDER.PINCER)
+
+  const orderState = squadron.getOrderState()
+  assert.ok(orderState, 'orderState deve existir')
+  assert.equal(orderState.participants.length, 2, 'Pinça no nível 5 deve ter exatamente 2 participantes')
+
+  const [p0, p1] = orderState.participants
+
+  let p0PassedPreparing = false
+  let p1PassedPreparing = false
+  let p0ReachedAttacking = false
+  let p1ReachedAttacking = false
   let separationVerified = false
+  let p0PassedPassing = false
+  let p1PassedPassing = false
 
-  // Força ordem de pinça
-  const active = squadron.getAlive()
-  active[0].state = FIGHTER_STATE.FORMATION
-  active[1].state = FIGHTER_STATE.FORMATION
-
+  // Roda a FSM real ao longo dos frames
   for (let frame = 0; frame < 300; frame++) {
-    if (squadron.getCurrentOrder() === SQUADRON_ORDER.NONE && frame < 30) {
-      // Inicia pinça
-      const aliveFormation = squadron.getAlive().filter((f) => f.state === FIGHTER_STATE.FORMATION)
-      if (aliveFormation.length >= 2) {
-        // Mock startOrder via composer update
-      }
-    }
-    squadron.update(1 / 60, commander, playerPos, ctx)
+    if (p0.state === FIGHTER_STATE.PREPARING) p0PassedPreparing = true
+    if (p1.state === FIGHTER_STATE.PREPARING) p1PassedPreparing = true
+    if (p0.state === FIGHTER_STATE.ATTACKING) p0ReachedAttacking = true
+    if (p1.state === FIGHTER_STATE.ATTACKING) p1ReachedAttacking = true
+    if (p0.state === FIGHTER_STATE.PASSING || p0.state === FIGHTER_STATE.RETURNING) p0PassedPassing = true
+    if (p1.state === FIGHTER_STATE.PASSING || p1.state === FIGHTER_STATE.RETURNING) p1PassedPassing = true
 
-    const attackers = squadron.getAlive().filter((f) => f.state === FIGHTER_STATE.ATTACKING)
-    if (attackers.length >= 2) {
-      witnessedPincer = true
-      const dist = attackers[0].mesh.position.distanceTo(attackers[1].mesh.position)
+    if (p0.state === FIGHTER_STATE.ATTACKING && p1.state === FIGHTER_STATE.ATTACKING) {
+      const dist = p0.mesh.position.distanceTo(p1.mesh.position)
       if (dist > 6.0) separationVerified = true
     }
+
+    squadron.update(1 / 60, commander, playerPos, ctx)
   }
 
-  // Se o compositor não engilhou pinça naturalmente, invoca diretamente para validar contrato
-  if (!witnessedPincer) {
-    const f0 = squadron.getAlive()[0]
-    const f1 = squadron.getAlive()[1]
-    f0.state = FIGHTER_STATE.ATTACKING
-    f1.state = FIGHTER_STATE.ATTACKING
-    f0.mesh.position.set(-15, 0, -20)
-    f1.mesh.position.set(15, 0, -20)
-    witnessedPincer = true
-    separationVerified = f0.mesh.position.distanceTo(f1.mesh.position) > 6.0
-  }
-
-  assert.ok(witnessedPincer, 'Pinça deve obrigatoriamente colocar ambos os caças em ATTACKING')
-  assert.ok(separationVerified, 'Caças em pinça devem ter separação espacial > 6.0u')
+  assert.ok(p0PassedPreparing && p1PassedPreparing, 'Ambos os participantes devem passar por PREPARING')
+  assert.ok(p0ReachedAttacking && p1ReachedAttacking, 'Ambos os participantes devem atingir ATTACKING')
+  assert.ok(separationVerified, 'Caças em pinça devem ter separação espacial real > 6.0u')
+  assert.ok(p0PassedPassing && p1PassedPassing, 'Ambos devem concluir passagem/retorno')
+  assert.equal(squadron.getCurrentOrder(), SQUADRON_ORDER.NONE, 'Ordem PINCER deve encerrar autoritativamente em NONE')
+  assert.equal(squadron.getOrderState(), null, 'orderState deve ser null após encerramento')
 })
 
 // ============ 35.9 CERCO DO LASER: CICLO COMPLETO ============
@@ -429,12 +431,21 @@ test('35.9 Ordem 3 — Cerco do Laser: Ciclo completo conclui autoritativamente 
     assert.ok(p.state === FIGHTER_STATE.REGROUPING || p.state === FIGHTER_STATE.FORMATION, 'Participantes devem voltar para REGROUPING/FORMATION')
   }
 
-  // Avança cooldown e comprova que outra ordem pode iniciar
-  for (let i = 0; i < 70; i++) {
+  // Avança cooldown e comprova que uma nova ordem real inicia
+  let witnessedPostLaserOrder = false
+  for (let i = 0; i < 120; i++) {
     squadron.update(0.1, commander, playerPos, ctx)
+    const current = squadron.getCurrentOrder()
+    if (
+      current === SQUADRON_ORDER.STRAFING_RUN ||
+      current === SQUADRON_ORDER.PINCER ||
+      current === SQUADRON_ORDER.COORDINATED_FIRE
+    ) {
+      witnessedPostLaserOrder = true
+      break
+    }
   }
-  // Após o cooldown, nova ordem foi orquestrada com sucesso (provando que saiu do Laser Flank)
-  assert.ok(squadron.getCurrentOrder() !== SQUADRON_ORDER.LASER_FLANK, 'Esquadrão não fica preso em LASER_FLANK e nova ordem pôde iniciar')
+  assert.equal(witnessedPostLaserOrder, true, 'Após o Laser Flank, uma nova ordem tática real (Strafing, Pincer ou Coordinated Fire) deve iniciar')
 })
 
 // ============ 35.10 FOGO COORDENADO NÃO-VÁCUO ============
@@ -450,44 +461,68 @@ test('35.10 Ordem 4 — Fogo Coordenado: Participantes <= cap, Comandante dispar
   commander.mesh.position.set(0, 0, -45)
   squadron.initSquadron(commander.mesh.position, new THREE.Vector3(0, 0, 1))
 
-  const ctx = makeMockCtx()
   const playerPos = new THREE.Vector3(0, 0, 0)
   const maxOffensive = getOffensiveCapForLevel(5) // 2
 
-  // Força início de Coordinated Fire
-  const activeFighters = squadron.getAlive()
-  for (const f of activeFighters) f.state = FIGHTER_STATE.FORMATION
+  // Inicia diretamente Coordinated Fire sem fallback artificial
+  const started = squadron.startOrder(SQUADRON_ORDER.COORDINATED_FIRE, commander, playerPos)
+  assert.equal(started, true, 'startOrder(COORDINATED_FIRE) deve iniciar com sucesso')
+  assert.equal(squadron.getCurrentOrder(), SQUADRON_ORDER.COORDINATED_FIRE)
 
-  // Simula até que Coordinated Fire aconteça
-  let witnessedCoordinatedFire = false
-  let commanderFiredWitnessed = false
-  let fighterFiredWitnessed = false
+  const state = squadron.getOrderState()
+  assert.ok(state, 'orderState deve existir')
+  assert.ok(state.participants.length <= maxOffensive, `Participantes (${state.participants.length}) não podem exceder maxOffensive (${maxOffensive})`)
 
-  for (let frame = 0; frame < 200; frame++) {
-    const orderBefore = squadron.getCurrentOrder()
-    squadron.update(0.05, commander, playerPos, ctx)
-    const orderNow = squadron.getCurrentOrder()
+  // Instrumenta ctx.fireEnemyProjectile com registro de frame e origem do mesh
+  const shotEvents = []
+  let shotsThisFrame = 0
+  const dt = 0.02
+  let frameCount = 0
 
-    if (orderNow === SQUADRON_ORDER.COORDINATED_FIRE) {
-      witnessedCoordinatedFire = true
-      const state = squadron.getOrderState()
-      assert.ok(state.participants.length <= maxOffensive, `Participantes (${state.participants.length}) não podem exceder maxOffensive (${maxOffensive})`)
-      if (state.commanderFired) commanderFiredWitnessed = true
+  const ctx = {
+    fireEnemyProjectile: (opts, targetPos) => {
+      shotsThisFrame++
+      shotEvents.push({
+        mesh: opts.mesh,
+        time: frameCount * dt,
+        isCommander: opts.mesh === commander.mesh,
+        isFighter: state.participants.some((p) => p.mesh === opts.mesh),
+      })
+    },
+    pushProjectile: () => {},
+    pushLaser: () => {},
+  }
+
+  for (let frame = 0; frame < 150; frame++) {
+    frameCount = frame
+    shotsThisFrame = 0
+    squadron.update(dt, commander, playerPos, ctx)
+    assert.ok(shotsThisFrame <= 1, `Nenhum frame pode ter mais de 1 disparo coordenado (houve ${shotsThisFrame})`)
+
+    if (squadron.getCurrentOrder() === SQUADRON_ORDER.NONE && shotEvents.length >= 3) {
+      break
     }
   }
 
-  if (!witnessedCoordinatedFire) {
-    // Força disparar para provar o lifecycle estrito
-    const f1 = activeFighters[0]
-    const f2 = activeFighters[1]
-    f1.hasFiredInAttack = true
-    f2.hasFiredInAttack = true
-    witnessedCoordinatedFire = true
-    commanderFiredWitnessed = true
-    fighterFiredWitnessed = true
+  const commanderFiredWitnessed = shotEvents.some((s) => s.isCommander)
+  const fighterFiredWitnessed = shotEvents.some((s) => s.isFighter)
+
+  assert.ok(commanderFiredWitnessed, 'Comandante deve ter disparado comprovadamente durante a sequência')
+  assert.ok(fighterFiredWitnessed, 'Pelo menos um caça deve ter disparado comprovadamente durante a sequência')
+  assert.equal(shotEvents.length, 3, 'Devem ocorrer exatamente 3 disparos (Caça 0 -> Comandante -> Caça 1)')
+
+  // Valida espaçamento temporal coerente com 280ms (com tolerância de 1.5 dt)
+  for (let i = 1; i < shotEvents.length; i++) {
+    const diff = shotEvents[i].time - shotEvents[i - 1].time
+    assert.ok(diff >= 0.28 - dt * 1.5 && diff <= 0.28 + dt * 1.5, `Espaçamento entre disparos deve ser ~280ms (foi ${(diff * 1000).toFixed(0)}ms)`)
   }
 
-  assert.ok(witnessedCoordinatedFire, 'Coordinated Fire deve ter ocorrido')
+  // Ao final: ordem encerrada autoritativamente
+  assert.equal(squadron.getCurrentOrder(), SQUADRON_ORDER.NONE, 'Ordem deve concluir em NONE')
+  assert.equal(squadron.getOrderState(), null, 'orderState deve ser limpo')
+  for (const p of squadron.getAlive()) {
+    assert.ok(p.state === FIGHTER_STATE.REGROUPING || p.state === FIGHTER_STATE.FORMATION, 'Participantes devem retornar a REGROUPING ou FORMATION')
+  }
 })
 
 // ============ 35.11 TELEPORTE E DESORGANIZAÇÃO ============
@@ -516,10 +551,23 @@ test('35.11 Teleporte do Comandante: Caças NÃO teleportam, entram em DISORGANI
     assert.equal(f.state, FIGHTER_STATE.DISORGANIZED, 'Caças devem entrar em estado DISORGANIZED')
   }
 
-  // Com o tempo, caças viajam fisicamente até o novo comandante
+  // Com o tempo, caças viajam fisicamente até o novo comandante e retornam comprovadamente à FORMATION
   const ctx = makeMockCtx()
-  for (let frame = 0; frame < 200; frame++) {
-    squadron.update(0.05, commander, new THREE.Vector3(0, 0, 0), ctx)
+  const reachedFormation = new Map()
+  for (const f of fightersAfter) reachedFormation.set(f.id, false)
+
+  for (let frame = 0; frame < 300; frame++) {
+    // playerPosition = null para não engatilhar ordens ofensivas antes do reagrupamento
+    squadron.update(0.05, commander, null, ctx)
+    for (const f of squadron.getAlive()) {
+      if (f.state === FIGHTER_STATE.FORMATION) {
+        reachedFormation.set(f.id, true)
+      }
+    }
+  }
+
+  for (const [fId, ok] of reachedFormation.entries()) {
+    assert.ok(ok, `Caça #${fId} deve ter retornado comprovadamente a FORMATION após o teleporte`)
   }
 
   for (const f of squadron.getAlive()) {
@@ -674,4 +722,52 @@ test('35.15 Ram Kill: Matar caça subordinado por ram gera +1 kill, +30 pontos e
   assert.equal(res2.ramKillPoints, 0, 'Frame seguinte não deve duplicar ramKillPoints')
 
   enemiesSys.dispose()
+})
+
+// ============ 35.16 DETERMINISMO REPRODUTÍVEL POR SEED ============
+test('35.16 Determinismo: Execuções com a mesma seed produzem trajetórias e estados idênticos', () => {
+  function createPrng(seed = 1337) {
+    let s = seed >>> 0
+    return function () {
+      s = (s + 0x6D2B79F5) | 0
+      let t = Math.imul(s ^ (s >>> 15), 1 | s)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  function simulateRun(seed) {
+    const scene = new THREE.Scene()
+    const rail = makeMockRail()
+    const sys = createGoldenSystem(scene, rail, null, () => 1, { rng: createPrng(seed) })
+    sys.spawn({ distanceMin: 35, distanceMax: 50, level: 5 })
+
+    const ctx = makeMockCtx()
+    const playerPos = new THREE.Vector3(0, 0, 0)
+    const snapshots = []
+
+    for (let frame = 0; frame < 200; frame++) {
+      playerPos.x = Math.sin(frame * 0.05) * 10
+      playerPos.y = Math.cos(frame * 0.03) * 6
+      sys.update(0.016, playerPos, ctx)
+
+      if (frame % 20 === 0) {
+        const cmd = sys.getAlive()[0]
+        const fighters = sys.getSquadron().getAlive()
+        snapshots.push({
+          cmdPos: [cmd.mesh.position.x, cmd.mesh.position.y, cmd.mesh.position.z],
+          order: sys.getSquadron().getCurrentOrder(),
+          fighterCount: fighters.length,
+          fighterPositions: fighters.map((f) => [f.mesh.position.x, f.mesh.position.y, f.mesh.position.z]),
+        })
+      }
+    }
+    sys.dispose()
+    return snapshots
+  }
+
+  const run1 = simulateRun(1337)
+  const run2 = simulateRun(1337)
+
+  assert.deepStrictEqual(run1, run2, 'Duas simulações com a mesma seed devem gerar snapshots exatamente idênticos')
 })

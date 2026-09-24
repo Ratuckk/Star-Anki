@@ -397,7 +397,7 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
         // Teleporte reativo: desorganiza o esquadrão sem teleportar as mini-naves
         if (goldenHit.teleportCooldownTimer <= 0) {
           const oldPos = goldenHit.mesh.position.clone()
-          const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax)
+          const newPos = randomSpawnAroundArena(rail, goldenHit.distanceMin, goldenHit.distanceMax, rng)
           goldenHit.mesh.position.copy(newPos)
           goldenHit.teleportCooldownTimer = goldenHit.teleportCooldownS
 
