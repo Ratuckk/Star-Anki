@@ -1223,6 +1223,7 @@ export function createGameHud() {
   // ---- Leitura de estado ao vivo ----
   const DEBUG_STAT_ROWS = [
     ['fps', 'FPS'], ['phase', 'Fase'], ['sector', 'Setor'],
+    ['difficulty', 'Nível'],
     ['health', 'Vida'], ['shield', 'Escudo'], ['lives', 'Vidas'],
     ['score', 'Pontos'], ['combo', 'Combo'], ['enemies', 'Inimigos'],
     ['wingmen', 'Ala'], ['position', 'Posição'], ['flags', 'Flags'],
@@ -1263,6 +1264,7 @@ export function createGameHud() {
     debugStatEls.fps.textContent = String(debugStatsLastFps)
     debugStatEls.phase.textContent = s.phase ?? '—'
     debugStatEls.sector.textContent = s.sector ?? '—'
+    debugStatEls.difficulty.textContent = s.difficultyLevel != null ? `${s.difficultyLevel}${s.isDifficultyOverridden ? ' [DBG]' : ''}` : '—'
     debugStatEls.health.textContent = `${s.health ?? 0}/${s.maxHealth ?? 0}`
     debugStatEls.shield.textContent = `${Math.round(s.shield ?? 0)}/${Math.round(s.maxShield ?? 0)}`
     debugStatEls.lives.textContent = `${s.lives ?? 0}/${s.maxLives ?? 0}`
@@ -1621,7 +1623,7 @@ export function createGameHud() {
   return {
     sceneRoot,
 
-    setStatus({ health, maxHealth = health, score = 0, combo = 1, streak = 0, kills = 0, missionTimeMs = 0, difficultyLevel = 1 } = {}) {
+    setStatus({ health, maxHealth = health, score = 0, combo = 1, streak = 0, kills = 0, missionTimeMs = 0, difficultyLevel = 1, isDifficultyOverridden = false } = {}) {
       const roundedScore = Math.max(0, Math.round(score || 0))
       scoreValEl.textContent = roundedScore.toLocaleString('pt-BR')
       streakValEl.textContent = String(Math.max(0, streak | 0))
@@ -1631,6 +1633,15 @@ export function createGameHud() {
       comboValEl.textContent = comboFormatted
       missionTimeValEl.textContent = formatMissionTime(missionTimeMs)
       levelValEl.textContent = formatDifficultyLevel(difficultyLevel)
+
+      const levelBlock = levelValEl.closest('.hud-level-block')
+      if (levelBlock) {
+        levelBlock.classList.toggle('debug-override', !!isDifficultyOverridden)
+        const labelEl = levelBlock.querySelector('.hud-stack-label')
+        if (labelEl) {
+          labelEl.textContent = isDifficultyOverridden ? 'NÍVEL [DBG]' : 'NÍVEL'
+        }
+      }
 
       if (status) {
         status.textContent = `Pontos: ${roundedScore} · Combo ${comboFormatted} · Nível ${difficultyLevel}/9`

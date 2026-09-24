@@ -1,3 +1,5 @@
+import { effectiveDifficultyLevel } from './enemies/shared.js'
+
 // Extraído de main.js (refatoração de organização, zero mudança de comportamento): monta o
 // objeto de bindings do painel de debug (hud.debug.bind). Depende de quase todos os sistemas
 // do jogo de propósito — é o painel de debug, "alcançar tudo" é esperado aqui — mas isolar isso
@@ -5,6 +7,7 @@
 export function createDebugActions(deps) {
   const {
     state,
+    deck,
     gameLoop,
     combat, session, player, rail, effects, hud, enemies,
     environment,
@@ -93,6 +96,42 @@ export function createDebugActions(deps) {
         session.pointer = (session.pointer - 1 + session.queue.length) % session.queue.length
         enterCombat()
       }
+    },
+    decreaseDifficultyLevel: () => {
+      const current = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
+      const next = Math.max(1, Math.min(9, current - 1))
+      state.debugDifficultyLevelOverride = next
+      state.lastDifficultyLevel = next
+      hud.debug?.refreshStats?.()
+      hud.setStatus({
+        health: session?.health,
+        maxHealth: player?.getMaxHealth?.() ?? session?.health,
+        score: session?.score ?? 0,
+        combo: session?.comboMultiplier ?? 1,
+        streak: session?.correctStreak || 0,
+        kills: session?.totalKills || 0,
+        missionTimeMs: session?.missionTimeMs || 0,
+        difficultyLevel: next,
+        isDifficultyOverridden: true,
+      })
+    },
+    increaseDifficultyLevel: () => {
+      const current = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
+      const next = Math.max(1, Math.min(9, current + 1))
+      state.debugDifficultyLevelOverride = next
+      state.lastDifficultyLevel = next
+      hud.debug?.refreshStats?.()
+      hud.setStatus({
+        health: session?.health,
+        maxHealth: player?.getMaxHealth?.() ?? session?.health,
+        score: session?.score ?? 0,
+        combo: session?.comboMultiplier ?? 1,
+        streak: session?.correctStreak || 0,
+        kills: session?.totalKills || 0,
+        missionTimeMs: session?.missionTimeMs || 0,
+        difficultyLevel: next,
+        isDifficultyOverridden: true,
+      })
     },
     exitArenaNow: () => {
       resetEverythingForDebugEvent()

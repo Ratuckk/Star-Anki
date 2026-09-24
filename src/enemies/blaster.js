@@ -430,6 +430,7 @@ export function spawnBlaster(scene, rail, id, opts = {}) {
     tumbleRollSpeed: 0,
     isLeader: !!opts.isLeader,
     squadronId: opts.squadronId ?? null,
+    level: opts.level ?? 1,
   }
   enemy.fsm = createStateMachine(enemy, BLASTER_STATES, ENEMY_STATES.SPAWNING)
 

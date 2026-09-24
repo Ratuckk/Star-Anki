@@ -3,7 +3,7 @@
 // modal de pergunta do chefe. Extraído de hud.js na refatoração que separa cada tela em seu
 // próprio arquivo. Só createGameHud (hud-game.js) chama isso. Zero mudança de comportamento.
 export function injectHudExtraStyles() {
-  if (document.getElementById('star-anki-hud-extra-styles')) return
+  if (typeof document === 'undefined' || document.getElementById('star-anki-hud-extra-styles')) return
   const style = document.createElement('style')
   style.id = 'star-anki-hud-extra-styles'
   style.textContent = `
@@ -2575,6 +2575,20 @@ export function injectHudExtraStyles() {
   background: #ffffff;
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
   border-radius: 2px;
+}
+
+.hud-level-block.debug-override .hud-stack-label {
+  color: #f59e0b;
+}
+
+.hud-level-block.debug-override .hud-level-value {
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.6), 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.hud-level-block.debug-override .hud-level-bar {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
 }
 
 /* Cluster Superior Central (Wingmen + Swirl + Cadeia) */

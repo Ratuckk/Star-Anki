@@ -19,6 +19,7 @@ import './arcade-draft-bullet-time.test.mjs'
 import './golden-squadron.test.mjs'
 import './lockon-miyu-reticle-fog.test.mjs'
 import './hud-double-stack.test.mjs'
+import './debug-difficulty-override.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'

@@ -42,7 +42,7 @@ import {
   ARCADE_CARD_CHOICE_TIME_SCALE,
 } from './main-constants.js'
 import { TANK_POPULATION_WEIGHT } from './enemies/tank.js'
-import { getDifficultyLevel } from './enemies/shared.js'
+import { getDifficultyLevel, effectiveDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
@@ -1025,7 +1025,7 @@ export function createGameLoop(deps) {
               // +2 por piloto recrutado, lido na hora do spawn (sempre em dia, sem precisar
               // recalcular quando alguém entra/sai da formação no meio da run)
               const wingmanSpawnBonus = (combat.getWingmanCount ? combat.getWingmanCount() : 0) * 2
-              const difficultySpawnBonus = Math.max(0, getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck }) - 1) * NORMAL_SPAWN_PER_DIFFICULTY_LEVEL
+              const difficultySpawnBonus = Math.max(0, effectiveDifficultyLevel({ state, session, isNoDeck }) - 1) * NORMAL_SPAWN_PER_DIFFICULTY_LEVEL
               const count = Math.min(room, roll + state.extraSpawnPerBatch + wingmanSpawnBonus + difficultySpawnBonus)
               for (let i = 0; i < count; i += 1) combat.spawnEnemy()
             }
@@ -1133,7 +1133,7 @@ export function createGameLoop(deps) {
     // nível 1-9 (eixo por-inimigo, distinto do wrongAnswerCount contínuo que applyDifficulty já
     // usa) — recalculado todo frame (não só em resposta errada) pra também refletir a escalada
     // por PONTUAÇÃO do modo sem baralho. Flash de subida dispara aqui (retrocesso é silencioso).
-    const difficultyLevel = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck })
+    const difficultyLevel = effectiveDifficultyLevel({ state, session, isNoDeck })
     if (difficultyLevel > state.lastDifficultyLevel) hud.showTierIncrease(difficultyLevel)
     state.lastDifficultyLevel = difficultyLevel
 
@@ -1146,6 +1146,7 @@ export function createGameLoop(deps) {
       kills: session.totalKills || 0,
       missionTimeMs: session.missionTimeMs || 0,
       difficultyLevel,
+      isDifficultyOverridden: state.debugDifficultyLevelOverride != null,
     })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax(), player.getTemporaryShieldValue?.() || 0)

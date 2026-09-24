@@ -1139,7 +1139,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     spawnEnemy() {
       const enemy = spawnBlaster(scene, rail, nextEnemyId++, { level: currentDifficultyLevel() })
       enemy.fireTimer = randomEnemyFireInterval()
-      registerSpawn(enemy)
+      return registerSpawn(enemy)
     },
 
     spawnSquadron(formationType = null) {
@@ -1242,8 +1242,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnTankEnemy(hp = null) {
-      const resolvedHp = hp ?? tankStatsForLevel(currentDifficultyLevel()).hp
+      const level = currentDifficultyLevel()
+      const resolvedHp = hp ?? tankStatsForLevel(level).hp
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
+      enemy.level = level
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
       return enemy
@@ -1282,33 +1284,51 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnSentinela() {
-      const enemy = spawnSentinela(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnSentinela(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnReplica() {
-      const enemy = spawnReplica(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnReplica(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnFragata() {
-      const enemy = spawnFragata(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnFragata(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnVerme() {
-      const segments = spawnVerme(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const segments = spawnVerme(scene, rail, () => nextEnemyId++, level)
+      for (const seg of segments) seg.level = level
       registerSpawnGroup(segments)
+      return segments
     },
 
     spawnImaSwarm() {
-      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++, level)
+      for (const m of group) m.level = level
       registerSpawnGroup(group)
+      return group
     },
 
     spawnSussurro() {
-      const enemy = spawnSussurro(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnSussurro(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     setDifficultyLevelProvider(fn) {
@@ -1348,7 +1368,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnGoldenSpecial(opts = {}) {
-      golden.spawn(opts)
+      const level = opts.level ?? currentDifficultyLevel()
+      golden.spawn({ ...opts, level })
     },
 
     showArenaPreview,
