@@ -680,13 +680,14 @@ export function getWingmanRadioValidationSnapshot(pilotId) {
 
 export function createWingmanRadio({
   random = Math.random,
-  enforceSquadSilence = false,
+  enforceSquadSilence = true,
   squadSilenceGapMs = SQUAD_TRIVIAL_GAP_MS,
   categoryDedupWindowMs = EVENT_CATEGORY_DEDUP_WINDOW_MS,
 } = {}) {
   const nextAllowedAtByPilot = new Map()
   const lastCategoryEmittedAt = new Map()
   let squadTrivialSilenceUntil = -Infinity
+  let lastGlobalTrivialSpokenAt = -Infinity
   let hasSaidAlone = false
   const conversations = createWingmanRadioConversationManager({ random })
 
@@ -699,9 +700,15 @@ export function createWingmanRadio({
 
   function emit(pilotId, eventId, now, context = {}, force = false, bypassCooldown = false) {
     const isAbility = ABILITY_EVENT_IDS.has(eventId)
-    const isUrgent = force || isAbility || eventId === 'retreat' || eventId === 'state_critical'
+    // 1.1 Rádio dos aliados: somente trivial — habilidade NUNCA usa rádio
+    if (isAbility) return null
 
-    if (enforceSquadSilence && !isUrgent) {
+    // 1.2 Cooldown global real de fala: no máximo 1 fala trivial a cada 6s no esquadrão inteiro
+    if (now - lastGlobalTrivialSpokenAt < squadSilenceGapMs) return null
+
+    const isUrgent = force || eventId === 'retreat' || eventId === 'state_critical'
+
+    if (!isUrgent) {
       if (now < squadTrivialSilenceUntil) return null
       const category = getEventCategory(eventId)
       const lastCatAt = lastCategoryEmittedAt.get(category) ?? -Infinity
@@ -709,27 +716,21 @@ export function createWingmanRadio({
     }
 
     const nextAllowedAt = nextAllowedAtByPilot.get(pilotId) ?? -Infinity
-    if (!force && !bypassCooldown && !isAbility && now < nextAllowedAt) return null
+    if (!force && !bypassCooldown && now < nextAllowedAt) return null
     const pool = LINES[pilotId]?.[eventId]
     if (!pool || pool.length === 0) return null
 
     const line = pick(random, pool)
 
+    lastGlobalTrivialSpokenAt = now
+    squadTrivialSilenceUntil = now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs
+
     if (isUrgent) {
       conversations.cancelPendingResponse('urgent-preempt')
-      if (enforceSquadSilence) {
-        squadTrivialSilenceUntil = Math.max(
-          squadTrivialSilenceUntil,
-          now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + 4000,
-        )
-      }
     } else {
-      if (!isAbility && !bypassCooldown) scheduleNextNormalLine(pilotId, now)
-      if (enforceSquadSilence) {
-        squadTrivialSilenceUntil = now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs
-        const category = getEventCategory(eventId)
-        lastCategoryEmittedAt.set(category, now)
-      }
+      if (!bypassCooldown) scheduleNextNormalLine(pilotId, now)
+      const category = getEventCategory(eventId)
+      lastCategoryEmittedAt.set(category, now)
     }
 
     conversations.openFromEvent({
@@ -752,9 +753,9 @@ export function createWingmanRadio({
     forceSpeak(pilotId, eventId, now = performance.now(), context = {}) {
       return emit(pilotId, eventId, now, context, true, false)
     },
-    speakAbility(pilotId, eventId, now = performance.now(), context = {}) {
-      if (!ABILITY_EVENT_IDS.has(eventId)) return null
-      return emit(pilotId, eventId, now, context, false, true)
+    // Habilidade não usa rádio (retorna sempre null)
+    speakAbility(_pilotId, _eventId, _now = performance.now(), _context = {}) {
+      return null
     },
     trySpeakAlone(pilotId, now = performance.now()) {
       if (hasSaidAlone) return null
@@ -766,8 +767,10 @@ export function createWingmanRadio({
       return pick(random, LINES[pilotId]?.[eventId])
     },
     takeDueResponse(now = performance.now(), eligibleResponderIds = []) {
+      if (now - lastGlobalTrivialSpokenAt < squadSilenceGapMs) return null
       const reply = conversations.takeDueResponse(now, eligibleResponderIds)
-      if (reply && enforceSquadSilence) {
+      if (reply) {
+        lastGlobalTrivialSpokenAt = now
         squadTrivialSilenceUntil = now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs
       }
       return reply
@@ -788,6 +791,7 @@ export function createWingmanRadio({
       nextAllowedAtByPilot.clear()
       lastCategoryEmittedAt.clear()
       squadTrivialSilenceUntil = -Infinity
+      lastGlobalTrivialSpokenAt = -Infinity
       hasSaidAlone = false
       conversations.reset()
     },

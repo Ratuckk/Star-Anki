@@ -683,8 +683,15 @@ export function createGameLoop(deps) {
       (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
     if (chargedKillHappened) state.hitShakeTimer = Math.max(state.hitShakeTimer, HOMING_KILL_SHAKE_MS)
 
-    // ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
+    // ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============
     if (getSettings().wingmanRadioEnabled) {
+      const shipBelow = playerPos.clone().addScaledVector(noseFrame.up, -2.8)
+      const ndcR = shipBelow.project(camera)
+      const radioVisible = ndcR.z >= -1 && ndcR.z <= 1
+      const xFrac = (ndcR.x + 1) / 2
+      const yFrac = (1 - ndcR.y) / 2
+      hud.updateRadioPosition?.(xFrac, yFrac, radioVisible)
+
       // radioQueue (rajada de "prontidão" do [D], vários pilotos em fila) tem prioridade sobre um
       // radioMessage avulso do mesmo frame — na prática nunca competem de verdade (o toggleCommand
       // não passa pelo mesmo laço que gera radioMessage), mas a ordem deixa a intenção explícita.
@@ -693,6 +700,29 @@ export function createGameLoop(deps) {
       } else if (events.radioMessage && hud.showWingmanRadio) {
         hud.showWingmanRadio(events.radioMessage)
       }
+    }
+
+    // ============ ÍCONES DE HABILIDADE DOS ALIADOS (Fase 1.4: Acima da nave do aliado) ============
+    const activeIcons = combat.getActiveAbilityIcons?.() || []
+    if (hud.updateWingmanAbilityIcons) {
+      const projectedIcons = []
+      for (const item of activeIcons) {
+        const ndcI = _threatProj.copy(item.worldPos).project(camera)
+        if (ndcI.z < -1 || ndcI.z > 1) continue
+        const xFrac = (ndcI.x + 1) / 2
+        const yFrac = (1 - ndcI.y) / 2
+        if (xFrac < -0.15 || xFrac > 1.15 || yFrac < -0.15 || yFrac > 1.15) continue
+        projectedIcons.push({
+          id: item.id,
+          xFrac,
+          yFrac,
+          icon: item.icon,
+          color: item.color,
+          scale: item.scale,
+          alpha: item.alpha,
+        })
+      }
+      hud.updateWingmanAbilityIcons(projectedIcons)
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============

@@ -133,6 +133,7 @@ function makePanelSprite(payload) {
 }
 
 function makeGlowTexture(color) {
+  if (typeof document === 'undefined') return new THREE.Texture()
   const canvas = document.createElement('canvas')
   canvas.width = 128
   canvas.height = 128
