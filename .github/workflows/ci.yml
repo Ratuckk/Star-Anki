@@ -66,6 +66,7 @@ jobs:
         run: |
           node src/arcade-draft-bullet-time.test.mjs
           node src/playtest-polish.test.mjs
+          node src/lockon-miyu-reticle-fog.test.mjs
 
       - name: Run Comprehensive Selftest
         run: |

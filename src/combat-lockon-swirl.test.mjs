@@ -58,11 +58,11 @@ test('Lock-on: prioriza maior maxHp sobre HP atual (ex: 10/300 vence 100/100)', 
   assert.equal(locked[0].id, 2, 'Enemy B com 300 maxHp deve vencer mesmo com 10 de HP atual')
 })
 
-test('Lock-on: não usa cone da mira para aquisição principal (alvo forte fora do centro vence fraco no centro)', () => {
+test('Lock-on: retículo governa a aquisição (alvo forte fora do retículo NÃO rouba lock do fraco dentro da mira)', () => {
   const rail = makeMockRail()
   // enemyWeak está exatamente na direção da mira (0, 0, 1)
   const enemyWeak = makeMockEnemy({ id: 1, kind: 'blaster', hp: 50, maxHp: 50, pos: [0, 0, 30] })
-  // enemyStrong está deslocado lateralmente (fora do cone antigo de 6 graus), mas na frente e no range
+  // enemyStrong está deslocado lateralmente (fora do cone do retículo), mas na frente e no range
   const enemyStrong = makeMockEnemy({ id: 2, kind: 'tank', hp: 200, maxHp: 200, pos: [20, 0, 40] })
 
   const enemies = {
@@ -77,7 +77,7 @@ test('Lock-on: não usa cone da mira para aquisição principal (alvo forte fora
 
   const locked = lockon.getLockedEntities()
   assert.equal(locked.length, 1)
-  assert.equal(locked[0].id, 2, 'Inimigo forte com 200 maxHp deve receber a trava mesmo fora do centro da mira')
+  assert.equal(locked[0].id, 1, 'Inimigo fraco na mira deve receber a trava; forte fora do retículo é ignorado')
 })
 
 test('Lock-on: Boss ativo tem prioridade absoluta mesmo sobre inimigo comum com maior maxHp', () => {

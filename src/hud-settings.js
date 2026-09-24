@@ -291,28 +291,156 @@ export function buildFogSection() {
 // Bullet-time no Card Choice (Docs/Bullet-time no Card Choice (Arcade).md) — mesmo padrão de
 // reaproveitamento das outras seções (builder exportado, usado pela tela de Configurações
 // completa e pelo painel de pausa).
-export function buildArcadeSection() {
+export function buildArcadeCardDraftPreview() {
+  const el = document.createElement('aside')
+  el.className = 'settings-damage-preview settings-arcade-preview'
+
+  const eyebrow = document.createElement('span')
+  eyebrow.className = 'settings-preview-eyebrow'
+  eyebrow.textContent = 'SIMULAÇÃO AO VIVO'
+  const title = document.createElement('h3')
+  title.textContent = 'Aquisição de cartas'
+  const copy = document.createElement('p')
+  copy.textContent = 'Sequência completa: escolha do chip, facho de absorção e pulso de instalação na nave.'
+
+  const stage = document.createElement('div')
+  stage.className = 'settings-damage-stage settings-arcade-stage'
+  stage.setAttribute('aria-label', 'Prévia animada da absorção de cartas')
+
+  const chip = document.createElement('div')
+  chip.className = 'preview-draft-chip category-ofensivo'
+  chip.innerHTML = '<span class="chip-key">1</span><span class="chip-icon">⚡</span><div class="chip-content"><strong>Carga Rápida</strong><span>-30% tempo p/ carregar</span></div>'
+
+  const beam = document.createElement('div')
+  beam.className = 'preview-absorb-beam'
+
+  const shipAnchor = document.createElement('div')
+  shipAnchor.className = 'preview-ship-anchor'
+  shipAnchor.innerHTML = '<div class="preview-ship-shape"></div><div class="preview-card-pulse"></div>'
+
+  stage.append(chip, beam, shipAnchor)
+
+  const footer = document.createElement('div')
+  footer.className = 'settings-preview-footer'
+  const current = document.createElement('span')
+  const replayButton = document.createElement('button')
+  replayButton.type = 'button'
+  replayButton.className = 'btn-secondary settings-preview-replay'
+  replayButton.textContent = '↻ Repetir absorção'
+  footer.append(current, replayButton)
+  el.append(eyebrow, title, copy, stage, footer)
+
+  const timeouts = new Set()
+  let kickoffRaf = null
+  const labels = {
+    pause: 'PAUSA TOTAL',
+    slowmo: 'CÂMERA LENTA (BULLET-TIME)',
+    normal: 'VELOCIDADE NORMAL (1.0x)',
+  }
+
+  function clearSequence() {
+    for (const timeout of timeouts) clearTimeout(timeout)
+    timeouts.clear()
+    beam.classList.remove('active')
+    shipAnchor.classList.remove('pulsing')
+    chip.classList.remove('selected')
+  }
+
+  function schedule(delay, fn) {
+    const timeout = setTimeout(() => {
+      timeouts.delete(timeout)
+      fn()
+    }, delay)
+    timeouts.add(timeout)
+  }
+
+  function replay() {
+    clearSequence()
+    const settings = getSettings()
+    const mode = settings.arcadeDraftMode || (settings.arcadeCardChoicePauses ? 'pause' : 'slowmo')
+    current.textContent = labels[mode] || labels.pause
+
+    const isSlow = mode === 'slowmo'
+    const speedMult = isSlow ? 1.5 : (mode === 'pause' ? 1.1 : 0.85)
+
+    chip.classList.add('selected')
+    schedule(120 * speedMult, () => {
+      beam.classList.add('active')
+    })
+    schedule((120 + 360) * speedMult, () => {
+      beam.classList.remove('active')
+      shipAnchor.classList.add('pulsing')
+    })
+    schedule((120 + 360 + 650) * speedMult, () => {
+      shipAnchor.classList.remove('pulsing')
+      chip.classList.remove('selected')
+    })
+  }
+
+  replayButton.addEventListener('click', replay)
+
+  return {
+    el,
+    replay,
+    start() { kickoffRaf = requestAnimationFrame(replay) },
+    dispose() {
+      if (kickoffRaf) cancelAnimationFrame(kickoffRaf)
+      clearSequence()
+    },
+  }
+}
+
+// Bullet-time no Card Choice (Docs/Bullet-time no Card Choice (Arcade).md) —
+// agora com 3 modos claros e inequívocos: Pausa Total / Câmera Lenta / Velocidade Normal
+export function buildArcadeSection(opts = {}) {
   const arcadeSection = document.createElement('div')
   arcadeSection.className = 'settings-section'
   const arcadeTitle = document.createElement('h3')
-  arcadeTitle.textContent = 'Modo Arcade'
+  arcadeTitle.textContent = 'Modo Arcade — Escolha de Cartas'
   arcadeSection.appendChild(arcadeTitle)
 
-  const row = document.createElement('div')
-  row.className = 'settings-row'
-  const label = document.createElement('label')
-  label.textContent = 'Pausar totalmente na escolha de cartas (desligado = câmera lenta)'
-  row.appendChild(label)
-  const checkbox = document.createElement('input')
-  checkbox.type = 'checkbox'
-  checkbox.checked = getSettings().arcadeCardChoicePauses
-  checkbox.addEventListener('change', () => setSetting('arcadeCardChoicePauses', checkbox.checked))
-  row.appendChild(checkbox)
-  arcadeSection.appendChild(row)
+  const modes = [
+    { id: 'pause', label: 'Pausa total', desc: 'Congela o combate na escolha de cartas.' },
+    { id: 'slowmo', label: 'Câmera lenta', desc: 'Bullet-time cinematográfico durante o draft.' },
+    { id: 'normal', label: 'Velocidade normal', desc: '100% de velocidade com sequência visual completa.' },
+  ]
+
+  const buttonsWrap = document.createElement('div')
+  buttonsWrap.className = 'damage-style-grid'
+  buttonsWrap.setAttribute('role', 'radiogroup')
+  buttonsWrap.setAttribute('aria-label', 'Modo de tempo da escolha de cartas no Arcade')
+
+  const modeButtons = {}
+  modes.forEach((mode) => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'damage-style-card'
+    btn.setAttribute('role', 'radio')
+    btn.innerHTML = `<strong>${mode.label}</strong><small>${mode.desc}</small>`
+    btn.addEventListener('click', () => {
+      setSetting('arcadeDraftMode', mode.id)
+      renderModeButtons()
+      opts.onDraftModeChange?.()
+    })
+    buttonsWrap.appendChild(btn)
+    modeButtons[mode.id] = btn
+  })
+  arcadeSection.appendChild(buttonsWrap)
+
+  function renderModeButtons() {
+    const settings = getSettings()
+    const current = settings.arcadeDraftMode || (settings.arcadeCardChoicePauses ? 'pause' : 'slowmo')
+    for (const [id, btn] of Object.entries(modeButtons)) {
+      const active = id === current
+      btn.classList.toggle('active', active)
+      btn.setAttribute('aria-checked', String(active))
+    }
+  }
+  renderModeButtons()
 
   const hint = document.createElement('p')
   hint.className = 'settings-hint'
-  hint.textContent = 'Só se aplica ao modo arcade (sem baralho) — no modo com baralho a escolha de carta sempre pausa.'
+  hint.textContent = 'Aplica-se ao modo arcade (sem baralho) — no modo com baralho a pergunta sempre pausa o jogo.'
   arcadeSection.appendChild(hint)
 
   return arcadeSection
@@ -669,7 +797,11 @@ export function showSettingsScreen({ onBack }) {
   visualLayout.append(buildVisualSection({ onDamageStyleChange: damagePreview.replay }), damagePreview.el)
   panels.visual.appendChild(visualLayout)
   panels.fog.appendChild(buildFogSection())
-  panels.game.appendChild(buildArcadeSection())
+  const arcadePreview = buildArcadeCardDraftPreview()
+  const arcadeLayout = document.createElement('div')
+  arcadeLayout.className = 'settings-visual-layout settings-arcade-layout'
+  arcadeLayout.append(buildArcadeSection({ onDraftModeChange: arcadePreview.replay }), arcadePreview.el)
+  panels.game.appendChild(arcadeLayout)
   panels.game.appendChild(buildAudioSection())
   panels.squad.appendChild(squadSetupSection)
   panels.squad.appendChild(buildRadioSection())
@@ -857,11 +989,13 @@ export function showSettingsScreen({ onBack }) {
   pollGamepad()
   activateCategory('visual')
   damagePreview.start()
+  arcadePreview.start()
 
   function cleanup() {
     cleanupKeybindSection()
     if (gamepadRaf) cancelAnimationFrame(gamepadRaf)
     damagePreview.dispose()
+    arcadePreview.dispose()
     app.classList.remove('settings-mode')
   }
 }

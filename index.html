@@ -631,6 +631,94 @@
   .settings-preview-footer > span { color: #5ce1ff; font: 800 0.66rem ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: 0.1em; }
   .settings-preview-replay { margin: 0; padding: 0.45rem 0.7rem; font-size: 0.72rem; }
 
+  /* Prévia de Aquisição de Cartas no Arcade */
+  .settings-arcade-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem;
+  }
+  .preview-draft-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8rem;
+    background: #141c2b;
+    border: 1px solid #ff4d6d;
+    border-radius: 8px;
+    box-shadow: 0 0 12px rgba(255, 77, 109, 0.35);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .preview-draft-chip.selected {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(255, 77, 109, 0.8);
+  }
+  .preview-draft-chip .chip-key {
+    background: #ff4d6d; color: #fff; font-weight: 800; font-size: 0.75rem;
+    padding: 0.1rem 0.4rem; border-radius: 4px;
+  }
+  .preview-draft-chip .chip-icon { font-size: 1.2rem; }
+  .preview-draft-chip .chip-content strong { display: block; color: #fff; font-size: 0.82rem; }
+  .preview-draft-chip .chip-content span { display: block; color: #94a3b8; font-size: 0.7rem; }
+
+  .preview-absorb-beam {
+    width: 6px;
+    height: 110px;
+    background: linear-gradient(to bottom, #ff4d6d, #fff);
+    border-radius: 3px;
+    box-shadow: 0 0 14px #ff4d6d, 0 0 4px #fff;
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: opacity 0.18s, transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .preview-absorb-beam.active {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  .preview-ship-anchor {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .preview-ship-shape {
+    width: 0;
+    height: 0;
+    border-left: 14px solid transparent;
+    border-right: 14px solid transparent;
+    border-bottom: 28px solid #5ce1ff;
+    filter: drop-shadow(0 0 8px rgba(92, 225, 255, 0.7));
+  }
+  .preview-card-pulse {
+    position: absolute;
+    inset: -12px;
+    border: 2px solid #ff4d6d;
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0.4);
+    pointer-events: none;
+  }
+  .preview-ship-anchor.pulsing .preview-card-pulse {
+    animation: preview-card-pulse-anim 0.75s ease-out;
+  }
+  .preview-ship-anchor.pulsing .preview-ship-shape {
+    animation: preview-ship-absorb-glow 0.75s ease-out;
+  }
+  @keyframes preview-card-pulse-anim {
+    0% { transform: scale(0.3); opacity: 1; border-color: #ffffff; }
+    50% { transform: scale(1.6); opacity: 0.8; border-color: #ff4d6d; }
+    100% { transform: scale(2.8); opacity: 0; border-color: #ff4d6d; }
+  }
+  @keyframes preview-ship-absorb-glow {
+    0%, 100% { filter: drop-shadow(0 0 8px rgba(92, 225, 255, 0.7)); }
+    30% { filter: drop-shadow(0 0 24px #ffffff) drop-shadow(0 0 35px #ff4d6d) brightness(2.2); }
+  }
+
   .keybind-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.4rem 0; border-bottom: 1px solid #232a33; }
   .keybind-row:last-child { border-bottom: none; }
   .keybind-btn {
@@ -1271,7 +1359,7 @@
     position: absolute;
     width: var(--marker-size, 30px);
     height: var(--marker-size, 30px);
-    transform: translate(-50%, -50%);
+    transform: translate(calc(-50% + var(--marker-offset-x, 0px)), calc(-50% + var(--marker-offset-y, 0px)));
     pointer-events: none;
   }
   .enemy-lock-marker .lock-sq {
@@ -1351,7 +1439,7 @@
     left: 50%;
     width: 24px;
     height: 24px;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(var(--reticle-charge-scale, 1));
     pointer-events: none;
     transition: width 0.12s ease-out, height 0.12s ease-out;
   }
@@ -1370,6 +1458,26 @@
     opacity: 0.95;
     box-shadow: 0 0 9px rgba(255, 59, 59, 0.8);
     transform: scale(1.22);
+  }
+  /* Item 6C: Estados visuais da retícula durante o carregamento */
+  .reticle-ring.charging {
+    opacity: 0.85;
+    border-color: #6ee7b7;
+    box-shadow: 0 0 8px rgba(110, 231, 183, 0.7);
+  }
+  .reticle-ring.charge-maxed {
+    border-color: #38bdf8;
+    opacity: 1;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.95), inset 0 0 6px rgba(56, 189, 248, 0.6);
+    animation: reticle-max-pulse 0.4s ease-in-out infinite alternate;
+  }
+  .reticle-ring.charge-miyu {
+    border-color: #e879f9;
+    box-shadow: 0 0 14px rgba(232, 121, 249, 0.95), inset 0 0 6px rgba(232, 121, 249, 0.6);
+  }
+  @keyframes reticle-max-pulse {
+    from { opacity: 0.85; filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.6)); }
+    to   { opacity: 1.0; filter: drop-shadow(0 0 10px rgba(56, 189, 248, 1)); }
   }
   /* linha-mãe do topo-esquerdo: placar + ícones de habilidade do esquadrão lado a lado, num
      flex row — evita posicionar o cluster de habilidades num left fixo "adivinhado" que

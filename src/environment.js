@@ -124,11 +124,13 @@ function createFogBankTexture() {
   canvas.width = 128
   canvas.height = 128
   const ctx = canvas.getContext('2d')
-  const grad = ctx.createRadialGradient(64, 64, 2, 64, 64, 62)
-  grad.addColorStop(0, 'rgba(165, 205, 245, 0.20)')
-  grad.addColorStop(0.35, 'rgba(125, 175, 230, 0.12)')
-  grad.addColorStop(0.70, 'rgba(65, 115, 185, 0.04)')
-  grad.addColorStop(1, 'rgba(20, 50, 95, 0)')
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62)
+  // Multi-stop gradient com volume visível no centro e bordas difusas
+  grad.addColorStop(0, 'rgba(195, 220, 245, 0.72)')
+  grad.addColorStop(0.25, 'rgba(160, 192, 226, 0.52)')
+  grad.addColorStop(0.55, 'rgba(115, 155, 195, 0.28)')
+  grad.addColorStop(0.80, 'rgba(70, 108, 155, 0.08)')
+  grad.addColorStop(1, 'rgba(20, 45, 80, 0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, 128, 128)
   const texture = new THREE.CanvasTexture(canvas)
@@ -376,27 +378,30 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
   const fogBankTexture = createFogBankTexture()
   const fogBankRoots = Array.from({ length: 3 }, (_, bankIndex) => {
     const root = new THREE.Group()
+    // Camadas volumétricas com diferentes escalas e offsets em profundidade/laterais
     const bankSpecs = [
-      [-32, 14, 32, 22, 0.75],
-      [34, -12, 36, 24, 0.85],
-      [-26, -18, 28, 18, 0.65],
+      [-32, 14, 0, 36, 26, 0.85],
+      [34, -12, 5, 40, 28, 0.90],
+      [-24, -16, -6, 32, 24, 0.75],
+      [4, 2, 8, 48, 34, 0.70], // núcleo volumétrico central
+      [-8, 18, -4, 30, 20, 0.65],
     ]
     const bankMaterials = []
-    for (const [x, y, sx, sy, alpha] of bankSpecs) {
+    for (const [x, y, z, sx, sy, alpha] of bankSpecs) {
       const material = new THREE.SpriteMaterial({
         map: fogBankTexture,
-        color: 0x7894aa,
+        color: 0x8eaac2, // tom neutro discreto (azul acinzentado / cinza espacial)
         transparent: true,
-        opacity: 0.18 * alpha,
+        opacity: 0.35 * alpha,
         depthWrite: false,
         depthTest: true,
         fog: false,
       })
       const sprite = new THREE.Sprite(material)
-      sprite.position.set(x, y, 0)
+      sprite.position.set(x, y, z)
       sprite.scale.set(sx, sy, 1)
       root.add(sprite)
-      bankMaterials.push({ material, alpha })
+      bankMaterials.push({ material, alpha, baseZ: z })
     }
     root.userData.bankMaterials = bankMaterials
     root.userData.lateral = (bankIndex - 1) * 9
@@ -675,10 +680,15 @@ export function createEnvironmentSystem(scene, camera, rail, deps = {}) {
         .addScaledVector(bankFrame.right, bank.userData.lateral)
         .addScaledVector(bankFrame.up, bank.userData.vertical)
       const approach = Math.max(0.35, Math.min(1, 1 - offset / 760))
-      const cameraDist = camera ? camera.position.distanceTo(bank.position) : offset
-      const proximityFade = THREE.MathUtils.clamp((cameraDist - 22) / 45, 0, 1)
+      const cameraDist = camera ? camera.position.distanceTo(bank.position) : Math.abs(offset)
+      // Presença ao se aproximar e atravessar:
+      // Quando a câmera está muito próxima (<= 28), NÃO zera o alpha! Mantém um envelope imersivo
+      // (mínimo 0.40) para envolver parcialmente a visão sem bloquear a leitura da nave.
+      // Quando ultrapassa a massa e sai (offset < -25), faz fade-out suave.
+      const insideEnvelope = THREE.MathUtils.clamp(cameraDist / 28, 0.40, 1.0)
+      const exitFade = offset < -25 ? THREE.MathUtils.clamp((offset + 120) / 95, 0, 1) : 1.0
       for (const entry of bank.userData.bankMaterials) {
-        entry.material.opacity = (0.04 + approach * 0.06) * entry.alpha * proximityFade
+        entry.material.opacity = (0.18 + approach * 0.22) * entry.alpha * insideEnvelope * exitFade
       }
     }
 
