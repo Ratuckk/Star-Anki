@@ -1,20 +1,41 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.36 — Dourado + Tank Natural Spawn + Pacote Polish integrados em main
+> **Versão:** v0.99.36 — Dourado + Tank Natural Spawn + Pacote Polish + HUD Double Stack integrados em main
 > **Branch Atual:** `main`
 > **Última Atualização:** 2026-09-24
 > **Histórico Recente de Integrações em `main`:**
 > - **PR #15 (Dourado + Esquadrão):** Merge `3c014a74f56dfd90428c6370372d90527f5c9716` (CI Run `35946376454` pass)
 > - **PR #16 (Tank Natural Spawn):** Merge `327bf50b24a8c5c1a2d1e32dcec230e360e08bc5` (CI Run `35997550149` pass)
 > - **PR #17 (Lock-on / Miyu / Reticle / Arcade / Fog Polish):** Merge `bdd8a879651ff4da411ec38a4c99745d9a93683f` (CI Run `36001243157` pass)
-> - **PR #18 (HUD Double Stack Architecture):** `EM PR` na branch `feat/score-hud-double-stack` (CI Run `36012240426` pass). Aguarda revisão humana.
+> - **PR #18 (HUD Double Stack Architecture):** Merge `7a6d10354486578bc1ba0d606b1d84a9410083af` (CI Run `36017039624` pass)
 > **Registro Cronológico Pós-v0.99.35:** [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md)
 > **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
-> **Pendências Abertas:** Homologação visual em tela/monitor de Fog, retícula progressiva e VFX/screen-space markers da Miyu.
+> **Pendências Abertas:** Homologação visual em tela/monitor do HUD Double Stack (1280x720, 1366x768, 1920x1080), Fog volumétrico, retícula progressiva e markers/screen-space da Miyu.
 
 ---
 
 ## 1. IMPLEMENTADO RECENTEMENTE
+- **HUD Double Stack Architecture & Authoritative Seams (PR #18):**
+  - **Pilha Esquerda (Score + Métricas + Combo):**
+    - Score autoritativo em tipografia pesada (`session.score`).
+    - Sub-linha com pills de `STREAK` (`session.correctStreak`, cobrindo perguntas normais, de chefe e bônus do Dourado via `updateCorrectStreak`) e `KILLS` (`session.totalKills` via `recordKills`, imune a despawns e hits não-letais, com guarda idempotente contra contagem dupla na morte de Boss/Dourado).
+    - Combo (`session.comboMultiplier`) mantido sob a métrica com barra de acento neon.
+    - Deslocamento horizontal seguro à direita do cluster vital via token responsivo `--hud-left-stack-x: clamp(238px, 17vw, 290px)`.
+  - **Pilha Direita (Mission Time + Nível):**
+    - Cronômetro progressivo real `MM:SS` medindo tempo efetivo de missão (`session.missionTimeMs`) via `rawDt * 1000`. Congelamento estrito durante pausas, card draft e cutscenes via seam `shouldAdvanceMissionTime`, imune a distorções de slow-motion. Ticks decorativos estáticos.
+    - Nível autoritativo em 2 dígitos (`01..09`) via `formatDifficultyLevel(level)`.
+    - Rank inexistente intencionalmente omitido do DOM (sem placeholders ou dados fake).
+  - **Cluster Superior Central (Wingmen + Swirl + Combate):**
+    - Hexes dos 4 wingmen centralizados horizontalmente no topo (`top: clamp(8px, 1.2vh, 14px); left: 50%`).
+    - Linha secundária de combate agrupando Ordem de Esquadrão [D], widget do Swirl Blast [🌀] e Cadeia de Abates [KILL CHAIN], desacoplados do Score e sem provocar saltos de layout.
+  - **Radar / Minimapa:**
+    - Oculto no modo rail (`hud.setMinimap(false)` e regra `[hidden] { display: none !important; }`), visível em arenas e chefes via `shouldDisplayMinimap`.
+    - Reposicionado na lateral intermediária (`top: clamp(28%, 32%, 35%); right: clamp(16px, 2vw, 24px)`), liberando o topo direito. Limpeza garantida da classe `alert` na saída da arena.
+  - **Consolidação de API (Abordagem B):**
+    - API centralizada em `hud.setStatus(...)` com formatadores puros compartilhados (`formatMissionTime`, `formatComboMultiplier`, `formatDifficultyLevel`). Métodos granulares mortos removidos.
+  - **Documentação e Testes:**
+    - Registro canônico: [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md). Suíte dedicada: `src/hud-double-stack.test.mjs` (7 blocos).
+
 - **Pacote de Polimento: Lock-on, Miyu Assist, Retícula, Arcade e Fog (PR #17):**
   - **Autoridade da Retícula & Lock-on:**
     - Mira real (`isTargetInCone`) governa a aquisição com vetores normalizados; alvos prioritários (Boss/Dourado/maior HP) só são travados se estiverem dentro do cone da mira.

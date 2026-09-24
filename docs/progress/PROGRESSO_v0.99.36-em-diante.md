@@ -74,13 +74,13 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
 ---
 
 ### 2.4 PR #18 — HUD Double Stack Architecture & Authoritative Seams
-* **Estado:** `EM PR` *(aguardando revisão e merge humano para integração em main)*
-* **Data da PR:** 2026-09-24
-* **Branch:** `feat/score-hud-double-stack`
-* **Head SHA:** `e178807e36a1b9489d97b825f6af0ecceebbf737`
-* **Base SHA:** `71a727a8106725dd78d2bcf39c2d1b7aa859ec1e`
-* **PR URL:** https://github.com/Ratuckk/Star-Anki/pull/18
-* **CI Run:** `36012240426` (pass em 14s)
+* **Estado:** `MERGED EM MAIN`
+* **Data do Merge:** 2026-09-24
+* **Branch Original:** `feat/score-hud-double-stack`
+* **Merge Commit:** `7a6d10354486578bc1ba0d606b1d84a9410083af`
+* **PR:** [PR #18](https://github.com/Ratuckk/Star-Anki/pull/18)
+* **CI Run (PR):** `36014254094` (pass em 18s)
+* **CI Run (main pós-merge):** `36017039624` (pass em 18s)
 * **Principais Alterações:**
   - **Pilha Esquerda (Score + Métricas + Combo):**
     - Score autoritativo (`session.score`).
@@ -105,16 +105,11 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
   2. *Ticks de Mission Time:* Mantidos estáticos/decorativos sem countdown regressivo ou alertas críticos fictícios.
   3. *Linha Central de Combate:* Swirl e Kill Chain reunidos logo abaixo dos wingmen para estabilidade de layout.
 * **Pendência Declarada:**
-  - `TESTADO AUTOMATICAMENTE: SIM | VALIDADO VISUALMENTE: NÃO` (inspeção estática de tokens e AST aprovada; validação visual em display real aguardando ambiente gráfico).
+  - `TESTADO AUTOMATICAMENTE: SIM | VALIDADO VISUALMENTE: NÃO` (inspeção estática de tokens e AST aprovada; validação visual humana recomendada nas resoluções 1280×720, 1366×768 e 1920×1080).
 
 ---
 
 ## 3. DIRETRIZES DE MANUTENÇÃO DESTE DOCUMENTO
 
 1. **Sincronização Contínua:** Toda PR substancial aprovada e mesclada na `main` deve receber uma subseção nesta página.
-2. **Atualização Pós-Merge do PR #18:**
-   Assim que o merge humano do PR #18 for executado:
-   - Alterar o estado do item 2.4 para `MERGED EM MAIN`.
-   - Adicionar o *Merge Commit SHA*.
-   - Atualizar [`CURRENT.md`](CURRENT.md) incorporando o HUD Double Stack ao resumo do estado ativo da `main`.
-3. **Escopo Canônico:** Este documento é o registro histórico linear ativo das versões posteriores à v0.99.35. Arquivos específicos como [`tank-natural-spawn.md`](tank-natural-spawn.md) e [`post-v09936-polish.md`](post-v09936-polish.md) aprofundam subsistemas individuais e devem ser preservados lado a lado.
+2. **Escopo Canônico:** Este documento é o registro histórico linear ativo das versões posteriores à v0.99.35. Arquivos específicos como [`tank-natural-spawn.md`](tank-natural-spawn.md) e [`post-v09936-polish.md`](post-v09936-polish.md) aprofundam subsistemas individuais e devem ser preservados lado a lado.
