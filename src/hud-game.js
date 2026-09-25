@@ -1178,6 +1178,8 @@ export function createGameHud() {
     ['difficulty', 'Nível'],
     ['health', 'Vida'], ['shield', 'Escudo'], ['lives', 'Vidas'],
     ['score', 'Pontos'], ['combo', 'Combo'], ['enemies', 'Inimigos'],
+    ['goldenSquad', 'Golden Caças'], ['goldenOrder', 'Golden Ordem'],
+    ['pityTimers', 'Pity Tank/Verme'], ['stealthEcho', 'Sussurro/Réplica'],
     ['wingmen', 'Ala'], ['position', 'Posição'], ['flags', 'Flags'],
   ]
   const debugStats = document.createElement('div')
@@ -1189,7 +1191,9 @@ export function createGameHud() {
     // posição/flags são texto de tamanho variável (coordenadas, lista de flags ativas) — ganham
     // a linha inteira pra não truncar em elipse contra o vizinho de coluna, diferente dos outros
     // (números curtos de formato fixo, cabem bem 2 por linha)
-    row.className = key === 'position' || key === 'flags' ? 'debug-stat-row debug-stat-row-wide' : 'debug-stat-row'
+    row.className = key === 'position' || key === 'flags' || key === 'goldenSquad' || key === 'pityTimers' || key === 'stealthEcho'
+      ? 'debug-stat-row debug-stat-row-wide'
+      : 'debug-stat-row'
     const labelEl = document.createElement('span')
     labelEl.className = 'debug-stat-label'
     labelEl.textContent = label
@@ -1223,6 +1227,10 @@ export function createGameHud() {
     debugStatEls.score.textContent = String(s.score ?? 0)
     debugStatEls.combo.textContent = `x${(s.combo ?? 1).toFixed(2)}`
     debugStatEls.enemies.textContent = String(s.enemies ?? 0)
+    debugStatEls.goldenSquad.textContent = s.goldenSquad ?? '—'
+    debugStatEls.goldenOrder.textContent = s.goldenOrder ?? '—'
+    debugStatEls.pityTimers.textContent = s.pityTimers ?? '—'
+    debugStatEls.stealthEcho.textContent = s.stealthEcho ?? '—'
     debugStatEls.wingmen.textContent = String(s.wingmen ?? 0)
     debugStatEls.position.textContent = s.position ?? '—'
     const activeFlags = s.flags ? Object.keys(s.flags).filter((k) => s.flags[k]) : []

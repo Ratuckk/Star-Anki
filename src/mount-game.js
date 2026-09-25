@@ -491,6 +491,17 @@ export function mountGame(session, deck, menu) {
       ? tele.wingmen.map((w) => `${w.name[0]}:${w.state[0].toUpperCase()}(${w.relativeToPlayer.dist}u,${w.rotation.smoothRollDeg}°)`).join(' ')
       : 'nenhum'
     const diffLevel = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
+    const goldenTele = enemies.getGoldenTelemetry ? enemies.getGoldenTelemetry() : null
+    const gFighters = goldenTele?.squadron?.aliveCount ?? 0
+    const gCap = goldenTele?.squadron?.cap ?? 0
+    const gOffCap = goldenTele?.squadron?.offensiveCap ?? 0
+    const gOrder = goldenTele?.squadron?.currentOrder ?? 'none'
+    const aliveList = enemies.getAlive ? enemies.getAlive() : []
+    const sussurro = aliveList.find((e) => e.kind === 'sussurro')
+    const replica = aliveList.find((e) => e.kind === 'replica')
+    const sussurroState = sussurro ? sussurro.state : 'nenhum'
+    const replicaState = replica ? (replica.burstShotsRemaining > 0 ? 'BURST' : `PRONTO(${replica.fireTimer.toFixed(1)}s)`) : 'nenhum'
+
     return {
       phase: state.phase,
       sector: `${(session.pointer || 0) + 1}/${session.queue.length}`,
@@ -505,6 +516,10 @@ export function mountGame(session, deck, menu) {
       score: Math.round(session.score),
       combo: session.comboMultiplier,
       enemies: aliveEnemies,
+      goldenSquad: `${gFighters}/${gCap} (offCap: ${gOffCap})`,
+      goldenOrder: gOrder,
+      pityTimers: `T:${(state.tankActiveTime || 0).toFixed(0)}s / V:${(state.vermeActiveTime || 0).toFixed(0)}s`,
+      stealthEcho: `S:${sussurroState} | R:${replicaState}`,
       wingmen: `${combat.getWingmanCount()} [${wingmenDetail}]`,
       position: `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`,
       flags: state.debugFlags,
