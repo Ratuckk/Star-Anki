@@ -153,6 +153,15 @@ export async function launchBrowser({ width = 1280, height = 720, port = 9222 } 
       writeFileSync(filepath, buffer)
       return filepath
     },
+    async setViewport(w, h) {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width: w,
+        height: h,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      await this.wait(200)
+    },
     async wait(ms) {
       await new Promise((r) => setTimeout(r, ms))
     },

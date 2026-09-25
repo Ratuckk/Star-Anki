@@ -347,6 +347,7 @@ export function mountGame(session, deck, menu) {
     // essas duas linhas ficavam aqui; agora o game-loop.js é dono do ciclo de vida do RAF.
     gameLoop.stop()
     if (window.__starAnki) delete window.__starAnki
+    if (window.__gameHudInstance) delete window.__gameHudInstance
     if (window.__stepFrames) delete window.__stepFrames
     if (state.bossFovTimeout) {
       clearTimeout(state.bossFovTimeout)
@@ -556,8 +557,10 @@ export function mountGame(session, deck, menu) {
 
   gameLoop.start()
 
+  window.__gameHudInstance = hud
   // Suporte a testes determinísticos, inspeção de tempo (stepper manual) e telemetria (jogador, esquadrão e inimigos)
   window.__starAnki = {
+    hud,
     state,
     gameLoop,
     combat,

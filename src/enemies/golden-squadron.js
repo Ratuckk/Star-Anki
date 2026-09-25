@@ -164,6 +164,11 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   let currentOrder = SQUADRON_ORDER.NONE
   let lastOrder = SQUADRON_ORDER.NONE
   let orderState = null
+  const lastOrderExecutedTime = {
+    [SQUADRON_ORDER.PINCER]: -1002,
+    [SQUADRON_ORDER.STRAFING_RUN]: -1001,
+    [SQUADRON_ORDER.COORDINATED_FIRE]: -1000,
+  }
 
   function getSquadronCap() {
     return getSquadronCapForLevel(level, allyBonus)
@@ -398,9 +403,9 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
     const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
     const maxOffensive = getOffensiveCap()
     const participants = activeFighters.slice(0, maxOffensive)
-    if (participants.length === 0) return
 
     currentOrder = SQUADRON_ORDER.LASER_FLANK
+    lastOrder = SQUADRON_ORDER.LASER_FLANK
     orderState = {
       type: SQUADRON_ORDER.LASER_FLANK,
       participants,
@@ -484,7 +489,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
     // Encerra LASER_FLANK imediatamente se o laser expirou antes do passo de reposição
     if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
-      if (!isLaserActive || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+      if (!isLaserActive) {
         finishCurrentOrder()
       }
     }
@@ -542,7 +547,11 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
         }
       }
       if (eligibleOrders.length > 0) {
-        const chosen = eligibleOrders[Math.floor(rng() * eligibleOrders.length)]
+        eligibleOrders.sort((a, b) => (lastOrderExecutedTime[a] || 0) - (lastOrderExecutedTime[b] || 0))
+        const oldestTime = lastOrderExecutedTime[eligibleOrders[0]] || 0
+        const topCandidates = eligibleOrders.filter((o) => (lastOrderExecutedTime[o] || 0) <= oldestTime + 0.001)
+        const chosen = topCandidates[Math.floor(rng() * topCandidates.length)]
+        lastOrderExecutedTime[chosen] = elapsed
         startOrder(chosen, commander, playerPosition)
       }
     }
@@ -806,9 +815,9 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       }
     }
 
-    // Finaliza LASER_FLANK de forma autoritativa se o laser terminou ou se participantes morreram
+    // Finaliza LASER_FLANK de forma autoritativa se o laser terminou
     if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
-      if (commander.laserTelegraphTimer <= 0 || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+      if (!isLaserActive) {
         finishCurrentOrder()
       }
     }

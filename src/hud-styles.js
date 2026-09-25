@@ -643,18 +643,21 @@ export function injectHudExtraStyles() {
 
 /* ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============ */
 /* Pedido do usuário: overhaul do design pra ficar "mais dinamico e epico" — console militar com
-   segmentos angulares em vez das 3 barras retas antigas. Mantém a mesma posição de tela (canto
-   superior esquerdo) e a mesma API do hud (setLives/setStatus/setShield/setBoost inalteradas). */
-.hud-vitals-cluster {
+   segmentos angulares em vez das 3 barras retas antigas.
+   OPÇÃO 4 (Coluna Esquerda Clássica): Posicionado estritamente abaixo das Ações (FOCO/SWIRL/CADEIA). */
+.hud-vitals-cluster,
+.hud-left-vitals {
   position: absolute;
-  top: 56px;
-  left: 12px;
+  top: clamp(258px, 36.0vh, 370px);
+  left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
   gap: 7px;
-  width: 220px;
+  width: clamp(260px, 22.5vw, 290px);
   pointer-events: none;
+  z-index: 22;
   filter: drop-shadow(0 1px 3px #000);
+  transition: opacity 0.35s ease;
 }
 .hud-vitals-cluster.hit-flash {
   animation: hud-vitals-hitflash 260ms ease-out;
@@ -1718,6 +1721,10 @@ export function injectHudExtraStyles() {
 .cinematic-active .reticle,
 .cinematic-active .hud-status,
 .cinematic-active .hud-double-stack,
+.cinematic-active .hud-left-stats,
+.cinematic-active .hud-left-resources,
+.cinematic-active .hud-left-actions,
+.cinematic-active .hud-left-vitals,
 .cinematic-active .hud-combat-left-cluster,
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
@@ -2320,9 +2327,10 @@ export function injectHudExtraStyles() {
   to   { transform: scale(1.28); opacity: 1.0; }
 }
 
-/* ============ HUD DOUBLE STACK ARCHITECTURE ============ */
+/* ============ HUD DOUBLE STACK & OPÇÃO 4 ARCHITECTURE ============ */
 :root {
-  --hud-left-stack-x: clamp(238px, 17vw, 290px);
+  --hud-left-x: clamp(18px, 3.2vw, 52px);
+  --hud-left-stack-x: var(--hud-left-x);
 }
 
 .hud-double-stack {
@@ -2334,14 +2342,16 @@ export function injectHudExtraStyles() {
   transition: opacity 0.35s ease;
 }
 
-/* Pilha Esquerda (Score + Streak/Kills + Combo) */
-.hud-stack-left {
-  top: clamp(14px, 1.6vh, 18px);
-  left: var(--hud-left-stack-x);
+/* Pilha Esquerda / Zona 1: Stats (Score + Streak/Kills + Combo) — Opção 4 */
+.hud-stack-left,
+.hud-left-stats {
+  top: clamp(14px, 2.0vh, 24px);
+  left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: clamp(10px, 1.2vh, 16px);
+  width: clamp(170px, 15vw, 200px);
 }
 
 .hud-stack-label {
@@ -2525,10 +2535,25 @@ export function injectHudExtraStyles() {
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
 }
 
-/* Cluster de Combate Esquerdo (Abilities + FOCO + SWIRL + Cadeia) - Fase 1.6 */
+/* Zona 2: Recursos / Cards (Abilities) — Opção 4 */
+.hud-left-resources {
+  position: absolute;
+  top: clamp(150px, 21.0vh, 220px);
+  left: var(--hud-left-x);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: none;
+  z-index: 22;
+  transition: opacity 0.35s ease;
+}
+
+/* Zona 3: Ações (FOCO + SWIRL + Cadeia) — Opção 4 */
+.hud-left-actions,
 .hud-combat-left-cluster {
   position: absolute;
-  top: clamp(140px, 17vh, 180px);
+  top: clamp(195px, 27.5vh, 280px);
+  left: var(--hud-left-x);
   left: var(--hud-left-stack-x);
   display: flex;
   flex-direction: column;
@@ -2537,6 +2562,14 @@ export function injectHudExtraStyles() {
   pointer-events: none;
   z-index: 22;
   transition: opacity 0.35s ease;
+}
+
+/* Alinhamento do eixo X principal da Coluna Esquerda Clássica (Opção 4) */
+.hud-left-stats,
+.hud-left-resources,
+.hud-left-actions,
+.hud-left-vitals {
+  left: var(--hud-left-x);
 }
 
 .hud-combat-actions-row {
@@ -2551,11 +2584,8 @@ export function injectHudExtraStyles() {
   display: none !important;
 }
 
-/* Responsividade Double Stack */
+/* Responsividade Double Stack / Coluna Esquerda Clássica */
 @media (max-width: 1366px) {
-  :root {
-    --hud-left-stack-x: clamp(234px, 18vw, 260px);
-  }
   .hud-score-value,
   .hud-mission-time-value {
     font-size: 32px;
@@ -2567,9 +2597,6 @@ export function injectHudExtraStyles() {
 }
 
 @media (max-width: 1280px) {
-  :root {
-    --hud-left-stack-x: 232px;
-  }
   .hud-score-value,
   .hud-mission-time-value {
     font-size: 28px;

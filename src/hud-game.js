@@ -372,9 +372,9 @@ export function createGameHud() {
     }
   }
 
-  // ============ DOUBLE STACK: PILHA ESQUERDA (SCORE + STREAK/KILLS + COMBO) ============
+  // ============ DOUBLE STACK: PILHA ESQUERDA (SCORE + STREAK/KILLS + COMBO) — ZONA 1 (STATS) ============
   const stackLeft = document.createElement('div')
-  stackLeft.className = 'hud-double-stack hud-stack-left'
+  stackLeft.className = 'hud-double-stack hud-stack-left hud-left-stats'
   stackLeft.innerHTML = `
     <div class="hud-score-block">
       <div class="hud-stack-label">SCORE</div>
@@ -442,16 +442,16 @@ export function createGameHud() {
   status.hidden = true
   root.appendChild(status)
 
-  // ============ CLUSTER DE COMBATE ESQUERDO (WINGMEN + SWIRL + CADEIA DE ABATES) - FASE 1.6 ============
-  const combatLeftCluster = document.createElement('div')
-  combatLeftCluster.className = 'hud-combat-left-cluster'
-  root.appendChild(combatLeftCluster)
+  // ============ ZONA 2: RECURSOS / CARDS (.hud-left-resources) — OPÇÃO 4 ============
+  const resourcesCluster = document.createElement('div')
+  resourcesCluster.className = 'hud-left-resources'
+  root.appendChild(resourcesCluster)
 
   // 4 slots fixos (Falco/Peppy/Slippy/Miyu, mesma ordem de WINGMAN_PROFILES)
   const SQUAD_ABILITY_ICONS = { ram: '☄️', guard: '🔰', repair: '🩹', assist: '🔗' }
   const abilityRow = document.createElement('div')
   abilityRow.className = 'hud-squad-abilities'
-  combatLeftCluster.appendChild(abilityRow)
+  resourcesCluster.appendChild(abilityRow)
 
   const abilityHexEls = [0, 1, 2, 3].map(() => {
     const slot = document.createElement('div')
@@ -477,9 +477,14 @@ export function createGameHud() {
   })
   let prevAbilitySignature = ''
 
+  // ============ ZONA 3: AÇÕES (.hud-left-actions) — OPÇÃO 4 ============
+  const actionsCluster = document.createElement('div')
+  actionsCluster.className = 'hud-left-actions hud-combat-left-cluster'
+  root.appendChild(actionsCluster)
+
   const combatActionsRow = document.createElement('div')
   combatActionsRow.className = 'hud-combat-actions-row'
-  combatLeftCluster.appendChild(combatActionsRow)
+  actionsCluster.appendChild(combatActionsRow)
 
   // Widget de comando do esquadrão [D] (Foco)
   const squadCommandWidget = document.createElement('div')
@@ -669,7 +674,7 @@ export function createGameHud() {
 
   if (!useOrbitalVitals) {
     vitalsCluster = document.createElement('div')
-    vitalsCluster.className = 'hud-vitals-cluster'
+    vitalsCluster.className = 'hud-vitals-cluster hud-left-vitals'
     root.appendChild(vitalsCluster)
 
     livesBar = document.createElement('div')

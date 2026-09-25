@@ -403,8 +403,9 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Authoritative Seams
   const hudStylesSource = readFileSync(new URL('./hud-styles.js', import.meta.url), 'utf8')
 
   assert.ok(
+    hudStylesSource.includes('--hud-left-x: clamp(18px, 3.2vw, 52px)') ||
     hudStylesSource.includes('--hud-left-stack-x: clamp(238px, 17vw, 290px)'),
-    'deve usar token --hud-left-stack-x com clamp para não colidir com o cluster de vida (220px)'
+    'deve usar token --hud-left-x com clamp para alinhamento da Coluna Esquerda Clássica (Opção 4)'
   )
   assert.ok(
     hudStylesSource.includes('.cinematic-active .hud-double-stack'),
