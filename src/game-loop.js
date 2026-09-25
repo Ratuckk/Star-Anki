@@ -32,6 +32,7 @@ import {
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
   HORDA_SPAWN_CHANCE, TANK_SPAWN_CHANCE, TANK_MAX_ACTIVE_ON_RAIL,
+  VERME_PITY_TIME_S, TANK_PITY_TIME_S,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
@@ -1018,33 +1019,80 @@ export function createGameLoop(deps) {
     } else if (state.phase === 'combat') {
       const spawnPauseThreshold = state.isBossCycle ? ARENA_WARNING_STOP_SPAWN_MS : NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS
       if (state.cycleTimer > spawnPauseThreshold && state.goldenTimer > ARENA_WARNING_STOP_SPAWN_MS) {
+        state.vermeActiveTime = (state.vermeActiveTime || 0) + dt
+        state.tankActiveTime = (state.tankActiveTime || 0) + dt
         state.normalSpawnTimer -= dt * 1000
         if (state.normalSpawnTimer <= 0) {
           state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
           const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
-          const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
-          if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
-            if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
-            else combat.spawnTimeEnemy()
-          } else if (Math.random() < MINI_SWARM_CHANCE) {
-            combat.spawnMiniSwarm()
-          } else if (Math.random() < sentinelaChance) {
-            combat.spawnSentinela()
-          } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
-            combat.spawnReplica()
-          } else if (Math.random() < VERME_SPAWN_CHANCE) {
+          const activeTanks = combat.getActiveTankCount ? combat.getActiveTankCount() : 0
+          const canSpawnTank = room >= TANK_POPULATION_WEIGHT && activeTanks < TANK_MAX_ACTIVE_ON_RAIL
+          const canSpawnVerme = room >= 1
+
+          const vermeDue = state.vermeActiveTime >= VERME_PITY_TIME_S
+          const tankDue = state.tankActiveTime >= TANK_PITY_TIME_S
+
+          // ============ HARD-PITY & CONFLITO DE PITY (FASE 3) ============
+          let pitySpawned = false
+          if (vermeDue && tankDue) {
+            const vermeRatio = state.vermeActiveTime / VERME_PITY_TIME_S
+            const tankRatio = state.tankActiveTime / TANK_PITY_TIME_S
+            if (tankRatio >= vermeRatio) {
+              if (canSpawnTank) {
+                combat.spawnTankEnemy()
+                state.tankActiveTime = 0
+                pitySpawned = true
+              } else if (canSpawnVerme) {
+                combat.spawnVerme()
+                state.vermeActiveTime = 0
+                pitySpawned = true
+              }
+            } else {
+              if (canSpawnVerme) {
+                combat.spawnVerme()
+                state.vermeActiveTime = 0
+                pitySpawned = true
+              } else if (canSpawnTank) {
+                combat.spawnTankEnemy()
+                state.tankActiveTime = 0
+                pitySpawned = true
+              }
+            }
+          } else if (vermeDue && canSpawnVerme) {
             combat.spawnVerme()
-          } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
-            combat.spawnSussurro()
-          } else if (Math.random() < HORDA_SPAWN_CHANCE) {
-            combat.spawnHorda()
-          } else if (
-            room >= TANK_POPULATION_WEIGHT &&
-            (combat.getActiveTankCount ? combat.getActiveTankCount() : 0) < TANK_MAX_ACTIVE_ON_RAIL &&
-            Math.random() < TANK_SPAWN_CHANCE
-          ) {
+            state.vermeActiveTime = 0
+            pitySpawned = true
+          } else if (tankDue && canSpawnTank) {
             combat.spawnTankEnemy()
-          } else {
+            state.tankActiveTime = 0
+            pitySpawned = true
+          }
+
+          if (!pitySpawned) {
+            const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
+            if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
+              if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
+              else combat.spawnTimeEnemy()
+            } else if (Math.random() < MINI_SWARM_CHANCE) {
+              combat.spawnMiniSwarm()
+            } else if (Math.random() < sentinelaChance) {
+              combat.spawnSentinela()
+            } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
+              combat.spawnReplica()
+            } else if (Math.random() < VERME_SPAWN_CHANCE) {
+              combat.spawnVerme()
+              state.vermeActiveTime = 0
+            } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
+              combat.spawnSussurro()
+            } else if (Math.random() < HORDA_SPAWN_CHANCE) {
+              combat.spawnHorda()
+            } else if (
+              canSpawnTank &&
+              Math.random() < TANK_SPAWN_CHANCE
+            ) {
+              combat.spawnTankEnemy()
+              state.tankActiveTime = 0
+            } else {
             if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {
               const formations = ['vFormation', 'sweepLine', 'trailColumn', 'pincer']
               const picked = formations[Math.floor(Math.random() * formations.length)]
@@ -1062,6 +1110,7 @@ export function createGameLoop(deps) {
           }
         }
       }
+    }
     }
 
     if (state.phase === 'combat') {
@@ -1416,5 +1465,6 @@ export function createGameLoop(deps) {
     step,
     setManualStepping,
     isManualStepping: () => !!state.manualStepActive,
+    getPityTelemetry: () => ({ tankActiveTime: state.tankActiveTime || 0, vermeActiveTime: state.vermeActiveTime || 0 }),
   }
 }

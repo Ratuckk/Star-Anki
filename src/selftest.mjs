@@ -22,6 +22,7 @@ import './hud-double-stack.test.mjs'
 import './debug-difficulty-override.test.mjs'
 import './fase1-radio-hud.test.mjs'
 import './fase2-golden-overhaul.test.mjs'
+import './fase3-tank-verme-spawn.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'

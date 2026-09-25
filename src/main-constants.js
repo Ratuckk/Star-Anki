@@ -149,17 +149,18 @@ export const DETRITO_SPAWN_INTERVAL_MAX_MS = 8000
 // sentido lá). Enxame-Ímã: os dois modos, tem seu próprio timer independente (parado, não
 // precisa da mesma pausa-antes-de-pergunta dos outros — mesmo princípio do Detrito).
 export const REPLICA_SPAWN_CHANCE = 0.1
-export const VERME_SPAWN_CHANCE = 0.08
+export const VERME_SPAWN_CHANCE = 0.12
 export const SUSSURRO_SPAWN_CHANCE = 0.1
 export const FRAGATA_SPAWN_CHANCE = 0.15
 // Horda: penúltima checagem da cadeia (ver game-loop.js), só rola se Time/MiniSwarm/Sentinela/
 // Réplica/Verme/Sussurro já falharam nesse tick — o nominal 30% (pedido do usuário) já sai bem
 // mais raro que isso na prática por causa da posição no fim da cadeia.
 export const HORDA_SPAWN_CHANCE = 0.3
-// Tank: unidade pesada regular (ADR-0003 e QoL v0.87). Chance nominal de 5% avaliada
-// após Horda na cadeia normal quando room >= 2 e no máximo 2 unidades ativas simultâneas.
-export const TANK_SPAWN_CHANCE = 0.05
+// Tank: unidade pesada regular (ADR-0003). Chance nominal de 8% com hard-pity de 20s.
+export const TANK_SPAWN_CHANCE = 0.08
 export const TANK_MAX_ACTIVE_ON_RAIL = 2
+export const VERME_PITY_TIME_S = 12.5
+export const TANK_PITY_TIME_S = 20.0
 export const IMA_SPAWN_INTERVAL_MIN_MS = 10000
 export const IMA_SPAWN_INTERVAL_MAX_MS = 18000
 

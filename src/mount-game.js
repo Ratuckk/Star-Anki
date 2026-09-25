@@ -598,4 +598,5 @@ export function mountGame(session, deck, menu) {
   window.__enemiesSysInstance = enemies
   window.__combatInstance = combat
   window.__getGoldenTelemetry = () => enemies.getGoldenTelemetry?.()
+  window.THREE = THREE
 }

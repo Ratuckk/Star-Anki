@@ -5,7 +5,7 @@ import {
   spawnTankEnemy, tankArmorBand, tankAttackForCycle, tankShouldLeaveAfterCycle, tankStatsForLevel,
 } from './enemies/tank.js'
 
-assert.equal(TANK_HIT_RADIUS, 2.8)
+assert.equal(TANK_HIT_RADIUS, 4.48)
 assert.equal(TANK_DEATH_DURATION, 0.65)
 assert.equal(TANK_KILL_BONUS, 75)
 assert.equal(TANK_POPULATION_WEIGHT, 2)
