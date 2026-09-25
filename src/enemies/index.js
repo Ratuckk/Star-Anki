@@ -671,27 +671,33 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           // podia ser travada pelo tiro teleguiado). Despawna por distância à frente.
           if (sentinelaShouldDespawn(enemy, frame)) { removeEnemy(enemy); continue }
         }
-        else if (enemy.kind === REPLICA_KIND) updateReplicaMovement(enemy, dt, rail, frame)
+        else if (enemy.kind === REPLICA_KIND) {
+          updateReplicaMovement(enemy, dt, rail, frame, { fireEnemyProjectile, playerPosition, effects })
+        }
         else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, rail)
         else if (enemy.kind === HORDA_KIND) updateHordaMovement(enemy, dt, frame, rail, opts.boostActive)
         else if (enemy.kind === SUSSURRO_KIND) {
-          updateSussurro(enemy, dt, rail, isDenseFog)
+          updateSussurro(enemy, dt, { rail, effects, fireEnemyProjectile, playerPosition }, isDenseFog)
           if (sussurroShouldSummon(enemy)) {
-            const count = 2 + Math.floor(Math.random() * 2)
-            const summonLevel = currentDifficultyLevel()
-            const expectedHp = blasterStatsForLevel(summonLevel).hp
-            const reinforcements = []
-            for (let i = 0; i < count; i += 1) {
-              const reinforcement = spawnBlaster(scene, rail, nextEnemyId++, { level: summonLevel })
-              reinforcement.fireTimer = randomEnemyFireInterval()
-              registerSpawn(reinforcement)
-              reinforcements.push(reinforcement)
+            const currentTotal = enemies.filter((e) => !e.dying && !e.fadingOut).length
+            const room = Math.max(0, 14 - currentTotal)
+            const count = Math.min(room, 1 + Math.floor(Math.random() * 2))
+            if (count > 0) {
+              const summonLevel = currentDifficultyLevel()
+              const expectedHp = blasterStatsForLevel(summonLevel).hp
+              const reinforcements = []
+              for (let i = 0; i < count; i += 1) {
+                const reinforcement = spawnBlaster(scene, rail, nextEnemyId++, { level: summonLevel })
+                reinforcement.fireTimer = randomEnemyFireInterval()
+                registerSpawn(reinforcement)
+                reinforcements.push(reinforcement)
+              }
+              aiValidator.expect(
+                'Sussurro invoca Blasters no nível atual e pelo pipeline normal de spawn',
+                () => reinforcements.length === count && reinforcements.every((r) => r.maxHp === expectedHp && r.spawnRailDist != null && isEnemySpawnPending(r)),
+                { count, summonLevel, expectedHp, actualHp: reinforcements.map((r) => r.maxHp) },
+              )
             }
-            aiValidator.expect(
-              'Sussurro invoca Blasters no nível atual e pelo pipeline normal de spawn',
-              () => reinforcements.length === count && reinforcements.every((r) => r.maxHp === expectedHp && r.spawnRailDist != null && isEnemySpawnPending(r)),
-              { count, summonLevel, expectedHp, actualHp: reinforcements.map((r) => r.maxHp) },
-            )
           }
         }
         const relative = _enemyRel.copy(enemy.mesh.position).sub(frame.position)
@@ -761,6 +767,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
         else if (enemy.kind === TIME_KIND) handled = timeFire(scene, enemy, playerPosition, timeLaserCtx)
         else if (enemy.kind === SENTINELA_KIND) handled = sentinelaFire(scene, enemy, playerPosition, { pushGate: (g) => enemyGates.push(g) }, frame)
+        else if (enemy.kind === SUSSURRO_KIND || enemy.kind === REPLICA_KIND) handled = true
         if (!handled) fireEnemyProjectile(enemy, playerPosition)
         enemy.fireTimer = enemy.kind === BOSS_KIND
           ? randomBossFireInterval()
