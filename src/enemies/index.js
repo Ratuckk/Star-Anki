@@ -135,6 +135,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return Number.isFinite(lvl) ? Math.max(1, Math.min(9, lvl)) : 1
   }
 
+  let allyCountProvider = null
+  function currentAllyCount() {
+    if (!allyCountProvider) return 0
+    const cnt = Math.round(allyCountProvider())
+    return Number.isFinite(cnt) ? Math.max(0, Math.min(4, cnt)) : 0
+  }
+
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
   const telemetry = createEnemyTelemetry()
 
@@ -664,27 +671,33 @@ export function createEnemiesSystem(scene, rail, effects = null) {
           // podia ser travada pelo tiro teleguiado). Despawna por distância à frente.
           if (sentinelaShouldDespawn(enemy, frame)) { removeEnemy(enemy); continue }
         }
-        else if (enemy.kind === REPLICA_KIND) updateReplicaMovement(enemy, dt, rail, frame)
+        else if (enemy.kind === REPLICA_KIND) {
+          updateReplicaMovement(enemy, dt, rail, frame, { fireEnemyProjectile, playerPosition, effects })
+        }
         else if (enemy.kind === VERME_KIND) updateVermeMovement(enemy, dt, rail)
         else if (enemy.kind === HORDA_KIND) updateHordaMovement(enemy, dt, frame, rail, opts.boostActive)
         else if (enemy.kind === SUSSURRO_KIND) {
-          updateSussurro(enemy, dt, rail, isDenseFog)
+          updateSussurro(enemy, dt, { rail, effects, fireEnemyProjectile, playerPosition }, isDenseFog)
           if (sussurroShouldSummon(enemy)) {
-            const count = 2 + Math.floor(Math.random() * 2)
-            const summonLevel = currentDifficultyLevel()
-            const expectedHp = blasterStatsForLevel(summonLevel).hp
-            const reinforcements = []
-            for (let i = 0; i < count; i += 1) {
-              const reinforcement = spawnBlaster(scene, rail, nextEnemyId++, { level: summonLevel })
-              reinforcement.fireTimer = randomEnemyFireInterval()
-              registerSpawn(reinforcement)
-              reinforcements.push(reinforcement)
+            const currentTotal = enemies.filter((e) => !e.dying && !e.fadingOut).length
+            const room = Math.max(0, 14 - currentTotal)
+            const count = Math.min(room, 1 + Math.floor(Math.random() * 2))
+            if (count > 0) {
+              const summonLevel = currentDifficultyLevel()
+              const expectedHp = blasterStatsForLevel(summonLevel).hp
+              const reinforcements = []
+              for (let i = 0; i < count; i += 1) {
+                const reinforcement = spawnBlaster(scene, rail, nextEnemyId++, { level: summonLevel })
+                reinforcement.fireTimer = randomEnemyFireInterval()
+                registerSpawn(reinforcement)
+                reinforcements.push(reinforcement)
+              }
+              aiValidator.expect(
+                'Sussurro invoca Blasters no nível atual e pelo pipeline normal de spawn',
+                () => reinforcements.length === count && reinforcements.every((r) => r.maxHp === expectedHp && r.spawnRailDist != null && isEnemySpawnPending(r)),
+                { count, summonLevel, expectedHp, actualHp: reinforcements.map((r) => r.maxHp) },
+              )
             }
-            aiValidator.expect(
-              'Sussurro invoca Blasters no nível atual e pelo pipeline normal de spawn',
-              () => reinforcements.length === count && reinforcements.every((r) => r.maxHp === expectedHp && r.spawnRailDist != null && isEnemySpawnPending(r)),
-              { count, summonLevel, expectedHp, actualHp: reinforcements.map((r) => r.maxHp) },
-            )
           }
         }
         const relative = _enemyRel.copy(enemy.mesh.position).sub(frame.position)
@@ -754,6 +767,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
         }
         else if (enemy.kind === TIME_KIND) handled = timeFire(scene, enemy, playerPosition, timeLaserCtx)
         else if (enemy.kind === SENTINELA_KIND) handled = sentinelaFire(scene, enemy, playerPosition, { pushGate: (g) => enemyGates.push(g) }, frame)
+        else if (enemy.kind === SUSSURRO_KIND || enemy.kind === REPLICA_KIND) handled = true
         if (!handled) fireEnemyProjectile(enemy, playerPosition)
         enemy.fireTimer = enemy.kind === BOSS_KIND
           ? randomBossFireInterval()
@@ -1139,7 +1153,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     spawnEnemy() {
       const enemy = spawnBlaster(scene, rail, nextEnemyId++, { level: currentDifficultyLevel() })
       enemy.fireTimer = randomEnemyFireInterval()
-      registerSpawn(enemy)
+      return registerSpawn(enemy)
     },
 
     spawnSquadron(formationType = null) {
@@ -1242,8 +1256,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnTankEnemy(hp = null) {
-      const resolvedHp = hp ?? tankStatsForLevel(currentDifficultyLevel()).hp
+      const level = currentDifficultyLevel()
+      const resolvedHp = hp ?? tankStatsForLevel(level).hp
       const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
+      enemy.level = level
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)
       return enemy
@@ -1282,37 +1298,59 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnSentinela() {
-      const enemy = spawnSentinela(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnSentinela(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnReplica() {
-      const enemy = spawnReplica(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnReplica(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnFragata() {
-      const enemy = spawnFragata(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnFragata(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     spawnVerme() {
-      const segments = spawnVerme(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const segments = spawnVerme(scene, rail, () => nextEnemyId++, level)
+      for (const seg of segments) seg.level = level
       registerSpawnGroup(segments)
+      return segments
     },
 
     spawnImaSwarm() {
-      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const group = spawnImaSwarm(scene, rail, () => nextEnemyId++, level)
+      for (const m of group) m.level = level
       registerSpawnGroup(group)
+      return group
     },
 
     spawnSussurro() {
-      const enemy = spawnSussurro(scene, rail, nextEnemyId++, currentDifficultyLevel())
+      const level = currentDifficultyLevel()
+      const enemy = spawnSussurro(scene, rail, nextEnemyId++, level)
+      enemy.level = level
       registerSpawn(enemy)
+      return enemy
     },
 
     setDifficultyLevelProvider(fn) {
       difficultyLevelProvider = fn
+    },
+
+    setAllyCountProvider(fn) {
+      allyCountProvider = fn
     },
 
     spawnHorda() {
@@ -1348,7 +1386,9 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     },
 
     spawnGoldenSpecial(opts = {}) {
-      golden.spawn(opts)
+      const level = opts.level ?? currentDifficultyLevel()
+      const allyCount = opts.allyCount ?? currentAllyCount()
+      golden.spawn({ ...opts, level, allyCount })
     },
 
     showArenaPreview,
@@ -1417,14 +1457,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const p = updateEnemyProjectiles(dt, playerPosition, opts)
       const l = updateEnemyLasers(dt, playerPosition, opts)
       const g = updateEnemyGates(dt, playerPosition, opts)
+      const gl = golden.updateLaser ? golden.updateLaser(dt, playerPosition, opts) : { hits: 0, damage: 0, powerLevel: 0, wingmanHitIds: [] }
       return {
-        hits: p.hits + l.hits + g.hits,
-        damage: Math.max(p.damage, l.damage, g.damage),
-        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0),
-        shieldDamage: g.hits > 0 ? g.shieldDamage : 0,
+        hits: p.hits + l.hits + g.hits + (gl.hits || 0),
+        damage: Math.max(p.damage, l.damage, g.damage, gl.damage || 0),
+        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0, (gl.hits || 0) > 0 ? (gl.genericDamage || gl.damage || 0) : 0),
+        shieldDamage: Math.max(g.hits > 0 ? g.shieldDamage : 0, (gl.hits || 0) > 0 ? (gl.shieldDamage || gl.damage || 0) : 0),
         hullDamage: g.hits > 0 ? g.hullDamage : 0,
-        powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
-        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || [])],
+        powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel, gl.powerLevel || 0),
+        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || []), ...(gl.wingmanHitIds || [])],
       }
     },
 
@@ -1899,6 +1940,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     isGoldenDying: () => (golden.isDying ? golden.isDying() : false),
     getGoldenWorldPos: () => (golden.getWorldPos ? golden.getWorldPos() : null),
     getGoldenSnapshot: () => (golden.getSnapshots ? golden.getSnapshots()[0] || null : null),
+    getGoldenTelemetry: () => (golden.getTelemetry ? golden.getTelemetry() : null),
 
     getTelemetry: () => telemetry.getSnapshot(),
     getCombatLog: (limit) => telemetry.getCombatLog(limit),

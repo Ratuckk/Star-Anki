@@ -32,6 +32,7 @@ import {
   TIME_ENEMY_SPAWN_CHANCE, TIME_ENEMY_MEGA_CHANCE, SENTINELA_SPAWN_CHANCE,
   REPLICA_SPAWN_CHANCE, VERME_SPAWN_CHANCE, SUSSURRO_SPAWN_CHANCE, FRAGATA_SPAWN_CHANCE,
   HORDA_SPAWN_CHANCE, TANK_SPAWN_CHANCE, TANK_MAX_ACTIVE_ON_RAIL,
+  VERME_PITY_TIME_S, TANK_PITY_TIME_S,
   ARENA_WARNING_COUNTDOWN_MS, ARENA_WARNING_STOP_SPAWN_MS,
   HOMING_LOCK_INTERVAL_MS, DODGE_TAP_WINDOW_MS, DEFLECT_RADIUS, RAM_DAMAGE,
   LOW_HEALTH_THRESHOLD_FRAC,
@@ -42,7 +43,7 @@ import {
   ARCADE_CARD_CHOICE_TIME_SCALE,
 } from './main-constants.js'
 import { TANK_POPULATION_WEIGHT } from './enemies/tank.js'
-import { getDifficultyLevel } from './enemies/shared.js'
+import { getDifficultyLevel, effectiveDifficultyLevel } from './enemies/shared.js'
 import { createWingmanReactivity } from './combat/wingman-reactivity.js'
 import { getSettings } from './settings.js'
 import { aiValidator } from './ai-validator.js'
@@ -683,8 +684,15 @@ export function createGameLoop(deps) {
       (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
     if (chargedKillHappened) state.hitShakeTimer = Math.max(state.hitShakeTimer, HOMING_KILL_SHAKE_MS)
 
-    // ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============
+    // ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============
     if (getSettings().wingmanRadioEnabled) {
+      const shipBelow = playerPos.clone().addScaledVector(noseFrame.up, -2.8)
+      const ndcR = shipBelow.project(camera)
+      const radioVisible = ndcR.z >= -1 && ndcR.z <= 1
+      const xFrac = (ndcR.x + 1) / 2
+      const yFrac = (1 - ndcR.y) / 2
+      hud.updateRadioPosition?.(xFrac, yFrac, radioVisible)
+
       // radioQueue (rajada de "prontidão" do [D], vários pilotos em fila) tem prioridade sobre um
       // radioMessage avulso do mesmo frame — na prática nunca competem de verdade (o toggleCommand
       // não passa pelo mesmo laço que gera radioMessage), mas a ordem deixa a intenção explícita.
@@ -693,6 +701,29 @@ export function createGameLoop(deps) {
       } else if (events.radioMessage && hud.showWingmanRadio) {
         hud.showWingmanRadio(events.radioMessage)
       }
+    }
+
+    // ============ ÍCONES DE HABILIDADE DOS ALIADOS (Fase 1.4: Acima da nave do aliado) ============
+    const activeIcons = combat.getActiveAbilityIcons?.() || []
+    if (hud.updateWingmanAbilityIcons) {
+      const projectedIcons = []
+      for (const item of activeIcons) {
+        const ndcI = _threatProj.copy(item.worldPos).project(camera)
+        if (ndcI.z < -1 || ndcI.z > 1) continue
+        const xFrac = (ndcI.x + 1) / 2
+        const yFrac = (1 - ndcI.y) / 2
+        if (xFrac < -0.15 || xFrac > 1.15 || yFrac < -0.15 || yFrac > 1.15) continue
+        projectedIcons.push({
+          id: item.id,
+          xFrac,
+          yFrac,
+          icon: item.icon,
+          color: item.color,
+          scale: item.scale,
+          alpha: item.alpha,
+        })
+      }
+      hud.updateWingmanAbilityIcons(projectedIcons)
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
@@ -988,33 +1019,80 @@ export function createGameLoop(deps) {
     } else if (state.phase === 'combat') {
       const spawnPauseThreshold = state.isBossCycle ? ARENA_WARNING_STOP_SPAWN_MS : NORMAL_SPAWN_PAUSE_BEFORE_QUESTION_MS
       if (state.cycleTimer > spawnPauseThreshold && state.goldenTimer > ARENA_WARNING_STOP_SPAWN_MS) {
+        state.vermeActiveTime = (state.vermeActiveTime || 0) + dt
+        state.tankActiveTime = (state.tankActiveTime || 0) + dt
         state.normalSpawnTimer -= dt * 1000
         if (state.normalSpawnTimer <= 0) {
           state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
           const room = Math.max(0, progression.currentEnemyCap() - combat.getEnemyCount())
-          const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
-          if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
-            if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
-            else combat.spawnTimeEnemy()
-          } else if (Math.random() < MINI_SWARM_CHANCE) {
-            combat.spawnMiniSwarm()
-          } else if (Math.random() < sentinelaChance) {
-            combat.spawnSentinela()
-          } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
-            combat.spawnReplica()
-          } else if (Math.random() < VERME_SPAWN_CHANCE) {
+          const activeTanks = combat.getActiveTankCount ? combat.getActiveTankCount() : 0
+          const canSpawnTank = room >= TANK_POPULATION_WEIGHT && activeTanks < TANK_MAX_ACTIVE_ON_RAIL
+          const canSpawnVerme = room >= 1
+
+          const vermeDue = state.vermeActiveTime >= VERME_PITY_TIME_S
+          const tankDue = state.tankActiveTime >= TANK_PITY_TIME_S
+
+          // ============ HARD-PITY & CONFLITO DE PITY (FASE 3) ============
+          let pitySpawned = false
+          if (vermeDue && tankDue) {
+            const vermeRatio = state.vermeActiveTime / VERME_PITY_TIME_S
+            const tankRatio = state.tankActiveTime / TANK_PITY_TIME_S
+            if (tankRatio >= vermeRatio) {
+              if (canSpawnTank) {
+                combat.spawnTankEnemy()
+                state.tankActiveTime = 0
+                pitySpawned = true
+              } else if (canSpawnVerme) {
+                combat.spawnVerme()
+                state.vermeActiveTime = 0
+                pitySpawned = true
+              }
+            } else {
+              if (canSpawnVerme) {
+                combat.spawnVerme()
+                state.vermeActiveTime = 0
+                pitySpawned = true
+              } else if (canSpawnTank) {
+                combat.spawnTankEnemy()
+                state.tankActiveTime = 0
+                pitySpawned = true
+              }
+            }
+          } else if (vermeDue && canSpawnVerme) {
             combat.spawnVerme()
-          } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
-            combat.spawnSussurro()
-          } else if (Math.random() < HORDA_SPAWN_CHANCE) {
-            combat.spawnHorda()
-          } else if (
-            room >= TANK_POPULATION_WEIGHT &&
-            (combat.getActiveTankCount ? combat.getActiveTankCount() : 0) < TANK_MAX_ACTIVE_ON_RAIL &&
-            Math.random() < TANK_SPAWN_CHANCE
-          ) {
+            state.vermeActiveTime = 0
+            pitySpawned = true
+          } else if (tankDue && canSpawnTank) {
             combat.spawnTankEnemy()
-          } else {
+            state.tankActiveTime = 0
+            pitySpawned = true
+          }
+
+          if (!pitySpawned) {
+            const sentinelaChance = SENTINELA_SPAWN_CHANCE + Math.min(0.20, (state.wrongAnswerCount || 0) * 0.04)
+            if (Math.random() < TIME_ENEMY_SPAWN_CHANCE) {
+              if (Math.random() < TIME_ENEMY_MEGA_CHANCE) combat.spawnTimeEnemyMega()
+              else combat.spawnTimeEnemy()
+            } else if (Math.random() < MINI_SWARM_CHANCE) {
+              combat.spawnMiniSwarm()
+            } else if (Math.random() < sentinelaChance) {
+              combat.spawnSentinela()
+            } else if (Math.random() < REPLICA_SPAWN_CHANCE) {
+              combat.spawnReplica()
+            } else if (Math.random() < VERME_SPAWN_CHANCE) {
+              combat.spawnVerme()
+              state.vermeActiveTime = 0
+            } else if (Math.random() < SUSSURRO_SPAWN_CHANCE) {
+              combat.spawnSussurro()
+            } else if (Math.random() < HORDA_SPAWN_CHANCE) {
+              combat.spawnHorda()
+            } else if (
+              canSpawnTank &&
+              Math.random() < TANK_SPAWN_CHANCE
+            ) {
+              combat.spawnTankEnemy()
+              state.tankActiveTime = 0
+            } else {
             if (room >= 3 && Math.random() < 0.65 && combat.spawnSquadron) {
               const formations = ['vFormation', 'sweepLine', 'trailColumn', 'pincer']
               const picked = formations[Math.floor(Math.random() * formations.length)]
@@ -1025,13 +1103,14 @@ export function createGameLoop(deps) {
               // +2 por piloto recrutado, lido na hora do spawn (sempre em dia, sem precisar
               // recalcular quando alguém entra/sai da formação no meio da run)
               const wingmanSpawnBonus = (combat.getWingmanCount ? combat.getWingmanCount() : 0) * 2
-              const difficultySpawnBonus = Math.max(0, getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck }) - 1) * NORMAL_SPAWN_PER_DIFFICULTY_LEVEL
+              const difficultySpawnBonus = Math.max(0, effectiveDifficultyLevel({ state, session, isNoDeck }) - 1) * NORMAL_SPAWN_PER_DIFFICULTY_LEVEL
               const count = Math.min(room, roll + state.extraSpawnPerBatch + wingmanSpawnBonus + difficultySpawnBonus)
               for (let i = 0; i < count; i += 1) combat.spawnEnemy()
             }
           }
         }
       }
+    }
     }
 
     if (state.phase === 'combat') {
@@ -1133,7 +1212,7 @@ export function createGameLoop(deps) {
     // nível 1-9 (eixo por-inimigo, distinto do wrongAnswerCount contínuo que applyDifficulty já
     // usa) — recalculado todo frame (não só em resposta errada) pra também refletir a escalada
     // por PONTUAÇÃO do modo sem baralho. Flash de subida dispara aqui (retrocesso é silencioso).
-    const difficultyLevel = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck })
+    const difficultyLevel = effectiveDifficultyLevel({ state, session, isNoDeck })
     if (difficultyLevel > state.lastDifficultyLevel) hud.showTierIncrease(difficultyLevel)
     state.lastDifficultyLevel = difficultyLevel
 
@@ -1146,6 +1225,7 @@ export function createGameLoop(deps) {
       kills: session.totalKills || 0,
       missionTimeMs: session.missionTimeMs || 0,
       difficultyLevel,
+      isDifficultyOverridden: state.debugDifficultyLevelOverride != null,
     })
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax(), player.getTemporaryShieldValue?.() || 0)
@@ -1385,5 +1465,6 @@ export function createGameLoop(deps) {
     step,
     setManualStepping,
     isManualStepping: () => !!state.manualStepActive,
+    getPityTelemetry: () => ({ tankActiveTime: state.tankActiveTime || 0, vermeActiveTime: state.vermeActiveTime || 0 }),
   }
 }

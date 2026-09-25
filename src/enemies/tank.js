@@ -6,13 +6,15 @@ import { createStateMachine, ENEMY_STATES } from './state-machine.js'
 
 export const TANK_KIND = 'tank'
 export const TANK_COLOR = 0xff9100
-export const TANK_HIT_RADIUS = 2.8
+// Hitbox autoritativa da Fase 3: 4.48 (2.8 * 1.6)
+export const TANK_HIT_RADIUS = 4.48
 export const TANK_DEATH_DURATION = 0.65
 export const TANK_DEFAULT_HP = 15
 export const TANK_KILL_BONUS = 75
 export const TANK_POPULATION_WEIGHT = 2
 
-const TANK_SCALE = 1.35
+// Bounding box final ~1.60x maior que a silhueta antiga
+export const TANK_SCALE = 2.16
 const TANK_HP_PER_LEVEL = 1.5
 const TANK_HP_CAP = 27
 const SPAWN_DISTANCE_MIN = 54
@@ -65,19 +67,45 @@ export function tankShouldLeaveAfterCycle(cycleCount, inArena) {
   return !inArena && cycleCount >= RAIL_CYCLES_BEFORE_LEAVE
 }
 
-const bodyGeo = new THREE.BoxGeometry(2.7, 1.25, 3.8)
-const sideGeo = new THREE.BoxGeometry(0.65, 0.75, 3.2)
-const noseGeo = new THREE.ConeGeometry(1.25, 2.0, 4)
+// ============ GEOMETRIAS DO TANK OVERHAUL (FASE 3) ============
+// Silhueta intencional de unidade pesada:
+// 1. Casco central largo e inclinado
+// 2. Proa blindada angulada
+// 3. Painéis laterais assimétricos (bulwark blindado à esquerda, gerador/sponson à direita)
+// 4. Torre elevada com anel e canhão pesado reconhecível
+// 5. Motores traseiros com tubeira emissiva
+// 6. Núcleo de energia e sensores
+
+const bodyGeo = new THREE.CylinderGeometry(1.6, 2.3, 3.8, 6)
+bodyGeo.rotateX(Math.PI / 2)
+
+const noseGeo = new THREE.ConeGeometry(1.5, 2.4, 5)
 noseGeo.rotateX(Math.PI / 2)
-const turretGeo = new THREE.CylinderGeometry(0.72, 0.92, 0.75, 8)
-const barrelGeo = new THREE.CylinderGeometry(0.18, 0.22, 2.5, 8)
+
+// Painéis laterais assimétricos
+const sideLGeo = new THREE.BoxGeometry(0.85, 1.15, 3.6) // Bulwark esquerdo
+const sideRGeo = new THREE.CylinderGeometry(0.55, 0.75, 3.4, 5) // Gerador/sponson direito
+sideRGeo.rotateX(Math.PI / 2)
+
+// Torre elevada com canhão pesado duplo
+const turretGeo = new THREE.CylinderGeometry(0.95, 1.25, 0.85, 8)
+const turretRingGeo = new THREE.CylinderGeometry(1.3, 1.35, 0.35, 8)
+const barrelGeo = new THREE.CylinderGeometry(0.24, 0.32, 3.2, 8)
 barrelGeo.rotateX(Math.PI / 2)
-const armorGeo = new THREE.BoxGeometry(0.48, 0.34, 1.15)
+const muzzleGeo = new THREE.CylinderGeometry(0.38, 0.35, 0.65, 8)
+muzzleGeo.rotateX(Math.PI / 2)
+
+// Motores e propulsores traseiros
+const thrusterGeo = new THREE.CylinderGeometry(0.42, 0.52, 1.1, 8)
+thrusterGeo.rotateX(Math.PI / 2)
+
+const armorGeo = new THREE.BoxGeometry(0.65, 0.42, 1.35)
 
 const bodyMat = new THREE.MeshPhongMaterial({ color: 0x7a3b00, emissive: 0x3b1700, emissiveIntensity: 0.52, flatShading: true })
 const armorMat = new THREE.MeshPhongMaterial({ color: TANK_COLOR, emissive: 0x552100, emissiveIntensity: 0.72, flatShading: true })
 const darkMat = new THREE.MeshPhongMaterial({ color: 0x2d1a12, emissive: 0x140700, emissiveIntensity: 0.3, flatShading: true })
 const coreMat = new THREE.MeshBasicMaterial({ color: 0xffd27a })
+const thrusterMat = new THREE.MeshPhongMaterial({ color: 0x221105, emissive: 0xff4400, emissiveIntensity: 0.85, flatShading: true })
 
 const siegeProjectileGeo = new THREE.IcosahedronGeometry(0.62, 1)
 const siegeProjectileMat = new THREE.MeshBasicMaterial({ color: 0xff7a18 })
@@ -101,30 +129,44 @@ function createTankVisual() {
   visualGroup.add(body)
 
   const nose = new THREE.Mesh(noseGeo, armorMat)
-  nose.position.z = 2.55
+  nose.position.z = 2.4
   visualGroup.add(nose)
 
-  const sideL = new THREE.Mesh(sideGeo, darkMat)
-  sideL.position.x = -1.65
-  const sideR = new THREE.Mesh(sideGeo, darkMat)
-  sideR.position.x = 1.65
+  const sideL = new THREE.Mesh(sideLGeo, darkMat)
+  sideL.position.set(-1.85, 0.05, 0)
+  const sideR = new THREE.Mesh(sideRGeo, darkMat)
+  sideR.position.set(1.85, 0.05, 0)
   visualGroup.add(sideL, sideR)
 
+  // Torre elevada com tracking independente
+  const turretGroup = new THREE.Group()
+  turretGroup.position.set(0, 1.1, 0.2)
+  const ring = new THREE.Mesh(turretRingGeo, darkMat)
+  ring.position.y = -0.25
   const turret = new THREE.Mesh(turretGeo, armorMat)
-  turret.position.set(0, 0.92, 0.15)
   const barrel = new THREE.Mesh(barrelGeo, armorMat)
-  barrel.position.set(0, 0.92, 1.55)
-  visualGroup.add(turret, barrel)
+  barrel.position.set(0, 0.1, 1.7)
+  const muzzle = new THREE.Mesh(muzzleGeo, darkMat)
+  muzzle.position.set(0, 0.1, 3.1)
+  turretGroup.add(ring, turret, barrel, muzzle)
+  visualGroup.add(turretGroup)
 
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), coreMat)
-  core.position.set(0, 0.15, 2.05)
+  // Motores traseiros
+  const thrusterL = new THREE.Mesh(thrusterGeo, thrusterMat)
+  thrusterL.position.set(-0.85, 0.15, -2.1)
+  const thrusterR = new THREE.Mesh(thrusterGeo, thrusterMat)
+  thrusterR.position.set(0.85, 0.15, -2.1)
+  visualGroup.add(thrusterL, thrusterR)
+
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.44, 10, 8), coreMat)
+  core.position.set(0, 0.2, 1.8)
   visualGroup.add(core)
 
   const armorPanels = []
   const panelSpecs = [
-    [-1.25, 0.58, 0.8, 1], [1.25, 0.58, 0.8, 1],
-    [-1.25, 0.58, -0.45, 2], [1.25, 0.58, -0.45, 2],
-    [-1.25, 0.58, -1.7, 3], [1.25, 0.58, -1.7, 3],
+    [-1.4, 0.65, 1.1, 1], [1.4, 0.65, 1.1, 1],
+    [-1.4, 0.65, -0.3, 2], [1.4, 0.65, -0.3, 2],
+    [-1.4, 0.65, -1.5, 3], [1.4, 0.65, -1.5, 3],
   ]
   for (const [x, y, z, tier] of panelSpecs) {
     const panel = new THREE.Mesh(armorGeo, armorMat)
@@ -134,7 +176,7 @@ function createTankVisual() {
     armorPanels.push(panel)
   }
   root.scale.setScalar(TANK_SCALE)
-  return { root, visualGroup, armorPanels, core }
+  return { root, visualGroup, armorPanels, core, turretGroup }
 }
 
 function updateArmorVisual(enemy) {
@@ -167,13 +209,30 @@ function moveToward(enemy, target, speed, dt) {
   return dist
 }
 
-function updateRailStandoff(enemy, dt, ctx) {
+export function updateRailStandoff(enemy, dt, ctx) {
+  enemy.moveTimer = (enemy.moveTimer || 0) + dt
+  // Deslocamento horizontal amplo entre -10u e +10u, vertical entre -4u e +4u (Fase 3.7)
+  const targetX = Math.sin(enemy.moveTimer * 0.95 + (enemy.id || 0) * 1.7) * 9.5
+  const targetY = Math.cos(enemy.moveTimer * 0.75 + (enemy.id || 0)) * 3.8
+  const lerpAlpha = Math.min(1, dt * 5.0)
+  enemy.screenX = THREE.MathUtils.lerp(enemy.screenX, targetX, lerpAlpha)
+  enemy.screenY = THREE.MathUtils.lerp(enemy.screenY, targetY, lerpAlpha)
+
   _target.copy(ctx.frame.position)
     .addScaledVector(ctx.frame.forward, RAIL_STANDOFF)
     .addScaledVector(ctx.frame.right, enemy.screenX)
     .addScaledVector(ctx.frame.up, enemy.screenY)
   moveToward(enemy, _target, RAIL_APPROACH_SPEED, dt)
+
+  // Casco aponta na direção geral com roll suave
   enemy.mesh.lookAt(ctx.playerPosition)
+  if (enemy.visualGroup) {
+    enemy.visualGroup.rotation.z = -(targetX - enemy.screenX) * 0.05
+  }
+  // Torre acompanha o jogador de forma independente
+  if (enemy.turretGroup) {
+    enemy.turretGroup.lookAt(ctx.playerPosition)
+  }
 }
 
 function updateArenaStandoff(enemy, dt, ctx) {
@@ -195,6 +254,9 @@ function updateArenaStandoff(enemy, dt, ctx) {
     }
   }
   enemy.mesh.lookAt(ctx.playerPosition)
+  if (enemy.turretGroup) {
+    enemy.turretGroup.lookAt(ctx.playerPosition)
+  }
 }
 
 function updateStandoff(enemy, dt, ctx) {
@@ -298,53 +360,62 @@ const TANK_STATES = {
       const kind = enemy.currentAttack || tankAttackForCycle(enemy.attackCycle)
       enemy.recoilTimer = 0.22
       enemy.attackShotTimer = 0
-      if (kind === TANK_ATTACKS.SIEGE) {
-        setProjectileProfile(enemy, kind)
-        ctx.fireEnemyProjectile(enemy, ctx.playerPosition)
-        enemy.attackShotsRemaining = 0
-      } else if (kind === TANK_ATTACKS.SUPPRESSION) {
-        setProjectileProfile(enemy, kind)
-        enemy.attackShotsRemaining = 4
-      } else {
+      if (kind === TANK_ATTACKS.RAM) {
         enemy.ramAttackActive = true
-        _ramDir.copy(ctx.playerPosition).sub(enemy.mesh.position)
-        if (_ramDir.lengthSq() < 1e-6) _ramDir.copy(ctx.frame.forward).negate()
-        enemy.ramDirection.copy(_ramDir.normalize())
+        _ramDir.copy(ctx.playerPosition).sub(enemy.mesh.position).normalize()
+        if (_ramDir.lengthSq() < 1e-4) _ramDir.copy(ctx.frame.forward).negate()
+        enemy.ramDirection.copy(_ramDir)
+        enemy.mesh.lookAt(enemy.mesh.position.clone().add(_ramDir))
+        triggerSoundCue(ENEMY_SOUND_CUES.tank_ram_charge, { enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position })
+      } else if (kind === TANK_ATTACKS.SIEGE) {
+        setProjectileProfile(enemy, kind)
+        enemy.attackShotsRemaining = 1
+      } else {
+        setProjectileProfile(enemy, kind)
+        enemy.attackShotsRemaining = 3
       }
-      aiValidator.logMechanic('tank-attack', kind, { enemyId: enemy.id, cycle: enemy.attackCycle, inArena: ctx.inArena })
-    },
-    onExit(enemy) {
-      enemy.ramAttackActive = false
-      enemy.attackShotsRemaining = 0
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
-      const kind = enemy.currentAttack
+      const kind = enemy.currentAttack || tankAttackForCycle(enemy.attackCycle)
       if (kind === TANK_ATTACKS.RAM) {
         enemy.mesh.position.addScaledVector(enemy.ramDirection, RAM_SPEED * dt)
-        enemy.mesh.lookAt(ctx.playerPosition)
-        if (enemy.fsm.timeInState >= RAM_TIME) enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
-        return
-      }
-      if (kind === TANK_ATTACKS.SUPPRESSION) {
-        enemy.attackShotTimer -= dt
-        if (enemy.attackShotsRemaining > 0 && enemy.attackShotTimer <= 0) {
-          const spreadIndex = 4 - enemy.attackShotsRemaining
-          const spread = [-0.16, -0.055, 0.055, 0.16][spreadIndex]
-          ctx.fireEnemyProjectile(enemy, ctx.playerPosition, spread)
-          enemy.attackShotsRemaining -= 1
-          enemy.attackShotTimer = 0.13
-          enemy.recoilTimer = 0.16
+        if (enemy.mesh.position.distanceTo(ctx.playerPosition) < 4.0) {
+          enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+          return
         }
-        if (enemy.attackShotsRemaining <= 0 && enemy.fsm.timeInState >= 0.5) enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
+        if (enemy.fsm.timeInState >= RAM_TIME) {
+          enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+        }
         return
       }
-      if (enemy.fsm.timeInState >= 0.12) enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
+
+      updateStandoff(enemy, dt, ctx)
+      enemy.attackShotTimer -= dt
+      if (enemy.attackShotsRemaining > 0 && enemy.attackShotTimer <= 0) {
+        enemy.attackShotsRemaining -= 1
+        enemy.attackShotTimer = 0.14
+        enemy.recoilTimer = 0.22
+        ctx.fireEnemyProjectile(enemy, ctx.playerPosition)
+        triggerSoundCue(kind === TANK_ATTACKS.SIEGE ? ENEMY_SOUND_CUES.tank_siege_fire : ENEMY_SOUND_CUES.tank_suppression_fire, {
+          enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position,
+        })
+      }
+      if (enemy.attackShotsRemaining <= 0 && enemy.fsm.timeInState >= 0.28) {
+        enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+      }
+    },
+    onExit(enemy) {
+      enemy.ramAttackActive = false
     },
   },
 
-  [ENEMY_STATES.RECOVERY]: {
+  [ENEMY_STATES.RECOVERING]: {
+    onEnter(enemy) {
+      enemy.ramAttackActive = false
+      enemy.attackShotsRemaining = 0
+    },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
@@ -355,45 +426,44 @@ const TANK_STATES = {
 
   [ENEMY_STATES.REPOSITIONING]: {
     onEnter(enemy) {
+      enemy.cycleCount = (enemy.cycleCount || 0) + 1
+      enemy.attackCycle = (enemy.attackCycle || 0) + 1
       enemy.strafeSign *= -1
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
-      if (!ctx.inArena) enemy.screenX = THREE.MathUtils.clamp(enemy.screenX + enemy.strafeSign * 4.5 * dt, -7, 7)
       updateStandoff(enemy, dt, ctx)
-      if (enemy.fsm.timeInState < REPOSITION_TIME) return
-      enemy.cycleCount += 1
-      enemy.attackCycle += 1
       if (tankShouldLeaveAfterCycle(enemy.cycleCount, ctx.inArena)) {
-        enemy.disengaging = true
         enemy.fsm.transition(ENEMY_STATES.DISENGAGING, null, ctx)
-      } else {
-        enemy.fireTimer = Math.max(0.75, ctx.randomEnemyFireInterval() * 0.65)
-        enemy.fsm.transition(ENEMY_STATES.ENGAGED, null, ctx)
+        return
       }
+      if (enemy.fsm.timeInState >= REPOSITION_TIME) enemy.fsm.transition(ENEMY_STATES.ENGAGED, null, ctx)
     },
   },
 
   [ENEMY_STATES.STAGGERED]: {
-    onEnter(enemy, ctx, payload) {
+    onEnter(enemy, ctx) {
       enemy.ramAttackActive = false
       enemy.attackShotsRemaining = 0
-      ctx.effects?.shockwave?.(enemy.mesh.position, 0xffc14d, 0.7)
-      aiValidator.logMechanic('tank-stagger', 'entered', { enemyId: enemy.id, reason: payload?.reason || 'unknown' })
+      enemy.recoilTimer = 0.4
+      ctx.effects?.shockwave?.(enemy.mesh.position, TANK_COLOR, 0.8)
+      triggerSoundCue(ENEMY_SOUND_CUES.tank_stagger, { enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position })
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
-      enemy.visualGroup.rotation.z = Math.sin(enemy.fsm.timeInState * 38) * 0.06
+      enemy.mesh.position.addScaledVector(ctx.frame.forward, 8 * dt)
+      enemy.mesh.rotation.z += Math.sin(enemy.fsm.timeInState * 16) * 0.05
       if (enemy.fsm.timeInState >= STAGGER_TIME) {
-        enemy.visualGroup.rotation.z = 0
-        enemy.fsm.transition(ENEMY_STATES.REPOSITIONING, null, ctx)
+        enemy.mesh.rotation.z = 0
+        enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
       }
     },
   },
 
   [ENEMY_STATES.DISENGAGING]: {
     onEnter(enemy) {
+      enemy.disengaging = true
       enemy.ramAttackActive = false
       enemy.fireTimer = Infinity
     },
@@ -402,15 +472,27 @@ const TANK_STATES = {
       leaveMovement(enemy, dt, ctx)
     },
   },
+
+  [ENEMY_STATES.DYING]: {
+    onEnter(enemy, ctx) {
+      enemy.dying = true
+      enemy.deathT = 0
+      ctx.effects?.explosion?.(enemy.mesh.position, TANK_COLOR, 1.8, { rings: true })
+      triggerSoundCue(ENEMY_SOUND_CUES.tank_death, { enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position })
+    },
+    update(enemy, dt) {
+      enemy.deathT = Math.min(1, (enemy.deathT || 0) + dt / TANK_DEATH_DURATION)
+      enemy.mesh.scale.setScalar(Math.max(0.001, (1 - enemy.deathT) * TANK_SCALE))
+    },
+  },
 }
 
 export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
-  const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
-  const { root, visualGroup, armorPanels, core } = createTankVisual()
-  root.position.copy(position)
+  const { root, visualGroup, armorPanels, core, turretGroup } = createTankVisual()
   scene.add(root)
-
-  const frame = rail?.getSpawnFrame ? rail.getSpawnFrame() : (rail?.getFrameAt ? rail.getFrameAt(0) : {
+  const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
+  root.position.copy(position)
+  const frame = rail.getSpawnFrame ? rail.getSpawnFrame() : (rail.getFrameAt ? rail.getFrameAt(0) : {
     position: new THREE.Vector3(),
     forward: new THREE.Vector3(0, 0, 1),
     up: new THREE.Vector3(0, 1, 0),
@@ -423,6 +505,7 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
     visualGroup,
     armorPanels,
     coreMesh: core,
+    turretGroup,
     kind: TANK_KIND,
     scale: TANK_SCALE,
     dying: false,
@@ -434,6 +517,7 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
     disengaging: false,
     screenX: THREE.MathUtils.clamp(_rel.dot(frame.right), -7, 7),
     screenY: THREE.MathUtils.clamp(_rel.dot(frame.up), -3, 5),
+    moveTimer: 0,
     attackCycle: 0,
     cycleCount: 0,
     currentAttack: null,
@@ -459,10 +543,14 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
 
 export function disposeTank() {
   bodyGeo.dispose()
-  sideGeo.dispose()
   noseGeo.dispose()
+  sideLGeo.dispose()
+  sideRGeo.dispose()
   turretGeo.dispose()
+  turretRingGeo.dispose()
   barrelGeo.dispose()
+  muzzleGeo.dispose()
+  thrusterGeo.dispose()
   armorGeo.dispose()
   siegeProjectileGeo.dispose()
   suppressionProjectileGeo.dispose()
@@ -470,6 +558,7 @@ export function disposeTank() {
   armorMat.dispose()
   darkMat.dispose()
   coreMat.dispose()
+  thrusterMat.dispose()
   siegeProjectileMat.dispose()
   suppressionProjectileMat.dispose()
 }

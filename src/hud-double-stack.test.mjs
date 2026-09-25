@@ -314,9 +314,10 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Authoritative Seams
   assert.ok(hudGameSource.includes('hud-level-block'), 'Deve conter hud-level-block')
   assert.ok(hudGameSource.includes('hud-level-value'), 'Deve conter hud-level-value')
 
-  // Top Center Cluster
-  assert.ok(hudGameSource.includes('hud-top-center-cluster'), 'Deve conter hud-top-center-cluster no topo central')
-  assert.ok(hudGameSource.includes('hud-center-combat-row'), 'Deve conter hud-center-combat-row agrupando combate')
+  // Combat Left Cluster (Fase 1.6: Nada estático no centro superior)
+  assert.ok(hudGameSource.includes('hud-combat-left-cluster'), 'Deve conter hud-combat-left-cluster na lateral esquerda')
+  assert.ok(hudGameSource.includes('hud-combat-actions-row'), 'Deve conter hud-combat-actions-row agrupando ações de combate')
+  assert.ok(!hudGameSource.includes('hud-top-center-cluster'), 'hud-top-center-cluster NÃO pode existir no topo central')
 
   // API consolidada (Abordagem B: setStatus unificado com formatters puros compartilhados)
   assert.ok(hudGameSource.includes('setStatus({'), 'Deve expor setStatus como API pública consolidada')
@@ -402,16 +403,17 @@ console.log('--- TEST SUITE: HUD Double Stack Architecture & Authoritative Seams
   const hudStylesSource = readFileSync(new URL('./hud-styles.js', import.meta.url), 'utf8')
 
   assert.ok(
+    hudStylesSource.includes('--hud-left-x: clamp(18px, 3.2vw, 52px)') ||
     hudStylesSource.includes('--hud-left-stack-x: clamp(238px, 17vw, 290px)'),
-    'deve usar token --hud-left-stack-x com clamp para não colidir com o cluster de vida (220px)'
+    'deve usar token --hud-left-x com clamp para alinhamento da Coluna Esquerda Clássica (Opção 4)'
   )
   assert.ok(
     hudStylesSource.includes('.cinematic-active .hud-double-stack'),
     'cutscenes cinemáticas devem ocultar as pilhas do Double Stack'
   )
   assert.ok(
-    hudStylesSource.includes('.cinematic-active .hud-top-center-cluster'),
-    'cutscenes cinemáticas devem ocultar o cluster superior central'
+    hudStylesSource.includes('.cinematic-active .hud-combat-left-cluster'),
+    'cutscenes cinemáticas devem ocultar o cluster de combate lateral esquerdo'
   )
 
   // Regressão Crítica: nenhum arquivo HUD pode referenciar THREE sem import (causava crash local de ReferenceError em setReticleCharge)

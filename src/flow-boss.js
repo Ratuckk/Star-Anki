@@ -16,7 +16,7 @@ import {
 } from './main-constants.js'
 import { nextQuestion, resolveAnswer, pickBonusCard, buildBonusQuestion, updateCorrectStreak, recordKills } from './quiz.js'
 import { recordResult, saveHistory } from './storage.js'
-import { getDifficultyLevel } from './enemies/shared.js'
+import { getDifficultyLevel, effectiveDifficultyLevel } from './enemies/shared.js'
 
 export function createBossFlow(deps) {
   const {
@@ -188,7 +188,7 @@ export function createBossFlow(deps) {
     hud.setCountdown(null)
     hud.setBossTint(true)
     combat.clearAllCombatants()
-    const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: !!deck?.isNoDeck })
+    const level = effectiveDifficultyLevel({ state, session, isNoDeck: !!deck?.isNoDeck })
     const bossHp = BOSS_BASE_HP + state.bossHealthBonus + BOSS_HP_PER_LEVEL * Math.max(0, level - 1)
     combat.spawnBossEnemy(bossHp, level)
     hud.setBossFight(true, bossHp, bossHp)
@@ -207,7 +207,7 @@ export function createBossFlow(deps) {
   function enterGoldenArena() {
     state.phase = 'goldenArena'
     rail.enterArena()
-    const level = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: !!deck?.isNoDeck })
+    const level = effectiveDifficultyLevel({ state, session, isNoDeck: !!deck?.isNoDeck })
     combat.spawnGoldenSpecial({ distanceMin: GOLDEN_SPREAD_MIN, distanceMax: GOLDEN_SPREAD_MAX, level })
     hud.setGoldenActive(true)
   }

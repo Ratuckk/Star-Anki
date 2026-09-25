@@ -16,7 +16,7 @@ import { getSummary, computeDifficultyBias } from './quiz.js'
 import { createRailController } from './rail.js'
 import { createCombatSystem } from './combat/index.js'
 import { createEnemiesSystem } from './enemies/index.js'
-import { getDifficultyLevel } from './enemies/shared.js'
+import { getDifficultyLevel, effectiveDifficultyLevel } from './enemies/shared.js'
 import { createPlayerSystem } from './player.js'
 import { createPlayerTelemetry } from './player-telemetry.js'
 import { createEffectsSystem } from './effects.js'
@@ -215,6 +215,7 @@ export function mountGame(session, deck, menu) {
     // descida, retrocesso é silencioso por pedido do usuário). O indicador persistente (HUD)
     // sempre mostra o valor atual, independente disso.
     lastDifficultyLevel: 1,
+    debugDifficultyLevelOverride: null,
     extraSpawnPerBatch: 0,
     enemyDamageValue: 1,
     enemyCap: 0,
@@ -250,12 +251,14 @@ export function mountGame(session, deck, menu) {
   // applyDifficulty já usa pra spawn rate/agressividade — os dois coexistem). Registrado uma
   // única vez aqui porque só este arquivo tem `state`/`session`/`deck` no mesmo escopo;
   // enemies/index.js chama esse provider internamente em cada spawnX() (ver
-  // setDifficultyLevelProvider lá).
-  enemies.setDifficultyLevelProvider(() => getDifficultyLevel({
-    wrongAnswerCount: state.wrongAnswerCount,
-    score: session.score,
+  // setDifficultyLevelProvider lá). Se state.debugDifficultyLevelOverride estiver ativo,
+  // effectiveDifficultyLevel honra o override de forma autoritativa.
+  enemies.setDifficultyLevelProvider(() => effectiveDifficultyLevel({
+    state,
+    session,
     isNoDeck: !!deck?.isNoDeck,
   }))
+  enemies.setAllyCountProvider(() => (combat.getWingmanCount ? combat.getWingmanCount() : 0))
 
   // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
   // `environment` entrou nas deps só pra decolagem chamar environment.update() (ver
@@ -297,7 +300,7 @@ export function mountGame(session, deck, menu) {
       ? (session.score - state.bossNoDeckScoreCheckpoint) >= BOSS_NO_DECK_SCORE_INTERVAL
       : (session.pointer + 1) % BOSS_EVERY_QUESTIONS === 0
     state.isReviewQuestion = (session.history[session.queue[session.pointer].guid]?.erros ?? 0) > 0
-    const difficultyLevel = getDifficultyLevel({ wrongAnswerCount: state.wrongAnswerCount, score: session.score, isNoDeck: deck?.isNoDeck })
+    const difficultyLevel = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
     state.cycleTimer = state.isBossCycle ? BOSS_CYCLE_MS : CYCLE_MS + (difficultyLevel - 1) * CYCLE_MS_PER_DIFFICULTY_LEVEL
     state.enemyTimer = progression.randomEnemyInterval() * (state.isBossCycle ? BOSS_ENEMY_INTERVAL_MULT : 1) * (state.isReviewQuestion ? REVIEW_ENEMY_INTERVAL_MULT : 1)
     state.normalSpawnTimer = NORMAL_SPAWN_INTERVAL_MS
@@ -344,6 +347,7 @@ export function mountGame(session, deck, menu) {
     // essas duas linhas ficavam aqui; agora o game-loop.js é dono do ciclo de vida do RAF.
     gameLoop.stop()
     if (window.__starAnki) delete window.__starAnki
+    if (window.__gameHudInstance) delete window.__gameHudInstance
     if (window.__stepFrames) delete window.__stepFrames
     if (state.bossFovTimeout) {
       clearTimeout(state.bossFovTimeout)
@@ -455,6 +459,7 @@ export function mountGame(session, deck, menu) {
   // ============ DEBUG PANEL ============
   hud.debug.bind(createDebugActions({
     state,
+    deck,
     gameLoop,
     combat, session, player, rail, effects, hud, enemies,
     environment,
@@ -486,9 +491,23 @@ export function mountGame(session, deck, menu) {
     const wingmenDetail = tele && tele.wingmen && tele.wingmen.length > 0
       ? tele.wingmen.map((w) => `${w.name[0]}:${w.state[0].toUpperCase()}(${w.relativeToPlayer.dist}u,${w.rotation.smoothRollDeg}°)`).join(' ')
       : 'nenhum'
+    const diffLevel = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
+    const goldenTele = enemies.getGoldenTelemetry ? enemies.getGoldenTelemetry() : null
+    const gFighters = goldenTele?.squadron?.aliveCount ?? 0
+    const gCap = goldenTele?.squadron?.cap ?? 0
+    const gOffCap = goldenTele?.squadron?.offensiveCap ?? 0
+    const gOrder = goldenTele?.squadron?.currentOrder ?? 'none'
+    const aliveList = enemies.getAlive ? enemies.getAlive() : []
+    const sussurro = aliveList.find((e) => e.kind === 'sussurro')
+    const replica = aliveList.find((e) => e.kind === 'replica')
+    const sussurroState = sussurro ? sussurro.state : 'nenhum'
+    const replicaState = replica ? (replica.burstShotsRemaining > 0 ? 'BURST' : `PRONTO(${replica.fireTimer.toFixed(1)}s)`) : 'nenhum'
+
     return {
       phase: state.phase,
       sector: `${(session.pointer || 0) + 1}/${session.queue.length}`,
+      difficultyLevel: diffLevel,
+      isDifficultyOverridden: state.debugDifficultyLevelOverride != null,
       health: session.health,
       maxHealth: player.getMaxHealth(),
       shield: player.getShieldValue(),
@@ -498,6 +517,10 @@ export function mountGame(session, deck, menu) {
       score: Math.round(session.score),
       combo: session.comboMultiplier,
       enemies: aliveEnemies,
+      goldenSquad: `${gFighters}/${gCap} (offCap: ${gOffCap})`,
+      goldenOrder: gOrder,
+      pityTimers: `T:${(state.tankActiveTime || 0).toFixed(0)}s / V:${(state.vermeActiveTime || 0).toFixed(0)}s`,
+      stealthEcho: `S:${sussurroState} | R:${replicaState}`,
       wingmen: `${combat.getWingmanCount()} [${wingmenDetail}]`,
       position: `${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`,
       flags: state.debugFlags,
@@ -506,6 +529,7 @@ export function mountGame(session, deck, menu) {
 
   // ============ KICKOFF ============
   enterCombat()
+  const initialDiffLevel = effectiveDifficultyLevel({ state, session, isNoDeck: deck?.isNoDeck })
   hud.setStatus({
     health: session.health,
     maxHealth: player.getMaxHealth(),
@@ -514,7 +538,8 @@ export function mountGame(session, deck, menu) {
     streak: session.correctStreak || 0,
     kills: session.totalKills || 0,
     missionTimeMs: session.missionTimeMs || 0,
-    difficultyLevel: 1,
+    difficultyLevel: initialDiffLevel,
+    isDifficultyOverridden: state.debugDifficultyLevelOverride != null,
   })
   hud.setLives(session.lives, player.getMaxLives())
   hud.setShield(player.getShieldValue(), player.getShieldMax())
@@ -532,8 +557,10 @@ export function mountGame(session, deck, menu) {
 
   gameLoop.start()
 
+  window.__gameHudInstance = hud
   // Suporte a testes determinísticos, inspeção de tempo (stepper manual) e telemetria (jogador, esquadrão e inimigos)
   window.__starAnki = {
+    hud,
     state,
     gameLoop,
     combat,
@@ -586,4 +613,8 @@ export function mountGame(session, deck, menu) {
 
   window.__getCombatTelemetry = () => combat.getCombatTelemetry?.()
   window.__dumpCombatTelemetry = () => combat.dumpCombatTelemetry?.()
+  window.__enemiesSysInstance = enemies
+  window.__combatInstance = combat
+  window.__getGoldenTelemetry = () => enemies.getGoldenTelemetry?.()
+  window.THREE = THREE
 }

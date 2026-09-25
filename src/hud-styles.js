@@ -3,7 +3,7 @@
 // modal de pergunta do chefe. Extraído de hud.js na refatoração que separa cada tela em seu
 // próprio arquivo. Só createGameHud (hud-game.js) chama isso. Zero mudança de comportamento.
 export function injectHudExtraStyles() {
-  if (document.getElementById('star-anki-hud-extra-styles')) return
+  if (typeof document === 'undefined' || document.getElementById('star-anki-hud-extra-styles')) return
   const style = document.createElement('style')
   style.id = 'star-anki-hud-extra-styles'
   style.textContent = `
@@ -643,18 +643,21 @@ export function injectHudExtraStyles() {
 
 /* ============ CLUSTER DE VIDA/ESCUDO/BOOST — placas angulares (overhaul v0.71.0) ============ */
 /* Pedido do usuário: overhaul do design pra ficar "mais dinamico e epico" — console militar com
-   segmentos angulares em vez das 3 barras retas antigas. Mantém a mesma posição de tela (canto
-   superior esquerdo) e a mesma API do hud (setLives/setStatus/setShield/setBoost inalteradas). */
-.hud-vitals-cluster {
+   segmentos angulares em vez das 3 barras retas antigas.
+   OPÇÃO 4 (Coluna Esquerda Clássica): Posicionado estritamente abaixo das Ações (FOCO/SWIRL/CADEIA). */
+.hud-vitals-cluster,
+.hud-left-vitals {
   position: absolute;
-  top: 56px;
-  left: 12px;
+  top: clamp(258px, 36.0vh, 370px);
+  left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
   gap: 7px;
-  width: 220px;
+  width: clamp(260px, 22.5vw, 290px);
   pointer-events: none;
+  z-index: 22;
   filter: drop-shadow(0 1px 3px #000);
+  transition: opacity 0.35s ease;
 }
 .hud-vitals-cluster.hit-flash {
   animation: hud-vitals-hitflash 260ms ease-out;
@@ -1718,7 +1721,11 @@ export function injectHudExtraStyles() {
 .cinematic-active .reticle,
 .cinematic-active .hud-status,
 .cinematic-active .hud-double-stack,
-.cinematic-active .hud-top-center-cluster,
+.cinematic-active .hud-left-stats,
+.cinematic-active .hud-left-resources,
+.cinematic-active .hud-left-actions,
+.cinematic-active .hud-left-vitals,
+.cinematic-active .hud-combat-left-cluster,
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-vitals-orbital,
@@ -2043,14 +2050,12 @@ export function injectHudExtraStyles() {
   letter-spacing: 0.03em;
 }
 
-/* ============ RÁDIO DOS ALIADOS (Overhaul de Personalidade, Ideia 3) ============ */
-/* Opção 3 dos 3 protótipos HTML (escolhida pelo usuário) — painel quadrado (não pill, pra
-   acomodar melhor o retrato) com cantos técnicos, glitch de entrada por corte em steps e
-   flicker rápido antes de sumir. Ver Docs/Rádio dos Aliados — Opção B v2 (protótipo).html. */
+/* ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============ */
 .hud-wingman-radio {
   position: absolute;
-  left: 12px;
-  top: var(--wingman-radio-top, 304px);
+  left: var(--wingman-radio-x, 50%);
+  top: var(--wingman-radio-y, 82%);
+  transform: translate(-50%, 0);
   bottom: auto;
   display: flex;
   align-items: center;
@@ -2061,15 +2066,13 @@ export function injectHudExtraStyles() {
   border: 1px solid var(--pc, #38bdf8);
   box-shadow: 0 0 18px var(--pg, rgba(56, 189, 248, 0.4)), 0 6px 16px rgba(0, 0, 0, 0.6);
   opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 140ms ease-out, transform 200ms ease-out, border-color 200ms, box-shadow 200ms;
+  transition: opacity 140ms ease-out, border-color 200ms, box-shadow 200ms;
   pointer-events: none;
   z-index: 45;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 .hud-wingman-radio.active {
   opacity: 1;
-  transform: translateY(0);
 }
 .hud-wingman-radio-corner {
   position: absolute;
@@ -2137,87 +2140,25 @@ export function injectHudExtraStyles() {
   animation: hud-wingman-radio-flicker 180ms steps(1, end);
 }
 
-/* ============ PAINEL DE ABILITY (região superior) — Documento de Implementação, item 2 ============ */
-/* Mesma estrutura interna (.hud-wingman-radio-corner/-avatar/-name/-line, reaproveitadas sem
-   redefinição — não são escopadas ao pai, valem pros dois painéis). Só a caixa raiz muda: posição
-   (top em vez de bottom), cor mais saturada, e uma entrada em fatias mais dramática (steps a
-   partir da esquerda) — pra distinguir "fala de habilidade" de "papo" trivial à primeira vista. */
-.hud-wingman-ability-panel {
+/* ============ ÍCONE DE HABILIDADE SOBRE NAVE DO ALIADO (Fase 1.4) ============ */
+.hud-wingman-ability-world-icon {
   position: absolute;
-  left: 12px;
-  top: var(--wingman-ability-top, 172px);
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 12.5px 22.5px 12.5px 12.5px;
-  border-radius: 6px;
-  background: rgba(8, 12, 22, 0.94);
-  border: 1.5px solid var(--pc, #38bdf8);
-  border-left-width: 6px;
-  box-shadow: 0 0 26px var(--pg, rgba(56, 189, 248, 0.7)), 0 6px 16px rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transform: translateY(-14px);
-  transition: opacity 140ms ease-out, transform 200ms ease-out, border-color 200ms, box-shadow 200ms;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(8, 14, 28, 0.90);
+  border: 2px solid var(--pilot-color, #38bdf8);
+  box-shadow: 0 0 18px var(--pilot-color, #38bdf8), inset 0 0 8px var(--pilot-color, #38bdf8);
+  font-size: 20px;
   pointer-events: none;
-  z-index: 45;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  z-index: 38;
+  will-change: transform, opacity, left, top;
 }
-.hud-wingman-ability-panel.active {
-  opacity: 1;
-  transform: translateY(0);
-}
-/* Opção 2 escolhida: o quote entra como painel em derrapagem. As speedlines chegam longas,
-   comprimem na freada e quase somem enquanto a fala é lida; ao sair, voltam aceleradas. */
-.hud-wingman-ability-speedlines {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-.hud-wingman-ability-speedlines i {
-  position: absolute;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--pc, #38bdf8), #ffffff);
-  box-shadow: 0 0 5px var(--pc, #38bdf8);
-  transform-origin: right;
-}
-.hud-wingman-ability-speedlines i:nth-child(1) { top: 16%; width: 74%; }
-.hud-wingman-ability-speedlines i:nth-child(2) { top: 31%; width: 44%; }
-.hud-wingman-ability-speedlines i:nth-child(3) { top: 49%; width: 90%; }
-.hud-wingman-ability-speedlines i:nth-child(4) { top: 66%; width: 57%; }
-.hud-wingman-ability-speedlines i:nth-child(5) { top: 83%; width: 78%; }
-@keyframes hud-wingman-ability-drift-in {
-  0% { clip-path: inset(0 100% 0 0); transform: translateX(-390px) scaleX(1.18); }
-  45% { clip-path: inset(0 0 0 0); transform: translateX(-22px) scaleX(1.05); }
-  72% { transform: translateX(8px) scaleX(0.98); }
-  100% { transform: translateX(0) scaleX(1); }
-}
-@keyframes hud-wingman-ability-lines-brake {
-  0% { opacity: 0; transform: translateX(-530px) scaleX(3); }
-  45% { opacity: 1; transform: translateX(-20px) scaleX(1.15); }
-  68% { opacity: 0.72; transform: translateX(12px) scaleX(0.75); }
-  100% { opacity: 0.18; transform: scaleX(0.3); }
-}
-@keyframes hud-wingman-ability-drift-out {
-  to { opacity: 0; transform: translateX(450px) scaleX(1.35); }
-}
-@keyframes hud-wingman-ability-lines-boost {
-  0% { opacity: 0.18; transform: scaleX(0.3); }
-  100% { opacity: 0; transform: translateX(580px) scaleX(3); }
-}
-.hud-wingman-ability-panel.entering {
-  animation: hud-wingman-ability-drift-in 1.2s cubic-bezier(0.12, 0.68, 0.16, 1) both;
-}
-.hud-wingman-ability-panel.entering .hud-wingman-ability-speedlines i {
-  animation: hud-wingman-ability-lines-brake 1.2s ease-out both;
-}
-.hud-wingman-ability-panel.leaving {
-  animation: hud-wingman-ability-drift-out 420ms cubic-bezier(0.76, 0, 0.99, 0.35) both;
-}
-.hud-wingman-ability-panel.leaving .hud-wingman-ability-speedlines i {
-  animation: hud-wingman-ability-lines-boost 420ms ease-in both;
-}
+
 
 /* ============ ALERTA DE EVENTO AMBIENTAL: TEMPESTADE DE DETRITOS ============ */
 .hud-storm-warning {
@@ -2386,9 +2327,10 @@ export function injectHudExtraStyles() {
   to   { transform: scale(1.28); opacity: 1.0; }
 }
 
-/* ============ HUD DOUBLE STACK ARCHITECTURE ============ */
+/* ============ HUD DOUBLE STACK & OPÇÃO 4 ARCHITECTURE ============ */
 :root {
-  --hud-left-stack-x: clamp(238px, 17vw, 290px);
+  --hud-left-x: clamp(18px, 3.2vw, 52px);
+  --hud-left-stack-x: var(--hud-left-x);
 }
 
 .hud-double-stack {
@@ -2400,14 +2342,16 @@ export function injectHudExtraStyles() {
   transition: opacity 0.35s ease;
 }
 
-/* Pilha Esquerda (Score + Streak/Kills + Combo) */
-.hud-stack-left {
-  top: clamp(14px, 1.6vh, 18px);
-  left: var(--hud-left-stack-x);
+/* Pilha Esquerda / Zona 1: Stats (Score + Streak/Kills + Combo) — Opção 4 */
+.hud-stack-left,
+.hud-left-stats {
+  top: clamp(14px, 2.0vh, 24px);
+  left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: clamp(10px, 1.2vh, 16px);
+  width: clamp(170px, 15vw, 200px);
 }
 
 .hud-stack-label {
@@ -2577,33 +2521,71 @@ export function injectHudExtraStyles() {
   border-radius: 2px;
 }
 
-/* Cluster Superior Central (Wingmen + Swirl + Cadeia) */
-.hud-top-center-cluster {
+.hud-level-block.debug-override .hud-stack-label {
+  color: #f59e0b;
+}
+
+.hud-level-block.debug-override .hud-level-value {
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.6), 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.hud-level-block.debug-override .hud-level-bar {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+}
+
+/* Zona 2: Recursos / Cards (Abilities) — Opção 4 */
+.hud-left-resources {
   position: absolute;
-  top: clamp(8px, 1.2vh, 14px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: clamp(150px, 21.0vh, 220px);
+  left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
   pointer-events: none;
   z-index: 22;
   transition: opacity 0.35s ease;
 }
 
-.hud-center-combat-row {
+/* Zona 3: Ações (FOCO + SWIRL + Cadeia) — Opção 4 */
+.hud-left-actions,
+.hud-combat-left-cluster {
+  position: absolute;
+  top: clamp(195px, 27.5vh, 280px);
+  left: var(--hud-left-x);
+  left: var(--hud-left-stack-x);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 22;
+  transition: opacity 0.35s ease;
+}
+
+/* Alinhamento do eixo X principal da Coluna Esquerda Clássica (Opção 4) */
+.hud-left-stats,
+.hud-left-resources,
+.hud-left-actions,
+.hud-left-vitals {
+  left: var(--hud-left-x);
+}
+
+.hud-combat-actions-row {
   display: flex;
   align-items: center;
   gap: 8px;
   pointer-events: none;
 }
 
-/* Responsividade Double Stack */
+/* 1.7: Um único timer visível no topo direito; oculta contagem solta central */
+.hud-countdown {
+  display: none !important;
+}
+
+/* Responsividade Double Stack / Coluna Esquerda Clássica */
 @media (max-width: 1366px) {
-  :root {
-    --hud-left-stack-x: clamp(234px, 18vw, 260px);
-  }
   .hud-score-value,
   .hud-mission-time-value {
     font-size: 32px;
@@ -2615,9 +2597,6 @@ export function injectHudExtraStyles() {
 }
 
 @media (max-width: 1280px) {
-  :root {
-    --hud-left-stack-x: 232px;
-  }
   .hud-score-value,
   .hud-mission-time-value {
     font-size: 28px;

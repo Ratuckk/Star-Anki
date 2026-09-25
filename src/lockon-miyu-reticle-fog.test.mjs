@@ -176,15 +176,14 @@ const testFrame = {
   const resNoShots = squadron.update(0.016, testFrame.position, testFrame)
   assert.equal(resNoShots.radioMessage, null, 'Soltar sem tiros válidos NÃO gera fala da Miyu')
 
-  // Test 3.6: Disparo efetivo gera exatamente 1 fala de assist!
+  // Test 3.6: Disparo efetivo gera ZERO rádio e ativa ícone visual (Fase 1.1 e 1.5)
   const dummyTarget = { mesh: { position: new THREE.Vector3(0, 0, -40) }, radius: 2 }
   const shots = squadron.fireMiyuAssistShots([dummyTarget, dummyTarget])
   assert.equal(shots, 2, 'Dois disparos efetuados')
   const resFired = squadron.update(0.016, testFrame.position, testFrame)
-  assert.ok(resFired.radioMessage, 'Exatamente 1 fala de rádio deve ser emitida ao disparar')
-  assert.equal(resFired.radioMessage.eventId, 'ability_assist', 'A fala deve ser ability_assist')
-  assert.equal(resFired.radioMessage.pilotId, 3, 'A fala deve ser da Miyu (pilotId = 3)')
-  assert.equal(resFired.radioMessage.isAbility, true, 'isAbility deve ser true')
+  assert.equal(resFired.radioMessage, null, 'Disparo assistido da Miyu gera ZERO rádio')
+  const activeIcons = squadron.getActiveAbilityIcons()
+  assert.ok(activeIcons.some(i => i.pilotId === 3), 'Ícone visual de ability ativado sobre a nave da Miyu')
 
   console.log('✔ Miyu Radio Timing & Cooldown Contracts passed')
 }

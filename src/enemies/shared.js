@@ -40,6 +40,32 @@ export function getDifficultyLevel({ wrongAnswerCount = 0, score = 0, isNoDeck =
     : Math.floor(wrongAnswerCount / DIFFICULTY_LEVEL_WRONG_STEP)
   return 1 + Math.min(DIFFICULTY_LEVEL_MAX - 1, Math.max(0, steps))
 }
+
+// Fase 0 (Debug de Dificuldade): função única de nível efetivo.
+// Se state.debugDifficultyLevelOverride != null, obedece o override clampado [1, 9];
+// senão delega ao getDifficultyLevel normal.
+export function effectiveDifficultyLevel(arg1, arg2, arg3) {
+  let state, session, isNoDeck
+  if (arg1 && (arg1.state !== undefined || arg1.wrongAnswerCount !== undefined || arg1.session !== undefined)) {
+    state = arg1.state || arg1
+    session = arg1.session
+    isNoDeck = arg1.isNoDeck ?? false
+  } else {
+    state = arg1
+    session = arg2
+    isNoDeck = arg3 ?? false
+  }
+  if (state?.debugDifficultyLevelOverride != null) {
+    const forced = Math.round(Number(state.debugDifficultyLevelOverride))
+    return Number.isFinite(forced) ? Math.max(1, Math.min(DIFFICULTY_LEVEL_MAX, forced)) : 1
+  }
+  return getDifficultyLevel({
+    wrongAnswerCount: state?.wrongAnswerCount ?? 0,
+    score: session?.score ?? 0,
+    isNoDeck: !!isNoDeck,
+  })
+}
+
 // ============ HIERARQUIA DE PODER DE PROJÉTIL (pedido explícito do usuário) ============
 // 4 níveis, usados pra decidir a REAÇÃO do jogador ao ser atingido — hoje só o nível 4 tem
 // comportamento próprio (perda de controle, ver rail.js → triggerHighImpactTumble), os outros

@@ -358,15 +358,16 @@ test('Swirl Blast: Hitbox própria permite acerto por raspão volumétrico e swe
   const rail = makeMockRail()
   const enemiesSys = createEnemiesSystem(scene, rail)
 
-  // Inimigo Tank (raio 2.2)
+  // Inimigo Tank
   const tank = enemiesSys.spawnTankEnemy(50)
   tank.spawnPhase = null
   const tankPos = tank.mesh.position
+  const tankRadius = tank.radius ?? 4.48
 
   // Segmento passando lateralmente a uma distância de (tankRadius + 2.5)
   // Sem hitBuffer (hitBuffer = 0), a distância seria maior que o raio do tank -> erraria.
-  // Com SWIRL_BLAST_HIT_RADIUS = 3.0, distância (2.2 + 2.5 = 4.7) <= (2.2 + 3.0 = 5.2) -> conecta!
-  const offset = 2.2 + 2.5 // 4.7u do centro
+  // Com SWIRL_BLAST_HIT_RADIUS = 3.0, distância (tankRadius + 2.5) <= (tankRadius + 3.0) -> conecta!
+  const offset = tankRadius + 2.5
   const prevPos = new THREE.Vector3(tankPos.x + offset, tankPos.y, tankPos.z - 10)
   const currPos = new THREE.Vector3(tankPos.x + offset, tankPos.y, tankPos.z + 10)
 
@@ -379,8 +380,8 @@ test('Swirl Blast: Hitbox própria permite acerto por raspão volumétrico e swe
   assert.equal(hits.length, 1, 'Raspão volumétrico deve registrar contato com a nova hitbox')
   assert.equal(hits[0].kind, 'tank')
 
-  // Passagem claramente fora (distância de 2.2 + 3.8 = 6.0u > 5.2u)
-  const farOffset = 2.2 + 3.8
+  // Passagem claramente fora (distância de tankRadius + 3.8 > tankRadius + 3.0)
+  const farOffset = tankRadius + 3.8
   const farPrev = new THREE.Vector3(tankPos.x + farOffset, tankPos.y, tankPos.z - 10)
   const farCurr = new THREE.Vector3(tankPos.x + farOffset, tankPos.y, tankPos.z + 10)
 

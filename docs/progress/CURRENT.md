@@ -1,7 +1,7 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.36 — Dourado + Tank Natural Spawn + Pacote Polish + HUD Double Stack integrados em main
-> **Branch Atual:** `main`
+> **Versão:** v0.99.36 — Pacote de Correção em Fases (Fases 0 a 5) implementado na branch `feat/system-correction-phases`
+> **Branch Atual de Trabalho:** `feat/system-correction-phases` (Baseline `main` @ `e5f68e93fee9b75a2edc8f219f3de08893524607`)
 > **Última Atualização:** 2026-09-24
 > **Histórico Recente de Integrações em `main`:**
 > - **PR #15 (Dourado + Esquadrão):** Merge `3c014a74f56dfd90428c6370372d90527f5c9716` (CI Run `35946376454` pass)
@@ -10,8 +10,7 @@
 > - **PR #18 (HUD Double Stack Architecture):** Merge `7a6d10354486578bc1ba0d606b1d84a9410083af` (CI Run `36017039624` pass)
 > - **PR #19 (Hotfix Runtime ReferenceError THREE em setReticleCharge):** Merge `8b499bddbed11d00b70747ceef9ca621ed6f5414` (CI Run `36031499957` pass)
 > **Registro Cronológico Pós-v0.99.35:** [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md)
-> **Branch de Segurança Local:** `wip/post-v09936-local-fixes` (commit `3c7cb7fa7f1bf216ecca9411e586da151b63b98b`)
-> **Pendências Abertas:** Fog volumétrico, retícula progressiva e markers/screen-space da Miyu (HUD Double Stack homologado graficamente via CDP em 1280x720, 1366x768, 1920x1080 e 1280x800).
+> **Pacote de Correções Ativo:** Fases 0 a 5 concluídas localmente em `feat/system-correction-phases`, com 56 testes automatizados, fuzz runtime, validação visual (11 artefatos) e sem merge automático na `main`.
 
 ---
 

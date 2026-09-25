@@ -19,6 +19,11 @@ import './arcade-draft-bullet-time.test.mjs'
 import './golden-squadron.test.mjs'
 import './lockon-miyu-reticle-fog.test.mjs'
 import './hud-double-stack.test.mjs'
+import './debug-difficulty-override.test.mjs'
+import './fase1-radio-hud.test.mjs'
+import './fase2-golden-overhaul.test.mjs'
+import './fase3-tank-verme-spawn.test.mjs'
+import './fase4-sussurro-replica.test.mjs'
 
 import { buildDeck, generateDistractors } from './anki.js'
 import { createSession, nextQuestion, resolveAnswer, getSummary, STARTING_HEALTH, STARTING_LIVES } from './quiz.js'
@@ -582,17 +587,18 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingm
   const line1 = radio.trySpeak(0, 'engage_dogfight', 1000)
   assert.ok(typeof line1 === 'string' && line1.length > 0, 'trySpeak deve devolver uma fala pra um par piloto+evento válido')
 
+  // 1.2: Gate global de 6s bloqueia qualquer fala trivial subsequente no esquadrão em menos de 6s
   const line2 = radio.trySpeak(1, 'engage_dogfight', 1500)
-  assert.ok(typeof line2 === 'string', 'cooldown de Falco não pode bloquear uma fala trivial de Peppy')
+  assert.strictEqual(line2, null, 'gate global de 6s do esquadrão deve bloquear fala trivial de Peppy aos 1500ms')
 
   const samePilotBlocked = radio.trySpeak(0, 'kill', 1500)
   assert.strictEqual(samePilotBlocked, null, 'cooldown trivial continua valendo por piloto')
 
+  // 1.1: Habilidade NUNCA usa rádio (retorna null)
   const abilityDuringCooldown = radio.speakAbility(0, 'ability_ram', 1600)
-  assert.ok(typeof abilityDuringCooldown === 'string', 'ability deve falar in-world mesmo durante cooldown trivial do piloto')
+  assert.strictEqual(abilityDuringCooldown, null, 'habilidade nunca usa rádio (retorna null)')
 
-  // O cooldown trivial continua aleatório entre 6s e 20s por piloto; usar o MÁXIMO garante que o
-  // cooldown de Falco já passou não importa qual valor foi sorteado na fala anterior.
+  // O cooldown trivial global exige pelo menos 6s (e até 20s por piloto)
   const line3 = radio.trySpeak(0, 'engage_dogfight', 1000 + GLOBAL_COOLDOWN_MAX_MS)
   assert.ok(typeof line3 === 'string', 'depois do cooldown trivial máximo (20s) passar, o mesmo piloto deve voltar a falar')
 

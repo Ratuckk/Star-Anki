@@ -559,39 +559,53 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     worldRadio.triggerAbilityGlow(wingman.mesh, wingman.profile.accentColor, WINGMAN_ABILITY_GLOW_DURATION_S)
   }
 
-  function announceAbility(wingman, eventId, { triggerGlow = true } = {}) {
-    // O efeito visual pertence à habilidade e permanece imediato; a fala lateral respeita o
-    // cooldown universal do piloto.
-    if (triggerGlow) triggerAbilityGlow(wingman)
-    for (let i = pendingRadioMessages.length - 1; i >= 0; i -= 1) {
-      if (!pendingRadioMessages[i]?.isAbility) pendingRadioMessages.splice(i, 1)
-    }
-    const text = wingmanRadio.speakAbility(
-      wingman.profile.id,
+  const WINGMAN_ABILITY_ICONS = {
+    ability_ram: '☄️',
+    ability_intercept: '☄️',
+    ability_guard: '🔰',
+    ability_rescue: '🔰',
+    ability_aux_shield: '🔰',
+    ability_repair: '🩹',
+    ability_morale: '🩹',
+    ability_boost_dash: '🩹',
+    ability_assist: '🔗',
+    ability_boombuster: '🔗',
+  }
+  let nextAbilityIconId = 1
+  const activeAbilityWorldIcons = []
+
+  function triggerAbilityWorldIcon(wingman, eventId) {
+    if (!wingman || !wingman.mesh) return
+    const iconChar = WINGMAN_ABILITY_ICONS[eventId] || '⭐'
+    activeAbilityWorldIcons.push({
+      id: nextAbilityIconId++,
+      wingman,
+      pilotId: wingman.profile.id,
       eventId,
-      performance.now(),
-      { activePilotIds: activeRadioPilotIds() },
+      icon: iconChar,
+      color: hexToCss(wingman.profile.accentColor),
+      age: 0,
+      duration: WINGMAN_ABILITY_GLOW_DURATION_S,
+    })
+  }
+
+  function announceAbility(wingman, eventId, { triggerGlow = true } = {}) {
+    // 1.1 e 1.4: Habilidade não usa rádio. Dispara exclusivamente brilho e ícone sobre a nave do aliado.
+    if (triggerGlow) triggerAbilityGlow(wingman)
+    triggerAbilityWorldIcon(wingman, eventId)
+    aiValidator.expect(
+      'Habilidade de Wingman ativa ícone visual brilhante de 1.5s sobre o aliado sem rádio',
+      () => WINGMAN_ABILITY_GLOW_DURATION_S === 1.5,
+      { pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S },
     )
-    if (text) {
-      aiValidator.expect(
-        'Habilidade de Wingman anunciada lateralmente preserva quote e brilho de 1.5s',
-        () => text.length > 0 && WINGMAN_ABILITY_GLOW_DURATION_S === 1.5,
-        { pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S },
-      )
-      pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, eventId))
-      aiValidator.logMechanic('wingman-radio', 'ability-announced-lateral', {
-        pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S, hasQuote: true,
-      })
-    } else {
-      aiValidator.logMechanic('wingman-radio', 'ability-radio-suppressed-cooldown', {
-        pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S,
-      })
-    }
-    return text
+    aiValidator.logMechanic('wingman-radio', 'ability-world-icon-triggered', {
+      pilotId: wingman.profile.id, eventId, glowDuration: WINGMAN_ABILITY_GLOW_DURATION_S,
+    })
+    return null
   }
 
   function announceLateral(wingman, eventId) {
-    if (pendingRadioMessages.some((m) => !m.isAbility)) return null
+    if (pendingRadioMessages.length > 0) return null
     const text = wingmanRadio.trySpeak(
       wingman.profile.id,
       eventId,
@@ -1851,14 +1865,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
               telemetry.recordEvent(w.profile.name, 'ability', 'Peppy ativou Guarda: voando para escoltar e reparar escudo do jogador', { elapsed })
               announceAbility(w, 'ability_guard')
             }
-          } else if (w.profile.abilityId === 'assist' && homingCharging && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
+          } else if (w.profile.abilityId === 'assist' && homingCharging && homingHasLockedTarget && chargeHeldTimer >= ASSIST_MIN_HOLD_S) {
             const transition = stateController.startAction(w, WINGMAN_ACTIONS.ASSIST, {
               cooldownSeconds: abilityCooldownFor(w.profile), source: 'miyu-assist', event: 'assist-requested',
             })
             if (transition.decision === 'accepted') {
               telemetry.recordEvent(w.profile.name, 'ability', 'Miyu sincronizou Carga Compartilhada (+50% veloc. carga, +1 alvo)', { elapsed })
-              // Sincronização visual e SFX começam agora; a fala só sairá se e quando Miyu disparar de verdade
               triggerAbilityGlow(w)
+              announceAbility(w, 'ability_assist')
               triggerSoundCue(WINGMAN_SOUND_CUES.phantom_assist, { worldPos: w.mesh.position })
             }
           }
@@ -2449,6 +2463,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     for (const profileId of completedRetreatIds) removeMember(profileId)
     telemetry.update(activeWingmen, playerPos, frame, squadronCommandMode, elapsed)
 
+    for (let i = activeAbilityWorldIcons.length - 1; i >= 0; i--) {
+      const entry = activeAbilityWorldIcons[i]
+      entry.age += dt
+      if (entry.age >= entry.duration || !entry.wingman?.mesh?.parent) {
+        activeAbilityWorldIcons.splice(i, 1)
+      }
+    }
+
     return {
       enemyKills,
       enemyKillPoints,
@@ -2560,7 +2582,21 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     dumpTelemetry: () => telemetry.dumpToConsole(),
     copyFlightLog: () => telemetry.copyToClipboard(),
     getTelemetryText: () => telemetry.getFormattedText(),
-    clearFlightLog: () => telemetry.clearLog(),
+    getActiveAbilityIcons: () => activeAbilityWorldIcons.map((e) => {
+      const t = e.age / e.duration
+      const scale = t < 0.2 ? 1.0 + (t / 0.2) * 0.35 : (t < 0.4 ? 1.35 - ((t - 0.2) / 0.2) * 0.35 : 1.0)
+      const alpha = t > 0.73 ? Math.max(0, (1 - t) / 0.27) : 1.0
+      const pos = e.wingman?.mesh?.position ? e.wingman.mesh.position.clone().add(new THREE.Vector3(0, 2.5, 0)) : new THREE.Vector3(0, 0, 0)
+      return {
+        id: e.id,
+        worldPos: pos,
+        pilotId: e.pilotId,
+        icon: e.icon,
+        color: e.color,
+        scale,
+        alpha,
+      }
+    }),
     dispose,
   }
 }

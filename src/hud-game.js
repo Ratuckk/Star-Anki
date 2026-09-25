@@ -190,15 +190,6 @@ export function createGameHud() {
   wingmanRadioPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
   root.appendChild(wingmanRadioPanel)
 
-  // ============ PAINEL DE ABILITY (região superior) — Documento de Implementação, item 2 ============
-  // Mesma estrutura visual/timing do painel trivial acima, canal INDEPENDENTE (fila própria,
-  // nunca compete pelo cooldown do outro) — só muda a posição (top, via CSS) e a animação de
-  // entrada (mais dramática). Roteamento entre os dois: ver showWingmanRadio()/showWingmanRadioQueue()
-  // mais abaixo, que decidem a região pelo payload.isAbility (combat/wingmen.js → ABILITY_EVENT_IDS).
-  const wingmanAbilityPanel = document.createElement('div')
-  wingmanAbilityPanel.className = 'hud-wingman-ability-panel'
-  wingmanAbilityPanel.innerHTML = WINGMAN_ABILITY_PANEL_MARKUP
-  root.appendChild(wingmanAbilityPanel)
 
   // Pré-carrega os 4 retratos assim que o HUD monta — o `.wr-portrait.src` ainda É reatribuído a
   // cada mensagem (só troca 1x por fala, sem pressão de tempo), mas com cache já quente o
@@ -340,48 +331,8 @@ export function createGameHud() {
     return { show, showQueue, forceHide, clearQueue, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
   }
 
-  const wingmanRadioRegionTrivial = createWingmanRadioRegion(wingmanRadioPanel)
-  const wingmanRadioRegionAbility = createWingmanRadioRegion(wingmanAbilityPanel, {
-    enterMs: WINGMAN_ABILITY_ENTER_MS,
-    leaveMs: WINGMAN_ABILITY_LEAVE_MS,
-  })
-  // Quando a mesma pessoa muda de canal (trivial ↔ ability), o painel anterior precisa terminar
-  // sua saída antes do novo entrar. Sem esta pequena serialização os dois ficavam visíveis pelos
-  // 190ms da animação de fade, contrariando a exclusão mútua por piloto do documento.
-  let radioChannelTransitionTimeout = null
-  function cancelRadioChannelTransition() {
-    if (radioChannelTransitionTimeout !== null) clearTimeout(radioChannelTransitionTimeout)
-    radioChannelTransitionTimeout = null
-  }
-  function showRadioAfterOtherRegion(payload, region, otherRegion) {
-    cancelRadioChannelTransition()
-    if (otherRegion.currentPilotId() !== payload.pilotId) {
-      region.show(payload)
-      return
-    }
-    otherRegion.forceHide()
-    radioChannelTransitionTimeout = setTimeout(() => {
-      radioChannelTransitionTimeout = null
-      region.show(payload)
-    }, otherRegion.getLeaveMs())
-  }
+  const wingmanRadioRegion = createWingmanRadioRegion(wingmanRadioPanel)
 
-  // Mantém os dois canais independentes quando o foco gera várias falas. Só há espera quando
-  // o MESMO piloto já está no canal oposto; pilotos diferentes podem transmitir em paralelo.
-  function showRadioQueueForChannel(payloads, region, otherRegion) {
-    if (!payloads || payloads.length === 0) return
-    const samePilotPayload = payloads.find((payload) => payload.pilotId === otherRegion.currentPilotId())
-    if (!samePilotPayload) {
-      region.showQueue(payloads)
-      return
-    }
-    cancelRadioChannelTransition()
-    otherRegion.forceHide()
-    radioChannelTransitionTimeout = setTimeout(() => {
-      radioChannelTransitionTimeout = null
-      region.showQueue(payloads)
-    }, otherRegion.getLeaveMs())
-  }
 
   // ============ TIMEOUTS PENDENTES (fix de vazamento — ver comentário do topo) ============
   // Set único de tudo que agenda DOM-removal por tempo: damage numbers, hit marker, absorb
@@ -421,9 +372,9 @@ export function createGameHud() {
     }
   }
 
-  // ============ DOUBLE STACK: PILHA ESQUERDA (SCORE + STREAK/KILLS + COMBO) ============
+  // ============ DOUBLE STACK: PILHA ESQUERDA (SCORE + STREAK/KILLS + COMBO) — ZONA 1 (STATS) ============
   const stackLeft = document.createElement('div')
-  stackLeft.className = 'hud-double-stack hud-stack-left'
+  stackLeft.className = 'hud-double-stack hud-stack-left hud-left-stats'
   stackLeft.innerHTML = `
     <div class="hud-score-block">
       <div class="hud-stack-label">SCORE</div>
@@ -456,7 +407,7 @@ export function createGameHud() {
   stackRight.className = 'hud-double-stack hud-stack-right'
   stackRight.innerHTML = `
     <div class="hud-mission-block">
-      <div class="hud-stack-label">MISSION TIME</div>
+      <div class="hud-stack-label">TEMPO</div>
       <div class="hud-mission-time-value">00:00</div>
       <div class="hud-mission-sub">
         <span class="hud-mission-status-label">NORMAL</span>
@@ -482,6 +433,7 @@ export function createGameHud() {
   `
   root.appendChild(stackRight)
   const missionTimeValEl = stackRight.querySelector('.hud-mission-time-value')
+  const missionStatusLabelEl = stackRight.querySelector('.hud-mission-status-label')
   const levelValEl = stackRight.querySelector('.hud-level-value')
 
   // Elemento legado de status mantido oculto para compatibilidade defensiva
@@ -490,16 +442,16 @@ export function createGameHud() {
   status.hidden = true
   root.appendChild(status)
 
-  // ============ CLUSTER SUPERIOR CENTRAL (WINGMEN + SWIRL + CADEIA DE ABATES) ============
-  const topCenterCluster = document.createElement('div')
-  topCenterCluster.className = 'hud-top-center-cluster'
-  root.appendChild(topCenterCluster)
+  // ============ ZONA 2: RECURSOS / CARDS (.hud-left-resources) — OPÇÃO 4 ============
+  const resourcesCluster = document.createElement('div')
+  resourcesCluster.className = 'hud-left-resources'
+  root.appendChild(resourcesCluster)
 
   // 4 slots fixos (Falco/Peppy/Slippy/Miyu, mesma ordem de WINGMAN_PROFILES)
   const SQUAD_ABILITY_ICONS = { ram: '☄️', guard: '🔰', repair: '🩹', assist: '🔗' }
   const abilityRow = document.createElement('div')
   abilityRow.className = 'hud-squad-abilities'
-  topCenterCluster.appendChild(abilityRow)
+  resourcesCluster.appendChild(abilityRow)
 
   const abilityHexEls = [0, 1, 2, 3].map(() => {
     const slot = document.createElement('div')
@@ -525,9 +477,14 @@ export function createGameHud() {
   })
   let prevAbilitySignature = ''
 
-  const centerCombatRow = document.createElement('div')
-  centerCombatRow.className = 'hud-center-combat-row'
-  topCenterCluster.appendChild(centerCombatRow)
+  // ============ ZONA 3: AÇÕES (.hud-left-actions) — OPÇÃO 4 ============
+  const actionsCluster = document.createElement('div')
+  actionsCluster.className = 'hud-left-actions hud-combat-left-cluster'
+  root.appendChild(actionsCluster)
+
+  const combatActionsRow = document.createElement('div')
+  combatActionsRow.className = 'hud-combat-actions-row'
+  actionsCluster.appendChild(combatActionsRow)
 
   // Widget de comando do esquadrão [D] (Foco)
   const squadCommandWidget = document.createElement('div')
@@ -542,7 +499,7 @@ export function createGameHud() {
     </div>
     <span class="hud-cmd-timer">PRONTO</span>
   `
-  centerCombatRow.appendChild(squadCommandWidget)
+  combatActionsRow.appendChild(squadCommandWidget)
   const squadCmdFill = squadCommandWidget.querySelector('.hud-cmd-meter-fill')
   const squadCmdTimer = squadCommandWidget.querySelector('.hud-cmd-timer')
 
@@ -559,7 +516,7 @@ export function createGameHud() {
     </div>
     <span class="hud-cmd-timer">PRONTO</span>
   `
-  centerCombatRow.appendChild(swirlCooldownWidget)
+  combatActionsRow.appendChild(swirlCooldownWidget)
   const swirlCmdFill = swirlCooldownWidget.querySelector('.hud-cmd-meter-fill')
   const swirlCmdTimer = swirlCooldownWidget.querySelector('.hud-cmd-timer')
 
@@ -572,7 +529,7 @@ export function createGameHud() {
     <span class="hud-kill-chain-x">x0</span>
     <div class="hud-kill-chain-segs"></div>
   `
-  centerCombatRow.appendChild(killChainRow)
+  combatActionsRow.appendChild(killChainRow)
   const killChainXEl = killChainRow.querySelector('.hud-kill-chain-x')
   const killChainSegsEl = killChainRow.querySelector('.hud-kill-chain-segs')
   const killChainSegEls = Array.from({ length: KILL_CHAIN_MAX_SEGS }, () => {
@@ -717,7 +674,7 @@ export function createGameHud() {
 
   if (!useOrbitalVitals) {
     vitalsCluster = document.createElement('div')
-    vitalsCluster.className = 'hud-vitals-cluster'
+    vitalsCluster.className = 'hud-vitals-cluster hud-left-vitals'
     root.appendChild(vitalsCluster)
 
     livesBar = document.createElement('div')
@@ -1223,8 +1180,11 @@ export function createGameHud() {
   // ---- Leitura de estado ao vivo ----
   const DEBUG_STAT_ROWS = [
     ['fps', 'FPS'], ['phase', 'Fase'], ['sector', 'Setor'],
+    ['difficulty', 'Nível'],
     ['health', 'Vida'], ['shield', 'Escudo'], ['lives', 'Vidas'],
     ['score', 'Pontos'], ['combo', 'Combo'], ['enemies', 'Inimigos'],
+    ['goldenSquad', 'Golden Caças'], ['goldenOrder', 'Golden Ordem'],
+    ['pityTimers', 'Pity Tank/Verme'], ['stealthEcho', 'Sussurro/Réplica'],
     ['wingmen', 'Ala'], ['position', 'Posição'], ['flags', 'Flags'],
   ]
   const debugStats = document.createElement('div')
@@ -1236,7 +1196,9 @@ export function createGameHud() {
     // posição/flags são texto de tamanho variável (coordenadas, lista de flags ativas) — ganham
     // a linha inteira pra não truncar em elipse contra o vizinho de coluna, diferente dos outros
     // (números curtos de formato fixo, cabem bem 2 por linha)
-    row.className = key === 'position' || key === 'flags' ? 'debug-stat-row debug-stat-row-wide' : 'debug-stat-row'
+    row.className = key === 'position' || key === 'flags' || key === 'goldenSquad' || key === 'pityTimers' || key === 'stealthEcho'
+      ? 'debug-stat-row debug-stat-row-wide'
+      : 'debug-stat-row'
     const labelEl = document.createElement('span')
     labelEl.className = 'debug-stat-label'
     labelEl.textContent = label
@@ -1263,12 +1225,17 @@ export function createGameHud() {
     debugStatEls.fps.textContent = String(debugStatsLastFps)
     debugStatEls.phase.textContent = s.phase ?? '—'
     debugStatEls.sector.textContent = s.sector ?? '—'
+    debugStatEls.difficulty.textContent = s.difficultyLevel != null ? `${s.difficultyLevel}${s.isDifficultyOverridden ? ' [DBG]' : ''}` : '—'
     debugStatEls.health.textContent = `${s.health ?? 0}/${s.maxHealth ?? 0}`
     debugStatEls.shield.textContent = `${Math.round(s.shield ?? 0)}/${Math.round(s.maxShield ?? 0)}`
     debugStatEls.lives.textContent = `${s.lives ?? 0}/${s.maxLives ?? 0}`
     debugStatEls.score.textContent = String(s.score ?? 0)
     debugStatEls.combo.textContent = `x${(s.combo ?? 1).toFixed(2)}`
     debugStatEls.enemies.textContent = String(s.enemies ?? 0)
+    debugStatEls.goldenSquad.textContent = s.goldenSquad ?? '—'
+    debugStatEls.goldenOrder.textContent = s.goldenOrder ?? '—'
+    debugStatEls.pityTimers.textContent = s.pityTimers ?? '—'
+    debugStatEls.stealthEcho.textContent = s.stealthEcho ?? '—'
     debugStatEls.wingmen.textContent = String(s.wingmen ?? 0)
     debugStatEls.position.textContent = s.position ?? '—'
     const activeFlags = s.flags ? Object.keys(s.flags).filter((k) => s.flags[k]) : []
@@ -1617,11 +1584,14 @@ export function createGameHud() {
   const enemyBarPool = new Map()
   const wingmanVitalPool = new Map()
   const lockMarkerPool = new Map()
+  const abilityWorldIconPool = new Map()
+  let activeCountdownSec = null
+  let activeWarningSec = null
 
   return {
     sceneRoot,
 
-    setStatus({ health, maxHealth = health, score = 0, combo = 1, streak = 0, kills = 0, missionTimeMs = 0, difficultyLevel = 1 } = {}) {
+    setStatus({ health, maxHealth = health, score = 0, combo = 1, streak = 0, kills = 0, missionTimeMs = 0, difficultyLevel = 1, isDifficultyOverridden = false } = {}) {
       const roundedScore = Math.max(0, Math.round(score || 0))
       scoreValEl.textContent = roundedScore.toLocaleString('pt-BR')
       streakValEl.textContent = String(Math.max(0, streak | 0))
@@ -1629,8 +1599,20 @@ export function createGameHud() {
 
       const comboFormatted = formatComboMultiplier(combo)
       comboValEl.textContent = comboFormatted
-      missionTimeValEl.textContent = formatMissionTime(missionTimeMs)
+      if (activeCountdownSec == null && activeWarningSec == null) {
+        missionTimeValEl.textContent = formatMissionTime(missionTimeMs)
+        if (missionStatusLabelEl) missionStatusLabelEl.textContent = 'NORMAL'
+      }
       levelValEl.textContent = formatDifficultyLevel(difficultyLevel)
+
+      const levelBlock = levelValEl.closest('.hud-level-block')
+      if (levelBlock) {
+        levelBlock.classList.toggle('debug-override', !!isDifficultyOverridden)
+        const labelEl = levelBlock.querySelector('.hud-stack-label')
+        if (labelEl) {
+          labelEl.textContent = isDifficultyOverridden ? 'NÍVEL [DBG]' : 'NÍVEL'
+        }
+      }
 
       if (status) {
         status.textContent = `Pontos: ${roundedScore} · Combo ${comboFormatted} · Nível ${difficultyLevel}/9`
@@ -1839,9 +1821,16 @@ export function createGameHud() {
     },
 
     setCountdown(n, urgent) {
-      countdown.hidden = n == null
+      countdown.hidden = true
       countdown.textContent = n == null ? '' : String(n)
       countdown.classList.toggle('urgent', !!urgent)
+      activeCountdownSec = n != null ? Number(n) : null
+      if (activeCountdownSec != null) {
+        missionTimeValEl.textContent = formatMissionTime(activeCountdownSec * 1000)
+        if (missionStatusLabelEl) {
+          missionStatusLabelEl.textContent = urgent ? 'URGENTE' : 'COMBATE'
+        }
+      }
     },
 
     // remaining: quantos orbes-pergunta ainda faltam achar/atirar (Fase 5) — opcional, só pra
@@ -1862,12 +1851,24 @@ export function createGameHud() {
     // aviso de 5s antes da cutscene de transição pro all-range (dourado surgindo / chefe se
     // aproximando) — kind null esconde
     setArenaWarning(kind, seconds) {
-      if (!kind) { arenaWarning.hidden = true; return }
+      if (!kind) {
+        arenaWarning.hidden = true
+        activeWarningSec = null
+        if (activeCountdownSec != null) {
+          missionTimeValEl.textContent = formatMissionTime(activeCountdownSec * 1000)
+        }
+        return
+      }
       arenaWarning.hidden = false
       arenaWarning.className = `hud-arena-warning kind-${kind}`
       arenaWarning.textContent = kind === 'golden'
         ? `Inimigo dourado surgindo em ${seconds}s`
         : `Chefe se aproximando em ${seconds}s`
+      activeWarningSec = Number(seconds)
+      missionTimeValEl.textContent = formatMissionTime(activeWarningSec * 1000)
+      if (missionStatusLabelEl) {
+        missionStatusLabelEl.textContent = kind === 'golden' ? 'DOURADO' : 'CHEFE'
+      }
     },
 
     // overlay de texto legado durante a cutscene de câmera/mapa — desativado em prol dos warning cards
@@ -2811,30 +2812,58 @@ export function createGameHud() {
       }, 2200)
     },
 
-    // Overhaul de Personalidade (Ideia 3) — payload vem de combat/wingmen.js via
-    // wingman-radio.js: { pilotId, name, color, text, isAbility }. color já chega como string CSS
-    // ('#rrggbb'). Trigger avulso: interrompe qualquer fila/animação em andamento NA REGIÃO
-    // escolhida e toca na hora. Regra "não pode estar nas 2 regiões ao mesmo tempo pro MESMO
-    // piloto" (Documento de Implementação, item 2.1-2.3): se a região OPOSTA está tocando esse
-    // mesmo pilotId, esconde ela primeiro (fade-out rápido, sem encadear a fila dela).
+    // Rádio dos Aliados — Fase 1.1: somente trivial. Habilidade nunca usa rádio.
     showWingmanRadio(payload) {
-      if (payload.isAbility) {
-        wingmanRadioRegionTrivial.clearQueue()
-      }
-      const region = payload.isAbility ? wingmanRadioRegionAbility : wingmanRadioRegionTrivial
-      const otherRegion = payload.isAbility ? wingmanRadioRegionTrivial : wingmanRadioRegionAbility
-      showRadioAfterOtherRegion(payload, region, otherRegion)
+      if (!payload || payload.isAbility) return
+      wingmanRadioRegion.show(payload)
     },
 
-    // Fila garantida do Foco: divide payloads por CANAL antes de enfileirar. Assim um quote de
-    // ability jamais cai no rádio trivial e as duas sequências podem coexistir quando pertencem
-    // a pilotos diferentes; a exclusão continua valendo apenas para o mesmo piloto.
     showWingmanRadioQueue(payloads) {
       if (!payloads || payloads.length === 0) return
-      const abilityPayloads = payloads.filter((payload) => payload.isAbility)
-      const trivialPayloads = payloads.filter((payload) => !payload.isAbility)
-      showRadioQueueForChannel(abilityPayloads, wingmanRadioRegionAbility, wingmanRadioRegionTrivial)
-      showRadioQueueForChannel(trivialPayloads, wingmanRadioRegionTrivial, wingmanRadioRegionAbility)
+      const trivialPayloads = payloads.filter((p) => p && !p.isAbility)
+      if (trivialPayloads.length === 0) return
+      wingmanRadioRegion.showQueue(trivialPayloads)
+    },
+
+    // Fase 1.3: Posicionamento 3D do rádio abaixo da nave do jogador
+    updateRadioPosition(xFrac, yFrac, isVisible = true) {
+      if (!wingmanRadioPanel) return
+      if (!isVisible) {
+        wingmanRadioPanel.style.display = 'none'
+        return
+      }
+      wingmanRadioPanel.style.display = ''
+      const safeX = Math.max(0.18, Math.min(0.82, xFrac))
+      const safeY = Math.max(0.55, Math.min(0.92, yFrac))
+      wingmanRadioPanel.style.setProperty('--wingman-radio-x', `${(safeX * 100).toFixed(1)}%`)
+      wingmanRadioPanel.style.setProperty('--wingman-radio-y', `${(safeY * 100).toFixed(1)}%`)
+    },
+
+    // Fase 1.4: Ícones de habilidade projetados no mundo acima de cada nave de wingman
+    updateWingmanAbilityIcons(icons = []) {
+      const seenIds = new Set()
+      for (const item of icons) {
+        seenIds.add(item.id)
+        let el = abilityWorldIconPool.get(item.id)
+        if (!el) {
+          el = document.createElement('div')
+          el.className = 'hud-wingman-ability-world-icon'
+          root.appendChild(el)
+          abilityWorldIconPool.set(item.id, el)
+        }
+        el.textContent = item.icon
+        el.style.setProperty('--pilot-color', item.color || '#38bdf8')
+        el.style.left = `${(item.xFrac * 100).toFixed(2)}%`
+        el.style.top = `${(item.yFrac * 100).toFixed(2)}%`
+        el.style.transform = `translate(-50%, -50%) scale(${item.scale.toFixed(2)})`
+        el.style.opacity = `${item.alpha.toFixed(2)}`
+      }
+      for (const [id, el] of abilityWorldIconPool.entries()) {
+        if (!seenIds.has(id)) {
+          el.remove()
+          abilityWorldIconPool.delete(id)
+        }
+      }
     },
 
     updateSquadronNoticePosition(xFrac, yFrac) {
@@ -2934,9 +2963,11 @@ export function createGameHud() {
       cancelTimeout(stormWarningTimeout)
       stormWarningTimeout = null
       stormWarning.classList.remove('active')
-      wingmanRadioRegionTrivial.unmount()
-      wingmanRadioRegionAbility.unmount()
-      cancelRadioChannelTransition()
+      wingmanRadioRegion.unmount()
+      for (const el of abilityWorldIconPool.values()) {
+        el.remove()
+      }
+      abilityWorldIconPool.clear()
       cancelTimeout(launchBannerHideTimeout)
       launchBannerHideTimeout = null
       for (const id of pendingTimeouts) clearTimeout(id)

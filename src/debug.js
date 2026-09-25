@@ -24,6 +24,8 @@ export const DEBUG_ACTIONS = [
   { id: 'restartSector', label: 'Reiniciar setor atual', category: 'Setor & Fluxo' },
   { id: 'nextSector', label: 'Próximo setor', category: 'Setor & Fluxo' },
   { id: 'prevSector', label: 'Setor anterior', category: 'Setor & Fluxo' },
+  { id: 'decreaseDifficultyLevel', label: '- Nível de dificuldade', category: 'Setor & Fluxo' },
+  { id: 'increaseDifficultyLevel', label: '+ Nível de dificuldade', category: 'Setor & Fluxo' },
   { id: 'exitArenaNow', label: 'Sair da arena agora', category: 'Setor & Fluxo' },
   { id: 'toggleDisableArena', label: 'Travar/desativar arenas', toggle: true, category: 'Setor & Fluxo' },
   { id: 'nukeEnemies', label: 'Detonar todos os inimigos (Nuke)', category: 'Combate' },

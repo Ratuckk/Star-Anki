@@ -73,7 +73,7 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
   assert.ok(peppyKill, 'Evento de categoria diferente ("kill") aos 5000ms é permitido')
 }
 
-// 3. Prioridade de Habilidade e Urgência sobre Silêncio Trivial
+// 3. Habilidade nunca usa rádio (Fase 1.1) e Trivial respeita silêncio
 {
   const radio = createWingmanRadio({
     random: () => 0,
@@ -82,15 +82,16 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
   })
 
   // Trivial aos 1000ms
-  radio.trySpeak(0, 'engage_dogfight', 1000, { activePilotIds: [0, 1, 2, 3] })
+  const line0 = radio.trySpeak(0, 'engage_dogfight', 1000, { activePilotIds: [0, 1, 2, 3] })
+  assert.ok(line0, 'Primeira fala trivial emitida')
 
-  // Habilidade aos 2000ms (dentro do período que bloquearia falas triviais)
+  // Habilidade aos 2000ms: NUNCA usa rádio (retorna null)
   const abilityLine = radio.speakAbility(1, 'ability_guard', 2000, { activePilotIds: [0, 1, 2, 3] })
-  assert.ok(typeof abilityLine === 'string', 'Ability de Peppy DEVE furar o silêncio trivial global')
+  assert.strictEqual(abilityLine, null, 'Habilidade nunca emite fala de rádio')
 
-  // Fala trivial logo após a ability (aos 3000ms) DEVE continuar bloqueada
+  // Fala trivial durante a janela de silêncio DEVE continuar bloqueada
   const trivialBlockedAfterAbility = radio.trySpeak(2, 'boost_used', 3000, { activePilotIds: [0, 1, 2, 3] })
-  assert.strictEqual(trivialBlockedAfterAbility, null, 'Trivial logo após ability continua bloqueada')
+  assert.strictEqual(trivialBlockedAfterAbility, null, 'Trivial durante a janela de silêncio global é bloqueada')
 }
 
 // 4. Call & Response respeita o orçamento global de silêncio
@@ -101,23 +102,22 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
     squadSilenceGapMs: SQUAD_TRIVIAL_GAP_MS,
   })
 
-  // Falco usa ability_ram aos 1000ms (abre Call & Response)
-  radio.speakAbility(0, 'ability_ram', 1000, { activePilotIds: [0, 1, 2, 3] })
+  // Falco engaja aos 1000ms
+  radio.trySpeak(0, 'engage_dogfight', 1000, { activePilotIds: [0, 1, 2, 3] })
 
-  // Resposta Call & Response vence por volta de 4000-5000ms
-  // Verificamos entrega
-  const reply = radio.takeDueResponse(4500, [0, 1, 2, 3])
+  // Resposta Call & Response vence após o silêncio global
+  const reply = radio.takeDueResponse(10000, [0, 1, 2, 3])
   if (reply) {
-    assert.ok(reply.text, 'Resposta Call & Response entregue')
+    assert.ok(reply.text, 'Resposta Call & Response entregue após janela global')
     // O silêncio global foi estendido para garantir pausa após a resposta:
     const silenceAfterReply = radio.getSquadTrivialSilenceUntil()
     assert.ok(
-      silenceAfterReply >= 4500 + TRIVIAL_TRANSMISSION_ESTIMATED_MS + SQUAD_TRIVIAL_GAP_MS,
+      silenceAfterReply >= 10000 + TRIVIAL_TRANSMISSION_ESTIMATED_MS + SQUAD_TRIVIAL_GAP_MS,
       'Silêncio global estendido após resposta Call & Response',
     )
 
     // Trivial durante a janela pós-resposta DEVE ser bloqueada
-    const trivialAfterReply = radio.trySpeak(3, 'kill', 5000, { activePilotIds: [0, 1, 2, 3] })
+    const trivialAfterReply = radio.trySpeak(3, 'kill', 11000, { activePilotIds: [0, 1, 2, 3] })
     assert.strictEqual(trivialAfterReply, null, 'Trivial logo após resposta de Call & Response é bloqueada')
   }
 }
@@ -176,8 +176,8 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
     )
   }
 
-  // Critério: as abilities continuam disparando
-  assert.equal(emittedAbilities.length, 2, 'As 2 abilities devem ter sido emitidas')
+  // Critério: as abilities NUNCA usam rádio
+  assert.equal(emittedAbilities.length, 0, 'Zero abilities emitidas pelo rádio')
 }
 
 console.log('wingman-global-radio.test.mjs: OK (Todos os critérios de rate limit global passaram)')

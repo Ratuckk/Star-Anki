@@ -12,8 +12,8 @@ export const GOLDEN_FIGHTER_COLOR = 0xffd600
 export const GOLDEN_FIGHTER_EMISSIVE = 0xff8f00
 export const GOLDEN_FIGHTER_BASE_HP = 6
 export const GOLDEN_FIGHTER_KILL_POINTS = 30
-export const GOLDEN_FIGHTER_HIT_RADIUS = 1.35
-export const GOLDEN_FIGHTER_RAM_RADIUS = 1.8
+export const GOLDEN_FIGHTER_HIT_RADIUS = 1.55
+export const GOLDEN_FIGHTER_RAM_RADIUS = 2.0
 
 // Mappings obrigatórios por dificuldade (1 a 9)
 // Capacidade máxima do esquadrão: 2 / 2 / 3 / 3 / 4 / 4 / 5 / 5 / 6
@@ -49,28 +49,70 @@ export const SQUADRON_ORDER = {
 // Parâmetros de movimentação e combate
 const FORMATION_FOLLOW_SPEED = 22.0
 const FORMATION_SLOT_SMOOTHING = 5.0
-const ATTACK_SPEED = 30.0
+const ATTACK_SPEED = 34.0
 const RETURN_SPEED = 22.0
 const PASS_DISTANCE_THRESHOLD = 30.0
 const COORDINATED_FIRE_INTERVAL_S = 0.28
-const ORDER_COOLDOWN_MIN_S = 3.5
-const ORDER_COOLDOWN_MAX_S = 5.5
+const ORDER_COOLDOWN_MIN_S = 2.2
+const ORDER_COOLDOWN_MAX_S = 3.8
 const FIGHTER_DEATH_DURATION_S = 0.22
 
-// Definição dos slots de formação ao redor do Comandante
+// Definição de 10 slots de formação únicos e distintos ao redor do Comandante (sem empilhamento)
 // (X = lateral direita/esquerda, Y = elevação superior/inferior, Z = frente/traseira relativa ao avanço)
 export const FORMATION_SLOTS = [
-  { id: 0, offset: new THREE.Vector3(-9.0, 1.5, -4.0) },  // Ala esquerda
-  { id: 1, offset: new THREE.Vector3(9.0, 1.5, -4.0) },   // Ala direita
-  { id: 2, offset: new THREE.Vector3(0.0, 5.5, -7.0) },   // Echelon superior traseiro
-  { id: 3, offset: new THREE.Vector3(0.0, -4.5, -6.0) },  // Echelon inferior traseiro
-  { id: 4, offset: new THREE.Vector3(-15.0, -1.0, -5.0) }, // Flanco largo esquerdo
-  { id: 5, offset: new THREE.Vector3(15.0, -1.0, -5.0) },  // Flanco largo direito
+  { id: 0, offset: new THREE.Vector3(-9.0, 1.5, -4.0) },   // Ala esquerda interna
+  { id: 1, offset: new THREE.Vector3(9.0, 1.5, -4.0) },    // Ala direita interna
+  { id: 2, offset: new THREE.Vector3(0.0, 6.0, -7.0) },    // Dorsal superior central
+  { id: 3, offset: new THREE.Vector3(0.0, -5.5, -6.5) },   // Ventral inferior central
+  { id: 4, offset: new THREE.Vector3(-16.0, -1.0, -5.0) }, // Flanco largo esquerdo
+  { id: 5, offset: new THREE.Vector3(16.0, -1.0, -5.0) },  // Flanco largo direito
+  { id: 6, offset: new THREE.Vector3(-11.5, 5.0, -8.5) },  // Echelon alto esquerdo
+  { id: 7, offset: new THREE.Vector3(11.5, 5.0, -8.5) },   // Echelon alto direito
+  { id: 8, offset: new THREE.Vector3(-7.0, -4.5, -9.0) },  // Echelon baixo esquerdo
+  { id: 9, offset: new THREE.Vector3(7.0, -4.5, -9.0) },   // Echelon baixo direito
 ]
 
+// Caça subordinado low-poly intencional (fuselagem, duas asas, nariz, dois propulsores traseiros)
+export function createFighterGeometry() {
+  const geom = new THREE.BufferGeometry()
+  const vertices = new Float32Array([
+    0.0, 0.0, 1.4,      // 0: Nariz
+    0.0, 0.42, 0.2,     // 1: Crista cockpit
+    0.0, -0.28, 0.2,    // 2: Quilha inferior
+    -0.45, 0.08, 0.1,   // 3: Ombro esquerdo
+    0.45, 0.08, 0.1,    // 4: Ombro direito
+    -1.85, 0.05, -0.65, // 5: Ponta da asa esquerda
+    1.85, 0.05, -0.65,  // 6: Ponta da asa direita
+    -0.55, 0.02, -1.05, // 7: Bordo de fuga esquerdo
+    0.55, 0.02, -1.05,  // 8: Bordo de fuga direito
+    -0.35, 0.18, -1.25, // 9: Motor esquerdo traseiro
+    0.35, 0.18, -1.25,  // 10: Motor direito traseiro
+    0.0, 0.25, -1.15,   // 11: Topo traseiro
+    0.0, -0.22, -1.15,  // 12: Fundo traseiro
+  ])
+
+  const indices = [
+    // Nariz
+    0, 1, 3,  0, 4, 1,  0, 3, 2,  0, 2, 4,
+    // Asa esquerda topo e fundo
+    1, 5, 7,  1, 3, 5,  2, 7, 5,  2, 5, 3,
+    // Asa direita topo e fundo
+    1, 8, 6,  1, 6, 4,  2, 6, 8,  2, 4, 6,
+    // Fuselagem dorsal e ventral
+    1, 7, 11, 1, 11, 8, 7, 9, 11, 8, 11, 10,
+    2, 12, 7, 2, 8, 12, 7, 12, 9, 8, 10, 12,
+    // Bicos dos motores traseiros
+    9, 12, 11, 10, 11, 12,
+  ]
+
+  geom.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
+  geom.setIndex(indices)
+  geom.computeVertexNormals()
+  return geom
+}
+
 // Compartilhamento único de recursos de renderização para evitar GC spikes
-export const fighterGeometry = new THREE.ConeGeometry(0.35, 1.25, 4)
-fighterGeometry.rotateX(Math.PI / 2)
+export const fighterGeometry = createFighterGeometry()
 export const fighterMaterial = new THREE.MeshPhongMaterial({
   color: GOLDEN_FIGHTER_COLOR,
   emissive: GOLDEN_FIGHTER_EMISSIVE,
@@ -86,14 +128,18 @@ const _vSlotTarget = new THREE.Vector3()
 const _vDesiredVel = new THREE.Vector3()
 const _vToTarget = new THREE.Vector3()
 
-export function getSquadronCapForLevel(level) {
+export function getSquadronCapForLevel(level, allyBonus = 0) {
   const lvl = Math.max(1, Math.min(9, Math.round(level || 1)))
-  return SQUADRON_CAP_BY_LEVEL[lvl] || 2
+  const base = SQUADRON_CAP_BY_LEVEL[lvl] || 2
+  const bonus = Math.max(0, Math.min(4, Math.round(allyBonus || 0)))
+  return Math.min(10, base + bonus)
 }
 
-export function getOffensiveCapForLevel(level) {
+export function getOffensiveCapForLevel(level, allyBonus = 0) {
   const lvl = Math.max(1, Math.min(9, Math.round(level || 1)))
-  return OFFENSIVE_CAP_BY_LEVEL[lvl] || 1
+  const base = OFFENSIVE_CAP_BY_LEVEL[lvl] || 1
+  const bonus = Math.max(0, Math.min(4, Math.round(allyBonus || 0)))
+  return base + Math.ceil(bonus / 2)
 }
 
 export function getReplenishIntervalForLevel(level) {
@@ -109,18 +155,32 @@ export function getFighterHpForLevel(level) {
 export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, opts = {}) {
   const rng = (opts && typeof opts.rng === 'function') ? opts.rng : Math.random
   let level = Math.max(1, Math.min(9, Math.round(initialLevel || 1)))
+  let allyBonus = Math.max(0, Math.min(4, Math.round(opts?.allyBonus ?? opts?.allyCount ?? 0)))
   let fighters = []
   let elapsed = 0
   let replenishTimer = getReplenishIntervalForLevel(level)
   let replacementReady = false
-  let orderCooldownTimer = 2.5
+  let orderCooldownTimer = 1.2 + rng() * 0.4
   let currentOrder = SQUADRON_ORDER.NONE
   let lastOrder = SQUADRON_ORDER.NONE
   let orderState = null
+  const lastOrderExecutedTime = {
+    [SQUADRON_ORDER.PINCER]: -1002,
+    [SQUADRON_ORDER.STRAFING_RUN]: -1001,
+    [SQUADRON_ORDER.COORDINATED_FIRE]: -1000,
+  }
+
+  function getSquadronCap() {
+    return getSquadronCapForLevel(level, allyBonus)
+  }
+
+  function getOffensiveCap() {
+    return getOffensiveCapForLevel(level, allyBonus)
+  }
 
   function getAvailableSlot() {
     const occupiedSlots = new Set(fighters.filter((f) => !f.dying).map((f) => f.slotIndex))
-    const maxSquad = getSquadronCapForLevel(level)
+    const maxSquad = getSquadronCap()
     for (let i = 0; i < maxSquad; i++) {
       if (!occupiedSlots.has(i)) return i
     }
@@ -128,7 +188,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   }
 
   function spawnFighter(spawnPos, initialVelocity = null, preferredSlot = -1) {
-    const maxSquad = getSquadronCapForLevel(level)
+    const maxSquad = getSquadronCap()
     const activeCount = fighters.filter((f) => !f.dying).length
     if (activeCount >= maxSquad) return null
 
@@ -226,16 +286,20 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
     }
   }
 
-  // Inicializa o esquadrão completo para a dificuldade atual
-  function initSquadron(commanderPos, forwardDir) {
+  // Inicializa o esquadrão completo para a dificuldade atual e bônus de aliados
+  function initSquadron(commanderPos, forwardDir, initOpts = {}) {
+    if (initOpts?.allyBonus != null || initOpts?.allyCount != null) {
+      allyBonus = Math.max(0, Math.min(4, Math.round(initOpts.allyBonus ?? initOpts.allyCount ?? 0)))
+    }
     fighters = []
     currentOrder = SQUADRON_ORDER.NONE
     orderState = null
     replenishTimer = getReplenishIntervalForLevel(level)
     replacementReady = false
-    const cap = getSquadronCapForLevel(level)
+    orderCooldownTimer = 1.2 + rng() * 0.4
+    const cap = getSquadronCap()
     for (let i = 0; i < cap; i++) {
-      const slotDef = FORMATION_SLOTS[i % FORMATION_SLOTS.length]
+      const slotDef = FORMATION_SLOTS[i] || FORMATION_SLOTS[i % FORMATION_SLOTS.length]
       const spawnOffset = new THREE.Vector3(slotDef.offset.x, slotDef.offset.y, slotDef.offset.z)
       const spawnPos = commanderPos.clone().add(spawnOffset)
       const f = spawnFighter(spawnPos, null, i)
@@ -246,7 +310,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   // Compositor de ordens: inicia uma ordem contextual
   function startOrder(orderType, commander, playerPosition) {
     const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
-    const maxOffensive = getOffensiveCapForLevel(level)
+    const maxOffensive = Math.min(activeFighters.length, getOffensiveCap())
 
     if (orderType === SQUADRON_ORDER.STRAFING_RUN) {
       const eligible = activeFighters.slice(0, maxOffensive)
@@ -260,22 +324,25 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
         timer: 0,
       }
 
-      for (const f of eligible) {
+      eligible.forEach((f, idx) => {
         f.state = FIGHTER_STATE.PREPARING
         f.currentOrder = SQUADRON_ORDER.STRAFING_RUN
-        f.stateTimer = 0.5 + rng() * 0.2
+        f.stateTimer = 0.4 + idx * 0.18
         f.hasFiredInAttack = false
+        const side = idx % 2 === 0 ? -1 : 1
         f.attackContext = {
+          flankSide: side,
           targetPos: playerPosition.clone(),
           diveVector: playerPosition.clone().sub(f.mesh.position).normalize(),
         }
-      }
+      })
       return true
     }
 
     if (orderType === SQUADRON_ORDER.PINCER) {
       if (activeFighters.length < 2 || maxOffensive < 2) return false
-      const participants = activeFighters.slice(0, 2)
+      const pCount = Math.min(activeFighters.length, maxOffensive)
+      const participants = activeFighters.slice(0, pCount)
 
       currentOrder = SQUADRON_ORDER.PINCER
       lastOrder = SQUADRON_ORDER.PINCER
@@ -285,31 +352,20 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
         timer: 0,
       }
 
-      // Caça 0 abre para a esquerda, Caça 1 para a direita com assimetria
-      const fLeft = participants[0]
-      const fRight = participants[1]
-
-      fLeft.state = FIGHTER_STATE.PREPARING
-      fLeft.currentOrder = SQUADRON_ORDER.PINCER
-      fLeft.stateTimer = 0.6
-      fLeft.hasFiredInAttack = false
-      fLeft.attackContext = {
-        flankSide: -1,
-        flankOffset: -20 + (rng() * 4 - 2),
-        elevationOffset: 3 + rng() * 2,
-        targetPos: playerPosition.clone(),
-      }
-
-      fRight.state = FIGHTER_STATE.PREPARING
-      fRight.currentOrder = SQUADRON_ORDER.PINCER
-      fRight.stateTimer = 0.75 // Pequeno stagger para evitar geometria idêntica espelhada
-      fRight.hasFiredInAttack = false
-      fRight.attackContext = {
-        flankSide: 1,
-        flankOffset: 22 + (rng() * 4 - 2),
-        elevationOffset: -2 + rng() * 2,
-        targetPos: playerPosition.clone(),
-      }
+      participants.forEach((f, idx) => {
+        const isLeft = idx % 2 === 0
+        const side = isLeft ? -1 : 1
+        f.state = FIGHTER_STATE.PREPARING
+        f.currentOrder = SQUADRON_ORDER.PINCER
+        f.stateTimer = isLeft ? (0.5 + idx * 0.12) : (0.75 + idx * 0.12)
+        f.hasFiredInAttack = false
+        f.attackContext = {
+          flankSide: side,
+          flankOffset: (isLeft ? -22 : 22) + (rng() * 4 - 2),
+          elevationOffset: (isLeft ? 3.5 : -3.0) + (rng() * 2 - 1),
+          targetPos: playerPosition.clone(),
+        }
+      })
       return true
     }
 
@@ -345,11 +401,11 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   // Cerco do Laser: invocado quando o comandante entra no telegraph do laser
   function coordinateLaserFlank(commanderPos, playerPosition, durationS) {
     const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
-    const maxOffensive = getOffensiveCapForLevel(level)
+    const maxOffensive = getOffensiveCap()
     const participants = activeFighters.slice(0, maxOffensive)
-    if (participants.length === 0) return
 
     currentOrder = SQUADRON_ORDER.LASER_FLANK
+    lastOrder = SQUADRON_ORDER.LASER_FLANK
     orderState = {
       type: SQUADRON_ORDER.LASER_FLANK,
       participants,
@@ -357,7 +413,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       timer: 0,
     }
 
-    // Distribui caças em flancos sem fechar todas as rotas de fuga
+    // Distribui caças em flancos mantendo rota de fuga central/superior claramente aberta
     participants.forEach((f, idx) => {
       f.state = FIGHTER_STATE.PREPARING
       f.currentOrder = SQUADRON_ORDER.LASER_FLANK
@@ -365,8 +421,10 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       const side = idx % 2 === 0 ? -1 : 1
       f.attackContext = {
         flankSide: side,
-        flankDist: 16.0 + idx * 4.0,
-        heightOffset: (idx === 0 ? 3.0 : -3.0),
+        flankDist: 18.0 + Math.floor(idx / 2) * 6.0,
+        heightOffset: (idx % 2 === 0 ? 3.5 : -3.5),
+        shotTimer: 0.65 + idx * 0.45,
+        hasShot: false,
       }
     })
   }
@@ -413,8 +471,9 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
     elapsed += dt
     orderCooldownTimer = Math.max(0, orderCooldownTimer - dt)
     const commanderPos = commander.mesh.position
-    const maxSquad = getSquadronCapForLevel(level)
-    const maxOffensive = getOffensiveCapForLevel(level)
+    const maxSquad = getSquadronCap()
+    const maxOffensive = getOffensiveCap()
+    const isLaserActive = commander.laserTelegraphTimer > 0 || !!commander.laserFiring
 
     // 1. Orientação da formação a partir do vetor comandante -> jogador
     if (playerPosition) {
@@ -430,7 +489,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
     // Encerra LASER_FLANK imediatamente se o laser expirou antes do passo de reposição
     if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
-      if (commander.laserTelegraphTimer <= 0 || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+      if (!isLaserActive) {
         finishCurrentOrder()
       }
     }
@@ -447,14 +506,19 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
       // Janela tática segura: comandante vivo, sem laser, sem ordem ofensiva ativa
       const isSafeWindow =
-        commander.laserTelegraphTimer <= 0 &&
+        !isLaserActive &&
         currentOrder === SQUADRON_ORDER.NONE &&
         !commander.dying
 
       if (replacementReady && isSafeWindow) {
         const spawnOffset = _vRight.clone().multiplyScalar((rng() < 0.5 ? -1 : 1) * 3.5).addScaledVector(_vForward, -4.0)
         const spawnPos = commanderPos.clone().add(spawnOffset)
-        spawnFighter(spawnPos)
+        const f = spawnFighter(spawnPos)
+        if (f && effects) {
+          effects.flashMesh?.(commander.mesh)
+          effects.shockwave?.(spawnPos, GOLDEN_FIGHTER_COLOR, 0.6)
+          effects.hitSpark?.(spawnPos, GOLDEN_FIGHTER_COLOR)
+        }
         replenishTimer = getReplenishIntervalForLevel(level)
         replacementReady = false
       }
@@ -464,7 +528,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
     // 3. Orquestração de ordens táticas pelo Comandante
     const organizedFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
-    if (currentOrder === SQUADRON_ORDER.NONE && orderCooldownTimer <= 0 && playerPosition && !commander.dying && commander.laserTelegraphTimer <= 0) {
+    if (currentOrder === SQUADRON_ORDER.NONE && orderCooldownTimer <= 0 && playerPosition && !commander.dying && !isLaserActive) {
       const eligibleOrders = []
       if (organizedFighters.length >= 2 && maxOffensive >= 2 && lastOrder !== SQUADRON_ORDER.PINCER) {
         eligibleOrders.push(SQUADRON_ORDER.PINCER)
@@ -483,7 +547,11 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
         }
       }
       if (eligibleOrders.length > 0) {
-        const chosen = eligibleOrders[Math.floor(rng() * eligibleOrders.length)]
+        eligibleOrders.sort((a, b) => (lastOrderExecutedTime[a] || 0) - (lastOrderExecutedTime[b] || 0))
+        const oldestTime = lastOrderExecutedTime[eligibleOrders[0]] || 0
+        const topCandidates = eligibleOrders.filter((o) => (lastOrderExecutedTime[o] || 0) <= oldestTime + 0.001)
+        const chosen = topCandidates[Math.floor(rng() * topCandidates.length)]
+        lastOrderExecutedTime[chosen] = elapsed
         startOrder(chosen, commander, playerPosition)
       }
     }
@@ -628,7 +696,17 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
             f.mesh.position.addScaledVector(f.velocity, dt)
             if (_vForward.lengthSq() > 0.01) f.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _vForward)
 
-            if (commander.laserTelegraphTimer <= 0) {
+            // Disparos escalonados de assédio nos flancos (sem formar parede impossível)
+            if (ctxFlank.shotTimer != null) {
+              ctxFlank.shotTimer -= dt
+              if (ctxFlank.shotTimer <= 0 && !ctxFlank.hasShot && ctx.fireEnemyProjectile) {
+                ctxFlank.hasShot = true
+                ctx.fireEnemyProjectile({ mesh: f.mesh, projectileOpts: { powerLevel: POWER_LEVEL_BASIC } }, playerPosition)
+                if (effects) effects.hitSpark(f.mesh.position, GOLDEN_FIGHTER_COLOR)
+              }
+            }
+
+            if (commander.laserTelegraphTimer <= 0 && !commander.laserFiring) {
               f.state = FIGHTER_STATE.REGROUPING
               f.currentOrder = SQUADRON_ORDER.NONE
             }
@@ -658,8 +736,8 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
             _vToTarget.copy(target).sub(f.mesh.position)
             const dist = _vToTarget.length()
 
-            // Disparo único durante a descida de ataque
-            if (!f.hasFiredInAttack && dist < 45.0 && ctx.fireEnemyProjectile) {
+            // Disparo único com stagger durante a descida de ataque
+            if (!f.hasFiredInAttack && dist < 48.0 && ctx.fireEnemyProjectile) {
               f.hasFiredInAttack = true
               ctx.fireEnemyProjectile({ mesh: f.mesh, projectileOpts: { powerLevel: POWER_LEVEL_BASIC } }, playerPosition)
               if (effects) effects.hitSpark(f.mesh.position, GOLDEN_FIGHTER_COLOR)
@@ -673,29 +751,30 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
             }
 
             // Ultrapassou o jogador ou timer expirou -> PASSING
-            if (dist < 6.0 || f.stateTimer <= 0 || _vToTarget.dot(_vForward) < -2.0) {
+            if (dist < 6.5 || f.stateTimer <= 0 || _vToTarget.dot(_vForward) < -2.0) {
               f.state = FIGHTER_STATE.PASSING
-              f.stateTimer = 0.65
+              f.stateTimer = 0.8
             }
           } else {
             f.state = FIGHTER_STATE.RETURNING
+            f.stateTimer = 2.2
           }
           break
         }
 
         case FIGHTER_STATE.PASSING: {
-          // Ultrapassa suavemente em vez de explodir contra o jogador
+          // Ultrapassa fisicamente e continua em frente além do jogador
           f.stateTimer -= dt
           f.mesh.position.addScaledVector(f.velocity, dt)
           if (f.stateTimer <= 0) {
             f.state = FIGHTER_STATE.RETURNING
-            f.stateTimer = 2.0
+            f.stateTimer = 2.2
           }
           break
         }
 
         case FIGHTER_STATE.RETURNING: {
-          // Curva de retorno para o Comandante
+          // Curva de retorno em arco suave (não em linha reta)
           f.stateTimer -= dt
           _vToTarget.copy(commanderPos).sub(f.mesh.position)
           const dist = _vToTarget.length()
@@ -704,8 +783,13 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
             f.state = FIGHTER_STATE.REGROUPING
             f.currentOrder = SQUADRON_ORDER.NONE
           } else {
+            const arcT = Math.max(0, f.stateTimer / 2.2)
+            const arcSide = f.attackContext?.flankSide || 1
             _vDesiredVel.copy(_vToTarget).normalize().multiplyScalar(RETURN_SPEED)
-            f.velocity.lerp(_vDesiredVel, dt * 3.0)
+            _vDesiredVel.addScaledVector(_vRight, arcSide * 8.0 * arcT)
+            _vDesiredVel.addScaledVector(_vUp, 5.0 * Math.sin(arcT * Math.PI))
+            _vDesiredVel.normalize().multiplyScalar(RETURN_SPEED)
+            f.velocity.lerp(_vDesiredVel, dt * 3.5)
             f.mesh.position.addScaledVector(f.velocity, dt)
             if (f.velocity.lengthSq() > 0.01) {
               f.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, f.velocity.clone().normalize())
@@ -731,9 +815,9 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       }
     }
 
-    // Finaliza LASER_FLANK de forma autoritativa se o laser terminou ou se participantes morreram
+    // Finaliza LASER_FLANK de forma autoritativa se o laser terminou
     if (currentOrder === SQUADRON_ORDER.LASER_FLANK && orderState) {
-      if (commander.laserTelegraphTimer <= 0 || orderState.participants.length === 0 || orderState.participants.every((p) => p.dying)) {
+      if (!isLaserActive) {
         finishCurrentOrder()
       }
     }
@@ -872,15 +956,30 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   }
 
   return {
-    setLevel(lvl) {
+    setLevel(lvl, setOpts = {}) {
       level = Math.max(1, Math.min(9, Math.round(lvl || 1)))
+      if (setOpts?.allyBonus != null || setOpts?.allyCount != null) {
+        allyBonus = Math.max(0, Math.min(4, Math.round(setOpts.allyBonus ?? setOpts.allyCount ?? 0)))
+      }
       replenishTimer = getReplenishIntervalForLevel(level)
       replacementReady = false
     },
     getLevel: () => level,
+    getSquadronCap,
+    getOffensiveCap,
+    getAllyBonus: () => allyBonus,
+    getTelemetry: () => ({
+      aliveCount: fighters.filter((f) => !f.dying).length,
+      cap: getSquadronCap(),
+      offensiveCap: getOffensiveCap(),
+      currentOrder,
+      offensiveParticipants: getOffensiveParticipants().length,
+      allyBonus,
+    }),
     initSquadron,
     startOrder,
     spawnFighter,
+    killFighter,
     update,
     onCommanderTeleported,
     coordinateLaserFlank,

@@ -20,8 +20,12 @@ for (const pilotId of [0, 1, 2, 3]) {
 }
 const independent = createWingmanRadio({ random: () => 0 })
 assert.ok(independent.trySpeak(0, 'engage_dogfight', 0, { activePilotIds: [0, 1] }))
-assert.ok(independent.trySpeak(1, 'engage_dogfight', 0, { activePilotIds: [0, 1] }))
-assert.ok(independent.speakAbility(0, 'ability_ram', 1, { activePilotIds: [0, 1] }))
+// 1.2: Segundo piloto bloqueado pelo silêncio de 6s do esquadrão no mesmo instante
+assert.strictEqual(independent.trySpeak(1, 'engage_dogfight', 0, { activePilotIds: [0, 1] }), null)
+// Mas permitido após o silêncio global
+assert.ok(independent.trySpeak(1, 'engage_dogfight', 10000, { activePilotIds: [0, 1] }))
+// 1.1: Habilidade NUNCA usa rádio (retorna null)
+assert.strictEqual(independent.speakAbility(0, 'ability_ram', 12000, { activePilotIds: [0, 1] }), null)
 assert.ok(ABILITY_EVENT_IDS.has('ability_focus_upgrade'))
 
 const hudFacade = readFileSync(new URL('./hud.js', import.meta.url), 'utf8')
@@ -36,8 +40,7 @@ assert.ok(worldRadio.includes("assets/wingman-radio/fox.png"))
 const wingmen = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
 assert.ok(wingmen.includes('worldRadio.showFoxFocus'), 'Fox continua acima da nave do jogador')
 assert.ok(!wingmen.includes('worldRadio.showWingman('), 'Wingmen não podem mais emitir quote acima da nave')
-assert.ok(wingmen.includes("pendingRadioMessages.push(buildRadioPayload(wingman.profile, text, eventId))"), 'abilities voltam ao painel lateral')
-assert.ok(wingmen.includes('Focus gera confirmação lateral para todo Wingman ativo'))
-assert.ok(wingmen.includes('focusResponders = activeWingmen.filter'))
+assert.ok(wingmen.includes('triggerAbilityWorldIcon'), 'abilities ativam ícone no mundo sobre a nave')
+assert.ok(!wingmen.includes('wingmanRadio.speakAbility'), 'wingmen não chama mais speakAbility')
 assert.ok(wingmen.includes('worldRadio.triggerAbilityGlow'), 'glow de ability permanece')
 console.log('wingman-radio-overhaul.test.mjs: OK')
