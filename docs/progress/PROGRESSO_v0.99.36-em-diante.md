@@ -126,10 +126,12 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
   - Adição de testes de regressão em `src/hud-double-stack.test.mjs` e `src/lockon-miyu-reticle-fog.test.mjs` garantindo ausência de chamadas a `THREE` nos módulos de HUD e validação do clamp nativo.
   - Validação completa em navegador real (Edge headless CDP) com zero exceções e zero erros de console durante gameplay ativo em resoluções 1280×720, 1366×768, 1920×1080 e 1280×800.
 
-### 2.6 Pacote de Correção em Fases — Fases 0 a 5 (Branch `feat/system-correction-phases`)
-* **Estado:** `IMPLEMENTADO LOCALMENTE` (aguardando abertura de PR e revisão humana para merge na `main`)
-* **Data:** 2026-09-24
-* **Branch Dedicada:** `feat/system-correction-phases`
+### 2.6 PR #20 — Pacote de Correção em Fases (0 a 5) + HUD Opção 4 (Coluna Esquerda Clássica)
+* **Estado:** `MERGED EM MAIN`
+* **Data do Merge:** 2026-09-25
+* **Branch Original:** `feat/system-correction-phases`
+* **Merge Commit:** `3028139552140bb6bf70c5384667d26ca75ad67f`
+* **PR:** [PR #20](https://github.com/Ratuckk/Star-Anki/pull/20)
 * **Baseline Original:** `main` @ `e5f68e93fee9b75a2edc8f219f3de08893524607`
 * **Escopo e Fases:**
   - **Fase 0 — Protocolo de Auditoria e Debug de Dificuldade:**
@@ -153,6 +155,7 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
     - Ordens táticas ativas no combate: *Strafing Run* (mergulho rasante com curva e retorno físico), *Pinça (Pincer)* (ataque por flancos convergentes com separação espacial), *Fogo Coordenado* (cadência escalonada entre 0.18s e 0.28s) e *Cerco do Laser* (posicionamento de contenção preservando rota de fuga).
     - Limite ofensivo escalonado: `baseOffensiveCap + ceil(allyBonus / 2)`.
     - Descontinuação do míssil/cone voador: substituição por Mega Laser com telegraph de 2.5s e feixe sustentado por 0.6s (envelope aditivo dourado com núcleo branco e swept cylinder hit com dano único).
+    - Correção do scheduler de ordens (`lastOrderExecutedTime`) prevenindo inanição estatística de Pinça e transição correta do cerco do laser. Fuzz runtime validado em 7.200 frames com 0 falhas.
   - **Fase 3 — Tank + Verme + Hard-Pity de Spawn:**
     - Ambos elegíveis e ativos desde o nível 1.
     - Probabilidades nominais aumentadas: Verme (0.08 -> 0.12) e Tank (0.05 -> 0.08).
@@ -166,6 +169,16 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
     - Instrumentação de debug em `src/mount-game.js` e `src/hud-game.js`: exibição de dificuldade efetiva, esquadrão/ordens do Dourado, timers de pity de Tank/Verme e estados de Sussurro/Réplica.
     - Suíte completa de testes automatizados executada e verde (56 subtestes em `selftest.mjs`, suítes unitárias dedicadas, fuzz de wingmen de 3600 frames e integridade estrita de links de documentação).
     - Validação visual completa por captura de tela em runtime real (11 artefatos gerados cobrindo todos os requisitos visuais).
+  - **HUD Opção 4 — Coluna Esquerda Clássica:**
+    - Reestruturação em 4 zonas verticais com eixo X unificado (`--hud-left-x: clamp(18px, 3.2vw, 52px)`):
+      1. `.hud-left-stats`: SCORE, STREAK, KILLS, COMBO.
+      2. `.hud-left-resources`: 4 emblemas de habilidade (Falco, Peppy, Slippy, Miyu).
+      3. `.hud-left-actions`: [D] FOCO, [Q] SWIRL, CADEIA DE ABATES.
+      4. `.hud-left-vitals`: VIDAS, ESCUDO, VIDA, BARRA AUXILIAR.
+    - Vitais posicionados estritamente abaixo dos comandos (`vitals.top >= actions.bottom + 12px`).
+    - Anti-overlap: 0 colisões em todos os 6 pares de containers.
+    - Ocupação lateral compacta: 25.7% (1280x720) e 17.8% (1920x1080), abaixo dos tetos contratuais de 34% e 30%.
+    - Validação em runtime via Edge CDP (`tools/validate-hud-option4.mjs`) com screenshots capturadas para 1280x720, 1366x768, 1920x1080 e resize dinâmico.
 
 ---
 

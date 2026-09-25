@@ -1,16 +1,17 @@
 # ESTADO ATUAL DO PROJETO — STAR-ANKI
 
-> **Versão:** v0.99.36 — Pacote de Correção em Fases (Fases 0 a 5) implementado na branch `feat/system-correction-phases`
-> **Branch Atual de Trabalho:** `feat/system-correction-phases` (Baseline `main` @ `e5f68e93fee9b75a2edc8f219f3de08893524607`)
-> **Última Atualização:** 2026-09-24
+> **Versão:** v0.99.36 — Pacote de Correção em Fases (Fases 0 a 5) + HUD Opção 4 integrado em `main`
+> **Branch Atual de Trabalho:** `main` (após merge do PR #20)
+> **Última Atualização:** 2026-09-25
 > **Histórico Recente de Integrações em `main`:**
 > - **PR #15 (Dourado + Esquadrão):** Merge `3c014a74f56dfd90428c6370372d90527f5c9716` (CI Run `35946376454` pass)
 > - **PR #16 (Tank Natural Spawn):** Merge `327bf50b24a8c5c1a2d1e32dcec230e360e08bc5` (CI Run `35997550149` pass)
 > - **PR #17 (Lock-on / Miyu / Reticle / Arcade / Fog Polish):** Merge `bdd8a879651ff4da411ec38a4c99745d9a93683f` (CI Run `36001243157` pass)
 > - **PR #18 (HUD Double Stack Architecture):** Merge `7a6d10354486578bc1ba0d606b1d84a9410083af` (CI Run `36017039624` pass)
 > - **PR #19 (Hotfix Runtime ReferenceError THREE em setReticleCharge):** Merge `8b499bddbed11d00b70747ceef9ca621ed6f5414` (CI Run `36031499957` pass)
+> - **PR #20 (Pacote de Correções Fases 0 a 5 + HUD Opção 4):** Merge `3028139552140bb6bf70c5384667d26ca75ad67f`
 > **Registro Cronológico Pós-v0.99.35:** [`docs/progress/PROGRESSO_v0.99.36-em-diante.md`](PROGRESSO_v0.99.36-em-diante.md)
-> **Pacote de Correções Ativo:** Fases 0 a 5 concluídas localmente em `feat/system-correction-phases`, com 56 testes automatizados, fuzz runtime, validação visual (11 artefatos) e sem merge automático na `main`.
+> **Pacote de Correções Ativo:** Fases 0 a 5 e HUD Opção 4 integrados integralmente na branch `main`.
 
 ---
 
