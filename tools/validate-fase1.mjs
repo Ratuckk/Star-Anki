@@ -2,7 +2,7 @@ import { launchBrowser } from './edge-cdp-harness.mjs'
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 
-const ARTIFACTS_DIR = 'C:\\Users\\zerke\\.gemini\\antigravity-ide\\brain\\1666ac6d-c31c-4d93-877f-9311ceaf7309'
+const ARTIFACTS_DIR = process.env.ARTIFACTS_DIR || 'C:\\Users\\zerke\\.gemini\\antigravity-ide\\brain\\4a71a9c7-c71f-4226-ac03-0646bbbbcc6c'
 const SHOT_CLEAN_HUD = join(ARTIFACTS_DIR, 'media_fase1_single_timer_clean_top.png')
 const SHOT_RADIO = join(ARTIFACTS_DIR, 'media_fase1_radio_below_ship.png')
 const SHOT_ABILITY_ICON = join(ARTIFACTS_DIR, 'media_fase1_ability_world_icon.png')

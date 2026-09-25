@@ -135,6 +135,13 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     return Number.isFinite(lvl) ? Math.max(1, Math.min(9, lvl)) : 1
   }
 
+  let allyCountProvider = null
+  function currentAllyCount() {
+    if (!allyCountProvider) return 0
+    const cnt = Math.round(allyCountProvider())
+    return Number.isFinite(cnt) ? Math.max(0, Math.min(4, cnt)) : 0
+  }
+
   const golden = createGoldenSystem(scene, rail, effects, () => nextEnemyId++)
   const telemetry = createEnemyTelemetry()
 
@@ -1335,6 +1342,10 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       difficultyLevelProvider = fn
     },
 
+    setAllyCountProvider(fn) {
+      allyCountProvider = fn
+    },
+
     spawnHorda() {
       const level = currentDifficultyLevel()
       const enemy = spawnHordaEnemy(scene, rail, nextEnemyId++, level)
@@ -1369,7 +1380,8 @@ export function createEnemiesSystem(scene, rail, effects = null) {
 
     spawnGoldenSpecial(opts = {}) {
       const level = opts.level ?? currentDifficultyLevel()
-      golden.spawn({ ...opts, level })
+      const allyCount = opts.allyCount ?? currentAllyCount()
+      golden.spawn({ ...opts, level, allyCount })
     },
 
     showArenaPreview,
@@ -1438,14 +1450,15 @@ export function createEnemiesSystem(scene, rail, effects = null) {
       const p = updateEnemyProjectiles(dt, playerPosition, opts)
       const l = updateEnemyLasers(dt, playerPosition, opts)
       const g = updateEnemyGates(dt, playerPosition, opts)
+      const gl = golden.updateLaser ? golden.updateLaser(dt, playerPosition, opts) : { hits: 0, damage: 0, powerLevel: 0, wingmanHitIds: [] }
       return {
-        hits: p.hits + l.hits + g.hits,
-        damage: Math.max(p.damage, l.damage, g.damage),
-        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0),
-        shieldDamage: g.hits > 0 ? g.shieldDamage : 0,
+        hits: p.hits + l.hits + g.hits + (gl.hits || 0),
+        damage: Math.max(p.damage, l.damage, g.damage, gl.damage || 0),
+        genericDamage: Math.max(p.hits > 0 ? p.damage : 0, l.hits > 0 ? l.damage : 0, (gl.hits || 0) > 0 ? (gl.genericDamage || gl.damage || 0) : 0),
+        shieldDamage: Math.max(g.hits > 0 ? g.shieldDamage : 0, (gl.hits || 0) > 0 ? (gl.shieldDamage || gl.damage || 0) : 0),
         hullDamage: g.hits > 0 ? g.hullDamage : 0,
-        powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel),
-        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || [])],
+        powerLevel: Math.max(p.powerLevel, l.powerLevel, g.powerLevel, gl.powerLevel || 0),
+        wingmanHitIds: [...(p.wingmanHitIds || []), ...(l.wingmanHitIds || []), ...(g.wingmanHitIds || []), ...(gl.wingmanHitIds || [])],
       }
     },
 
@@ -1920,6 +1933,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     isGoldenDying: () => (golden.isDying ? golden.isDying() : false),
     getGoldenWorldPos: () => (golden.getWorldPos ? golden.getWorldPos() : null),
     getGoldenSnapshot: () => (golden.getSnapshots ? golden.getSnapshots()[0] || null : null),
+    getGoldenTelemetry: () => (golden.getTelemetry ? golden.getTelemetry() : null),
 
     getTelemetry: () => telemetry.getSnapshot(),
     getCombatLog: (limit) => telemetry.getCombatLog(limit),

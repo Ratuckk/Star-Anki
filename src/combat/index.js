@@ -166,7 +166,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     spawnTimeEnemyMega: () => enemies.spawnTimeEnemyMega(),
     spawnTankEnemy: (hp) => enemies.spawnTankEnemy(hp),
     spawnBossEnemy: (hp, level) => enemies.spawnBossEnemy(hp, level),
-    spawnGoldenSpecial: (opts) => enemies.spawnGoldenSpecial(opts),
+    spawnGoldenSpecial: (opts = {}) => enemies.spawnGoldenSpecial({ allyCount: squadron.getWingmanCount ? squadron.getWingmanCount() : 0, ...opts }),
     spawnDetrito: (count, opts) => enemies.spawnDetrito(count, opts),
     spawnTitanicDetrito: (opts) => enemies.spawnTitanicDetrito(opts),
     spawnSentinela: () => enemies.spawnSentinela(),

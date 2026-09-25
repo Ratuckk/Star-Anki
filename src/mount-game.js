@@ -258,6 +258,7 @@ export function mountGame(session, deck, menu) {
     session,
     isNoDeck: !!deck?.isNoDeck,
   }))
+  enemies.setAllyCountProvider(() => (combat.getWingmanCount ? combat.getWingmanCount() : 0))
 
   // cutscenes (etapa 3): arenaCutscene/deathCutscene extraídas pra cutscenes.js
   // `environment` entrou nas deps só pra decolagem chamar environment.update() (ver
@@ -594,4 +595,7 @@ export function mountGame(session, deck, menu) {
 
   window.__getCombatTelemetry = () => combat.getCombatTelemetry?.()
   window.__dumpCombatTelemetry = () => combat.dumpCombatTelemetry?.()
+  window.__enemiesSysInstance = enemies
+  window.__combatInstance = combat
+  window.__getGoldenTelemetry = () => enemies.getGoldenTelemetry?.()
 }

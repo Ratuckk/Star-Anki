@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, POWER_LEVEL_HIGH_IMPACT } from './shared.js'
+import { FORWARD_AXIS, distanceToSegment, randomSpawnAroundArena, HOMING_EXPLOSION_COLOR, POWER_LEVEL_BASIC, POWER_LEVEL_HIGH_IMPACT } from './shared.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import {
   createGoldenSquadron,
@@ -49,15 +49,15 @@ const GOLDEN_DASH_SPEED = 72.0
 const GOLDEN_FIRE_INTERVAL_MIN = 1100
 const GOLDEN_FIRE_INTERVAL_MAX = 2200
 
-// ============ LASER GRANDE DO DOURADO ============
+// ============ LASER GRANDE DO DOURADO (FEIXE SUSTENTADO — SEM CONE VOADOR) ============
 const GOLDEN_LASER_INTERVAL_MIN = 8.0
 const GOLDEN_LASER_INTERVAL_MAX = 12.0
 const GOLDEN_LASER_TELEGRAPH_S = 2.5
-const GOLDEN_LASER_RADIUS = 3.2
-const GOLDEN_LASER_LENGTH = 36
-const GOLDEN_LASER_SPEED = 500
-const GOLDEN_LASER_HIT_RADIUS = 4.0
-const GOLDEN_LASER_MAX_RANGE = 200
+export const GOLDEN_BEAM_LENGTH = 200
+export const GOLDEN_BEAM_RADIUS = 2.8
+export const GOLDEN_BEAM_CORE_RADIUS = 0.65
+export const GOLDEN_BEAM_HIT_RADIUS = 3.2
+export const GOLDEN_BEAM_DURATION_S = 0.6
 
 export const goldenGeometry = new THREE.TorusKnotGeometry(1.21, 0.44, 80, 12)
 export const goldenMaterial = new THREE.MeshPhongMaterial({
@@ -67,12 +67,54 @@ export const goldenMaterial = new THREE.MeshPhongMaterial({
   flatShading: true,
 })
 
-const goldenLaserGeometry = new THREE.ConeGeometry(GOLDEN_LASER_RADIUS, GOLDEN_LASER_LENGTH, 8)
-goldenLaserGeometry.rotateX(Math.PI / 2)
-const goldenLaserMaterial = new THREE.MeshBasicMaterial({
-  color: GOLDEN_COLOR, transparent: true, opacity: 0.95,
-  blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+// Geometrias do feixe de energia (cilindros orientados ao longo do eixo +Z a partir do muzzle)
+export const goldenBeamCoreGeometry = new THREE.CylinderGeometry(GOLDEN_BEAM_CORE_RADIUS, GOLDEN_BEAM_CORE_RADIUS, GOLDEN_BEAM_LENGTH, 12, 1, true)
+goldenBeamCoreGeometry.rotateX(Math.PI / 2)
+goldenBeamCoreGeometry.translate(0, 0, GOLDEN_BEAM_LENGTH / 2)
+
+export const goldenBeamEnvelopeGeometry = new THREE.CylinderGeometry(GOLDEN_BEAM_RADIUS, GOLDEN_BEAM_RADIUS, GOLDEN_BEAM_LENGTH, 16, 1, true)
+goldenBeamEnvelopeGeometry.rotateX(Math.PI / 2)
+goldenBeamEnvelopeGeometry.translate(0, 0, GOLDEN_BEAM_LENGTH / 2)
+
+export const goldenBeamGuideGeometry = new THREE.CylinderGeometry(0.04, 0.04, GOLDEN_BEAM_LENGTH, 6, 1, true)
+goldenBeamGuideGeometry.rotateX(Math.PI / 2)
+goldenBeamGuideGeometry.translate(0, 0, GOLDEN_BEAM_LENGTH / 2)
+
+export const goldenMuzzleFlareGeometry = new THREE.SphereGeometry(1.6, 12, 8)
+
+export const goldenBeamCoreMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.95,
+  depthWrite: false,
 })
+
+export const goldenBeamEnvelopeMaterial = new THREE.MeshBasicMaterial({
+  color: GOLDEN_COLOR,
+  transparent: true,
+  opacity: 0.82,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+})
+
+export const goldenBeamGuideMaterial = new THREE.MeshBasicMaterial({
+  color: GOLDEN_COLOR,
+  transparent: true,
+  opacity: 0.35,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+})
+
+export const goldenMuzzleFlareMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+})
+
+const _beamEnd = new THREE.Vector3()
 
 export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
   const rng = (opts && typeof opts.rng === 'function') ? opts.rng : Math.random
@@ -90,37 +132,71 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
   // Instância modular do Esquadrão com injeção de RNG
   const squadron = createGoldenSquadron(scene, effects, nextId, currentLevel, { rng })
 
+  function cleanupCommanderBeams(g) {
+    if (g.laserBeamMesh) {
+      scene.remove(g.laserBeamMesh)
+      g.laserBeamMesh = null
+    }
+    if (g.guideBeamMesh) {
+      scene.remove(g.guideBeamMesh)
+      g.guideBeamMesh = null
+    }
+    g.laserFiring = false
+  }
+
   function removeGoldenTarget(g) {
     g.dying = true
+    cleanupCommanderBeams(g)
     scene.remove(g.mesh)
     const idx = goldenTargets.indexOf(g)
     if (idx !== -1) goldenTargets.splice(idx, 1)
   }
 
-  // Laser grande do Dourado
-  function fireGoldenLaser(g, targetPos, ctx) {
+  // Laser grande do Dourado: feixe sustentado com núcleo branco, envelope aditivo e glow (sem projétil viajando)
+  function fireGoldenLaser(g, targetPos) {
     const startPos = g.mesh.position.clone()
     const direction = targetPos.clone().sub(startPos).normalize()
+    if (direction.lengthSq() < 0.001) direction.set(0, 0, -1)
 
-    const mesh = new THREE.Mesh(goldenLaserGeometry, goldenLaserMaterial)
-    mesh.position.copy(startPos)
-    mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
-    scene.add(mesh)
+    // Remove guia prévio se ainda estiver em cena
+    if (g.guideBeamMesh) {
+      scene.remove(g.guideBeamMesh)
+      g.guideBeamMesh = null
+    }
+
+    // Cria grupo visual do feixe sustentado
+    const beamGroup = new THREE.Group()
+    const coreMesh = new THREE.Mesh(goldenBeamCoreGeometry, goldenBeamCoreMaterial)
+    const envMesh = new THREE.Mesh(goldenBeamEnvelopeGeometry, goldenBeamEnvelopeMaterial)
+    const flareMesh = new THREE.Mesh(goldenMuzzleFlareGeometry, goldenMuzzleFlareMaterial)
+    beamGroup.add(coreMesh)
+    beamGroup.add(envMesh)
+    beamGroup.add(flareMesh)
+
+    beamGroup.position.copy(startPos)
+    beamGroup.quaternion.setFromUnitVectors(FORWARD_AXIS, direction)
+    scene.add(beamGroup)
+
+    g.laserFiring = true
+    g.laserFireTimer = GOLDEN_BEAM_DURATION_S
+    g.laserBeamDirection = direction.clone()
+    g.laserBeamMesh = beamGroup
+    g.laserBeamHitPlayer = false
+    g.laserBeamHitWingmen = new Set()
+
     triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_fire, { worldPos: startPos, targetPos })
-    ctx.pushLaser({
-      mesh,
-      velocity: direction.multiplyScalar(GOLDEN_LASER_SPEED), traveled: 0,
-      maxRange: GOLDEN_LASER_MAX_RANGE, hitRadius: GOLDEN_LASER_HIT_RADIUS,
-      shieldDamage: 1,
-      powerLevel: POWER_LEVEL_HIGH_IMPACT,
-    })
+    if (effects) {
+      effects.shockwave?.(startPos, GOLDEN_COLOR, 1.2)
+      effects.hitSpark?.(startPos, GOLDEN_COLOR)
+    }
   }
 
   return {
     spawn(spawnOpts = {}) {
       const { distanceMin = 48, distanceMax = 108, level = 1 } = spawnOpts
+      const allyCount = Math.max(0, Math.min(4, Math.round(spawnOpts.allyCount ?? 0)))
       currentLevel = level
-      squadron.setLevel(level)
+      squadron.setLevel(level, { allyBonus: allyCount })
       const shrink = goldenCooldownShrinkFor(level)
       const dashCooldownS = GOLDEN_DASH_COOLDOWN_S * shrink
       const teleportCooldownS = GOLDEN_TELEPORT_COOLDOWN_S * shrink
@@ -148,6 +224,13 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
         laserCooldown: GOLDEN_LASER_INTERVAL_MIN + rng() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN),
         laserTelegraphTimer: 0,
         laserTargetPos: null,
+        laserFiring: false,
+        laserFireTimer: 0,
+        laserBeamDirection: null,
+        laserBeamMesh: null,
+        guideBeamMesh: null,
+        laserBeamHitPlayer: false,
+        laserBeamHitWingmen: new Set(),
         dashCooldownS, teleportCooldownS,
         distanceMin, distanceMax, teleportCooldownTimer: 0,
         dashCooldownTimer: 0,
@@ -158,8 +241,8 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
       }
       goldenTargets.push(commander)
 
-      // Inicializa esquadrão subordinado na formação inicial ao redor do Comandante
-      squadron.initSquadron(mesh.position, frame.forward)
+      // Inicializa esquadrão subordinado na formação inicial ao redor do Comandante com bônus de aliados
+      squadron.initSquadron(mesh.position, frame.forward, { allyBonus: allyCount })
     },
 
     update(dt, playerPosition, ctx, ramDamage = 0, updateOpts = {}) {
@@ -294,7 +377,7 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
         // Só dispara se não estiver ocupado com laser ou fogo coordenado
         const currentSquadOrder = squadron.getCurrentOrder()
         const isCoordinatedFire = currentSquadOrder === SQUADRON_ORDER.COORDINATED_FIRE
-        const isLaserActive = g.laserTelegraphTimer > 0
+        const isLaserActive = g.laserTelegraphTimer > 0 || !!g.laserFiring
 
         if (!isCoordinatedFire && !isLaserActive) {
           if (g.fireTimer > 0.3 && g.fireTimer - dt <= 0.3 && effects) effects.telegraph(g.mesh.position, GOLDEN_COLOR)
@@ -306,20 +389,54 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
           }
         }
 
-        // ============ LASER GRANDE COM CERCO DE ESQUADRÃO ============
+        // ============ LASER GRANDE COM CERCO DE ESQUADRÃO (SUSTENTADO) ============
         if (g.laserTelegraphTimer > 0) {
           if (!g.laserTargetPos) g.laserTargetPos = new THREE.Vector3()
           g.laserTargetPos.copy(playerPosition)
           g.laserTelegraphTimer -= dt
+
+          // Feixe guia fino visível nos últimos ~0.35s do telegraph (sem dano)
+          if (g.laserTelegraphTimer <= 0.35 && g.laserTargetPos) {
+            if (!g.guideBeamMesh) {
+              g.guideBeamMesh = new THREE.Mesh(goldenBeamGuideGeometry, goldenBeamGuideMaterial)
+              scene.add(g.guideBeamMesh)
+            }
+            g.guideBeamMesh.position.copy(g.mesh.position)
+            const guideDir = g.laserTargetPos.clone().sub(g.mesh.position).normalize()
+            if (guideDir.lengthSq() > 0.001) {
+              g.guideBeamMesh.quaternion.setFromUnitVectors(FORWARD_AXIS, guideDir)
+            }
+          }
+
           if (g.laserTelegraphTimer <= 0) {
-            if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos, ctx)
+            if (g.laserTargetPos) fireGoldenLaser(g, g.laserTargetPos)
             g.laserTargetPos = null
+          }
+        } else if (g.laserFiring) {
+          // Feixe sustentado ativo por 0.6s ancorado ao Comandante
+          g.laserFireTimer -= dt
+          if (g.laserBeamMesh) {
+            g.laserBeamMesh.position.copy(g.mesh.position)
+            if (g.laserBeamDirection) {
+              g.laserBeamMesh.quaternion.setFromUnitVectors(FORWARD_AXIS, g.laserBeamDirection)
+            }
+            const pulse = 1 + Math.sin(elapsed * 45) * 0.08
+            g.laserBeamMesh.scale.set(pulse, pulse, 1.0)
+          }
+
+          if (g.laserFireTimer <= 0) {
+            // Dissipação do feixe com flash/onda curta no muzzle
+            cleanupCommanderBeams(g)
             g.laserCooldown = GOLDEN_LASER_INTERVAL_MIN + rng() * (GOLDEN_LASER_INTERVAL_MAX - GOLDEN_LASER_INTERVAL_MIN)
+            if (effects) {
+              effects.flashMesh?.(g.mesh)
+              effects.shockwave?.(g.mesh.position, GOLDEN_COLOR, 1.0)
+            }
           }
         } else {
           g.laserCooldown -= dt
           if (g.laserCooldown <= 0) {
-            // Política A: laser aguarda janela segura sem ordem ofensiva ativa
+            // Laser aguarda janela segura sem ordem ofensiva ativa
             if (squadron.getCurrentOrder() === SQUADRON_ORDER.NONE) {
               g.laserTargetPos = playerPosition.clone()
               g.laserTelegraphTimer = GOLDEN_LASER_TELEGRAPH_S
@@ -328,7 +445,7 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
               if (effects) effects.chargeCircle(() => g.laserTargetPos, GOLDEN_LASER_TELEGRAPH_S, GOLDEN_COLOR)
               triggerSoundCue(ENEMY_SOUND_CUES.golden_laser_charge, { worldPos: g.mesh.position, targetPos: g.laserTargetPos })
             } else {
-              // Mantém o laser pronto aguardando a ordem ativa terminar sem corromper estados
+              // Mantém o laser pronto aguardando a ordem ativa terminar
               g.laserCooldown = 0
             }
           }
@@ -476,6 +593,57 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
       return hits
     },
 
+    updateLaser(dt, playerPosition, opts = {}) {
+      let hits = 0
+      let damage = 0
+      let powerLevel = POWER_LEVEL_BASIC
+      const wingmanHitIds = []
+      const shipPoints = (opts && opts.shipHitboxPoints) || (playerPosition ? [{ worldPos: playerPosition, radius: 0.5 }] : [])
+      const wingmanTargets = opts.wingmanTargets || []
+
+      for (const g of goldenTargets) {
+        if (g.dying || !g.laserFiring || !g.laserBeamDirection) continue
+
+        const startPos = g.mesh.position
+        const endPos = _beamEnd.copy(startPos).addScaledVector(g.laserBeamDirection, GOLDEN_BEAM_LENGTH)
+
+        // 1. Dano ao Jogador (instantâneo ao longo do feixe, max 1 hit por disparo sustentado)
+        if (!g.laserBeamHitPlayer) {
+          const hit = shipPoints.some((pt) => distanceToSegment(pt.worldPos, startPos, endPos) <= GOLDEN_BEAM_HIT_RADIUS + pt.radius)
+          if (hit) {
+            g.laserBeamHitPlayer = true
+            hits = 1
+            damage = 1
+            powerLevel = POWER_LEVEL_HIGH_IMPACT
+            if (effects) {
+              effects.flashMesh?.(g.mesh)
+              effects.shockwave?.(playerPosition || startPos, GOLDEN_COLOR, 1.2)
+            }
+          }
+        }
+
+        // 2. Dano aos Aliados (Wingmen)
+        for (const w of wingmanTargets) {
+          if (g.laserBeamHitWingmen?.has(w.id)) continue
+          const dist = distanceToSegment(w.worldPos, startPos, endPos)
+          if (dist <= GOLDEN_BEAM_HIT_RADIUS + (w.radius || 1.25)) {
+            if (!g.laserBeamHitWingmen) g.laserBeamHitWingmen = new Set()
+            g.laserBeamHitWingmen.add(w.id)
+            wingmanHitIds.push(w.id)
+          }
+        }
+      }
+
+      return {
+        hits,
+        damage,
+        genericDamage: damage,
+        shieldDamage: damage,
+        powerLevel,
+        wingmanHitIds,
+      }
+    },
+
     getAlive: () => goldenTargets.filter((g) => !g.dying),
     getSquadronAlive: () => squadron.getAlive(),
     hasAlive: () => goldenTargets.some((g) => !g.dying),
@@ -499,6 +667,12 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
     ],
 
     getSquadron: () => squadron,
+    getTelemetry: () => ({
+      alive: goldenTargets.filter((g) => !g.dying).length > 0,
+      laserFiring: goldenTargets.some((g) => g.laserFiring),
+      laserTelegraphTimer: goldenTargets[0]?.laserTelegraphTimer || 0,
+      squadron: squadron.getTelemetry?.(),
+    }),
 
     consumeDefeated() {
       if (!goldenDefeatedPending) return null
@@ -510,6 +684,7 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
     clear() {
       goldenDefeatedPending = false
       goldenDefeatedWorldPos = null
+      for (const g of goldenTargets) cleanupCommanderBeams(g)
       squadron.clear()
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
     },
@@ -517,14 +692,21 @@ export function createGoldenSystem(scene, rail, effects, nextId, opts = {}) {
     dispose() {
       goldenDefeatedPending = false
       goldenDefeatedWorldPos = null
+      for (const g of goldenTargets) cleanupCommanderBeams(g)
       squadron.dispose()
       for (const g of [...goldenTargets]) removeGoldenTarget(g)
       goldenGeometry.dispose()
       goldenMaterial.dispose()
       fighterGeometry.dispose()
       fighterMaterial.dispose()
-      goldenLaserGeometry.dispose()
-      goldenLaserMaterial.dispose()
+      goldenBeamCoreGeometry.dispose()
+      goldenBeamEnvelopeGeometry.dispose()
+      goldenBeamGuideGeometry.dispose()
+      goldenMuzzleFlareGeometry.dispose()
+      goldenBeamCoreMaterial.dispose()
+      goldenBeamEnvelopeMaterial.dispose()
+      goldenBeamGuideMaterial.dispose()
+      goldenMuzzleFlareMaterial.dispose()
     },
   }
 }
