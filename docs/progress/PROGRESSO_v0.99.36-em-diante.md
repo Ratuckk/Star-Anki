@@ -126,6 +126,47 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
   - Adição de testes de regressão em `src/hud-double-stack.test.mjs` e `src/lockon-miyu-reticle-fog.test.mjs` garantindo ausência de chamadas a `THREE` nos módulos de HUD e validação do clamp nativo.
   - Validação completa em navegador real (Edge headless CDP) com zero exceções e zero erros de console durante gameplay ativo em resoluções 1280×720, 1366×768, 1920×1080 e 1280×800.
 
+### 2.6 Pacote de Correção em Fases — Fases 0 a 5 (Branch `feat/system-correction-phases`)
+* **Estado:** `IMPLEMENTADO LOCALMENTE` (aguardando abertura de PR e revisão humana para merge na `main`)
+* **Data:** 2026-09-24
+* **Branch Dedicada:** `feat/system-correction-phases`
+* **Baseline Original:** `main` @ `e5f68e93fee9b75a2edc8f219f3de08893524607`
+* **Escopo e Fases:**
+  - **Fase 0 — Protocolo de Auditoria e Debug de Dificuldade:**
+    - Botões `-` e `+` de nível de dificuldade no painel de debug com faixa clampada em `[1, 9]`.
+    - Override explícito de debug via `effectiveDifficultyLevel()` compartilhado por spawner, cálculo de bônus, inimigos especiais (Golden, Tank, Verme, Sussurro, Réplica) e HUD.
+    - Zero falsificação de score e zero alteração de `wrongAnswerCount`.
+    - Indicador de override discreto na HUD (`[DBG]`).
+    - Testes dedicados em `src/debug-difficulty-override.test.mjs` e integração no `selftest.mjs`.
+  - **Fase 1 — Rádio dos Aliados, Miyu, HUD e Timer Único:**
+    - Rádio restrito estritamente a chatter trivial e falas de personalidade; abilities completamente desacopladas do rádio (nenhum diálogo ou painel de rádio emitido por habilidades).
+    - Rate limit global autoritativo de no máximo 1 fala trivial a cada 6.0s no esquadrão inteiro.
+    - Painel do rádio projetado em world-space abaixo da nave do jogador (`distToCam * 0.16`), com clamp de segurança de viewport e ocultação se atrás da câmera.
+    - Ícones visuais 3D holográficos de ability acima da nave do aliado executor (duração 1.5s, halo com cor do piloto, pulso de escala e fade-out, sem gerar rádio).
+    - Carga Compartilhada da Miyu condicionada cumulativamente a: estar viva/ativa, fora de cooldown, jogador carregando o tiro E com mira válida/lock ativo sobre inimigo elegível (zero disparo/cooldown mirando o vazio).
+    - Remoção do cluster estático superior central (`top-center-cluster`): widgets de FOCO, SWIRL, KILL CHAIN agrupados à esquerda; retícula limpa no centro.
+    - Timer único visível no canto superior direito (`hud-timer`), unificando contagem regressiva de combate normal, warnings e transições sem relógios concorrentes.
+  - **Fase 2 — Dourado: Esquadrão Tático e Mega Laser Sustentado:**
+    - Escalonamento de caças com bônus de aliados: `base (2..6) + 1 por aliado presente`, até o cap técnico estrito de 10.
+    - 10 slots 3D de formação distintos e legíveis (sem compressão por módulo).
+    - Nova malha de caça dourado em low-poly (fuselagem angular, duas asas, nariz e propulsores duplos emissivos).
+    - Ordens táticas ativas no combate: *Strafing Run* (mergulho rasante com curva e retorno físico), *Pinça (Pincer)* (ataque por flancos convergentes com separação espacial), *Fogo Coordenado* (cadência escalonada entre 0.18s e 0.28s) e *Cerco do Laser* (posicionamento de contenção preservando rota de fuga).
+    - Limite ofensivo escalonado: `baseOffensiveCap + ceil(allyBonus / 2)`.
+    - Descontinuação do míssil/cone voador: substituição por Mega Laser com telegraph de 2.5s e feixe sustentado por 0.6s (envelope aditivo dourado com núcleo branco e swept cylinder hit com dano único).
+  - **Fase 3 — Tank + Verme + Hard-Pity de Spawn:**
+    - Ambos elegíveis e ativos desde o nível 1.
+    - Probabilidades nominais aumentadas: Verme (0.08 -> 0.12) e Tank (0.05 -> 0.08).
+    - Hard-pity acumulado em tempo ativo de spawn: Verme aos 12.5s e Tank aos 20.0s, com resolução de conflito estocástica proporcional (`activeTime / limit`).
+    - Tank: hitbox expandida para 4.48 (bounding box ~1.60x), nova geometria pesada (casco angular inclinado, proa blindada, sponsons laterais assimétricos, torre elevada com mira independente e propulsores duplos) e movimentação lateral ampla no trilho entre -10u e +10u.
+    - Verme: extensão lateral total (span) inicial de exatamente 8.0u, anatomia com mandíbulas, 4 segmentos articulados com placas dorsais e cauda cônica, trajetória ondulante 3D (pitch/yaw/roll suaves) e amostragem histórica de caminho contínuo prevenindo snaps ou NaNs ao seccionar.
+  - **Fase 4 — Sussurro + Réplica:**
+    - Sussurro: silhueta alongada assimétrica com aletas laterais, núcleo interno pulsante e rim de distorção; visibilidade mínima garantida no cloak (opacidade >= 0.22 mesmo em fog denso e >= 0.38 normal); ciclo FSM perceptível (`CLOAKED_APPROACH` -> `REVEAL_TELEGRAPH` 0.7s -> `ATTACK` rajada espectral de 2 disparos a 0.18s / `SUMMON` com cap -> `EVADE` em arco lateral).
+    - Réplica: silhueta de cópia corrompida da nave do jogador (fuselagem, asas com enflechamento, motores duplos, canhões nas pontas e aura glitch wireframe aditiva); perseguição com atraso histórico de ~0.4s; comportamento ofensivo real com `fireTimer` finito, telegraph de ~0.35s, rajada de 3 tiros a 0.12s e mira preditiva contra o jogador.
+  - **Fase 5 — Validação Integrada, Regressão e Telemetria:**
+    - Instrumentação de debug em `src/mount-game.js` e `src/hud-game.js`: exibição de dificuldade efetiva, esquadrão/ordens do Dourado, timers de pity de Tank/Verme e estados de Sussurro/Réplica.
+    - Suíte completa de testes automatizados executada e verde (56 subtestes em `selftest.mjs`, suítes unitárias dedicadas, fuzz de wingmen de 3600 frames e integridade estrita de links de documentação).
+    - Validação visual completa por captura de tela em runtime real (11 artefatos gerados cobrindo todos os requisitos visuais).
+
 ---
 
 ## 3. DIRETRIZES DE MANUTENÇÃO DESTE DOCUMENTO
