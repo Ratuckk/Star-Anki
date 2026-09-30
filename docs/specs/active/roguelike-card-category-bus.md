@@ -4,7 +4,7 @@
 > **Tipo:** especificação de implementação/layout (não é ADR: reversível e restrita ao HUD).
 > **Origem:** decisão do usuário produzida fora do GitHub (documento "STAR-ANKI_IMPLEMENTACAO_BARRAMENTOS"), registrada aqui para se tornar canônica.
 > **Autoridade:** esta spec substitui qualquer regra anterior sobre onde os cards roguelike ficam na HUD (inclusive as antigas seções 9.1/9.5/27/34.3 do `CLAUDE.md`, já atualizadas junto com esta spec).
-> **Ainda pendente:** escolha da **linguagem visual** (Tático / Arcade Neon / Módulos de Nave), via protótipo HTML. A **estrutura e o posicionamento abaixo já estão decididos** e não fazem parte da escolha visual.
+> **Linguagem visual decidida:** Tático / Militar (Arcade Neon e Módulos de Nave descartadas). A **estrutura e o posicionamento abaixo já estão decididos** e independem da skin.
 
 ---
 
