@@ -307,37 +307,60 @@ Baseline integrada antes deste arquivo:
 
 # 9. HUD — DIREÇÃO VISUAL APROVADA
 
-## 9.1 Layout escolhido: Opção 4 — Coluna Esquerda Clássica
+## 9.1 Layout escolhido: Opção 4 — Coluna Esquerda Clássica (+ Barramentos de Cards)
 
-A direção aprovada pelo usuário é uma composição vertical no canto esquerdo.
+A direção aprovada pelo usuário é uma composição vertical no canto esquerdo. A posição dos cards roguelike foi definida pela decisão "Barramentos por Categoria" (spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md)) e **depende do modo de vitais**.
 
-Ordem obrigatória:
+**VITAIS CLÁSSICOS** — ordem obrigatória:
 
 ```text
 SCORE
 STREAK / KILLS
 COMBO
 
-RECURSOS / ÍCONES ROGUELIKE / INDICADORES SUPERIORES
+RECURSOS
 
 FOCO / SWIRL / CADEIA
 
 VIDAS
 ESCUDO
 VIDA
+BOOST
+
+O | cards ofensivos
+D | cards defensivos
+U | cards utilitários
 ```
 
-Regra crítica:
+**VITAIS ORBITAIS** (VIDA/ESCUDO/BOOST junto da nave) — ordem obrigatória:
 
-**VIDAS / ESCUDO / VIDA ficam ABAIXO de todos os demais blocos da esquerda.**
+```text
+SCORE
+STREAK / KILLS
+COMBO
 
-Nunca:
+RECURSOS
+
+FOCO / SWIRL / CADEIA
+
+O | cards ofensivos
+D | cards defensivos
+U | cards utilitários
+```
+
+Regras críticas:
+
+- **VIDAS / ESCUDO / VIDA / BOOST clássicos ficam ABAIXO de Stats, Recursos e FOCO/SWIRL/CADEIA.**
+- **Os barramentos O/D/U ficam ABAIXO dos vitais clássicos**; com vitais orbitais **ocupam o slot fixo dos vitais clássicos**. São HUD fixa: não acompanham a nave.
+
+Nunca (vitais ou barramentos):
 
 - ao lado do Score;
 - na mesma faixa Y do Score;
 - em uma coluna paralela competindo com estatísticas;
 - entre Score e recursos;
-- entre recursos e FOCO/SWIRL/CADEIA.
+- entre recursos e FOCO/SWIRL/CADEIA;
+- barramentos entre COMBO e FOCO, sobre os vitais, no topo, no centro, perto do timer/nível ou na região do rádio.
 
 ## 9.2 Centro da tela
 
@@ -351,7 +374,7 @@ Elementos persistentes proibidos no centro/topo central:
 - SWIRL;
 - Cadeia;
 - vitais;
-- ícones roguelike;
+- cards roguelike (barramentos O/D/U);
 - timer.
 
 Elementos contextuais permitidos:
@@ -379,19 +402,15 @@ Não reintroduzir countdown numérico central simultâneo.
 
 Nível fica no topo direito, abaixo/associado ao timer.
 
-## 9.5 Ícones roguelike — NÃO considerar layout final
+## 9.5 Cards roguelike — Barramentos por Categoria (decisão fechada)
 
-Os ícones do roguelike/recursos ainda precisam de overhaul visual futuro.
+O overhaul dos cards roguelike **foi decidido**: três rails `O / D / U` (ofensivo vermelho/rosa, defensivo azul, utilitário amarelo/dourado), uma linha por categoria, **sem wrap e sem scroll**, ordem estável, categoria vazia oculta, 1 célula + 1 contador por carta, suporte às 32 cartas atuais (stress 14/11/7) e stacks de dois dígitos.
 
-O usuário explicitamente decidiu tratar isso em outro ciclo.
+O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` e `.hud-card-chip` devem ser removidos (não escondidos), sem duplicação de cards. Spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md).
 
-Ao desenhar novos protótipos para esses ícones:
+Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
-- considerar posição real de **todos** os outros blocos da HUD;
-- não ocupar a mesma região de Stats, FOCO/SWIRL/CADEIA, vitais, timer/nível, rádio ou centro útil;
-- validar `getBoundingClientRect()` e screenshots em múltiplas resoluções;
-- não resolver colocando tudo no centro;
-- não projetar o elemento isoladamente sem o restante da HUD.
+Ainda pendente: escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout). Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
 
 ---
 
@@ -468,6 +487,8 @@ A direção correta é estilo Star Fox:
 - portrait + nome + texto continuam válidos para chatter trivial.
 
 A interpretação “embaixo da nave” NÃO é mais válida.
+
+> Registros históricos (ex.: `docs/progress/PROGRESSO_v0.99.36-em-diante.md`) ainda descrevem o rádio como “world-space abaixo da nave”. Isso está **obsoleto**; vale esta seção.
 
 ---
 
@@ -902,9 +923,10 @@ Zonas ocupadas/reservadas:
 - Streak;
 - Kills;
 - Combo;
-- recursos/ícones roguelike;
+- recursos;
 - FOCO/SWIRL/CADEIA;
-- abaixo disso, vitais.
+- abaixo disso, vitais clássicos (quando ativos);
+- por último, barramentos de cards O/D/U (ocupam o slot dos vitais clássicos quando os vitais são orbitais).
 
 ## Superior direito
 
@@ -1084,11 +1106,9 @@ Critério de aceite:
 
 Se rádio abrir junto, falhou.
 
-## 34.3 Ícones roguelike atuais não são visual final
+## 34.3 Tray/chips de cards atuais estão obsoletos
 
-Não investir em microajuste definitivo do posicionamento antes do overhaul visual solicitado pelo usuário, salvo correção de overlap crítico.
-
-Qualquer futuro protótipo deve nascer já consciente das demais zonas da HUD.
+`.hud-cards-tray` / `.hud-card-chip` são o renderer antigo e serão **substituídos** pelos Barramentos por Categoria (§9.5 e spec `docs/specs/ready/roguelike-card-category-bus.md`). Não investir em microajuste do tray atual e não construir os barramentos em cima dele.
 
 ## 34.4 Visual de inimigos pode estar tecnicamente implementado sem estar aprovado
 
@@ -1168,7 +1188,8 @@ PENDÊNCIAS: ...
 # 38. RESUMO DAS DECISÕES QUE NÃO DEVEM REGREDIR
 
 - HUD: Opção 4, coluna esquerda clássica.
-- Vitais: abaixo de Stats + recursos + FOCO/SWIRL/CADEIA.
+- Vitais clássicos: abaixo de Stats + recursos + FOCO/SWIRL/CADEIA.
+- Cards roguelike: barramentos O/D/U, abaixo dos vitais clássicos (ou no slot dos vitais clássicos com vitais orbitais); nunca entre Combo e FOCO; sem wrap/scroll; substituem tray/chips antigos.
 - Centro: livre de HUD persistente.
 - Timer: um único display visível no topo direito.
 - Rádio: chatter trivial apenas.
