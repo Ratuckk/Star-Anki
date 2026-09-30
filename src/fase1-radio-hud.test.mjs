@@ -302,10 +302,16 @@ function createMockRail() {
 
   // Verificação no game-loop.js
   const loopSource = readFileSync(new URL('./game-loop.js', import.meta.url), 'utf8')
-  assert.ok(
-    loopSource.includes('const radioVisible = ndcR.z >= -1 && ndcR.z <= 1'),
-    'game-loop deve verificar se rádio está na frente da câmera',
-  )
+  // Rádio = HUD fixa inferior-central (CLAUDE.md §10.3): nada de projetar a partir da nave.
+  assert.ok(!loopSource.includes('shipBelow'), 'game-loop não projeta mais o rádio a partir da nave')
+  assert.ok(!loopSource.includes('updateRadioPosition'), 'game-loop não reposiciona o rádio por frame')
+  const hudSource = readFileSync(new URL('./hud-game.js', import.meta.url), 'utf8')
+  assert.ok(!hudSource.includes('updateRadioPosition'), 'HUD não expõe mais posicionamento dinâmico do rádio')
+  const stylesSource = readFileSync(new URL('./hud-styles.js', import.meta.url), 'utf8')
+  const radioCss = stylesSource.match(/\.hud-wingman-radio\s*\{[^}]*\}/)
+  assert.ok(radioCss, 'regra CSS do rádio existe')
+  assert.ok(/left:\s*50%/.test(radioCss[0]) && /bottom:\s*clamp/.test(radioCss[0]), 'rádio fixo: centro horizontal, ancorado embaixo')
+  assert.ok(!/--wingman-radio-[xy]/.test(radioCss[0]), 'rádio não depende de variáveis de posição dinâmicas')
   assert.ok(
     loopSource.includes('if (ndcI.z < -1 || ndcI.z > 1) continue'),
     'game-loop deve ignorar ícones de ability atrás da câmera',

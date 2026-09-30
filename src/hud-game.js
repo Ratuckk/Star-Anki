@@ -9,6 +9,8 @@ import { getSettings } from './settings.js'
 import { createDamageNumbers } from './hud-damage.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 import { createHudSpeedlines } from './hud-speedlines.js'
+import { createCardBus } from './hud-card-bus.js'
+import { createArmamentWidget, computeFocoView, computeSwirlView } from './hud-armament.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -123,19 +125,6 @@ export function createGameHud() {
   reticle.appendChild(hitMarkerEl)
 
   let hitMarkerTimeout = null
-
-  // ============ NOTIFICAÇÃO DE COMANDO DO ESQUADRÃO (TECLA D) ============
-  const squadronNotice = document.createElement('div')
-  squadronNotice.className = 'hud-squadron-notice'
-  squadronNotice.innerHTML = `
-    <div class="hud-squadron-notice-pill">
-      <span class="hud-squadron-notice-icon">🎯</span>
-      <span class="hud-squadron-notice-text">ESQUADRÃO: CONCENTRAR FOGO!</span>
-    </div>
-    <div class="hud-squadron-notice-sub">[D] Dispersão</div>
-  `
-  root.appendChild(squadronNotice)
-  let squadronNoticeTimeout = null
 
   // ============ ALERTA DE TEMPESTADE DE DETRITOS (v0.57.0) ============
   const stormWarning = document.createElement('div')
@@ -486,39 +475,13 @@ export function createGameHud() {
   combatActionsRow.className = 'hud-combat-actions-row'
   actionsCluster.appendChild(combatActionsRow)
 
-  // Widget de comando do esquadrão [D] (Foco)
-  const squadCommandWidget = document.createElement('div')
-  squadCommandWidget.className = 'hud-squad-command-widget ready'
-  squadCommandWidget.innerHTML = `
-    <div class="hud-squad-command-badge">
-      <span class="hud-cmd-key">D</span>
-      <span class="hud-cmd-label">FOCO</span>
-    </div>
-    <div class="hud-cmd-meter">
-      <div class="hud-cmd-meter-fill"></div>
-    </div>
-    <span class="hud-cmd-timer">PRONTO</span>
-  `
-  combatActionsRow.appendChild(squadCommandWidget)
-  const squadCmdFill = squadCommandWidget.querySelector('.hud-cmd-meter-fill')
-  const squadCmdTimer = squadCommandWidget.querySelector('.hud-cmd-timer')
-
-  // Contador de cooldown do Swirl Blast
-  const swirlCooldownWidget = document.createElement('div')
-  swirlCooldownWidget.className = 'hud-squad-command-widget hud-swirl-widget ready'
-  swirlCooldownWidget.innerHTML = `
-    <div class="hud-squad-command-badge">
-      <span class="hud-cmd-key">🌀</span>
-      <span class="hud-cmd-label">SWIRL</span>
-    </div>
-    <div class="hud-cmd-meter">
-      <div class="hud-cmd-meter-fill"></div>
-    </div>
-    <span class="hud-cmd-timer">PRONTO</span>
-  `
-  combatActionsRow.appendChild(swirlCooldownWidget)
-  const swirlCmdFill = swirlCooldownWidget.querySelector('.hud-cmd-meter-fill')
-  const swirlCmdTimer = swirlCooldownWidget.querySelector('.hud-cmd-timer')
+  // Display de Armamento (Opção B): FOCO [D] e SWIRL. Estado 100% vindo do runtime real via
+  // setSquadronCommandState()/setSwirlCooldown(); o widget é o feedback visual autoritativo do
+  // comando (não existe mais aviso acima da nave).
+  const focoWidget = createArmamentWidget({ doc: document, kind: 'foco', tag: 'FOCO', schedule: scheduleTimeout })
+  combatActionsRow.appendChild(focoWidget.el)
+  const swirlWidget = createArmamentWidget({ doc: document, kind: 'swirl', tag: 'SWIRL', schedule: scheduleTimeout })
+  combatActionsRow.appendChild(swirlWidget.el)
 
   // Cadeia de abates — "Arcade Neon"
   const KILL_CHAIN_MAX_SEGS = 8
@@ -731,26 +694,17 @@ export function createGameHud() {
     orbitalSvg.appendChild(orbitalLifePipsGroup)
   }
 
-  // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
-  const cardsTray = document.createElement('div')
-  cardsTray.className = 'hud-cards-tray'
-  root.appendChild(cardsTray)
-  let prevCardsSignature = ''
-  // O tamanho da bandeja muda com a quantidade de cartas e com a largura de tela. Os quotes
-  // começam sempre depois dela, com dois canais bem separados; ResizeObserver cobre quebra de
-  // linha ao redimensionar a janela sem depender de nova carta adquirida.
-  function updateWingmanRadioAnchor() {
-    const cardsBottom = cardsTray.offsetTop + cardsTray.offsetHeight
-    const abilityTop = Math.max(172, cardsBottom + 24)
-    root.style.setProperty('--wingman-ability-top', `${abilityTop}px`)
-    // Os dois blocos cresceram 25%; preserva uma faixa livre entre diálogo e habilidade.
-    root.style.setProperty('--wingman-radio-top', `${abilityTop + 165}px`)
-  }
-  const radioTrayResizeObserver = typeof ResizeObserver !== 'undefined'
-    ? new ResizeObserver(updateWingmanRadioAnchor)
-    : null
-  radioTrayResizeObserver?.observe(cardsTray)
-  updateWingmanRadioAnchor()
+  // ============ BARRAMENTOS POR CATEGORIA (cards roguelike) ============
+  // Spec: docs/specs/active/roguelike-card-category-bus.md. Substitui a antiga bandeja/chips.
+  // Clássico: abaixo do cluster de vitais (medido). Orbital: no slot fixo dos vitais clássicos.
+  const cardBus = createCardBus({
+    root,
+    catalog: ROGUELIKE_CARDS,
+    categoryColors: CARD_CATEGORY_COLOR,
+    mode: useOrbitalVitals ? 'orbital' : 'classic',
+    vitalsEl: useOrbitalVitals ? null : vitalsCluster,
+  })
+  cardBus.reposition()
 
   const question = document.createElement('p')
   question.className = 'hud-question'
@@ -2624,44 +2578,7 @@ export function createGameHud() {
     },
 
     updateCollectedCards(cardsMap) {
-      if (!cardsMap) {
-        cardsTray.innerHTML = ''
-        prevCardsSignature = ''
-        updateWingmanRadioAnchor()
-        return
-      }
-      const entries = Array.from(cardsMap.entries()).filter(([_, count]) => count > 0)
-      const sig = entries.map(([id, count]) => `${id}:${count}`).sort().join(';')
-      if (sig === prevCardsSignature) return
-      prevCardsSignature = sig
-
-      cardsTray.innerHTML = ''
-      for (const [id, count] of entries) {
-        const card = CARD_MAP.get(id)
-        if (!card) continue
-        const catColor = CARD_CATEGORY_COLOR[card.category] || '#3ea6ff'
-        const catLabel = CARD_CATEGORY_LABEL[card.category] || card.category
-
-        const chip = document.createElement('div')
-        chip.className = 'hud-card-chip'
-        chip.style.setProperty('--card-color', catColor)
-        chip.style.setProperty('--card-glow', `${catColor}44`)
-
-        chip.innerHTML = `
-          <span class="hud-card-icon">${card.icon || '📦'}</span>
-          <span class="hud-card-count">x${count}</span>
-          <div class="hud-card-tooltip">
-            <div class="hud-card-tooltip-header">
-              <span class="hud-card-tooltip-title">${card.label}</span>
-              <span class="hud-card-tooltip-cat">${catLabel}</span>
-            </div>
-            <div class="hud-card-tooltip-body">${card.description}</div>
-            <div class="hud-card-tooltip-stacks">Nível acumulado: x${count}</div>
-          </div>
-        `
-        cardsTray.appendChild(chip)
-      }
-      updateWingmanRadioAnchor()
+      cardBus.update(cardsMap)
     },
 
     // 4 slots fixos (ver criação de abilityHexEls acima) — states vem de combat.getAbilityStates(),
@@ -2738,78 +2655,15 @@ export function createGameHud() {
       })
     },
 
-    // QOL (Item 3 — Barra / Indicador de Recarga do Comando de Ofensiva [D])
+    // FOCO [D]: READY / ACTIVE / COOLDOWN com os valores reais do esquadrão.
     setSquadronCommandState(cmdState) {
       if (!cmdState) return
-      const { mode = 'free', durationRemaining = 0, durationMax = 6, cooldownRemaining = 0, cooldownMax = 10 } = cmdState
-      const isActive = mode === 'focus' && durationRemaining > 0
-      const isCooling = !isActive && cooldownRemaining > 0
-
-      squadCommandWidget.classList.toggle('active', isActive)
-      squadCommandWidget.classList.toggle('cooling', isCooling)
-      squadCommandWidget.classList.toggle('ready', !isActive && !isCooling)
-
-      if (isActive) {
-        squadCmdTimer.textContent = `${durationRemaining.toFixed(1)}s`
-        squadCmdFill.style.width = `${Math.max(0, Math.min(100, (durationRemaining / durationMax) * 100))}%`
-      } else if (isCooling) {
-        squadCmdTimer.textContent = `${Math.ceil(cooldownRemaining)}s`
-        squadCmdFill.style.width = `${Math.max(0, Math.min(100, ((cooldownMax - cooldownRemaining) / cooldownMax) * 100))}%`
-      } else {
-        squadCmdTimer.textContent = 'PRONTO'
-        squadCmdFill.style.width = '100%'
-      }
+      focoWidget.update(computeFocoView(cmdState))
     },
 
-    // Contador de cooldown do Swirl Blast (pedido do usuário) — mesmo padrão visual do widget
-    // de FOCO acima, ready/cooling só (sem "active": o Swirl dispara instantâneo, não tem janela
-    // de duração pra mostrar).
+    // SWIRL: READY / COOLDOWN; total efetivo real do player (cartas podem alterá-lo).
     setSwirlCooldown(cooldownMs, totalMs) {
-      const isCooling = cooldownMs > 0
-      swirlCooldownWidget.classList.toggle('cooling', isCooling)
-      swirlCooldownWidget.classList.toggle('ready', !isCooling)
-      if (isCooling) {
-        swirlCmdTimer.textContent = `${(cooldownMs / 1000).toFixed(1)}s`
-        swirlCmdFill.style.width = `${Math.max(0, Math.min(100, ((totalMs - cooldownMs) / totalMs) * 100))}%`
-      } else {
-        swirlCmdTimer.textContent = 'PRONTO'
-        swirlCmdFill.style.width = '100%'
-      }
-    },
-
-    showSquadronNotice({ mode, targetCount = 1, hasLocked = false, remaining = 0, xFrac = 0.5, yFrac = 0.5 }) {
-      cancelTimeout(squadronNoticeTimeout)
-      squadronNotice.classList.remove('active', 'focus', 'cooldown')
-
-      const icon = squadronNotice.querySelector('.hud-squadron-notice-icon')
-      const text = squadronNotice.querySelector('.hud-squadron-notice-text')
-      const sub = squadronNotice.querySelector('.hud-squadron-notice-sub')
-
-      if (mode === 'focus') {
-        squadronNotice.classList.add('focus')
-        if (icon) icon.textContent = '🎯'
-        if (text) text.textContent = hasLocked ? 'ESQUADRÃO: FOCO NO ALVO TRAVADO!' : 'ESQUADRÃO: CONCENTRAR FOGO!'
-        if (sub) sub.textContent = 'Volta ao normal sozinho em 6s'
-      } else if (mode === 'cooldown') {
-        // pedido do usuário: comando agora tem cooldown de 10s após os 6s de duração — sem esse
-        // aviso, apertar [D] durante o cooldown não fazia nada visível e parecia bugado.
-        squadronNotice.classList.add('cooldown')
-        if (icon) icon.textContent = '⏳'
-        if (text) text.textContent = 'ESQUADRÃO: COMANDO EM RECARGA'
-        if (sub) sub.textContent = `Disponível em ${Math.ceil(remaining)}s`
-      } else {
-        if (icon) icon.textContent = '🚀'
-        if (text) text.textContent = 'ESQUADRÃO: DISPERSÃO / ATAQUE LIVRE'
-        if (sub) sub.textContent = '[D] Focar Alvos'
-      }
-
-      squadronNotice.style.left = `${(xFrac * 100).toFixed(1)}%`
-      squadronNotice.style.top = `${(yFrac * 100).toFixed(1)}%`
-      squadronNotice.classList.add('active')
-
-      squadronNoticeTimeout = scheduleTimeout(() => {
-        squadronNotice.classList.remove('active')
-      }, 2200)
+      swirlWidget.update(computeSwirlView(cooldownMs, totalMs))
     },
 
     // Rádio dos Aliados — Fase 1.1: somente trivial. Habilidade nunca usa rádio.
@@ -2823,20 +2677,6 @@ export function createGameHud() {
       const trivialPayloads = payloads.filter((p) => p && !p.isAbility)
       if (trivialPayloads.length === 0) return
       wingmanRadioRegion.showQueue(trivialPayloads)
-    },
-
-    // Fase 1.3: Posicionamento 3D do rádio abaixo da nave do jogador
-    updateRadioPosition(xFrac, yFrac, isVisible = true) {
-      if (!wingmanRadioPanel) return
-      if (!isVisible) {
-        wingmanRadioPanel.style.display = 'none'
-        return
-      }
-      wingmanRadioPanel.style.display = ''
-      const safeX = Math.max(0.18, Math.min(0.82, xFrac))
-      const safeY = Math.max(0.55, Math.min(0.92, yFrac))
-      wingmanRadioPanel.style.setProperty('--wingman-radio-x', `${(safeX * 100).toFixed(1)}%`)
-      wingmanRadioPanel.style.setProperty('--wingman-radio-y', `${(safeY * 100).toFixed(1)}%`)
     },
 
     // Fase 1.4: Ícones de habilidade projetados no mundo acima de cada nave de wingman
@@ -2864,12 +2704,6 @@ export function createGameHud() {
           abilityWorldIconPool.delete(id)
         }
       }
-    },
-
-    updateSquadronNoticePosition(xFrac, yFrac) {
-      if (!squadronNotice.classList.contains('active')) return
-      squadronNotice.style.left = `${(xFrac * 100).toFixed(1)}%`
-      squadronNotice.style.top = `${(yFrac * 100).toFixed(1)}%`
     },
 
     showDebrisStormNotice({ active = true, cleared = false, title, sub } = {}) {
@@ -2957,9 +2791,8 @@ export function createGameHud() {
       // tipo de vazamento silencioso que aparece como bug intermitente depois de N partidas.
       cancelFocusCollapse()
       stopDebugStatsLoop()
-      cancelTimeout(squadronNoticeTimeout)
-      squadronNoticeTimeout = null
-      squadronNotice.classList.remove('active')
+      focoWidget.destroy()
+      swirlWidget.destroy()
       cancelTimeout(stormWarningTimeout)
       stormWarningTimeout = null
       stormWarning.classList.remove('active')
@@ -3001,9 +2834,7 @@ export function createGameHud() {
       // listener global de keydown daquela seção vazava pra depois do fim da partida
       pauseOverlay.hide()
       root.classList.remove('cinematic-active', 'game-paused')
-      cardsTray.innerHTML = ''
-      prevCardsSignature = ''
-      radioTrayResizeObserver?.disconnect()
+      cardBus.destroy()
       root.innerHTML = ''
     },
   }

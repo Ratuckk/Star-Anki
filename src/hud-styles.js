@@ -378,140 +378,121 @@ export function injectHudExtraStyles() {
   gap: 4px;
 }
 
-/* ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============ */
-.hud-squad-command-widget {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 2px 7px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1.5px solid #334155;
-  border-radius: 6px;
-  min-width: 62px;
-  height: 32px;
+/* ============ DISPLAY DE ARMAMENTO — FOCO [D] e SWIRL (Opção B aprovada) ============ */
+/* Caixa externa fixa 76×46 px (protótipo foco-swirl-v2). Estado por TEXTO + padrão do medidor +
+   direção do progresso, nunca só cor: READY = cheio sólido; ACTIVE = hachurado esvaziando;
+   COOLDOWN = listrado cinza enchendo. Sem glow permanente; só microanimações locais curtas. */
+.hud-armament {
+  --arm-c: #38bdf8;
+  position: relative;
+  flex: 0 0 76px;
+  width: 76px;
+  height: 46px;
   box-sizing: border-box;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 13px 1fr;
+  background: rgba(6, 10, 16, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  color: #e2e8f0;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   pointer-events: none;
-  transition: all 0.2s ease;
+  user-select: none;
 }
-.hud-squad-command-badge {
+.hud-armament--swirl { --arm-c: #2b8fff; }
+.hud-armament.is-active { --arm-c: #fbbf24; }
+.hud-armament.is-cooling { --arm-c: #7b8798; }
+.hud-arm-tag {
+  background: var(--arm-c);
+  color: #05070b;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
 }
-.hud-cmd-key {
-  background: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 3px;
-  padding: 0 3px;
-  font-size: 8px;
+.hud-arm-main {
+  padding: 4px 5px 5px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+.hud-arm-value {
+  font-size: 15px;
   font-weight: 800;
-  color: #38bdf8;
-  line-height: 1.2;
+  line-height: 1;
+  color: #fff;
+  white-space: nowrap;
 }
-.hud-cmd-label {
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-  text-transform: uppercase;
-}
-.hud-cmd-meter {
-  width: 100%;
-  height: 3px;
-  background: rgba(30, 41, 59, 0.9);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 1px;
-}
-.hud-cmd-meter-fill {
-  height: 100%;
-  width: 100%;
-  border-radius: 2px;
-  transition: width 0.1s linear, background-color 0.2s ease;
-}
-.hud-cmd-timer {
+.hud-armament.is-ready .hud-arm-value { font-size: 11px; color: var(--arm-c); }
+.hud-arm-sub {
   font-size: 7.5px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  line-height: 1;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+  white-space: nowrap;
+  margin-top: 3px;
 }
-
-/* Modificadores de Estado */
-.hud-squad-command-widget.ready {
-  border-color: rgba(56, 189, 248, 0.5);
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.2);
+.hud-arm-gauge {
+  position: relative;
+  height: 7px;
+  border: 1px solid #3a4658;
+  background: #0a0f18;
 }
-.hud-squad-command-widget.ready .hud-cmd-key {
-  color: #38bdf8;
-  border-color: #0284c7;
-  box-shadow: 0 0 4px rgba(56, 189, 248, 0.5);
+.hud-arm-gauge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), #05070b calc(25% - 1px) 25%);
 }
-.hud-squad-command-widget.ready .hud-cmd-label { color: #38bdf8; }
-.hud-squad-command-widget.ready .hud-cmd-meter-fill {
-  background: #38bdf8;
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+.hud-arm-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: var(--arm-c);
+  transition: width 0.1s linear;
 }
-.hud-squad-command-widget.ready .hud-cmd-timer { color: #38bdf8; }
-
-.hud-squad-command-widget.active {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.18);
-  animation: squad-cmd-active-pulse 1s infinite alternate;
+.hud-armament.is-active .hud-arm-gauge { border-color: var(--arm-c); }
+.hud-armament.is-active .hud-arm-fill {
+  background: repeating-linear-gradient(135deg, var(--arm-c) 0 3px, color-mix(in srgb, var(--arm-c) 45%, #05070b) 3px 5px);
 }
-@keyframes squad-cmd-active-pulse {
-  from { box-shadow: 0 0 6px rgba(245, 158, 11, 0.3); }
-  to   { box-shadow: 0 0 14px rgba(245, 158, 11, 0.7); }
+.hud-armament.is-cooling .hud-arm-fill {
+  background: repeating-linear-gradient(90deg, #7b8798 0 3px, #4b5566 3px 4px);
 }
-.hud-squad-command-widget.active .hud-cmd-key {
-  color: #fff;
-  background: #d97706;
-  border-color: #f59e0b;
+.hud-arm-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 2px;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
 }
-.hud-squad-command-widget.active .hud-cmd-label {
-  color: #fbbf24;
-  font-weight: 900;
+.hud-armament.is-igniting { animation: hud-arm-flash 220ms ease-out; }
+.hud-armament.is-igniting .hud-arm-sweep { animation: hud-arm-sweep 260ms ease-out; }
+.hud-armament.is-firing { animation: hud-arm-flash 200ms ease-out; }
+.hud-armament.is-firing .hud-arm-fill { transition: width 0.22s cubic-bezier(0.5, 0, 1, 0.6); }
+.hud-armament.is-ready-flash { animation: hud-arm-flash 260ms ease-out; }
+@keyframes hud-arm-flash {
+  0%   { filter: brightness(2); }
+  100% { filter: none; }
 }
-.hud-squad-command-widget.active .hud-cmd-meter-fill {
-  background: #fbbf24;
-  box-shadow: 0 0 8px #fbbf24;
+@keyframes hud-arm-sweep {
+  0%   { left: -4px; opacity: 0.9; }
+  100% { left: 78px; opacity: 0; }
 }
-.hud-squad-command-widget.active .hud-cmd-timer {
-  color: #fbbf24;
-  font-size: 8px;
-  font-weight: 900;
+@media (prefers-reduced-motion: reduce) {
+  .hud-armament,
+  .hud-armament .hud-arm-sweep,
+  .hud-armament .hud-arm-fill { animation: none !important; transition: none !important; }
 }
-
-.hud-squad-command-widget.cooling {
-  border-color: #1e293b;
-  opacity: 0.85;
-}
-.hud-squad-command-widget.cooling .hud-cmd-key { color: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-label { color: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-meter-fill { background: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-timer { color: #94a3b8; }
-
-/* Variante do Swirl Blast — mesma estrutura do widget de FOCO acima, só troca o azul-ciano
-   (#38bdf8) pelo azul do próprio Swirl Blast (0x2b8fff em combat/projectiles.js) no estado
-   "ready", pra não ler como o mesmo botão. Estado "cooling" fica igual (cinza neutro). */
-.hud-swirl-widget.ready {
-  border-color: rgba(43, 143, 255, 0.5);
-  box-shadow: 0 0 6px rgba(43, 143, 255, 0.2);
-}
-.hud-swirl-widget.ready .hud-cmd-key {
-  color: #5fa8ff;
-  border-color: #2b6fd6;
-  box-shadow: 0 0 4px rgba(43, 143, 255, 0.5);
-}
-.hud-swirl-widget.ready .hud-cmd-label { color: #5fa8ff; }
-.hud-swirl-widget.ready .hud-cmd-meter-fill {
-  background: #2b8fff;
-  box-shadow: 0 0 6px rgba(43, 143, 255, 0.6);
-}
-.hud-swirl-widget.ready .hud-cmd-timer { color: #5fa8ff; }
 
 /* ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============ */
 /* terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — evita
@@ -648,7 +629,7 @@ export function injectHudExtraStyles() {
 .hud-vitals-cluster,
 .hud-left-vitals {
   position: absolute;
-  top: clamp(258px, 36.0vh, 370px);
+  top: var(--hud-classic-vitals-top, clamp(258px, 36.0vh, 370px));
   left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
@@ -984,58 +965,131 @@ export function injectHudExtraStyles() {
   z-index: 18;
 }
 
-/* ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============ */
-.hud-cards-tray {
+/* ============ BARRAMENTOS POR CATEGORIA — CARDS ROGUELIKE ============ */
+/* Spec: docs/specs/active/roguelike-card-category-bus.md. HUD fixa (screen-space), três rails O/D/U,
+   uma linha cada (sem wrap, sem scroll). Posição vertical vem do JS (clássico: medição do cluster de
+   vitais) ou do token --hud-classic-vitals-top (orbital). SKIN: Tático / Militar (escolhida pelo
+   usuário) — só pintura (borda/fundo/acento/tipografia); nenhuma propriedade de geometria muda. */
+.hud-card-bus {
   position: absolute;
-  top: 136px;
-  left: 12px;
+  left: var(--hud-left-x);
+  width: clamp(220px, 22.5vw, 290px);
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-width: 250px;
-  z-index: 12;
+  flex-direction: column;
+  gap: 3px;
   pointer-events: none;
+  z-index: 22;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  filter: drop-shadow(0 1px 2px #000);
+  transition: opacity 0.35s ease;
 }
-#game-screen.game-paused .hud-cards-tray {
-  pointer-events: auto;
+.hud-card-bus[hidden],
+.hud-card-rail[hidden] {
+  display: none;
 }
-.hud-card-chip {
+.hud-card-rail {
+  --card-color: #3ea6ff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.hud-card-rail--offensive { --card-color: #ff4d6d; }
+.hud-card-rail--defensive { --card-color: #3ea6ff; }
+.hud-card-rail--utility   { --card-color: #ffd700; }
+/* Tático: rótulo do rail em mono, com barra de acento de categoria (linha fina, sem preencher o rail) */
+.hud-card-rail-label {
+  flex: 0 0 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 10px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  text-align: center;
+  color: var(--card-color);
+  box-shadow: inset -2px 0 0 var(--card-color);
+}
+.hud-card-rail-items {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  overflow: visible;
+}
+.hud-card-bus-item {
   position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: rgba(10, 16, 26, 0.88);
-  border: 1.5px solid var(--card-color, #3ea6ff);
-  box-shadow: 0 0 8px var(--card-glow, rgba(62, 166, 255, 0.25));
+  justify-content: center;
+  gap: 3px;
+  padding: 0 4px;
+  border-radius: 1px;
+  background: rgba(6, 10, 16, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  box-shadow: inset 0 2px 0 var(--card-color);
   color: #fff;
   cursor: default;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
 }
-#game-screen.game-paused .hud-card-chip {
-  cursor: pointer;
-}
-#game-screen.game-paused .hud-card-chip:hover {
-  transform: translateY(-2px) scale(1.06);
-  box-shadow: 0 0 14px var(--card-color, #3ea6ff);
-  z-index: 55;
-}
-.hud-card-icon {
-  font-size: 0.85rem;
+.hud-card-bus-icon {
+  font-size: 13px;
   line-height: 1;
 }
-.hud-card-count {
+.hud-card-bus-stack {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: 10px;
   font-weight: 800;
-  color: #f1f5f9;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 1px 0 #000;
+  white-space: nowrap;
 }
-.hud-card-tooltip {
-  display: none;
+/* densidade média (5–8 cartas no maior rail) */
+.hud-card-bus[data-density="medium"] .hud-card-bus-item {
+  gap: 1px;
+  padding: 0 3px;
+}
+.hud-card-bus[data-density="medium"] .hud-card-bus-icon { font-size: 10px; }
+.hud-card-bus[data-density="medium"] .hud-card-bus-stack { font-size: 8.5px; }
+/* densidade alta (9+ no maior rail): célula compacta em coluna, ícone sobre contador */
+.hud-card-bus[data-density="high"] .hud-card-bus-item {
+  flex: 1 1 0;
+  max-width: 24px;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+.hud-card-bus[data-density="high"] .hud-card-bus-icon { font-size: 10px; }
+.hud-card-bus[data-density="high"] .hud-card-bus-stack { font-size: 8px; }
+
+/* microanimações: nova carta = flash curto na célula; stack = só o contador */
+.hud-card-bus-item.is-new { animation: hud-card-bus-new 300ms ease-out; }
+@keyframes hud-card-bus-new {
+  0%   { filter: brightness(1.9); outline: 1px solid var(--card-color); }
+  100% { filter: brightness(1); outline: 1px solid transparent; }
+}
+.hud-card-bus-stack.is-bump { animation: hud-card-bus-bump 240ms ease-out; }
+@keyframes hud-card-bus-bump {
+  0%   { color: var(--card-color); }
+  100% { color: #ffffff; }
+}
+
+/* tooltip: somente em pausa (a HUD de gameplay nunca depende dele); hover não altera geometria */
+.hud-card-bus-tooltip { display: none; }
+#game-screen.game-paused .hud-card-bus-item { pointer-events: auto; }
+#game-screen.game-paused .hud-card-bus-item { cursor: pointer; }
+#game-screen.game-paused .hud-card-bus-item:hover {
+  filter: brightness(1.35);
+  outline: 1px solid var(--card-color);
+  z-index: 55;
+}
+#game-screen.game-paused .hud-card-bus-item:hover .hud-card-bus-tooltip {
+  display: block;
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -1044,51 +1098,17 @@ export function injectHudExtraStyles() {
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(8, 14, 24, 0.97);
-  border: 1px solid var(--card-color, #3ea6ff);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.85), 0 0 16px rgba(0, 140, 255, 0.3);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--card-color);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.85);
   z-index: 60;
   pointer-events: none;
   text-align: left;
+  white-space: normal;
 }
-#game-screen.game-paused .hud-card-chip:hover .hud-card-tooltip {
-  display: block;
-  animation: hud-card-tooltip-pop 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes hud-card-tooltip-pop {
-  0% { opacity: 0; transform: translateY(-4px) scale(0.96); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.hud-card-tooltip-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  gap: 8px;
-}
-.hud-card-tooltip-title {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: #ffffff;
-}
-.hud-card-tooltip-cat {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #0b0f19;
-  background: var(--card-color, #3ea6ff);
-  flex-shrink: 0;
-}
-.hud-card-tooltip-body {
-  font-size: 0.78rem;
-  color: #cbd5e1;
-  line-height: 1.4;
-  margin-bottom: 6px;
-}
-.hud-card-tooltip-stacks {
+.hud-card-bus-tooltip-header { margin-bottom: 6px; }
+.hud-card-bus-tooltip-title { font-weight: 700; font-size: 0.85rem; color: #ffffff; }
+.hud-card-bus-tooltip-body { font-size: 0.78rem; color: #cbd5e1; line-height: 1.4; margin-bottom: 6px; }
+.hud-card-bus-tooltip-stacks {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.72rem;
   color: #94a3b8;
@@ -1729,6 +1749,7 @@ export function injectHudExtraStyles() {
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-vitals-orbital,
+.cinematic-active .hud-card-bus,
 .cinematic-active .hud-horizon,
 .cinematic-active .hud-question,
 .cinematic-active .hud-legend,
@@ -1992,71 +2013,13 @@ export function injectHudExtraStyles() {
   text-shadow: 0 0 8px rgba(255, 100, 100, 0.7);
 }
 
-/* ============ NOTIFICAÇÃO DE COMANDO DO ESQUADRÃO (TECLA D) ============ */
-.hud-squadron-notice {
-  position: absolute;
-  transform: translate(-50%, -100%) scale(0.85);
-  pointer-events: none;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  opacity: 0;
-  transition: opacity 140ms ease-out, transform 160ms cubic-bezier(0.18, 0.9, 0.3, 1.2);
-  will-change: transform, opacity, left, top;
-}
-.hud-squadron-notice.active {
-  opacity: 1;
-  transform: translate(-50%, -100%) scale(1);
-}
-.hud-squadron-notice-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(10, 15, 28, 0.88);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(56, 189, 248, 0.6);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35), 0 4px 12px rgba(0, 0, 0, 0.6);
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-weight: 800;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: #e0f2fe;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.hud-squadron-notice.focus .hud-squadron-notice-pill {
-  border-color: rgba(239, 68, 68, 0.85);
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
-  color: #fecaca;
-}
-.hud-squadron-notice.cooldown .hud-squadron-notice-pill {
-  border-color: rgba(148, 163, 184, 0.7);
-  box-shadow: 0 0 14px rgba(148, 163, 184, 0.3), 0 4px 12px rgba(0, 0, 0, 0.6);
-  color: #cbd5e1;
-}
-.hud-squadron-notice-icon {
-  font-size: 14px;
-}
-.hud-squadron-notice-sub {
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  letter-spacing: 0.03em;
-}
-
-/* ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============ */
+/* ============ RÁDIO DOS ALIADOS — HUD fixa, inferior-central (não segue a nave) ============ */
 .hud-wingman-radio {
   position: absolute;
-  left: var(--wingman-radio-x, 50%);
-  top: var(--wingman-radio-y, 82%);
-  transform: translate(-50%, 0);
-  bottom: auto;
+  left: 50%;
+  bottom: clamp(24px, 6vh, 64px);
+  top: auto;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 15px;
@@ -2331,6 +2294,9 @@ export function injectHudExtraStyles() {
 :root {
   --hud-left-x: clamp(18px, 3.2vw, 52px);
   --hud-left-stack-x: var(--hud-left-x);
+  /* Fonte única do slot dos vitais clássicos: os vitais clássicos e o barramento de cards no modo
+     orbital consomem este mesmo token. */
+  --hud-classic-vitals-top: clamp(258px, 36.0vh, 370px);
 }
 
 .hud-double-stack {

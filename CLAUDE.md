@@ -259,6 +259,8 @@ node src/wingman-radio-callresponse.test.mjs
 node src/arcade-draft-bullet-time.test.mjs
 node src/playtest-polish.test.mjs
 node src/lockon-miyu-reticle-fog.test.mjs
+node src/hud-card-bus.test.mjs
+node src/hud-armament.test.mjs
 node src/selftest.mjs
 node tools/state-fuzz-audit.mjs
 node tools/wingman-runtime-fuzz-audit.mjs
@@ -309,7 +311,7 @@ Baseline integrada antes deste arquivo:
 
 ## 9.1 Layout escolhido: Opção 4 — Coluna Esquerda Clássica (+ Barramentos de Cards)
 
-A direção aprovada pelo usuário é uma composição vertical no canto esquerdo. A posição dos cards roguelike foi definida pela decisão "Barramentos por Categoria" (spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md)) e **depende do modo de vitais**.
+A direção aprovada pelo usuário é uma composição vertical no canto esquerdo. A posição dos cards roguelike foi definida pela decisão "Barramentos por Categoria" (spec canônica: [`docs/specs/active/roguelike-card-category-bus.md`](docs/specs/active/roguelike-card-category-bus.md)) e **depende do modo de vitais**.
 
 **VITAIS CLÁSSICOS** — ordem obrigatória:
 
@@ -406,11 +408,19 @@ Nível fica no topo direito, abaixo/associado ao timer.
 
 O overhaul dos cards roguelike **foi decidido**: três rails `O / D / U` (ofensivo vermelho/rosa, defensivo azul, utilitário amarelo/dourado), uma linha por categoria, **sem wrap e sem scroll**, ordem estável, categoria vazia oculta, 1 célula + 1 contador por carta, suporte às 32 cartas atuais (stress 14/11/7) e stacks de dois dígitos.
 
-O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` e `.hud-card-chip` devem ser removidos (não escondidos), sem duplicação de cards. Spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md).
+O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` e `.hud-card-chip` devem ser removidos (não escondidos), sem duplicação de cards. Spec canônica: [`docs/specs/active/roguelike-card-category-bus.md`](docs/specs/active/roguelike-card-category-bus.md).
 
 Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
-Ainda pendente: escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout). Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
+Estado: estrutura/layout/renderer **implementados** em `src/hud-card-bus.js` (renderer legado removido; testes `src/hud-card-bus.test.mjs` e `tools/validate-card-bus.mjs`). Skin escolhida pelo usuário: **Tático / Militar** (aplicada). Ainda pendente: validação visual pelo usuário. Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
+
+---
+
+## 9.6 FOCO / SWIRL — Display de Armamento (Opção B, decisão fechada)
+
+FOCO [D] e SWIRL usam o **Display de Armamento**: caixa 76×46 px, etiqueta vertical, tempo grande, label pequena e medidor contínuo de 4 marcas (READY sólido cheio; ACTIVE hachurado esvaziando; COOLDOWN cinza listrado enchendo). Spec: [`docs/specs/active/focus-swirl-armament-display.md`](docs/specs/active/focus-swirl-armament-display.md). Implementado em `src/hud-armament.js`; estado 100% vindo do runtime real (nada de 6 s/10 s hardcoded; o total do SWIRL é o efetivo do player). Posição e zona `.hud-left-actions` são contrato; CADEIA não foi redesenhada. Pendente: validação visual do usuário.
+
+**O widget FOCO é a fonte visual autoritativa do comando.** O feedback antigo acima da nave (`hud-squadron-notice` e `worldRadio.showFoxFocus`) foi REMOVIDO e não pode voltar: ao acionar FOCO não existe painel, pill, retrato ou sprite world-space seguindo o jogador (teste: `src/hud-armament.test.mjs`).
 
 ---
 
@@ -1084,7 +1094,9 @@ Não remover atribuições de assets/portraits históricos sem verificar origem.
 
 # 34. PROBLEMAS CONHECIDOS QUE NÃO DEVEM SER “ESQUECIDOS”
 
-## 34.1 Rádio ainda precisa de correção arquitetural final
+## 34.1 Rádio — posicionamento corrigido; dispatcher único ainda a auditar
+
+O painel do rádio agora é fixo inferior-central (não é mais projetado a partir da nave). Continua pendente a auditoria de bypass do gate de fala descrita abaixo.
 
 Mesmo após o pacote integrado, o usuário relatou spam e ability radio ainda aparecendo.
 
@@ -1106,9 +1118,9 @@ Critério de aceite:
 
 Se rádio abrir junto, falhou.
 
-## 34.3 Tray/chips de cards atuais estão obsoletos
+## 34.3 Tray/chips de cards — renderer legado REMOVIDO
 
-`.hud-cards-tray` / `.hud-card-chip` são o renderer antigo e serão **substituídos** pelos Barramentos por Categoria (§9.5 e spec `docs/specs/ready/roguelike-card-category-bus.md`). Não investir em microajuste do tray atual e não construir os barramentos em cima dele.
+`.hud-cards-tray` / `.hud-card-chip` foram substituídos pelos Barramentos por Categoria (§9.5 e spec `docs/specs/active/roguelike-card-category-bus.md`). Não reintroduzir o renderer antigo nem construir nada em cima dele; o teste `src/hud-card-bus.test.mjs` falha se ele voltar.
 
 ## 34.4 Visual de inimigos pode estar tecnicamente implementado sem estar aprovado
 
