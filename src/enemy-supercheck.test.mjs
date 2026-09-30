@@ -139,7 +139,8 @@ check('#13 Boss não dispara volley normal durante transition', () => {
 
 check('#14 Tank não entra em disengage por ciclo na arena e, se entrar, afasta', () => {
   assert.equal(tankShouldLeaveAfterCycle(999, true), false)
-  assert.equal(tankShouldLeaveAfterCycle(3, false), true)
+  assert.equal(tankShouldLeaveAfterCycle(4, false), false)
+  assert.equal(tankShouldLeaveAfterCycle(5, false), true)
   const disengage = block(tankSrc, '[ENEMY_STATES.DISENGAGING]:', 'export function spawnTankEnemy')
   assert.ok(disengage.includes('leaveMovement(enemy, dt, ctx)'))
   const leave = block(tankSrc, 'function leaveMovement(', 'const TANK_STATES')

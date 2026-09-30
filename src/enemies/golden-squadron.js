@@ -56,6 +56,13 @@ const COORDINATED_FIRE_INTERVAL_S = 0.28
 const ORDER_COOLDOWN_MIN_S = 2.2
 const ORDER_COOLDOWN_MAX_S = 3.8
 const FIGHTER_DEATH_DURATION_S = 0.22
+// Pincer: cada lado assume um ponto de flanco à frente do jogador (lado do comandante) e converge
+// junto; antes só existia a constante nos `attackContext` (flankOffset/elevationOffset nunca eram
+// lidos) e o "Pincer" era um mergulho reto a partir do slot de formação.
+const PINCER_FLANK_ENTRY_DISTANCE = 28.0
+const PINCER_FLANK_SPEED = 30.0
+const PINCER_PREP_TIME_S = 1.6
+const PINCER_PREP_STAGGER_S = 0.12
 
 // Definição de 10 slots de formação únicos e distintos ao redor do Comandante (sem empilhamento)
 // (X = lateral direita/esquerda, Y = elevação superior/inferior, Z = frente/traseira relativa ao avanço)
@@ -127,6 +134,7 @@ const _vRight = new THREE.Vector3()
 const _vSlotTarget = new THREE.Vector3()
 const _vDesiredVel = new THREE.Vector3()
 const _vToTarget = new THREE.Vector3()
+const _vTmpDir = new THREE.Vector3()
 
 export function getSquadronCapForLevel(level, allyBonus = 0) {
   const lvl = Math.max(1, Math.min(9, Math.round(level || 1)))
@@ -216,6 +224,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       dying: false,
       deathT: 0,
       hasFiredInAttack: false,
+      lastActedAt: -1000 + slotIndex * 0.001, // rodízio de participantes: nunca agiu = mais antigo
       disorganizedTimer: 0,
       ramHitActive: false,
     }
@@ -308,13 +317,24 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   }
 
   // Compositor de ordens: inicia uma ordem contextual
+  // Rodízio: quem agiu há mais tempo (ou nunca) é o próximo. Antes `slice(0, cap)` escolhia SEMPRE
+  // os mesmos primeiros caças do array e os demais ficavam parados na formação para sempre.
+  function pickParticipants(pool, count) {
+    return [...pool].sort((a, b) => (a.lastActedAt - b.lastActedAt) || (a.slotIndex - b.slotIndex)).slice(0, Math.max(0, count))
+  }
+
+  function markActed(list) {
+    for (const f of list) f.lastActedAt = elapsed
+  }
+
   function startOrder(orderType, commander, playerPosition) {
     const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
     const maxOffensive = Math.min(activeFighters.length, getOffensiveCap())
 
     if (orderType === SQUADRON_ORDER.STRAFING_RUN) {
-      const eligible = activeFighters.slice(0, maxOffensive)
+      const eligible = pickParticipants(activeFighters, maxOffensive)
       if (eligible.length === 0) return false
+      markActed(eligible)
 
       currentOrder = SQUADRON_ORDER.STRAFING_RUN
       lastOrder = SQUADRON_ORDER.STRAFING_RUN
@@ -342,7 +362,10 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
     if (orderType === SQUADRON_ORDER.PINCER) {
       if (activeFighters.length < 2 || maxOffensive < 2) return false
       const pCount = Math.min(activeFighters.length, maxOffensive)
-      const participants = activeFighters.slice(0, pCount)
+      const participants = pickParticipants(activeFighters, pCount)
+      markActed(participants)
+      // lados opostos garantidos: ordena pelo X do slot (esquerda → direita) e divide ao meio
+      participants.sort((a, b) => FORMATION_SLOTS[a.slotIndex % FORMATION_SLOTS.length].offset.x - FORMATION_SLOTS[b.slotIndex % FORMATION_SLOTS.length].offset.x)
 
       currentOrder = SQUADRON_ORDER.PINCER
       lastOrder = SQUADRON_ORDER.PINCER
@@ -353,11 +376,11 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
       }
 
       participants.forEach((f, idx) => {
-        const isLeft = idx % 2 === 0
+        const isLeft = idx < participants.length / 2
         const side = isLeft ? -1 : 1
         f.state = FIGHTER_STATE.PREPARING
         f.currentOrder = SQUADRON_ORDER.PINCER
-        f.stateTimer = isLeft ? (0.5 + idx * 0.12) : (0.75 + idx * 0.12)
+        f.stateTimer = PINCER_PREP_TIME_S + idx * PINCER_PREP_STAGGER_S
         f.hasFiredInAttack = false
         f.attackContext = {
           flankSide: side,
@@ -371,8 +394,9 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
     if (orderType === SQUADRON_ORDER.COORDINATED_FIRE) {
       // Contrato: estritamente até maxOffensive caças. O Comandante entra na sequência separadamente sem adicionar slot extra.
-      const eligible = activeFighters.slice(0, maxOffensive)
+      const eligible = pickParticipants(activeFighters, maxOffensive)
       if (eligible.length === 0) return false
+      markActed(eligible)
 
       currentOrder = SQUADRON_ORDER.COORDINATED_FIRE
       lastOrder = SQUADRON_ORDER.COORDINATED_FIRE
@@ -402,7 +426,8 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
   function coordinateLaserFlank(commanderPos, playerPosition, durationS) {
     const activeFighters = fighters.filter((f) => !f.dying && (f.state === FIGHTER_STATE.FORMATION || f.state === FIGHTER_STATE.REGROUPING))
     const maxOffensive = getOffensiveCap()
-    const participants = activeFighters.slice(0, maxOffensive)
+    const participants = pickParticipants(activeFighters, maxOffensive)
+    markActed(participants)
 
     currentOrder = SQUADRON_ORDER.LASER_FLANK
     lastOrder = SQUADRON_ORDER.LASER_FLANK
@@ -713,8 +738,30 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
           } else if (f.currentOrder === SQUADRON_ORDER.COORDINATED_FIRE) {
             // Mantém posição e mira no jogador
             if (_vForward.lengthSq() > 0.01) f.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _vForward)
+          } else if (f.currentOrder === SQUADRON_ORDER.PINCER && f.attackContext && playerPosition) {
+            // Pinça: assume o ponto de flanco (lado do comandante, ±22u lateral) e espera a janela
+            // comum de ataque; os dois lados saem quase juntos e CONVERGEM no jogador.
+            const c = f.attackContext
+            _vSlotTarget.copy(playerPosition)
+              .addScaledVector(_vForward, -PINCER_FLANK_ENTRY_DISTANCE)
+              .addScaledVector(_vRight, c.flankOffset)
+              .addScaledVector(_vUp, c.elevationOffset)
+            _vToTarget.copy(_vSlotTarget).sub(f.mesh.position)
+            const distToFlank = _vToTarget.length()
+            const speed = Math.min(PINCER_FLANK_SPEED, Math.max(3.0, distToFlank * 2.5))
+            _vDesiredVel.copy(_vToTarget).normalize().multiplyScalar(speed)
+            f.velocity.lerp(_vDesiredVel, dt * 4.0)
+            f.mesh.position.addScaledVector(f.velocity, dt)
+            if (f.velocity.lengthSq() > 0.01) f.mesh.quaternion.setFromUnitVectors(FORWARD_AXIS, _vTmpDir.copy(f.velocity).normalize())
+            c.reachedFlank = distToFlank < 6.0
+
+            if (f.stateTimer <= 0) {
+              f.state = FIGHTER_STATE.ATTACKING
+              f.stateTimer = 1.6
+              c.targetPos = playerPosition.clone()
+            }
           } else {
-            // Strafing ou Pincer: manobra preparatória de abertura
+            // Strafing: manobra preparatória de abertura
             const flankSide = f.attackContext?.flankSide || (rng() < 0.5 ? -1 : 1)
             _vDesiredVel.copy(_vRight).multiplyScalar(flankSide * 12.0).addScaledVector(_vForward, -4.0)
             f.velocity.lerp(_vDesiredVel, dt * 4.0)
@@ -731,7 +778,7 @@ export function createGoldenSquadron(scene, effects, nextId, initialLevel = 1, o
 
         case FIGHTER_STATE.ATTACKING: {
           f.stateTimer -= dt
-          const target = (f.attackContext && f.attackContext.targetPos) || playerPosition
+          const target = (f.currentOrder === SQUADRON_ORDER.PINCER && playerPosition) || (f.attackContext && f.attackContext.targetPos) || playerPosition
           if (target) {
             _vToTarget.copy(target).sub(f.mesh.position)
             const dist = _vToTarget.length()

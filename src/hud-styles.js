@@ -2020,6 +2020,17 @@ export function injectHudExtraStyles() {
   bottom: clamp(24px, 6vh, 64px);
   top: auto;
   transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+  pointer-events: none;
+  z-index: 45;
+  /* âncora fixa: só a centralização (translateX(-50%)); efeitos de entrada/saída ficam no shell interno */
+}
+.hud-wingman-radio.active {
+  opacity: 1;
+}
+.hud-wingman-radio-shell {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 15px;
@@ -2028,14 +2039,8 @@ export function injectHudExtraStyles() {
   background: rgba(8, 12, 22, 0.92);
   border: 1px solid var(--pc, #38bdf8);
   box-shadow: 0 0 18px var(--pg, rgba(56, 189, 248, 0.4)), 0 6px 16px rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transition: opacity 140ms ease-out, border-color 200ms, box-shadow 200ms;
-  pointer-events: none;
-  z-index: 45;
+  transition: border-color 200ms, box-shadow 200ms;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-}
-.hud-wingman-radio.active {
-  opacity: 1;
 }
 .hud-wingman-radio-corner {
   position: absolute;
@@ -2093,33 +2098,42 @@ export function injectHudExtraStyles() {
   80%  { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(1px); }
   100% { clip-path: inset(0 0 0 0); transform: translateY(0) translateX(0); }
 }
-.hud-wingman-radio.entering {
+.hud-wingman-radio.entering .hud-wingman-radio-shell {
   animation: hud-wingman-radio-glitch-in 260ms steps(2, end);
 }
 @keyframes hud-wingman-radio-flicker {
   0%, 100% { opacity: 1; } 20% { opacity: 0.2; } 40% { opacity: 1; } 60% { opacity: 0.15; } 80% { opacity: 1; }
 }
-.hud-wingman-radio.leaving {
+.hud-wingman-radio.leaving .hud-wingman-radio-shell {
   animation: hud-wingman-radio-flicker 180ms steps(1, end);
 }
 
-/* ============ ÍCONE DE HABILIDADE SOBRE NAVE DO ALIADO (Fase 1.4) ============ */
-.hud-wingman-ability-world-icon {
+/* ============ RETRATO DO PILOTO (habilidade) SOBRE A NAVE DO ALIADO ============ */
+/* Sem glifo e sem texto: o retrato de rádio do piloto, projetado sobre a própria nave. */
+.hud-ability-pilot-portrait {
   position: absolute;
   transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(8, 14, 28, 0.90);
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0a0f1c;
   border: 2px solid var(--pilot-color, #38bdf8);
-  box-shadow: 0 0 18px var(--pilot-color, #38bdf8), inset 0 0 8px var(--pilot-color, #38bdf8);
-  font-size: 20px;
+  box-shadow: 0 0 16px var(--pilot-color, #38bdf8);
   pointer-events: none;
   z-index: 38;
   will-change: transform, opacity, left, top;
+}
+.hud-ability-pilot-portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+/* reduced-motion: o retrato permanece (feedback essencial); só o pulso de escala é desligado */
+@media (prefers-reduced-motion: reduce) {
+  .hud-ability-pilot-portrait { transform: translate(-50%, -50%) !important; }
 }
 
 

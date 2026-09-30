@@ -15,10 +15,17 @@ export const ENEMY_STATES = {
   STAGGERED: 'STAGGERED',
   CRITICAL_TUMBLE: 'CRITICAL_TUMBLE',
   DISENGAGING: 'DISENGAGING',
+  DYING: 'DYING',
 }
 
 // statesConfig: { [ENEMY_STATES.X]: { onEnter?(enemy, ctx, payload), update?(enemy, dt, ctx), onExit?(enemy, ctx) } }
 export function createStateMachine(enemy, statesConfig, initialState) {
+  // Guarda contra a colisão de chaves `[ENEMY_STATES.X]` com X inexistente (vira a chave literal
+  // "undefined" e sobrescreve outro estado silenciosamente — foi a causa do Tank se autodestruir
+  // depois do primeiro ataque, ver docs/audits/tank-golden-runtime-audit.md).
+  if (Object.prototype.hasOwnProperty.call(statesConfig, 'undefined') || Object.prototype.hasOwnProperty.call(statesConfig, 'null')) {
+    throw new Error('createStateMachine: statesConfig contém a chave "undefined"/"null" — algum ENEMY_STATES.X não existe')
+  }
   if (!statesConfig[initialState]) {
     throw new Error(`createStateMachine: estado inicial "${initialState}" não existe em statesConfig`)
   }

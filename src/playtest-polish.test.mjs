@@ -28,8 +28,10 @@ assert.strictEqual(shielded.control.retreat, null, 'perder escudo não pode inic
 assert.strictEqual(shielded.state, 'patrol', 'perder escudo não pode iniciar regroup/retreat')
 
 const radio = createWingmanRadioConversationManager({ random: () => 0 })
-const interceptThread = radio.openFromEvent({ openerPilotId: 0, triggerEventId: 'ability_intercept', now: 0, activePilotIds: [0, 1, 2, 3] })
-assert.ok(interceptThread && interceptThread.responderPilotId !== 0, 'Intercept precisa poder abrir Call & Response')
+// habilidade nunca usa rádio (nem abre Call & Response); a conversa nasce de eventos triviais/urgentes
+assert.strictEqual(radio.openFromEvent({ openerPilotId: 0, triggerEventId: 'ability_intercept', now: 0, activePilotIds: [0, 1, 2, 3] }), null, 'ability não abre Call & Response')
+const retreatThread = radio.openFromEvent({ openerPilotId: 0, triggerEventId: 'retreat', now: 0, activePilotIds: [0, 1, 2, 3] })
+assert.ok(retreatThread && retreatThread.responderPilotId !== 0, 'retreat precisa poder abrir Call & Response')
 
 const wingmenSource = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
 assert.match(wingmenSource, /abilityLabel: 'Carga Compartilhada',[\s\S]{0,100}abilityCooldownBase: 9,[\s\S]{0,80}abilityCooldownFloor: 3/, 'Carga Compartilhada deve ter cooldown base de 9s')

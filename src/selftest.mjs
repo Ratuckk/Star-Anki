@@ -595,7 +595,7 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingm
   assert.strictEqual(samePilotBlocked, null, 'cooldown trivial continua valendo por piloto')
 
   // 1.1: Habilidade NUNCA usa rádio (retorna null)
-  const abilityDuringCooldown = radio.speakAbility(0, 'ability_ram', 1600)
+  const abilityDuringCooldown = radio.trySpeak(0, 'ability_ram', 1600)
   assert.strictEqual(abilityDuringCooldown, null, 'habilidade nunca usa rádio (retorna null)')
 
   // O cooldown trivial global exige pelo menos 6s (e até 20s por piloto)
@@ -615,20 +615,17 @@ import { createWingmanRadio, ABILITY_EVENT_IDS, GLOBAL_COOLDOWN_MAX_MS, getWingm
 
 {
   // Etapa 1 do documento: cada piloto mantém pelo menos 30 falas; as existentes nunca são
-  // removidas só para bater uma contagem exata. Também garante que toda ability já catalogada
-  // possui pool próprio antes de sua carta correspondente ser implementada.
+  // removidas só para bater uma contagem exata. Habilidade NUNCA usa rádio: o catálogo não tem
+  // nenhuma linha de habilidade e o scheduler recusa qualquer evento de habilidade.
   for (const pilotId of [0, 1, 2, 3]) {
     assert.ok(getWingmanRadioLineCount(pilotId) >= 30, `piloto ${pilotId} deve ter ao menos 30 falas no rádio`)
   }
-  const abilityPools = [
-    [0, 'ability_ram'], [0, 'ability_intercept'],
-    [1, 'ability_guard'], [1, 'ability_rescue'], [1, 'ability_aux_shield'], [1, 'ability_focus_upgrade'],
-    [2, 'ability_repair'], [2, 'ability_morale'], [2, 'ability_boost_dash'], [2, 'ability_focus_upgrade'],
-    [3, 'ability_assist'], [3, 'ability_boombuster'],
-  ]
   const radio = createWingmanRadio()
-  for (const [pilotId, eventId] of abilityPools) {
-    assert.ok(typeof radio.getLine(pilotId, eventId) === 'string', `${eventId} do piloto ${pilotId} precisa ter fala própria`)
+  for (const pilotId of [0, 1, 2, 3]) {
+    for (const eventId of ABILITY_EVENT_IDS) {
+      assert.strictEqual(radio.trySpeak(pilotId, eventId, 100000 + pilotId), null, `${eventId} do piloto ${pilotId} nunca fala no rádio`)
+      assert.strictEqual(radio.forceSpeak(pilotId, eventId, 100000 + pilotId), null, `${eventId} nunca fala nem forçado`)
+    }
   }
 }
 

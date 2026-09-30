@@ -209,7 +209,7 @@ Documentos antigos descreviam o rádio como painel projetado em world-space abai
 - rádio = **HUD fixa em screen-space**, região **inferior-central**, referência Star Fox (implementado: `.hud-wingman-radio` com `left:50%` e ancorado embaixo; a projeção `shipBelow`/`updateRadioPosition` foi removida do `game-loop.js`/`hud-game.js`);
 - **não segue a nave**;
 - rádio serve só para chatter trivial (gate global de ≥ 6 s);
-- **abilities de wingmen não usam rádio**: ativação = somente ícone brilhante acima da nave do aliado;
+- **abilities de wingmen não usam rádio**: ativação = somente o retrato do piloto acima da nave do aliado (decisão de 2026-09-30; antes era um ícone/glifo);
 - o feedback de ability é **edge-triggered** (transição inativo → ativo), não repetido por frame/salva;
 - os barramentos **nunca invadem** a região inferior-central do rádio, e o rádio **nunca move** os barramentos; o aparecimento de uma fala não pode fazer a HUD saltar.
 

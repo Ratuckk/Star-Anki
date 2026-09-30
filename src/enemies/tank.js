@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { spawnPositionForEnemy, enemyInFireRange, POWER_LEVEL_AREA_DAMAGE, POWER_LEVEL_GUIDED_OR_LARGE } from './shared.js'
+import { spawnPositionForEnemy, enemyInFireRange, POWER_LEVEL_HIGH_IMPACT, POWER_LEVEL_GUIDED_OR_LARGE } from './shared.js'
 import { ENEMY_SOUND_CUES, triggerSoundCue } from '../audio-cues.js'
 import { aiValidator } from '../ai-validator.js'
 import { createStateMachine, ENEMY_STATES } from './state-machine.js'
@@ -28,16 +28,38 @@ const ARENA_STANDOFF_MIN = 30
 const ARENA_STANDOFF_MAX = 40
 const ARENA_STANDOFF_TARGET = 35
 const ARENA_MOVE_SPEED = 20
-const BRACE_TIME = 0.42
+// Números do design as-built (docs/design/enemies/tank.md + spec gravity-recovery §2.4/§2.8).
+// A reescrita da Fase 3 (cdc276f) tinha trocado vários sem registrar decisão; restaurados aqui.
 const TELEGRAPH_TIME = 0.34
-const RECOVERY_TIME = 0.62
+const RAM_TELEGRAPH_TIME = 0.55
 const REPOSITION_TIME = 0.82
-const STAGGER_TIME = 0.65
-const STAGGER_IMMUNITY_TIME = 1.65
-const RAM_TIME = 0.78
-const RAM_SPEED = 58
-const RAIL_CYCLES_BEFORE_LEAVE = 3
+const STAGGER_TIME = 0.45
+const STAGGER_IMMUNITY_TIME = 2.5
+export const TANK_RAM_TIME = 0.55
+export const TANK_RAM_SPEED = 30
+export const TANK_RAM_MAX_DISTANCE = 13
+const RAM_RECOVERY_TIME = 1.10
+const CRITICAL_RECOVERY_FACTOR = 0.9
+export const TANK_BURST_SHOT_INTERVAL = 0.22
+export const TANK_RECOIL_DISTANCE = 1.35
+export const RAIL_CYCLES_BEFORE_LEAVE = 5
 const LEAVE_SPEED = 38
+
+export const TANK_SIEGE_PROJECTILE = Object.freeze({ speed: 34, hitRadius: 2.4, damage: 2, maxRange: 100 })
+export const TANK_SUPPRESSION_PROJECTILE = Object.freeze({ speed: 40, hitRadius: 1.7, damage: 1, maxRange: 90 })
+
+// Tabela D1–D9 (spec §2.8): brace, cooldown entre ações, tiros do burst, Ram permitido, recovery.
+export function tankTuningForLevel(level = 1) {
+  const lvl = Math.min(9, Math.max(1, Math.round(level || 1)))
+  const tier = lvl <= 2 ? 0 : lvl <= 4 ? 1 : lvl <= 6 ? 2 : lvl <= 8 ? 3 : 4
+  return {
+    braceTime: [0.70, 0.65, 0.60, 0.55, 0.50][tier],
+    actionCooldown: [2.8, 2.6, 2.4, 2.2, 2.0][tier],
+    burstShots: lvl <= 4 ? 2 : 3,
+    ramAllowed: lvl >= 3,
+    recoveryTime: [0.80, 0.76, 0.72, 0.68, 0.64][tier],
+  }
+}
 
 export const TANK_ATTACKS = Object.freeze({
   SIEGE: 'siege-shot',
@@ -53,6 +75,13 @@ export function tankStatsForLevel(level = 1) {
 export function tankAttackForCycle(cycle = 0) {
   const attacks = [TANK_ATTACKS.SIEGE, TANK_ATTACKS.SUPPRESSION, TANK_ATTACKS.RAM]
   return attacks[Math.abs(Math.trunc(cycle)) % attacks.length]
+}
+
+// Seleção real do ataque: Ram é situacional (jogador a < 13u, à frente, D3+); fora disso alterna
+// Siege/Suppression pelo ciclo (ciclo par = Siege, ímpar = Suppression).
+export function chooseTankAttack(cycle, { distToPlayer = Infinity, playerAhead = true, level = 1 } = {}) {
+  if (tankTuningForLevel(level).ramAllowed && playerAhead && distToPlayer < TANK_RAM_MAX_DISTANCE) return TANK_ATTACKS.RAM
+  return Math.abs(Math.trunc(cycle)) % 2 === 0 ? TANK_ATTACKS.SIEGE : TANK_ATTACKS.SUPPRESSION
 }
 
 export function tankArmorBand(hp, maxHp) {
@@ -195,7 +224,7 @@ function tickTankVisual(enemy, dt) {
   enemy.recoilTimer = Math.max(0, (enemy.recoilTimer || 0) - dt)
   if (enemy.visualGroup) {
     const recoilFrac = Math.min(1, enemy.recoilTimer / 0.22)
-    enemy.visualGroup.position.z = -0.5 * recoilFrac
+    enemy.visualGroup.position.z = -TANK_RECOIL_DISTANCE * recoilFrac
   }
   updateArmorVisual(enemy)
 }
@@ -278,13 +307,13 @@ function setProjectileProfile(enemy, kind) {
   if (kind === TANK_ATTACKS.SIEGE) {
     enemy.projectileOpts = {
       geometry: siegeProjectileGeo, material: siegeProjectileMat,
-      damage: 3, speed: 20, hitRadius: 2.15, maxRange: 100,
-      powerLevel: POWER_LEVEL_AREA_DAMAGE,
+      ...TANK_SIEGE_PROJECTILE,
+      powerLevel: POWER_LEVEL_HIGH_IMPACT,
     }
   } else {
     enemy.projectileOpts = {
       geometry: suppressionProjectileGeo, material: suppressionProjectileMat,
-      damage: 1, speed: 31, hitRadius: 1.25, maxRange: 90,
+      ...TANK_SUPPRESSION_PROJECTILE,
       powerLevel: POWER_LEVEL_GUIDED_OR_LARGE,
     }
   }
@@ -330,15 +359,21 @@ const TANK_STATES = {
   },
 
   [ENEMY_STATES.BRACING]: {
-    onEnter(enemy) {
-      enemy.currentAttack = tankAttackForCycle(enemy.attackCycle)
+    onEnter(enemy, ctx) {
+      // Ataque decidido AQUI, com o contexto real (distância/posição do jogador): Ram só é
+      // escolhido quando situacional; senão Siege/Suppression alternando por ciclo.
+      _rel.copy(ctx.playerPosition).sub(enemy.mesh.position)
+      const distToPlayer = _rel.length()
+      const playerAhead = ctx.inArena || _rel.dot(ctx.frame.forward) < 0
+      enemy.currentAttack = chooseTankAttack(enemy.attackCycle, { distToPlayer, playerAhead, level: enemy.level })
       enemy.ramAttackActive = false
+      enemy.attackShotsRemaining = 0
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
       updateStandoff(enemy, dt, ctx)
-      if (enemy.fsm.timeInState >= BRACE_TIME) enemy.fsm.transition(ENEMY_STATES.TELEGRAPHING, null, ctx)
+      if (enemy.fsm.timeInState >= tankTuningForLevel(enemy.level).braceTime) enemy.fsm.transition(ENEMY_STATES.TELEGRAPHING, null, ctx)
     },
   },
 
@@ -346,18 +381,23 @@ const TANK_STATES = {
     onEnter(enemy, ctx) {
       ctx.effects?.telegraph?.(enemy.mesh.position, TANK_COLOR)
       triggerSoundCue(ENEMY_SOUND_CUES.blaster_telegraph, { enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position })
+      enemy.telegraphGlow = 1
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
       updateStandoff(enemy, dt, ctx)
-      if (enemy.fsm.timeInState >= TELEGRAPH_TIME) enemy.fsm.transition(ENEMY_STATES.ATTACKING, null, ctx)
+      const needed = enemy.currentAttack === TANK_ATTACKS.RAM ? RAM_TELEGRAPH_TIME : TELEGRAPH_TIME
+      if (enemy.fsm.timeInState >= needed) enemy.fsm.transition(ENEMY_STATES.ATTACKING, null, ctx)
+    },
+    onExit(enemy) {
+      enemy.telegraphGlow = 0
     },
   },
 
   [ENEMY_STATES.ATTACKING]: {
     onEnter(enemy, ctx) {
-      const kind = enemy.currentAttack || tankAttackForCycle(enemy.attackCycle)
+      const kind = enemy.currentAttack || chooseTankAttack(enemy.attackCycle, { level: enemy.level })
       enemy.recoilTimer = 0.22
       enemy.attackShotTimer = 0
       if (kind === TANK_ATTACKS.RAM) {
@@ -372,21 +412,19 @@ const TANK_STATES = {
         enemy.attackShotsRemaining = 1
       } else {
         setProjectileProfile(enemy, kind)
-        enemy.attackShotsRemaining = 3
+        enemy.attackShotsRemaining = tankTuningForLevel(enemy.level).burstShots
       }
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
-      const kind = enemy.currentAttack || tankAttackForCycle(enemy.attackCycle)
+      const kind = enemy.currentAttack || chooseTankAttack(enemy.attackCycle, { level: enemy.level })
       if (kind === TANK_ATTACKS.RAM) {
-        enemy.mesh.position.addScaledVector(enemy.ramDirection, RAM_SPEED * dt)
-        if (enemy.mesh.position.distanceTo(ctx.playerPosition) < 4.0) {
-          enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
-          return
-        }
-        if (enemy.fsm.timeInState >= RAM_TIME) {
-          enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+        enemy.mesh.position.addScaledVector(enemy.ramDirection, TANK_RAM_SPEED * dt)
+        // colisão/dano: pipeline físico normal da nave (enemies/index.js → isColliding); o Ram só
+        // encerra por tempo ou ao atravessar o jogador (nunca duplica dano)
+        if (enemy.mesh.position.distanceTo(ctx.playerPosition) < 4.0 || enemy.fsm.timeInState >= TANK_RAM_TIME) {
+          enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
         }
         return
       }
@@ -395,15 +433,17 @@ const TANK_STATES = {
       enemy.attackShotTimer -= dt
       if (enemy.attackShotsRemaining > 0 && enemy.attackShotTimer <= 0) {
         enemy.attackShotsRemaining -= 1
-        enemy.attackShotTimer = 0.14
+        // burst: intervalo de 0,22 s; cada tiro re-mira a posição ATUAL do jogador (sem teleguiar)
+        enemy.attackShotTimer = TANK_BURST_SHOT_INTERVAL
         enemy.recoilTimer = 0.22
+        enemy.shotTimestamps.push(enemy.fsm.timeInState)
         ctx.fireEnemyProjectile(enemy, ctx.playerPosition)
         triggerSoundCue(kind === TANK_ATTACKS.SIEGE ? ENEMY_SOUND_CUES.tank_siege_fire : ENEMY_SOUND_CUES.tank_suppression_fire, {
           enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position,
         })
       }
       if (enemy.attackShotsRemaining <= 0 && enemy.fsm.timeInState >= 0.28) {
-        enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+        enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
       }
     },
     onExit(enemy) {
@@ -411,16 +451,20 @@ const TANK_STATES = {
     },
   },
 
-  [ENEMY_STATES.RECOVERING]: {
+  [ENEMY_STATES.RECOVERY]: {
     onEnter(enemy) {
+      const wasRam = enemy.currentAttack === TANK_ATTACKS.RAM
       enemy.ramAttackActive = false
       enemy.attackShotsRemaining = 0
+      let recovery = wasRam ? RAM_RECOVERY_TIME : tankTuningForLevel(enemy.level).recoveryTime
+      if (tankArmorBand(enemy.hp, enemy.maxHp) === 1) recovery *= CRITICAL_RECOVERY_FACTOR
+      enemy.recoveryDuration = recovery
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
       if (consumePendingStagger(enemy, ctx)) return
       updateStandoff(enemy, dt, ctx)
-      if (enemy.fsm.timeInState >= RECOVERY_TIME) enemy.fsm.transition(ENEMY_STATES.REPOSITIONING, null, ctx)
+      if (enemy.fsm.timeInState >= enemy.recoveryDuration) enemy.fsm.transition(ENEMY_STATES.REPOSITIONING, null, ctx)
     },
   },
 
@@ -429,6 +473,8 @@ const TANK_STATES = {
       enemy.cycleCount = (enemy.cycleCount || 0) + 1
       enemy.attackCycle = (enemy.attackCycle || 0) + 1
       enemy.strafeSign *= -1
+      // cooldown entre ações (spec §2.8) — o ENGAGED só arma o próximo ciclo depois dele
+      enemy.fireTimer = tankTuningForLevel(enemy.level).actionCooldown
     },
     update(enemy, dt, ctx) {
       tickTankVisual(enemy, dt)
@@ -444,9 +490,11 @@ const TANK_STATES = {
 
   [ENEMY_STATES.STAGGERED]: {
     onEnter(enemy, ctx) {
+      // Swirl em BRACING/TELEGRAPHING/ATTACKING cancela ataque, rajada pendente e investida
       enemy.ramAttackActive = false
       enemy.attackShotsRemaining = 0
       enemy.recoilTimer = 0.4
+      enemy.staggerCount = (enemy.staggerCount || 0) + 1
       ctx.effects?.shockwave?.(enemy.mesh.position, TANK_COLOR, 0.8)
       triggerSoundCue(ENEMY_SOUND_CUES.tank_stagger, { enemyId: enemy.id, kind: enemy.kind, worldPos: enemy.mesh.position })
     },
@@ -456,7 +504,8 @@ const TANK_STATES = {
       enemy.mesh.rotation.z += Math.sin(enemy.fsm.timeInState * 16) * 0.05
       if (enemy.fsm.timeInState >= STAGGER_TIME) {
         enemy.mesh.rotation.z = 0
-        enemy.fsm.transition(ENEMY_STATES.RECOVERING, null, ctx)
+        enemy.currentAttack = null
+        enemy.fsm.transition(ENEMY_STATES.RECOVERY, null, ctx)
       }
     },
   },
@@ -487,7 +536,7 @@ const TANK_STATES = {
   },
 }
 
-export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
+export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP, level = 1) {
   const { root, visualGroup, armorPanels, core, turretGroup } = createTankVisual()
   scene.add(root)
   const position = spawnPositionForEnemy(rail, SPAWN_DISTANCE_MIN, SPAWN_DISTANCE_MAX, BOX_X, BOX_Y)
@@ -507,6 +556,7 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
     coreMesh: core,
     turretGroup,
     kind: TANK_KIND,
+    level,
     scale: TANK_SCALE,
     dying: false,
     deathT: 0,
@@ -523,6 +573,7 @@ export function spawnTankEnemy(scene, rail, id, hp = TANK_DEFAULT_HP) {
     currentAttack: null,
     attackShotsRemaining: 0,
     attackShotTimer: 0,
+    shotTimestamps: [],
     ramAttackActive: false,
     ramDirection: new THREE.Vector3(),
     strafeSign: id % 2 === 0 ? 1 : -1,

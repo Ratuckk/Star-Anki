@@ -50,8 +50,10 @@ jobs:
           node src/lockon-priority.test.mjs
           node src/combat-lockon-swirl.test.mjs
           node src/tank.test.mjs
+          node src/tank-runtime.test.mjs
           node src/tank-spawn-integration.test.mjs
           node src/golden-squadron.test.mjs
+          node src/golden-runtime.test.mjs
 
       - name: Run Wingman Suites
         run: |
@@ -69,6 +71,8 @@ jobs:
           node src/lockon-miyu-reticle-fog.test.mjs
           node src/hud-card-bus.test.mjs
           node src/hud-armament.test.mjs
+          node src/wingman-radio-dispatcher.test.mjs
+          node src/radio-fox-priority.test.mjs
 
       - name: Run Comprehensive Selftest
         run: |

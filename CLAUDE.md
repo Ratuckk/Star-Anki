@@ -250,6 +250,9 @@ node src/combat-lockon-swirl.test.mjs
 node src/tank.test.mjs
 node src/tank-spawn-integration.test.mjs
 node src/golden-squadron.test.mjs
+node src/golden-runtime.test.mjs
+node src/tank-runtime.test.mjs
+node src/radio-fox-priority.test.mjs
 node src/wingman-bughunt.test.mjs
 node src/wingman-navigation.test.mjs
 node src/wingman-global-radio.test.mjs
@@ -261,6 +264,7 @@ node src/playtest-polish.test.mjs
 node src/lockon-miyu-reticle-fog.test.mjs
 node src/hud-card-bus.test.mjs
 node src/hud-armament.test.mjs
+node src/wingman-radio-dispatcher.test.mjs
 node src/selftest.mjs
 node tools/state-fuzz-audit.mjs
 node tools/wingman-runtime-fuzz-audit.mjs
@@ -428,6 +432,8 @@ FOCO [D] e SWIRL usam o **Display de Armamento**: caixa 76×46 px, etiqueta vert
 
 Esta seção é especialmente importante porque implementações anteriores interpretaram o pedido errado.
 
+> **Decisão superseded em 2026-09-30 pela validação de gameplay do usuário.** Duas regras anteriores foram REVOGADAS: (1) “FOCO nunca usa rádio” — agora o **Fox (jogador)** fala no rádio fixo inferior-central quando o FOCO é ativado e quando ele volta a READY (§10.4); (2) “feedback de habilidade = ícone/glifo sobre a nave” — agora é o **retrato de rádio do piloto** sobre a nave (§11). O restante desta seção (habilidade nunca usa painel/texto de rádio; gate de 6 s; sem bypass) continua valendo.
+
 ## 10.1 Rádio serve SOMENTE para chatter/trivial
 
 Rádio pode conter:
@@ -448,15 +454,15 @@ Proibido:
 - `ability_repair` no rádio;
 - `ability_assist` no rádio;
 - qualquer “ability quote” que abra retrato/painel;
-- Focus contornar o scheduler e enfileirar várias confirmações consecutivas.
+- Focus contornar o scheduler e enfileirar várias confirmações consecutivas (o FOCO fala **uma** vez, como Fox, via `requestPlayerCommand`).
 
 Se uma habilidade ativou:
 
 ```text
-Ícone brilhante sobre a nave do aliado = SIM
+Retrato do piloto sobre a nave do aliado (sem glifo, sem texto) = SIM
 Painel de rádio = NÃO
 Texto de rádio = NÃO
-Retrato = NÃO
+Retrato no painel de rádio = NÃO (o retrato é o badge sobre a nave)
 ```
 
 ## 10.2 Cooldown global de fala é autoridade única
@@ -500,6 +506,14 @@ A interpretação “embaixo da nave” NÃO é mais válida.
 
 > Registros históricos (ex.: `docs/progress/PROGRESSO_v0.99.36-em-diante.md`) ainda descrevem o rádio como “world-space abaixo da nave”. Isso está **obsoleto**; vale esta seção.
 
+## 10.4 Fox (jogador) no rádio — comando/status do FOCO
+
+- Falante real: `FOX_SPEAKER` em `src/combat/radio-speakers.js` (`speakerId:'fox'`, `speakerType:'player'`, `pilotId:null`, retrato `assets/wingman-radio/fox.png`, voz `pilot_voice_fox` → `sons/fox.mp3` via `audio-cues.js`). Nada de `pilotId=4` nem índice fantasma em `WINGMAN_RADIO_AVATARS`: o painel lê `avatar`/`voiceCue` do payload.
+- Dois eventos, cada um **uma** fala, por transição real: `focus_activated` (free→focus, tecla real `KeyD`) e `focus_ready` (COOLDOWN>0→READY, edge trigger; não ao montar o HUD nem por frame).
+- Mesmo painel fixo inferior-central; sequência `radio_connect` → voz → `radio_disconnect`. Não existe (e não pode voltar) painel/pill/sprite world-space acima da nave.
+- **Arbitragem (um único controlador de painel, `requestPlayerCommand` no dispatcher):** 1) comando/status do jogador (Fox), 2) urgente (`retreat`, `state_critical`), 3) chatter trivial, 4) Call & Response. O comando do Fox substitui/interrompe chatter em exibição; o chatter não apaga o Fox; o gate global de 6 s continua para chatter e urgente depois da fala do Fox; a resposta de C&R pendente é cancelada. O FOCO **não** gera rajada de quatro pilotos.
+- Testes: `src/radio-fox-priority.test.mjs` (CI), `tools/validate-radio-runtime.mjs` (Chromium).
+
 ---
 
 # 11. FEEDBACK DE HABILIDADES DOS WINGMEN
@@ -507,13 +521,13 @@ A interpretação “embaixo da nave” NÃO é mais válida.
 Quando um wingman ativa uma ability:
 
 - não abre rádio;
-- aparece **somente um ícone brilhante acima da nave desse wingman**;
-- ícone acompanha a nave;
-- halo/pulso curto;
-- duração curta (~1,5s é referência existente);
-- some por fade;
-- se a nave sair da câmera, não teleportar o ícone para a borda;
-- não repetir continuamente enquanto a mesma ability continua ativa.
+- aparece **somente um pequeno RETRATO de rádio do piloto acima da nave desse wingman** (`assets/wingman-radio/{falco,peppy,slippy,miyu}.png`), com borda na cor do piloto — **sem glifo/emoji, sem texto, sem painel adicional**;
+- o retrato acompanha a nave (projeção world→tela a cada frame);
+- pulso/fade curto, duração ~1,5 s (`WINGMAN_ABILITY_GLOW_DURATION_S`);
+- se a nave sair da câmera, não teleportar o retrato para a borda;
+- não repetir continuamente enquanto a mesma ability continua ativa (um retrato por piloto por ativação; salva de tiros/frame não reinicia);
+- `prefers-reduced-motion`: o retrato permanece (só o pulso de escala é desligado);
+- código: `triggerAbilityPilotPortrait` (`combat/wingmen.js`), `hud.updateWingmanAbilityPortraits` (`hud-game.js`), CSS `.hud-ability-pilot-portrait`.
 
 O trigger deve ser por **transição de estado** (inactive → active), não por frame nem por cada projétil.
 
@@ -539,7 +553,7 @@ Se jogador segura carga olhando para espaço vazio:
 
 - não ativa;
 - não consome cooldown;
-- não mostra ícone;
+- não mostra retrato de habilidade;
 - não fala no rádio.
 
 Os projéteis assistidos devem nascer fisicamente da nave da Miyu.
@@ -644,6 +658,8 @@ Fantasia central:
 **Dourado = comandante agressivo de um esquadrão de caças persistentes.**
 
 Não transformar os caças em “mísseis que vivem mais”.
+
+> **Comportamento (validado no sistema de inimigos real, 2026-09-30):** instrumentação de 60–75 s mostrou (a) participantes das ordens escolhidos por `slice(0, cap)` — sempre os mesmos primeiros caças (no D1, 15 participações contra 1) — e (b) Pincer sem flancos reais (`flankOffset`/`elevationOffset` eram dados mortos). Corrigido com rodízio por “agiu há mais tempo” e pontos de flanco lado a lado (±22u, à frente do jogador) que convergem juntos. Testes: `src/golden-runtime.test.mjs` (CI), `tools/validate-golden-runtime.mjs`.
 
 ## 17.1 Caças
 
@@ -766,6 +782,8 @@ Direção exigida e atualmente codificada:
 - torre pode acompanhar jogador independentemente.
 
 Se o usuário reprovar o visual, faça novo design visual; não alegue que números corretos garantem aprovação estética.
+
+**Comportamento (validado no sistema de inimigos real, 2026-09-30):** o Tank parecia “inerte” porque `tank.js` usava `ENEMY_STATES.RECOVERING` e `ENEMY_STATES.DYING`, que não existiam; as duas chaves colidiam em `"undefined"` e, depois do primeiro ataque, o Tank executava o handler de morte. Corrigido (`RECOVERY`, `DYING` adicionado) e `createStateMachine` agora lança erro se o mapa de estados contiver a chave `"undefined"`. Números restaurados do design (`docs/design/enemies/tank.md`): Siege 34 u/s/raio 2,4/dano 2/High Impact; Suppression 2–3 tiros, 40 u/s, 0,22 s, re-mira por tiro; Ram situacional (< 13u, D3+, telegraph 0,55 s, 30 u/s, ≤ 0,55 s, recovery 1,10 s); Stagger 0,45 s com imunidade 2,5 s; disengage após 5 ciclos; tabela D1–D9. `TANK_HIT_RADIUS = 4.48` segue este documento (o raio 2.80 do design é obsoleto). Testes: `src/tank-runtime.test.mjs` (CI) e `tools/validate-tank-runtime.mjs`.
 
 ---
 
@@ -912,7 +930,7 @@ RADIO
 = painel inferior central fixo
 
 ABILITY FEEDBACK
-= ícone acima da nave do aliado
+= retrato do piloto acima da nave do aliado
 = world/screen projected
 = sem texto de rádio
 ```
@@ -1094,27 +1112,25 @@ Não remover atribuições de assets/portraits históricos sem verificar origem.
 
 # 34. PROBLEMAS CONHECIDOS QUE NÃO DEVEM SER “ESQUECIDOS”
 
-## 34.1 Rádio — posicionamento corrigido; dispatcher único ainda a auditar
+## 34.1 Rádio — dispatcher único IMPLEMENTADO (validação de gameplay pendente)
 
-O painel do rádio agora é fixo inferior-central (não é mais projetado a partir da nave). Continua pendente a auditoria de bypass do gate de fala descrita abaixo.
+O painel do rádio é fixo inferior-central (não é projetado a partir da nave) e **toda fala passa pelo dispatcher único** `src/combat/wingman-radio-dispatcher.js` (auditoria: `docs/audits/radio-wingmen-audit.md`). Contrato, coberto por `src/wingman-radio-dispatcher.test.mjs` (esquadrão real, na CI):
 
-Mesmo após o pacote integrado, o usuário relatou spam e ability radio ainda aparecendo.
+- `wingmen.js` **não** escolhe linhas nem tem fila própria: o scheduler não exporta mais `getLine`, `markSpoken` nem `speakAbility`; qualquer produtor só chama `radioDispatcher.request(...)`. Reintroduzir esses acessos quebra o teste estático.
+- Gate global de **6 s absoluto**: vale também para `retreat` e `state_critical` (urgentes ignoram só cooldown/dedupe do piloto). Urgente só substitui a mensagem pendente depois de ser realmente aceita.
+- **FOCO fala pelo Fox** (§10.4): `focus_activated` e `focus_ready` via `radioDispatcher.requestPlayerCommand` (prioridade máxima, um painel, sem cooldown de piloto consumido, sem rajada de pilotos). *Decisão “FOCO nunca fala” superseded em 2026-09-30.* `ability_focus_upgrade` continua inexistente.
+- **Habilidade nunca usa rádio** (`ABILITY_EVENT_IDS` é recusado no dispatcher e no scheduler); feedback = retrato do piloto + brilho sobre o aliado (`triggerAbilityGlow`).
+- **Painel:** âncora `.hud-wingman-radio` fixa (left:50% + `translateX(-50%)`, sem animação); o glitch de entrada/flicker de saída animam o `.hud-wingman-radio-shell` interno. (O keyframe antigo redefinia `transform` na âncora e deslocava o painel até ~75 px à direita por ~260 ms.)
+- **Call & Response** permanece, com a janela alinhada ao gate (a resposta só vence depois dos 6 s; sem garantia se outro evento ocupar o canal).
+- Código morto removido: `radioQueue`/`showQueue`/`clearQueue`, ramo `isAbility`, linhas e respostas `ability_*`, painéis world-space de mensagem, `clearPilot?.()`.
 
-Auditoria recente encontrou caminhos como resposta de FOCO que podem buscar linha diretamente e enfileirar mensagens fora do gate normal.
+Ainda vale: qualquer nova fonte de fala nasce como `radioDispatcher.request`, nunca como `getLine`+`push`.
 
-Portanto:
-
-- não presumir que `wingman-radio.js` estar correto significa sistema inteiro correto;
-- procurar bypass em `wingmen.js` e HUD;
-- consolidar emissão num dispatcher único;
-- ability nunca deve virar rádio;
-- rádio deve mudar para região inferior-central fixa.
-
-## 34.2 Ability icon existe, mas não basta se o rádio também aparece
+## 34.2 Retrato de habilidade existe, mas não basta se o rádio também aparece
 
 Critério de aceite:
 
-**quando ability ativa, aparece apenas o ícone sobre o aliado.**
+**quando ability ativa, aparece apenas o retrato do piloto sobre o aliado.**
 
 Se rádio abrir junto, falhou.
 
@@ -1207,7 +1223,8 @@ PENDÊNCIAS: ...
 - Rádio: chatter trivial apenas.
 - Rádio: painel fixo inferior-central, **não preso à nave**.
 - Rádio: gate global mínimo de 6s e sem bypass.
-- Ability de wingman: apenas ícone brilhante acima da nave, sem rádio.
+- Ability de wingman: apenas retrato do piloto acima da nave (sem glifo), sem rádio.
+- FOCO: Fox fala no rádio na ativação e no retorno a READY (uma fala cada); nada de painel world-space.
 - Miyu assist: só inicia com carga + lock/alvo válido.
 - Swirl camera: já é runtime e não deve ser removida.
 - Lock-on: ~7° / 7,5° / 12° / 90u, não valores históricos errados.

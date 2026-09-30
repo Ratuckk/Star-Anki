@@ -1,6 +1,8 @@
 import { createWingmanRadioConversationManager } from './wingman-radio-callresponse.js'
 export { CALL_RESPONSE_DELAY_MIN_MS, CALL_RESPONSE_DELAY_MAX_MS, CALL_RESPONSE_TTL_AFTER_DUE_MS, CALL_RESPONSE_THREAD_COOLDOWN_MS, classifyWingmanTransitionForRadio } from './wingman-radio-callresponse.js'
 
+// Eventos de HABILIDADE: nunca falam no rádio (o feedback é o ícone/brilho sobre o aliado). `emit()`
+// recusa qualquer um deles e o dispatcher do esquadrão também; o catálogo não tem linhas para eles.
 export const ABILITY_EVENT_IDS = new Set([
   'ability_ram', 'ability_intercept',
   'ability_guard', 'ability_rescue', 'ability_aux_shield',
@@ -46,20 +48,6 @@ const LINES = {
     "engage_fragata": [
       "That shield won't hold forever!"
     ],
-    "ability_ram": [
-      "Time to make my move!",
-      "Ramming speed!",
-      "Outta my way!",
-      "Locked on — here I come!",
-      "Brace for impact, hotshot!"
-    ],
-    "ability_intercept": [
-      "Not on my watch!",
-      "I got your six, Fox!",
-      "Yeah, I don't think so!",
-      "Ha! Too slow!",
-      "Denied!"
-    ],
     "kill": [
       "Got him!",
       "Too easy."
@@ -94,9 +82,6 @@ const LINES = {
     "alone": [
       "Guess it's just me now."
     ],
-    "focus_ready": [
-      "Locked and loaded!"
-    ],
     "state_critical": [
       "I'm taking a beating!",
       "Systems are getting ugly!"
@@ -127,34 +112,6 @@ const LINES = {
     ],
     "engage_fragata": [
       "Watch its blind spot!"
-    ],
-    "ability_guard": [
-      "I'll cover you, Fox!",
-      "Standing by to defend!",
-      "Shields up!",
-      "Defense grid online!",
-      "Nothing gets through me!"
-    ],
-    "ability_rescue": [
-      "Hang on, Fox — I'm coming in!",
-      "I've got you, steady now.",
-      "Stay with me, Fox!",
-      "You're not going down today.",
-      "Rescue run underway!"
-    ],
-    "ability_aux_shield": [
-      "Shield wall deployed!",
-      "Stay behind me, Fox.",
-      "I'll take the heat.",
-      "Barrier holding.",
-      "I've got the incoming fire."
-    ],
-    "ability_focus_upgrade": [
-      "Formation locked. Protecting the lead.",
-      "Auxiliary systems ready.",
-      "My shield is yours, Fox.",
-      "Command received. Defense first.",
-      "Cover pattern set."
     ],
     "kill": [
       "Target down."
@@ -189,9 +146,6 @@ const LINES = {
     "alone": [
       "Keep your guard up out there."
     ],
-    "focus_ready": [
-      "Standing by."
-    ],
     "state_critical": [
       "Hull's in bad shape!",
       "I'm taking serious damage!"
@@ -221,34 +175,6 @@ const LINES = {
     ],
     "engage_fragata": [
       "That armor looks tough..."
-    ],
-    "ability_repair": [
-      "Got a little something for you!",
-      "Got you covered, buddy!",
-      "Field repair incoming!",
-      "Patch kit on the way!",
-      "Don't worry, I can fix this!"
-    ],
-    "ability_morale": [
-      "Everybody, hit harder!",
-      "Boosting the whole squad!",
-      "Morale boost is live!",
-      "Let's turn this around!",
-      "Damage link optimized!"
-    ],
-    "ability_boost_dash": [
-      "I'm boosting with you!",
-      "Turbo sync, go go go!",
-      "No one can touch us now!",
-      "Hold on, Fox!",
-      "Boost trail engaged!"
-    ],
-    "ability_focus_upgrade": [
-      "Morale systems ready!",
-      "Everyone gets the boost!",
-      "Focus command received!",
-      "I can make every shot count!",
-      "Squad link charged!"
     ],
     "kill": [
       "Yeah! Got one!"
@@ -282,9 +208,6 @@ const LINES = {
     "alone": [
       "Where'd everyone go? Help me, Fox!"
     ],
-    "focus_ready": [
-      "R-ready when you are!"
-    ],
     "state_critical": [
       "Uh-oh! My hull's critical!",
       "I-I need some breathing room!"
@@ -317,20 +240,6 @@ const LINES = {
     "engage_fragata": [
       "Scanning for a weak point."
     ],
-    "ability_assist": [
-      "Syncing targeting array.",
-      "Systems synced.",
-      "Uplink stable.",
-      "Sharing target solution.",
-      "Additional locks available."
-    ],
-    "ability_boombuster": [
-      "Heavy charge pattern armed.",
-      "Multiple targets, one solution.",
-      "Boombuster volley released.",
-      "Charged ordnance away.",
-      "Saturation strike confirmed."
-    ],
     "kill": [
       "Clean shot."
     ],
@@ -362,10 +271,6 @@ const LINES = {
     ],
     "alone": [
       "...Just me and the silence now."
-    ],
-    "focus_ready": [
-      "Awaiting your mark.",
-      "Command link ready."
     ],
     "state_critical": [
       "Hull integrity critical.",
@@ -647,15 +552,9 @@ export function getNewTrivialQuoteCount(pilotId) {
 export function getWingmanRadioLineStats(pilotId) {
   const pools = LINES[pilotId] || {}
   let total = 0
-  let ability = 0
-  let trivial = 0
-  for (const [eventId, pool] of Object.entries(pools)) {
-    const count = Array.isArray(pool) ? pool.length : 0
-    total += count
-    if (ABILITY_EVENT_IDS.has(eventId)) ability += count
-    else trivial += count
-  }
-  return { total, ability, trivial, newTrivial: getNewTrivialQuoteCount(pilotId) }
+  for (const pool of Object.values(pools)) total += Array.isArray(pool) ? pool.length : 0
+  // o catálogo só tem linhas triviais: habilidade nunca usa rádio (nem há linha para ela)
+  return { total, trivial: total, newTrivial: getNewTrivialQuoteCount(pilotId) }
 }
 
 export function getWingmanRadioLineCount(pilotId) {
@@ -665,15 +564,11 @@ export function getWingmanRadioLineCount(pilotId) {
 export function getWingmanRadioValidationSnapshot(pilotId) {
   const pools = LINES[pilotId] || {}
   const trivialLines = []
-  const abilityLines = []
-  for (const [eventId, pool] of Object.entries(pools)) {
-    if (!Array.isArray(pool)) continue
-    if (ABILITY_EVENT_IDS.has(eventId)) abilityLines.push(...pool)
-    else trivialLines.push(...pool)
+  for (const pool of Object.values(pools)) {
+    if (Array.isArray(pool)) trivialLines.push(...pool)
   }
   return {
-    trivialLines: [...trivialLines],
-    abilityLines: [...abilityLines],
+    trivialLines,
     newTrivialLines: Object.values(TRIVIAL_EXPANSION[pilotId] || {}).flat(),
   }
 }
@@ -739,32 +634,24 @@ export function createWingmanRadio({
       now,
       activePilotIds: context.activePilotIds || [],
       force,
+      // a resposta só pode vencer quando o gate global já permitir transmitir
+      minDeliveryDelayMs: squadSilenceGapMs,
     })
     return line
   }
 
   return {
-    markSpoken(pilotId, now = performance.now()) {
-      scheduleNextNormalLine(pilotId, now)
-    },
     trySpeak(pilotId, eventId, now = performance.now(), context = {}) {
       return emit(pilotId, eventId, now, context, false, false)
     },
     forceSpeak(pilotId, eventId, now = performance.now(), context = {}) {
       return emit(pilotId, eventId, now, context, true, false)
     },
-    // Habilidade não usa rádio (retorna sempre null)
-    speakAbility(_pilotId, _eventId, _now = performance.now(), _context = {}) {
-      return null
-    },
     trySpeakAlone(pilotId, now = performance.now()) {
       if (hasSaidAlone) return null
       const line = emit(pilotId, 'alone', now, {}, false, false)
       if (line) hasSaidAlone = true
       return line
-    },
-    getLine(pilotId, eventId) {
-      return pick(random, LINES[pilotId]?.[eventId])
     },
     takeDueResponse(now = performance.now(), eligibleResponderIds = []) {
       if (now - lastGlobalTrivialSpokenAt < squadSilenceGapMs) return null
@@ -783,6 +670,18 @@ export function createWingmanRadio({
     },
     getConversationDebug() {
       return conversations.getDebugSnapshot()
+    },
+    // gate global de transmissão (ms): nenhuma fala/resposta pode sair a menos disso da anterior
+    getGlobalGapMs() {
+      return squadSilenceGapMs
+    },
+    // Transmissão do JOGADOR (Fox: comando/status do FOCO) aceita fora do scheduler de chatter: ela
+    // arma o mesmo gate global (chatter espontâneo só volta depois de squadSilenceGapMs) e cancela
+    // uma resposta de Call & Response pendente, para nada sobrescrever a fala do Fox no painel.
+    markPlayerTransmission(now = performance.now()) {
+      lastGlobalTrivialSpokenAt = now
+      squadTrivialSilenceUntil = Math.max(squadTrivialSilenceUntil, now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs)
+      conversations.cancelPendingResponse('player_command')
     },
     getSquadTrivialSilenceUntil() {
       return squadTrivialSilenceUntil

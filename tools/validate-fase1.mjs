@@ -107,13 +107,13 @@ try {
     if (radioEl) radioEl.classList.remove('active');
 
     // Cria/atualiza ícone de habilidade sobre a nave aliada
-    let iconEl = document.querySelector('.hud-wingman-ability-world-icon');
+    let iconEl = document.querySelector('.hud-ability-pilot-portrait');
     if (!iconEl) {
       iconEl = document.createElement('div');
-      iconEl.className = 'hud-wingman-ability-world-icon';
+      iconEl.className = 'hud-ability-pilot-portrait';
       (document.querySelector('.game-hud') || document.body).appendChild(iconEl);
     }
-    iconEl.textContent = '🔰';
+    iconEl.innerHTML = '<img alt="" src="assets/wingman-radio/peppy.png">';
     iconEl.style.setProperty('--pilot-color', '#22c55e');
     iconEl.style.left = '42.0%';
     iconEl.style.top = '36.0%';
@@ -122,7 +122,7 @@ try {
 
     const comp = window.getComputedStyle(iconEl);
     return {
-      icon: iconEl.textContent,
+      icon: iconEl.querySelector('img') ? 'portrait' : iconEl.textContent,
       left: comp.left,
       top: comp.top,
       border: comp.borderColor,
@@ -131,7 +131,7 @@ try {
   })()`)
 
   console.log('[FASE 1 RUNTIME VALIDATION] Ability world icon state:', abilityIconCheck)
-  assert.equal(abilityIconCheck.icon, '🔰', 'Ícone de Peppy deve ser 🔰')
+  assert.equal(abilityIconCheck.icon, 'portrait', 'Retrato de Peppy (sem glifo)')
   assert.equal(abilityIconCheck.opacity, '1', 'Ícone de ability deve ser opaco')
 
   // Captura 3: Ícone de ability sobre wingman

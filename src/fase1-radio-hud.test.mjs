@@ -82,8 +82,9 @@ function createMockRail() {
 
   for (const abilityId of ABILITY_EVENT_IDS) {
     for (const pilotId of [0, 1, 2, 3]) {
-      const result = radio.speakAbility(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] })
-      assert.strictEqual(result, null, `speakAbility(${pilotId}, ${abilityId}) deve retornar null`)
+      const result = radio.trySpeak(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] })
+      assert.strictEqual(result, null, `trySpeak(${pilotId}, ${abilityId}) deve retornar null`)
+      assert.strictEqual(radio.forceSpeak(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] }), null, `forceSpeak(${pilotId}, ${abilityId}) deve retornar null`)
     }
   }
 
@@ -129,16 +130,17 @@ function createMockRail() {
   // Peppy ativa guarda
   squadron.update(0.1, testFrame.position, testFrame, { shieldNotFull: true })
 
-  const activeIcons = squadron.getActiveAbilityIcons()
+  const activeIcons = squadron.getActiveAbilityPortraits()
   assert.ok(activeIcons.length >= 1, 'Deve conter ícone de ability ativo')
   const peppyIcon = activeIcons.find((i) => i.pilotId === 1)
   assert.ok(peppyIcon, 'Ícone de Peppy deve estar presente')
-  assert.equal(peppyIcon.icon, '🔰', 'Ícone de Peppy deve ser 🔰')
+  assert.equal(peppyIcon.portrait, 'assets/wingman-radio/peppy.png', 'Retrato de Peppy (sem glifo)')
+  assert.equal('icon' in peppyIcon, false, 'sem glifo/ícone textual')
   assert.ok(peppyIcon.worldPos.y > 0, 'Ícone deve estar posicionado acima da nave')
 
   // Tick de 1.6s deve expirar o ícone (duração 1.5s)
   squadron.update(1.6, testFrame.position, testFrame)
-  const expiredIcons = squadron.getActiveAbilityIcons()
+  const expiredIcons = squadron.getActiveAbilityPortraits()
   assert.equal(expiredIcons.filter((i) => i.id === peppyIcon.id).length, 0, 'Ícone deve sumir após 1.5s')
 
   console.log('✔ Ability world icons passed')
@@ -174,7 +176,7 @@ function createMockRail() {
 
   // Miyu não pode ter ativado
   assert.equal(miyu.abilityCooldown, 0, 'Cooldown de Miyu NÃO pode ser consumido em espaço vazio')
-  const icons = squadron.getActiveAbilityIcons().filter((i) => i.pilotId === 3)
+  const icons = squadron.getActiveAbilityPortraits().filter((i) => i.pilotId === 3)
   assert.equal(icons.length, 0, 'Nenhum ícone de ability de Miyu deve aparecer em espaço vazio')
 
   console.log('✔ Miyu mirando espaço vazio passed')
@@ -213,9 +215,9 @@ function createMockRail() {
     })
   }
 
-  const icons = squadron.getActiveAbilityIcons().filter((i) => i.pilotId === 3)
+  const icons = squadron.getActiveAbilityPortraits().filter((i) => i.pilotId === 3)
   assert.ok(icons.length >= 1, 'Ícone visual de assist deve aparecer sobre a Miyu')
-  assert.equal(icons[0].icon, '🔗', 'Ícone de Miyu deve ser 🔗')
+  assert.equal(icons[0].portrait, 'assets/wingman-radio/miyu.png', 'Retrato da Miyu (sem glifo)')
 
   // Disparo assistido nasce fisicamente na nave da Miyu
   miyu.mesh.position.set(30, 10, -5)

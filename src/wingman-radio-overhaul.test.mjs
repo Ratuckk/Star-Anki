@@ -15,7 +15,7 @@ for (const pilotId of [0, 1, 2, 3]) {
   assert.equal(new Set(snapshot.newTrivialLines).size, 30)
   for (const line of snapshot.newTrivialLines) {
     assert.ok(snapshot.trivialLines.includes(line))
-    assert.ok(!snapshot.abilityLines.includes(line))
+    assert.ok(!('abilityLines' in snapshot), 'catálogo não tem linhas de habilidade')
   }
 }
 const independent = createWingmanRadio({ random: () => 0 })
@@ -25,7 +25,11 @@ assert.strictEqual(independent.trySpeak(1, 'engage_dogfight', 0, { activePilotId
 // Mas permitido após o silêncio global
 assert.ok(independent.trySpeak(1, 'engage_dogfight', 10000, { activePilotIds: [0, 1] }))
 // 1.1: Habilidade NUNCA usa rádio (retorna null)
-assert.strictEqual(independent.speakAbility(0, 'ability_ram', 12000, { activePilotIds: [0, 1] }), null)
+assert.strictEqual(independent.trySpeak(0, 'ability_ram', 12000, { activePilotIds: [0, 1] }), null)
+assert.strictEqual(independent.forceSpeak(0, 'ability_ram', 12000, { activePilotIds: [0, 1] }), null)
+assert.equal(typeof independent.speakAbility, 'undefined', 'speakAbility deixou de existir')
+assert.equal(typeof independent.getLine, 'undefined', 'getLine não faz parte da API do scheduler')
+assert.equal(typeof independent.markSpoken, 'undefined', 'markSpoken não faz parte da API do scheduler')
 assert.ok(ABILITY_EVENT_IDS.has('ability_focus_upgrade'))
 
 const hudFacade = readFileSync(new URL('./hud.js', import.meta.url), 'utf8')
@@ -41,7 +45,7 @@ assert.ok(!worldRadio.includes('assets/wingman-radio/fox.png'), 'world-radio nã
 const wingmen = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
 assert.ok(!wingmen.includes('showFoxFocus'), 'FOCO não cria mais painel acima da nave do jogador')
 assert.ok(!wingmen.includes('worldRadio.showWingman('), 'Wingmen não podem mais emitir quote acima da nave')
-assert.ok(wingmen.includes('triggerAbilityWorldIcon'), 'abilities ativam ícone no mundo sobre a nave')
+assert.ok(wingmen.includes('triggerAbilityPilotPortrait'), 'abilities ativam retrato do piloto sobre a nave')
 assert.ok(!wingmen.includes('wingmanRadio.speakAbility'), 'wingmen não chama mais speakAbility')
 assert.ok(wingmen.includes('worldRadio.triggerAbilityGlow'), 'glow de ability permanece')
 console.log('wingman-radio-overhaul.test.mjs: OK')
