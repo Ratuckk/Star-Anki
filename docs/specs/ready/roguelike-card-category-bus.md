@@ -95,7 +95,7 @@ O renderer atual **deve ser removido de verdade**, não apenas escondido:
 - `updateCollectedCards(cardsMap)` continua sendo o ponto de entrada, mas passa a alimentar somente o novo componente;
 - não construir os barramentos "em cima" do tray antigo como camada extra.
 
-Critério de aceite: teste DOM de ausência do legado (§7, item 1) e `grep -rn "hud-cards-tray\|hud-card-chip" src/` com **zero** ocorrências ao final da implementação.
+Critério de aceite: teste DOM de ausência do legado (§7, item 1) e `grep -rn "hud-cards-tray\|hud-card-chip" src/ --exclude="*.test.mjs"` com **zero** ocorrências em código de produção ao final da implementação. O `grep` exclui `*.test.mjs` porque o próprio teste DOM referencia os seletores legados literalmente; o teste DOM é a autoridade sobre o renderer montado.
 
 ---
 
@@ -218,7 +218,7 @@ Documentos antigos descreviam o rádio como painel projetado em world-space abai
 
 Testes de renderer montado (DOM), **não substituíveis por `grep`** (o `grep` pode existir como proteção adicional):
 
-1. **Ausência do legado:** teste falha se `document.querySelector('.hud-cards-tray') !== null` ou `document.querySelector('.hud-card-chip') !== null`. Teste positivo: `document.querySelector('.hud-card-bus') !== null`. Proteção adicional: `grep -rn "hud-cards-tray\|hud-card-chip" src/` = 0.
+1. **Ausência do legado:** teste falha se `document.querySelector('.hud-cards-tray') !== null` ou `document.querySelector('.hud-card-chip') !== null`. Teste positivo: `document.querySelector('.hud-card-bus') !== null`. Proteção adicional (só código de produção, excluindo os testes que citam os seletores): `grep -rn "hud-cards-tray\|hud-card-chip" src/ --exclude="*.test.mjs"` = 0.
 2. **Nº de itens:** `.hud-card-bus-item` == nº de ids distintos com `count > 0`. Stack não multiplica elementos (A x7 + B x3 → 2 itens, não 10).
 3. **Atualização de stack:** `x3 → x4` mantém a **mesma** célula (identidade do nó), mesma ordem, muda só o contador/estado visual; os demais itens não são recriados nem mudam de posição.
 4. **Categoria:** `ofensivo → O`, `defensivo → D`, `utilitario → U`. Categoria desconhecida gera fallback/log observável, nunca reclassificação silenciosa em Ofensivo.
