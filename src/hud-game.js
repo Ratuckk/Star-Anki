@@ -8,6 +8,7 @@ import { LOW_HEALTH_THRESHOLD_FRAC } from './main-constants.js'
 import { getSettings } from './settings.js'
 import { createDamageNumbers } from './hud-damage.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
+import { FOX_SPEAKER } from './combat/radio-speakers.js'
 import { createHudSpeedlines } from './hud-speedlines.js'
 import { createCardBus } from './hud-card-bus.js'
 import { createArmamentWidget, computeFocoView, computeSwirlView } from './hud-armament.js'
@@ -154,7 +155,12 @@ export function createGameHud() {
   // mount, nunca mais têm o `src` tocado depois disso) empilhados atrás do retrato; "tocar o
   // flipbook" agora é só alternar QUAL já está visível (classe CSS), sem nenhuma rede/decode
   // envolvida no caminho crítico — instantâneo e confiável.
+  // Estrutura em 2 camadas: `.hud-wingman-radio` é a ÂNCORA fixa (left:50% + translateX(-50%),
+  // NUNCA animada); `.hud-wingman-radio-shell` é quem recebe glitch/flicker. Antes o keyframe de
+  // entrada redefinia `transform` na própria âncora e perdia o translateX(-50%) por ~260 ms
+  // (painel deslocado à direita no início de cada transmissão).
   const WINGMAN_RADIO_PANEL_MARKUP = `
+   <div class="hud-wingman-radio-shell">
     <div class="hud-wingman-radio-corner tl"></div>
     <div class="hud-wingman-radio-corner tr"></div>
     <div class="hud-wingman-radio-corner bl"></div>
@@ -167,6 +173,7 @@ export function createGameHud() {
       <div class="hud-wingman-radio-name"></div>
       <div class="hud-wingman-radio-line"></div>
     </div>
+   </div>
   `
   // Ability quote recebe uma camada exclusiva de speedlines. O painel trivial mantém o markup
   // original: o destaque visual pertence só à ativação de habilidade, nunca à conversa comum.
@@ -183,7 +190,7 @@ export function createGameHud() {
   // Pré-carrega os 4 retratos assim que o HUD monta — o `.wr-portrait.src` ainda É reatribuído a
   // cada mensagem (só troca 1x por fala, sem pressão de tempo), mas com cache já quente o
   // load é efetivamente instantâneo em vez de competir com o resto da rede na primeira fala.
-  for (const url of WINGMAN_RADIO_AVATARS) {
+  for (const url of [...WINGMAN_RADIO_AVATARS, FOX_SPEAKER.avatar]) {
     const preload = new Image()
     preload.src = url
   }
@@ -203,6 +210,7 @@ export function createGameHud() {
     let timers = []
     let playing = false
     let currentPilotId = null
+    let currentSpeakerId = null
 
     function clearTimers() {
       for (const t of timers) { if (t.type === 'interval') clearInterval(t.id); else clearTimeout(t.id) }
@@ -212,7 +220,7 @@ export function createGameHud() {
       for (const el of frameEls) el.classList.toggle('visible', el.dataset.frame === String(frameIdx))
       portraitEl.classList.remove('visible')
     }
-    function play({ pilotId, name, color, text }) {
+    function play({ pilotId = null, name, color, text, avatar = null, voiceCue = null, speakerId = null }) {
       playing = true
       currentPilotId = pilotId
       clearTimers()
@@ -229,17 +237,17 @@ export function createGameHud() {
       panelEl.classList.add('active', 'entering')
       // A abertura sonora pertence à transmissão em si, não ao comando [D]. Assim qualquer
       // quote — trivial ou de habilidade — sincroniza com os frames de estática do retrato.
-      triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId })
-      const voiceCue = [
-        WINGMAN_SOUND_CUES.pilot_voice_falco,
-        WINGMAN_SOUND_CUES.pilot_voice_peppy,
-        WINGMAN_SOUND_CUES.pilot_voice_slippy,
-        WINGMAN_SOUND_CUES.pilot_voice_miyu,
-      ][pilotId]
-      if (voiceCue) triggerSoundCue(voiceCue, { pilotId })
+      triggerSoundCue(WINGMAN_SOUND_CUES.radio_connect, { pilotId, speakerId })
+      // voz e retrato vêm do próprio falante do payload (Fox = jogador, sem pilotId); wingmen caem
+      // no índice do piloto só por compatibilidade.
+      const voiceKeys = ['pilot_voice_falco', 'pilot_voice_peppy', 'pilot_voice_slippy', 'pilot_voice_miyu']
+      const voiceCueDef = WINGMAN_SOUND_CUES[voiceCue || voiceKeys[pilotId]]
+      if (voiceCueDef) triggerSoundCue(voiceCueDef, { pilotId, speakerId })
       let frameIdx = 0
       setFrame(0)
-      const sprite = WINGMAN_RADIO_AVATARS[pilotId]
+      currentSpeakerId = speakerId
+      panelEl.dataset.speaker = speakerId || (pilotId != null ? `wingman-${pilotId}` : '')
+      const sprite = avatar || WINGMAN_RADIO_AVATARS[pilotId]
       if (sprite) portraitEl.src = sprite
       const staticIv = setInterval(() => {
         frameIdx += 1
@@ -1516,7 +1524,7 @@ export function createGameHud() {
   const enemyBarPool = new Map()
   const wingmanVitalPool = new Map()
   const lockMarkerPool = new Map()
-  const abilityWorldIconPool = new Map()
+  const abilityPortraitPool = new Map()
   let activeCountdownSec = null
   let activeWarningSec = null
 
@@ -2651,28 +2659,34 @@ export function createGameHud() {
     },
 
     // Fase 1.4: Ícones de habilidade projetados no mundo acima de cada nave de wingman
-    updateWingmanAbilityIcons(icons = []) {
+    updateWingmanAbilityPortraits(portraits = []) {
       const seenIds = new Set()
-      for (const item of icons) {
+      for (const item of portraits) {
         seenIds.add(item.id)
-        let el = abilityWorldIconPool.get(item.id)
+        let el = abilityPortraitPool.get(item.id)
         if (!el) {
           el = document.createElement('div')
-          el.className = 'hud-wingman-ability-world-icon'
+          el.className = 'hud-ability-pilot-portrait'
+          el.setAttribute('aria-hidden', 'true')
+          const img = document.createElement('img')
+          img.alt = ''
+          el.appendChild(img)
           root.appendChild(el)
-          abilityWorldIconPool.set(item.id, el)
+          abilityPortraitPool.set(item.id, el)
         }
-        el.textContent = item.icon
+        const portraitImg = el.firstChild
+        if (item.portrait && portraitImg.getAttribute('src') !== item.portrait) portraitImg.setAttribute('src', item.portrait)
+        el.dataset.pilotId = String(item.pilotId)
         el.style.setProperty('--pilot-color', item.color || '#38bdf8')
         el.style.left = `${(item.xFrac * 100).toFixed(2)}%`
         el.style.top = `${(item.yFrac * 100).toFixed(2)}%`
         el.style.transform = `translate(-50%, -50%) scale(${item.scale.toFixed(2)})`
         el.style.opacity = `${item.alpha.toFixed(2)}`
       }
-      for (const [id, el] of abilityWorldIconPool.entries()) {
+      for (const [id, el] of abilityPortraitPool.entries()) {
         if (!seenIds.has(id)) {
           el.remove()
-          abilityWorldIconPool.delete(id)
+          abilityPortraitPool.delete(id)
         }
       }
     },
@@ -2768,10 +2782,10 @@ export function createGameHud() {
       stormWarningTimeout = null
       stormWarning.classList.remove('active')
       wingmanRadioRegion.unmount()
-      for (const el of abilityWorldIconPool.values()) {
+      for (const el of abilityPortraitPool.values()) {
         el.remove()
       }
-      abilityWorldIconPool.clear()
+      abilityPortraitPool.clear()
       cancelTimeout(launchBannerHideTimeout)
       launchBannerHideTimeout = null
       for (const id of pendingTimeouts) clearTimeout(id)

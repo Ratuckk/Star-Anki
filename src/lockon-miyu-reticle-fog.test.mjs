@@ -178,12 +178,15 @@ const testFrame = {
 
   // Test 3.6: Disparo efetivo gera ZERO rádio e ativa ícone visual (Fase 1.1 e 1.5)
   const dummyTarget = { mesh: { position: new THREE.Vector3(0, 0, -40) }, radius: 2 }
+  const portraitsBefore = squadron.getActiveAbilityPortraits().filter(i => i.pilotId === 3).map(i => i.id)
   const shots = squadron.fireMiyuAssistShots([dummyTarget, dummyTarget])
   assert.equal(shots, 2, 'Dois disparos efetuados')
   const resFired = squadron.update(0.016, testFrame.position, testFrame)
   assert.equal(resFired.radioMessage, null, 'Disparo assistido da Miyu gera ZERO rádio')
-  const activeIcons = squadron.getActiveAbilityIcons()
-  assert.ok(activeIcons.some(i => i.pilotId === 3), 'Ícone visual de ability ativado sobre a nave da Miyu')
+  const activeIcons = squadron.getActiveAbilityPortraits()
+  const miyuPortraits = activeIcons.filter(i => i.pilotId === 3)
+  assert.deepEqual(miyuPortraits.map(i => i.id), portraitsBefore, 'a salva não reinicia/recria o retrato')
+  assert.ok(miyuPortraits.length <= 1, 'a salva de tiros nunca cria retrato: ele nasce só na ATIVAÇÃO da habilidade (edge trigger)')
 
   console.log('✔ Miyu Radio Timing & Cooldown Contracts passed')
 }

@@ -169,11 +169,11 @@ function makeSquad() {
 }
 
 {
-  console.log('Testing 5: FOCO com 4 wingmen gera zero rádio e não queima cooldowns...')
+  console.log('Testing 5: FOCO fala pelo Fox (ativação e READY), sem rajada e sem cooldown de piloto...')
   assert.equal(WINGMAN_PROFILES.length >= 4, true)
   for (const variant of [
     { name: 'sem upgrades', slippy: 0 },
-    { name: 'Slippy com morale (antigo ability_focus_upgrade)', slippy: 2 },
+    { name: 'Slippy com morale', slippy: 2 },
   ]) {
     const squad = makeSquad()
     squad.update(0.016, frame.position, frame, {})
@@ -185,20 +185,23 @@ function makeSquad() {
       if (ev.radioMessage) seen.push(ev.radioMessage)
       assert.equal('radioQueue' in ev, false, 'radioQueue deixou de existir')
     }
-    assert.equal(seen.length, 0, `${variant.name}: FOCO não gera nenhuma transmissão (${JSON.stringify(seen.map((m) => m.eventId))})`)
+    assert.equal(seen.length, 1, `${variant.name}: exatamente UMA transmissão (Fox), nunca rajada de 4 pilotos`)
+    const fox = seen[0]
+    assert.equal(fox.eventId, 'focus_activated')
+    assert.equal(fox.speakerId, 'fox')
+    assert.equal(fox.speakerType, 'player')
+    assert.equal(fox.name, 'Fox')
+    assert.equal(fox.pilotId, null, 'Fox não é wingman: nada de pilotId fantasma')
+    assert.equal(fox.avatar, 'assets/wingman-radio/fox.png')
+    assert.equal(fox.voiceCue, 'pilot_voice_fox')
+    assert.ok(!ABILITY_EVENT_IDS.has(fox.eventId))
 
-    // cooldowns intactos: logo depois do FOCO um evento trivial normal ainda fala
-    squad.triggerPlayerTookDamage()
-    const after = squad.update(0.016, frame.position, frame, {})
-    assert.ok(after.radioMessage, `${variant.name}: nenhum piloto teve o cooldown de fala consumido pelo FOCO`)
-    assert.equal(after.radioMessage.eventId, 'player_take_damage')
-    assert.ok(!ABILITY_EVENT_IDS.has(after.radioMessage.eventId))
-    assert.notEqual(after.radioMessage.eventId, 'focus_ready')
-
-    // desativar o FOCO também é silencioso
+    // desativar o FOCO manualmente é silencioso
     const off = squad.toggleCommand([], frame.position, variant.slippy)
     assert.equal(off.mode, 'free')
-    assert.equal(squad.update(0.016, frame.position, frame, {}).radioMessage, null)
+    const offSeen = []
+    for (let i = 0; i < 5; i++) { const ev = squad.update(0.016, frame.position, frame, {}); if (ev.radioMessage) offSeen.push(ev.radioMessage) }
+    assert.equal(offSeen.length, 0, 'cancelar o FOCO não fala')
   }
 }
 
@@ -211,7 +214,7 @@ function makeSquad() {
   const messages = []
   for (let i = 0; i < 200; i++) {
     const ev = squad.update(0.05, frame.position, frame, { homingCharging: true, homingHasLockedTarget: true, playerBoostStarted: i === 10 })
-    icons = Math.max(icons, squad.getActiveAbilityIcons().length)
+    icons = Math.max(icons, squad.getActiveAbilityPortraits().length)
     if (ev.radioMessage) messages.push(ev.radioMessage)
   }
   assert.ok(icons > 0, 'a ability aparece como ícone sobre o aliado')
@@ -246,7 +249,7 @@ function makeSquad() {
   const combatIndex = read('./combat/index.js')
 
   // (a) wingmen.js não escolhe linhas nem fala direto: só o dispatcher
-  for (const forbidden of ['getLine', 'markSpoken', 'pendingRadioMessages', 'speakAbility', 'radioQueue', 'isAbility', 'clearPilot', 'focus_ready', 'ability_focus_upgrade', 'focusResponse']) {
+  for (const forbidden of ['getLine', 'markSpoken', 'pendingRadioMessages', 'speakAbility', 'radioQueue', 'isAbility', 'clearPilot', 'ability_focus_upgrade', 'focusResponse']) {
     assert.ok(!wingmen.includes(forbidden), `wingmen.js não pode conter "${forbidden}"`)
   }
   for (const direct of ['wingmanRadio.trySpeak', 'wingmanRadio.forceSpeak', 'wingmanRadio.trySpeakAlone', 'wingmanRadio.takeDueResponse']) {
@@ -269,7 +272,7 @@ function makeSquad() {
 
   // (d) o feedback visual legítimo de ability permanece
   assert.ok(world.includes('triggerAbilityGlow') && wingmen.includes('worldRadio.triggerAbilityGlow'))
-  assert.ok(wingmen.includes('triggerAbilityWorldIcon'))
+  assert.ok(wingmen.includes('triggerAbilityPilotPortrait'))
 
   // (e) rádio continua fixo inferior-central (sem projeção a partir da nave)
   assert.ok(!loop.includes('updateRadioPosition') && !loop.includes('shipBelow'))

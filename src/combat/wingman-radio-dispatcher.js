@@ -10,6 +10,7 @@
 //  - no máximo UMA mensagem pendente; ela só é entregue por take();
 //  - urgente (`force`) ignora cooldown/dedupe do piloto, MAS NUNCA o gate global de 6 s; só
 //    substitui a pendente depois de a emissão urgente ter sido realmente aceita;
+//  - comando/status do jogador (Fox/FOCO) tem prioridade máxima: requestPlayerCommand (ver abaixo);
 //  - a resposta de Call & Response também é entregue por aqui (takeReply), e só se não houver
 //    pendente no mesmo instante.
 import { ABILITY_EVENT_IDS } from './wingman-radio.js'
@@ -18,6 +19,7 @@ import { aiValidator } from '../ai-validator.js'
 export function createRadioDispatcher({ radio, buildPayload, getActivePilotIds, now = () => performance.now() }) {
   let pending = null
   let lastAcceptedAt = -Infinity
+  let lastCommand = null
 
   // profile: perfil do piloto; eventId: id do evento de fala; opts.force: urgente (retreat /
   // state_critical); opts.alone: fala única "sozinho"; opts.meta: campos extras do payload.
@@ -54,6 +56,35 @@ export function createRadioDispatcher({ radio, buildPayload, getActivePilotIds, 
     return pending
   }
 
+  // COMANDO/STATUS do jogador (Fox — FOCO ativado / FOCO pronto). Prioridade MÁXIMA (1º: comando,
+  // 2º: urgente, 3º: chatter, 4º: Call & Response): substitui qualquer pendente e, no HUD, o painel
+  // único interrompe o chatter em exibição (mesmo controlador, nunca dois painéis). Não passa pelo
+  // gate de chatter nem consome cooldown de piloto; em compensação arma o gate global, então
+  // chatter/urgente/resposta só saem >= 6 s depois e nunca apagam a fala do Fox.
+  function requestPlayerCommand(speaker, eventId, text) {
+    if (!speaker || !text) return null
+    if (ABILITY_EVENT_IDS.has(eventId)) return null
+    const t = now()
+    // nunca duas transmissões do jogador coladas: mesma fala repetida em < 0,25 s é descartada
+    if (lastCommand && lastCommand.eventId === eventId && t - lastCommand.at < 250) return null
+    lastCommand = { eventId, at: t }
+    radio.markPlayerTransmission(t)
+    lastAcceptedAt = t
+    pending = {
+      pilotId: speaker.pilotId ?? null,
+      speakerId: speaker.speakerId,
+      speakerType: 'player',
+      name: speaker.name,
+      color: speaker.color,
+      avatar: speaker.avatar,
+      voiceCue: speaker.voiceCue,
+      text,
+      eventId,
+      priority: 'command',
+    }
+    return pending
+  }
+
   // Resposta de Call & Response vencida (o scheduler só a libera depois do gate global).
   function takeReply(eligibleResponderIds, buildReplyPayload) {
     if (pending) return null // nunca perde a resposta: só consulta quando o canal está livre
@@ -85,7 +116,8 @@ export function createRadioDispatcher({ radio, buildPayload, getActivePilotIds, 
   function clear() {
     pending = null
     lastAcceptedAt = -Infinity
+    lastCommand = null
   }
 
-  return { request, takeReply, take, cancelForPilot, clear, hasPending: () => pending !== null }
+  return { request, requestPlayerCommand, takeReply, take, cancelForPilot, clear, hasPending: () => pending !== null }
 }

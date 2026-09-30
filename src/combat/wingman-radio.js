@@ -675,6 +675,14 @@ export function createWingmanRadio({
     getGlobalGapMs() {
       return squadSilenceGapMs
     },
+    // Transmissão do JOGADOR (Fox: comando/status do FOCO) aceita fora do scheduler de chatter: ela
+    // arma o mesmo gate global (chatter espontâneo só volta depois de squadSilenceGapMs) e cancela
+    // uma resposta de Call & Response pendente, para nada sobrescrever a fala do Fox no painel.
+    markPlayerTransmission(now = performance.now()) {
+      lastGlobalTrivialSpokenAt = now
+      squadTrivialSilenceUntil = Math.max(squadTrivialSilenceUntil, now + TRIVIAL_TRANSMISSION_ESTIMATED_MS + squadSilenceGapMs)
+      conversations.cancelPendingResponse('player_command')
+    },
     getSquadTrivialSilenceUntil() {
       return squadTrivialSilenceUntil
     },

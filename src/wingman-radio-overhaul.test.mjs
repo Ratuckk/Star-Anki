@@ -45,7 +45,7 @@ assert.ok(!worldRadio.includes('assets/wingman-radio/fox.png'), 'world-radio nã
 const wingmen = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
 assert.ok(!wingmen.includes('showFoxFocus'), 'FOCO não cria mais painel acima da nave do jogador')
 assert.ok(!wingmen.includes('worldRadio.showWingman('), 'Wingmen não podem mais emitir quote acima da nave')
-assert.ok(wingmen.includes('triggerAbilityWorldIcon'), 'abilities ativam ícone no mundo sobre a nave')
+assert.ok(wingmen.includes('triggerAbilityPilotPortrait'), 'abilities ativam retrato do piloto sobre a nave')
 assert.ok(!wingmen.includes('wingmanRadio.speakAbility'), 'wingmen não chama mais speakAbility')
 assert.ok(wingmen.includes('worldRadio.triggerAbilityGlow'), 'glow de ability permanece')
 console.log('wingman-radio-overhaul.test.mjs: OK')

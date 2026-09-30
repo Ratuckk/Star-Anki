@@ -682,9 +682,9 @@ export function createGameLoop(deps) {
       }
     }
 
-    // ============ ÍCONES DE HABILIDADE DOS ALIADOS (Fase 1.4: Acima da nave do aliado) ============
-    const activeIcons = combat.getActiveAbilityIcons?.() || []
-    if (hud.updateWingmanAbilityIcons) {
+    // ============ RETRATO DE HABILIDADE DOS ALIADOS (acima da nave do aliado; sem glifo, sem rádio) ============
+    const activeIcons = combat.getActiveAbilityPortraits?.() || []
+    if (hud.updateWingmanAbilityPortraits) {
       const projectedIcons = []
       for (const item of activeIcons) {
         const ndcI = _threatProj.copy(item.worldPos).project(camera)
@@ -696,13 +696,14 @@ export function createGameLoop(deps) {
           id: item.id,
           xFrac,
           yFrac,
-          icon: item.icon,
+          portrait: item.portrait,
+          pilotId: item.pilotId,
           color: item.color,
           scale: item.scale,
           alpha: item.alpha,
         })
       }
-      hud.updateWingmanAbilityIcons(projectedIcons)
+      hud.updateWingmanAbilityPortraits(projectedIcons)
     }
 
     // ============ NÚMEROS DE DANO FLUTUANTES ============
