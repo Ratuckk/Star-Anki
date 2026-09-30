@@ -36,9 +36,10 @@ for (const required of ['radio_connect', 'radio_disconnect', 'pilot_voice_falco'
 }
 const worldRadio = readFileSync(new URL('./combat/wingman-world-radio.js', import.meta.url), 'utf8')
 assert.match(worldRadio, /WINGMAN_ABILITY_GLOW_DURATION_S\s*=\s*1\.5/)
-assert.ok(worldRadio.includes("assets/wingman-radio/fox.png"))
+assert.ok(!worldRadio.includes('showFoxFocus') && !worldRadio.includes('followPlayer'), 'painel world-space do Fox no FOCO foi removido')
+assert.ok(!worldRadio.includes('assets/wingman-radio/fox.png'), 'world-radio não carrega mais o avatar do Fox')
 const wingmen = readFileSync(new URL('./combat/wingmen.js', import.meta.url), 'utf8')
-assert.ok(wingmen.includes('worldRadio.showFoxFocus'), 'Fox continua acima da nave do jogador')
+assert.ok(!wingmen.includes('showFoxFocus'), 'FOCO não cria mais painel acima da nave do jogador')
 assert.ok(!wingmen.includes('worldRadio.showWingman('), 'Wingmen não podem mais emitir quote acima da nave')
 assert.ok(wingmen.includes('triggerAbilityWorldIcon'), 'abilities ativam ícone no mundo sobre a nave')
 assert.ok(!wingmen.includes('wingmanRadio.speakAbility'), 'wingmen não chama mais speakAbility')

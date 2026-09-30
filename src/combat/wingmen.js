@@ -1200,13 +1200,9 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
       triggerSoundCue(WINGMAN_SOUND_CUES.command_focus_toggle, { targetCount: squadronFocusTargets.length, hasLocked: validLocked.length > 0 })
 
-      // Só Fox permanece in-world. Toda confirmação dos Wingmen volta ao rádio lateral, inclusive
-      // pilotos ocupados em Actions: responder ao comando não significa cancelar sua ação atual.
-      worldRadio.showFoxFocus(playerPos, {
-        text: validLocked.length > 0 ? 'All units, focus on my target!' : 'All units, focus fire!',
-        targetCount: squadronFocusTargets.length,
-        hasLocked: validLocked.length > 0,
-      })
+      // Nenhum painel in-world acima da nave: o widget FOCO da HUD é o feedback visual do comando.
+      // Toda confirmação dos Wingmen volta ao rádio lateral, inclusive pilotos ocupados em Actions:
+      // responder ao comando não significa cancelar sua ação atual.
       const focusResponders = activeWingmen.filter((w) => w.state !== 'retreating')
       let focusReplyCount = 0
       for (const w of focusResponders) {
@@ -1227,7 +1223,6 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
         { responders: focusResponders.map((w) => w.profile.id), focusReplyCount, targetCount: squadronFocusTargets.length },
       )
       aiValidator.logMechanic('wingman-radio', 'focus-broadcast-lateral', {
-        foxInWorld: true,
         responders: focusResponders.map((w) => w.profile.id),
         focusReplyCount,
         hasLocked: validLocked.length > 0,
@@ -1397,7 +1392,7 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
 
   function update(dt, playerPos, frame, opts = {}) {
     elapsed += dt
-    worldRadio.update(dt, playerPos, frame)
+    worldRadio.update(dt, frame)
     const boostActive = !!opts.boostActive
     const homingCharging = !!opts.homingCharging
     const homingHasLockedTarget = !!opts.homingHasLockedTarget

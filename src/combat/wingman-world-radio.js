@@ -9,8 +9,6 @@ const WINGMAN_AVATARS = Object.freeze({
   2: 'assets/wingman-radio/slippy.png',
   3: 'assets/wingman-radio/miyu.png',
 })
-const FOX_AVATAR = 'assets/wingman-radio/fox.png'
-const FOX_COLOR = '#5ec8ff'
 const PANEL_WIDTH = 640
 const PANEL_HEIGHT = 144
 
@@ -162,14 +160,13 @@ export function createWingmanWorldRadio(scene) {
     entry.texture.dispose()
   }
 
-  function showMessage({ targetMesh = null, followPlayer = false, name, text, color, avatarUrl, holdS = WINGMAN_WORLD_RADIO_HOLD_S }) {
+  function showMessage({ targetMesh = null, name, text, color, avatarUrl, holdS = WINGMAN_WORLD_RADIO_HOLD_S }) {
     if (!text) return null
     const visual = makePanelSprite({ name, text, color, avatarUrl })
     scene.add(visual.sprite)
     const entry = {
       ...visual,
       targetMesh,
-      followPlayer,
       life: holdS,
       maxLife: holdS,
     }
@@ -186,19 +183,6 @@ export function createWingmanWorldRadio(scene) {
       avatarUrl: WINGMAN_AVATARS[pilotId],
       holdS,
     })
-  }
-
-  function showFoxFocus(playerPos, { text = 'All units, focus fire!', targetCount = 0, hasLocked = false } = {}) {
-    const entry = showMessage({
-      followPlayer: true,
-      name: 'Fox',
-      text,
-      color: FOX_COLOR,
-      avatarUrl: FOX_AVATAR,
-      holdS: 2.25,
-    })
-    if (entry && playerPos) entry.sprite.position.copy(playerPos)
-    return { entry, targetCount, hasLocked }
   }
 
   function triggerAbilityGlow(targetMesh, color, durationS = WINGMAN_ABILITY_GLOW_DURATION_S) {
@@ -228,23 +212,20 @@ export function createWingmanWorldRadio(scene) {
     return entry
   }
 
-  function update(dt, playerPos, frame) {
+  function update(dt, frame) {
     const up = frame?.up
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const entry = messages[i]
       entry.life -= dt
-      if (entry.life <= 0 || (!entry.followPlayer && (!entry.targetMesh || !entry.targetMesh.parent))) {
+      if (entry.life <= 0 || !entry.targetMesh || !entry.targetMesh.parent) {
         disposeMessage(entry)
         messages.splice(i, 1)
         continue
       }
 
-      const anchor = entry.followPlayer ? playerPos : entry.targetMesh.position
-      if (anchor) {
-        entry.sprite.position.copy(anchor)
-        if (up) entry.sprite.position.addScaledVector(up, entry.followPlayer ? 3.4 : 3.0)
-        else entry.sprite.position.y += entry.followPlayer ? 3.4 : 3.0
-      }
+      entry.sprite.position.copy(entry.targetMesh.position)
+      if (up) entry.sprite.position.addScaledVector(up, 3.0)
+      else entry.sprite.position.y += 3.0
 
       const fadeWindow = 0.32
       entry.material.opacity = entry.life < fadeWindow ? Math.max(0, entry.life / fadeWindow) : 1
@@ -281,7 +262,6 @@ export function createWingmanWorldRadio(scene) {
 
   return {
     showWingman,
-    showFoxFocus,
     triggerAbilityGlow,
     update,
     clear,

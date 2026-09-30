@@ -15,6 +15,9 @@
 
 ---
 
+## 0.1 HUD — FOCO / SWIRL Display de Armamento (implementado; validação visual pendente)
+- Opção B do protótipo `foco-swirl-v2`: [`docs/specs/active/focus-swirl-armament-display.md`](../specs/active/focus-swirl-armament-display.md). Código: `src/hud-armament.js`. Feedback antigo do comando acima da nave (`hud-squadron-notice`, `worldRadio.showFoxFocus`) removido; o widget FOCO é a fonte visual autoritativa. Pendências: validação visual do usuário; auditoria do scheduler/cooldown do rádio (`CLAUDE.md` §34.1) segue separada; `showWingman()` do world-radio é código morto candidato a remoção.
+
 ## 0. HUD — BARRAMENTOS POR CATEGORIA (implementado; skin e validação visual pendentes)
 - **Barramentos por Categoria (cards roguelike):** layout O/D/U em [`docs/specs/active/roguelike-card-category-bus.md`](../specs/active/roguelike-card-category-bus.md). Implementado em `src/hud-card-bus.js` (integração em `hud-game.js`, CSS em `hud-styles.js`, token `--hud-classic-vitals-top`); renderer legado `.hud-cards-tray`/`.hud-card-chip` removido. Testes: `src/hud-card-bus.test.mjs` (CI) e `tools/validate-card-bus.mjs` (Chromium, fora da CI). Skin escolhida: Tático / Militar (aplicada). Pendente: aprovação visual do usuário. Rádio = HUD fixa inferior-central (não segue a nave).
 

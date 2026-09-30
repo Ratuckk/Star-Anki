@@ -512,21 +512,9 @@ export function createGameLoop(deps) {
     }
 
     if (!tumbleLocked && isActionPressed(bindings, inputState.pressed, 'squadronCommand')) {
-      const res = combat.toggleSquadronCommand(playerPos)
-      if (res && hud && hud.showSquadronNotice) {
-        const shipAbove = playerPos.clone().addScaledVector(noseFrame.up, 3.2)
-        const ndcAbove = shipAbove.project(camera)
-        const xFrac = THREE.MathUtils.clamp((ndcAbove.x + 1) / 2, 0.05, 0.95)
-        const yFrac = THREE.MathUtils.clamp((1 - ndcAbove.y) / 2, 0.05, 0.95)
-        hud.showSquadronNotice({
-          mode: res.mode,
-          targetCount: res.targetCount,
-          hasLocked: res.hasLocked,
-          remaining: res.remaining,
-          xFrac,
-          yFrac,
-        })
-      }
+      // O feedback visual do comando é o widget FOCO da coluna esquerda (hud.setSquadronCommandState,
+      // alimentado abaixo com o estado real do esquadrão). Nada de aviso acima da nave.
+      combat.toggleSquadronCommand(playerPos)
     }
 
     rail.setSpeedMultiplier(state.speedMultiplier * player.getBoostSpeedFactor())
@@ -795,15 +783,6 @@ export function createGameLoop(deps) {
       THREE.MathUtils.clamp((ndc.x + 1) / 2, 0, 1),
       THREE.MathUtils.clamp((1 - ndc.y) / 2, 0, 1),
     )
-
-    if (hud.updateSquadronNoticePosition) {
-      const shipAbove = playerPos.clone().addScaledVector(noseFrame.up, 3.2)
-      const ndcAbove = shipAbove.project(camera)
-      hud.updateSquadronNoticePosition(
-        THREE.MathUtils.clamp((ndcAbove.x + 1) / 2, 0.05, 0.95),
-        THREE.MathUtils.clamp((1 - ndcAbove.y) / 2, 0.05, 0.95),
-      )
-    }
 
     if (showEnemyHealthBars) {
       const bars = combat.getEnemySnapshots().map((s) => {
@@ -1225,7 +1204,7 @@ export function createGameLoop(deps) {
     hud.setLives(session.lives, player.getMaxLives())
     hud.setShield(player.getShieldValue(), player.getShieldMax(), player.getTemporaryShieldValue?.() || 0)
     // HUD orbital (settings.vitalsHudStyle): âncora dos arcos = projeção na tela da nave, mesmo
-    // padrão de setReticlePosition/updateSquadronNoticePosition abaixo. Clamp com margem generosa
+    // padrão de setReticlePosition abaixo. Clamp com margem generosa
     // porque o cluster se estende bem mais PRA CIMA da âncora do que pros lados/baixo (a
     // varredura vai de baixo-direita a cima-esquerda) — sem isso o leque cortaria no topo da tela
     // quando a nave sobe perto da borda. No-op no estilo clássico (setVitalsAnchor primeiro checa

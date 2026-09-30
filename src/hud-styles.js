@@ -378,140 +378,121 @@ export function injectHudExtraStyles() {
   gap: 4px;
 }
 
-/* ============ WIDGET DE COMANDO DO ESQUADRÃO [D] (Item 3 — QOL v0.76.0) ============ */
-.hud-squad-command-widget {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 2px 7px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1.5px solid #334155;
-  border-radius: 6px;
-  min-width: 62px;
-  height: 32px;
+/* ============ DISPLAY DE ARMAMENTO — FOCO [D] e SWIRL (Opção B aprovada) ============ */
+/* Caixa externa fixa 76×46 px (protótipo foco-swirl-v2). Estado por TEXTO + padrão do medidor +
+   direção do progresso, nunca só cor: READY = cheio sólido; ACTIVE = hachurado esvaziando;
+   COOLDOWN = listrado cinza enchendo. Sem glow permanente; só microanimações locais curtas. */
+.hud-armament {
+  --arm-c: #38bdf8;
+  position: relative;
+  flex: 0 0 76px;
+  width: 76px;
+  height: 46px;
   box-sizing: border-box;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 13px 1fr;
+  background: rgba(6, 10, 16, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  color: #e2e8f0;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   pointer-events: none;
-  transition: all 0.2s ease;
+  user-select: none;
 }
-.hud-squad-command-badge {
+.hud-armament--swirl { --arm-c: #2b8fff; }
+.hud-armament.is-active { --arm-c: #fbbf24; }
+.hud-armament.is-cooling { --arm-c: #7b8798; }
+.hud-arm-tag {
+  background: var(--arm-c);
+  color: #05070b;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
 }
-.hud-cmd-key {
-  background: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 3px;
-  padding: 0 3px;
-  font-size: 8px;
+.hud-arm-main {
+  padding: 4px 5px 5px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+.hud-arm-value {
+  font-size: 15px;
   font-weight: 800;
-  color: #38bdf8;
-  line-height: 1.2;
+  line-height: 1;
+  color: #fff;
+  white-space: nowrap;
 }
-.hud-cmd-label {
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-  text-transform: uppercase;
-}
-.hud-cmd-meter {
-  width: 100%;
-  height: 3px;
-  background: rgba(30, 41, 59, 0.9);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 1px;
-}
-.hud-cmd-meter-fill {
-  height: 100%;
-  width: 100%;
-  border-radius: 2px;
-  transition: width 0.1s linear, background-color 0.2s ease;
-}
-.hud-cmd-timer {
+.hud-armament.is-ready .hud-arm-value { font-size: 11px; color: var(--arm-c); }
+.hud-arm-sub {
   font-size: 7.5px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  line-height: 1;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+  white-space: nowrap;
+  margin-top: 3px;
 }
-
-/* Modificadores de Estado */
-.hud-squad-command-widget.ready {
-  border-color: rgba(56, 189, 248, 0.5);
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.2);
+.hud-arm-gauge {
+  position: relative;
+  height: 7px;
+  border: 1px solid #3a4658;
+  background: #0a0f18;
 }
-.hud-squad-command-widget.ready .hud-cmd-key {
-  color: #38bdf8;
-  border-color: #0284c7;
-  box-shadow: 0 0 4px rgba(56, 189, 248, 0.5);
+.hud-arm-gauge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), #05070b calc(25% - 1px) 25%);
 }
-.hud-squad-command-widget.ready .hud-cmd-label { color: #38bdf8; }
-.hud-squad-command-widget.ready .hud-cmd-meter-fill {
-  background: #38bdf8;
-  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+.hud-arm-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: var(--arm-c);
+  transition: width 0.1s linear;
 }
-.hud-squad-command-widget.ready .hud-cmd-timer { color: #38bdf8; }
-
-.hud-squad-command-widget.active {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.18);
-  animation: squad-cmd-active-pulse 1s infinite alternate;
+.hud-armament.is-active .hud-arm-gauge { border-color: var(--arm-c); }
+.hud-armament.is-active .hud-arm-fill {
+  background: repeating-linear-gradient(135deg, var(--arm-c) 0 3px, color-mix(in srgb, var(--arm-c) 45%, #05070b) 3px 5px);
 }
-@keyframes squad-cmd-active-pulse {
-  from { box-shadow: 0 0 6px rgba(245, 158, 11, 0.3); }
-  to   { box-shadow: 0 0 14px rgba(245, 158, 11, 0.7); }
+.hud-armament.is-cooling .hud-arm-fill {
+  background: repeating-linear-gradient(90deg, #7b8798 0 3px, #4b5566 3px 4px);
 }
-.hud-squad-command-widget.active .hud-cmd-key {
-  color: #fff;
-  background: #d97706;
-  border-color: #f59e0b;
+.hud-arm-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 2px;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
 }
-.hud-squad-command-widget.active .hud-cmd-label {
-  color: #fbbf24;
-  font-weight: 900;
+.hud-armament.is-igniting { animation: hud-arm-flash 220ms ease-out; }
+.hud-armament.is-igniting .hud-arm-sweep { animation: hud-arm-sweep 260ms ease-out; }
+.hud-armament.is-firing { animation: hud-arm-flash 200ms ease-out; }
+.hud-armament.is-firing .hud-arm-fill { transition: width 0.22s cubic-bezier(0.5, 0, 1, 0.6); }
+.hud-armament.is-ready-flash { animation: hud-arm-flash 260ms ease-out; }
+@keyframes hud-arm-flash {
+  0%   { filter: brightness(2); }
+  100% { filter: none; }
 }
-.hud-squad-command-widget.active .hud-cmd-meter-fill {
-  background: #fbbf24;
-  box-shadow: 0 0 8px #fbbf24;
+@keyframes hud-arm-sweep {
+  0%   { left: -4px; opacity: 0.9; }
+  100% { left: 78px; opacity: 0; }
 }
-.hud-squad-command-widget.active .hud-cmd-timer {
-  color: #fbbf24;
-  font-size: 8px;
-  font-weight: 900;
+@media (prefers-reduced-motion: reduce) {
+  .hud-armament,
+  .hud-armament .hud-arm-sweep,
+  .hud-armament .hud-arm-fill { animation: none !important; transition: none !important; }
 }
-
-.hud-squad-command-widget.cooling {
-  border-color: #1e293b;
-  opacity: 0.85;
-}
-.hud-squad-command-widget.cooling .hud-cmd-key { color: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-label { color: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-meter-fill { background: #64748b; }
-.hud-squad-command-widget.cooling .hud-cmd-timer { color: #94a3b8; }
-
-/* Variante do Swirl Blast — mesma estrutura do widget de FOCO acima, só troca o azul-ciano
-   (#38bdf8) pelo azul do próprio Swirl Blast (0x2b8fff em combat/projectiles.js) no estado
-   "ready", pra não ler como o mesmo botão. Estado "cooling" fica igual (cinza neutro). */
-.hud-swirl-widget.ready {
-  border-color: rgba(43, 143, 255, 0.5);
-  box-shadow: 0 0 6px rgba(43, 143, 255, 0.2);
-}
-.hud-swirl-widget.ready .hud-cmd-key {
-  color: #5fa8ff;
-  border-color: #2b6fd6;
-  box-shadow: 0 0 4px rgba(43, 143, 255, 0.5);
-}
-.hud-swirl-widget.ready .hud-cmd-label { color: #5fa8ff; }
-.hud-swirl-widget.ready .hud-cmd-meter-fill {
-  background: #2b8fff;
-  box-shadow: 0 0 6px rgba(43, 143, 255, 0.6);
-}
-.hud-swirl-widget.ready .hud-cmd-timer { color: #5fa8ff; }
 
 /* ============ CADEIA DE ABATES — "Arcade Neon" (v0.73.0) ============ */
 /* terceiro filho de .hud-topbar-row, ao lado do placar e dos emblemas de habilidade — evita
@@ -2030,64 +2011,6 @@ export function injectHudExtraStyles() {
   font-size: 0.85rem;
   letter-spacing: 0.12em;
   text-shadow: 0 0 8px rgba(255, 100, 100, 0.7);
-}
-
-/* ============ NOTIFICAÇÃO DE COMANDO DO ESQUADRÃO (TECLA D) ============ */
-.hud-squadron-notice {
-  position: absolute;
-  transform: translate(-50%, -100%) scale(0.85);
-  pointer-events: none;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  opacity: 0;
-  transition: opacity 140ms ease-out, transform 160ms cubic-bezier(0.18, 0.9, 0.3, 1.2);
-  will-change: transform, opacity, left, top;
-}
-.hud-squadron-notice.active {
-  opacity: 1;
-  transform: translate(-50%, -100%) scale(1);
-}
-.hud-squadron-notice-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(10, 15, 28, 0.88);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(56, 189, 248, 0.6);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35), 0 4px 12px rgba(0, 0, 0, 0.6);
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-weight: 800;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: #e0f2fe;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.hud-squadron-notice.focus .hud-squadron-notice-pill {
-  border-color: rgba(239, 68, 68, 0.85);
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6);
-  color: #fecaca;
-}
-.hud-squadron-notice.cooldown .hud-squadron-notice-pill {
-  border-color: rgba(148, 163, 184, 0.7);
-  box-shadow: 0 0 14px rgba(148, 163, 184, 0.3), 0 4px 12px rgba(0, 0, 0, 0.6);
-  color: #cbd5e1;
-}
-.hud-squadron-notice-icon {
-  font-size: 14px;
-}
-.hud-squadron-notice-sub {
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  letter-spacing: 0.03em;
 }
 
 /* ============ RÁDIO DOS ALIADOS — HUD fixa, inferior-central (não segue a nave) ============ */

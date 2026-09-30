@@ -68,6 +68,7 @@ jobs:
           node src/playtest-polish.test.mjs
           node src/lockon-miyu-reticle-fog.test.mjs
           node src/hud-card-bus.test.mjs
+          node src/hud-armament.test.mjs
 
       - name: Run Comprehensive Selftest
         run: |

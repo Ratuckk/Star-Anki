@@ -260,6 +260,7 @@ node src/arcade-draft-bullet-time.test.mjs
 node src/playtest-polish.test.mjs
 node src/lockon-miyu-reticle-fog.test.mjs
 node src/hud-card-bus.test.mjs
+node src/hud-armament.test.mjs
 node src/selftest.mjs
 node tools/state-fuzz-audit.mjs
 node tools/wingman-runtime-fuzz-audit.mjs
@@ -412,6 +413,14 @@ O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` 
 Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
 Estado: estrutura/layout/renderer **implementados** em `src/hud-card-bus.js` (renderer legado removido; testes `src/hud-card-bus.test.mjs` e `tools/validate-card-bus.mjs`). Skin escolhida pelo usuário: **Tático / Militar** (aplicada). Ainda pendente: validação visual pelo usuário. Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
+
+---
+
+## 9.6 FOCO / SWIRL — Display de Armamento (Opção B, decisão fechada)
+
+FOCO [D] e SWIRL usam o **Display de Armamento**: caixa 76×46 px, etiqueta vertical, tempo grande, label pequena e medidor contínuo de 4 marcas (READY sólido cheio; ACTIVE hachurado esvaziando; COOLDOWN cinza listrado enchendo). Spec: [`docs/specs/active/focus-swirl-armament-display.md`](docs/specs/active/focus-swirl-armament-display.md). Implementado em `src/hud-armament.js`; estado 100% vindo do runtime real (nada de 6 s/10 s hardcoded; o total do SWIRL é o efetivo do player). Posição e zona `.hud-left-actions` são contrato; CADEIA não foi redesenhada. Pendente: validação visual do usuário.
+
+**O widget FOCO é a fonte visual autoritativa do comando.** O feedback antigo acima da nave (`hud-squadron-notice` e `worldRadio.showFoxFocus`) foi REMOVIDO e não pode voltar: ao acionar FOCO não existe painel, pill, retrato ou sprite world-space seguindo o jogador (teste: `src/hud-armament.test.mjs`).
 
 ---
 
