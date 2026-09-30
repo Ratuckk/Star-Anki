@@ -648,7 +648,7 @@ export function injectHudExtraStyles() {
 .hud-vitals-cluster,
 .hud-left-vitals {
   position: absolute;
-  top: clamp(258px, 36.0vh, 370px);
+  top: var(--hud-classic-vitals-top, clamp(258px, 36.0vh, 370px));
   left: var(--hud-left-x);
   display: flex;
   flex-direction: column;
@@ -984,58 +984,123 @@ export function injectHudExtraStyles() {
   z-index: 18;
 }
 
-/* ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============ */
-.hud-cards-tray {
+/* ============ BARRAMENTOS POR CATEGORIA — CARDS ROGUELIKE ============ */
+/* Spec: docs/specs/ready/roguelike-card-category-bus.md. HUD fixa (screen-space), três rails O/D/U,
+   uma linha cada (sem wrap, sem scroll). Posição vertical vem do JS (clássico: medição do cluster de
+   vitais) ou do token --hud-classic-vitals-top (orbital). Skin final ainda pendente de escolha. */
+.hud-card-bus {
   position: absolute;
-  top: 136px;
-  left: 12px;
+  left: var(--hud-left-x);
+  width: clamp(220px, 22.5vw, 290px);
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-width: 250px;
-  z-index: 12;
+  flex-direction: column;
+  gap: 3px;
   pointer-events: none;
+  z-index: 22;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  filter: drop-shadow(0 1px 3px #000);
+  transition: opacity 0.35s ease;
 }
-#game-screen.game-paused .hud-cards-tray {
-  pointer-events: auto;
+.hud-card-bus[hidden],
+.hud-card-rail[hidden] {
+  display: none;
 }
-.hud-card-chip {
+.hud-card-rail {
+  --card-color: #3ea6ff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.hud-card-rail--offensive { --card-color: #ff4d6d; }
+.hud-card-rail--defensive { --card-color: #3ea6ff; }
+.hud-card-rail--utility   { --card-color: #ffd700; }
+.hud-card-rail-label {
+  flex: 0 0 12px;
+  font: 800 10px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  text-align: center;
+  color: var(--card-color);
+  text-shadow: 0 0 4px var(--card-color);
+}
+.hud-card-rail-items {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  overflow: visible;
+}
+.hud-card-bus-item {
   position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 700;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
   background: rgba(10, 16, 26, 0.88);
-  border: 1.5px solid var(--card-color, #3ea6ff);
-  box-shadow: 0 0 8px var(--card-glow, rgba(62, 166, 255, 0.25));
+  border: 1px solid var(--card-color);
   color: #fff;
   cursor: default;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
 }
-#game-screen.game-paused .hud-card-chip {
-  cursor: pointer;
-}
-#game-screen.game-paused .hud-card-chip:hover {
-  transform: translateY(-2px) scale(1.06);
-  box-shadow: 0 0 14px var(--card-color, #3ea6ff);
-  z-index: 55;
-}
-.hud-card-icon {
-  font-size: 0.85rem;
+.hud-card-bus-icon {
+  font-size: 13px;
   line-height: 1;
 }
-.hud-card-count {
+.hud-card-bus-stack {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: 10px;
   font-weight: 800;
+  line-height: 1;
   color: #f1f5f9;
+  white-space: nowrap;
 }
-.hud-card-tooltip {
-  display: none;
+/* densidade média (5–8 cartas no maior rail) */
+.hud-card-bus[data-density="medium"] .hud-card-bus-item {
+  gap: 1px;
+  padding: 0 3px;
+}
+.hud-card-bus[data-density="medium"] .hud-card-bus-icon { font-size: 10px; }
+.hud-card-bus[data-density="medium"] .hud-card-bus-stack { font-size: 8.5px; }
+/* densidade alta (9+ no maior rail): célula compacta em coluna, ícone sobre contador */
+.hud-card-bus[data-density="high"] .hud-card-bus-item {
+  flex: 1 1 0;
+  max-width: 24px;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+.hud-card-bus[data-density="high"] .hud-card-bus-icon { font-size: 10px; }
+.hud-card-bus[data-density="high"] .hud-card-bus-stack { font-size: 8px; }
+
+/* microanimações: nova carta = flash curto na célula; stack = só o contador */
+.hud-card-bus-item.is-new { animation: hud-card-bus-new 300ms ease-out; }
+@keyframes hud-card-bus-new {
+  0%   { filter: brightness(2.2); box-shadow: 0 0 10px var(--card-color); }
+  100% { filter: brightness(1); box-shadow: 0 0 0 transparent; }
+}
+.hud-card-bus-stack.is-bump { animation: hud-card-bus-bump 240ms ease-out; }
+@keyframes hud-card-bus-bump {
+  0%   { color: var(--card-color); text-shadow: 0 0 6px var(--card-color); }
+  100% { color: #f1f5f9; text-shadow: none; }
+}
+
+/* tooltip: somente em pausa (a HUD de gameplay nunca depende dele); hover não altera geometria */
+.hud-card-tooltip { display: none; }
+#game-screen.game-paused .hud-card-bus-item { pointer-events: auto; }
+#game-screen.game-paused .hud-card-bus-item { cursor: pointer; }
+#game-screen.game-paused .hud-card-bus-item:hover {
+  filter: brightness(1.35);
+  outline: 1px solid var(--card-color);
+  z-index: 55;
+}
+#game-screen.game-paused .hud-card-bus-item:hover .hud-card-tooltip {
+  display: block;
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
@@ -1044,50 +1109,16 @@ export function injectHudExtraStyles() {
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(8, 14, 24, 0.97);
-  border: 1px solid var(--card-color, #3ea6ff);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.85), 0 0 16px rgba(0, 140, 255, 0.3);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--card-color);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.85);
   z-index: 60;
   pointer-events: none;
   text-align: left;
+  white-space: normal;
 }
-#game-screen.game-paused .hud-card-chip:hover .hud-card-tooltip {
-  display: block;
-  animation: hud-card-tooltip-pop 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes hud-card-tooltip-pop {
-  0% { opacity: 0; transform: translateY(-4px) scale(0.96); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-.hud-card-tooltip-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  gap: 8px;
-}
-.hud-card-tooltip-title {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: #ffffff;
-}
-.hud-card-tooltip-cat {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #0b0f19;
-  background: var(--card-color, #3ea6ff);
-  flex-shrink: 0;
-}
-.hud-card-tooltip-body {
-  font-size: 0.78rem;
-  color: #cbd5e1;
-  line-height: 1.4;
-  margin-bottom: 6px;
-}
+.hud-card-tooltip-header { margin-bottom: 6px; }
+.hud-card-tooltip-title { font-weight: 700; font-size: 0.85rem; color: #ffffff; }
+.hud-card-tooltip-body { font-size: 0.78rem; color: #cbd5e1; line-height: 1.4; margin-bottom: 6px; }
 .hud-card-tooltip-stacks {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.72rem;
@@ -1729,6 +1760,7 @@ export function injectHudExtraStyles() {
 .cinematic-active .hud-topbar-row,
 .cinematic-active .hud-vitals-cluster,
 .cinematic-active .hud-vitals-orbital,
+.cinematic-active .hud-card-bus,
 .cinematic-active .hud-horizon,
 .cinematic-active .hud-question,
 .cinematic-active .hud-legend,
@@ -2331,6 +2363,9 @@ export function injectHudExtraStyles() {
 :root {
   --hud-left-x: clamp(18px, 3.2vw, 52px);
   --hud-left-stack-x: var(--hud-left-x);
+  /* Fonte única do slot dos vitais clássicos: os vitais clássicos e o barramento de cards no modo
+     orbital consomem este mesmo token. */
+  --hud-classic-vitals-top: clamp(258px, 36.0vh, 370px);
 }
 
 .hud-double-stack {

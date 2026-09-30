@@ -259,6 +259,7 @@ node src/wingman-radio-callresponse.test.mjs
 node src/arcade-draft-bullet-time.test.mjs
 node src/playtest-polish.test.mjs
 node src/lockon-miyu-reticle-fog.test.mjs
+node src/hud-card-bus.test.mjs
 node src/selftest.mjs
 node tools/state-fuzz-audit.mjs
 node tools/wingman-runtime-fuzz-audit.mjs
@@ -410,7 +411,7 @@ O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` 
 
 Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
-Ainda pendente: escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout). Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
+Estado: estrutura/layout/renderer **implementados** em `src/hud-card-bus.js` (renderer legado removido; testes `src/hud-card-bus.test.mjs` e `tools/validate-card-bus.mjs`). Ainda pendente: escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout) e validação visual pelo usuário. Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
 
 ---
 
@@ -1106,9 +1107,9 @@ Critério de aceite:
 
 Se rádio abrir junto, falhou.
 
-## 34.3 Tray/chips de cards atuais estão obsoletos
+## 34.3 Tray/chips de cards — renderer legado REMOVIDO
 
-`.hud-cards-tray` / `.hud-card-chip` são o renderer antigo e serão **substituídos** pelos Barramentos por Categoria (§9.5 e spec `docs/specs/ready/roguelike-card-category-bus.md`). Não investir em microajuste do tray atual e não construir os barramentos em cima dele.
+`.hud-cards-tray` / `.hud-card-chip` foram substituídos pelos Barramentos por Categoria (§9.5 e spec `docs/specs/ready/roguelike-card-category-bus.md`). Não reintroduzir o renderer antigo nem construir nada em cima dele; o teste `src/hud-card-bus.test.mjs` falha se ele voltar.
 
 ## 34.4 Visual de inimigos pode estar tecnicamente implementado sem estar aprovado
 

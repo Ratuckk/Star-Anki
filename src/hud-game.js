@@ -9,6 +9,7 @@ import { getSettings } from './settings.js'
 import { createDamageNumbers } from './hud-damage.js'
 import { WINGMAN_SOUND_CUES, triggerSoundCue } from './audio-cues.js'
 import { createHudSpeedlines } from './hud-speedlines.js'
+import { createCardBus } from './hud-card-bus.js'
 
 const CARD_MAP = new Map(ROGUELIKE_CARDS.map((c) => [c.id, c]))
 
@@ -731,26 +732,17 @@ export function createGameHud() {
     orbitalSvg.appendChild(orbitalLifePipsGroup)
   }
 
-  // ============ BANDEJA DE CARTAS ROGUELIKE (v0.53.4) ============
-  const cardsTray = document.createElement('div')
-  cardsTray.className = 'hud-cards-tray'
-  root.appendChild(cardsTray)
-  let prevCardsSignature = ''
-  // O tamanho da bandeja muda com a quantidade de cartas e com a largura de tela. Os quotes
-  // começam sempre depois dela, com dois canais bem separados; ResizeObserver cobre quebra de
-  // linha ao redimensionar a janela sem depender de nova carta adquirida.
-  function updateWingmanRadioAnchor() {
-    const cardsBottom = cardsTray.offsetTop + cardsTray.offsetHeight
-    const abilityTop = Math.max(172, cardsBottom + 24)
-    root.style.setProperty('--wingman-ability-top', `${abilityTop}px`)
-    // Os dois blocos cresceram 25%; preserva uma faixa livre entre diálogo e habilidade.
-    root.style.setProperty('--wingman-radio-top', `${abilityTop + 165}px`)
-  }
-  const radioTrayResizeObserver = typeof ResizeObserver !== 'undefined'
-    ? new ResizeObserver(updateWingmanRadioAnchor)
-    : null
-  radioTrayResizeObserver?.observe(cardsTray)
-  updateWingmanRadioAnchor()
+  // ============ BARRAMENTOS POR CATEGORIA (cards roguelike) ============
+  // Spec: docs/specs/ready/roguelike-card-category-bus.md. Substitui a antiga bandeja/chips.
+  // Clássico: abaixo do cluster de vitais (medido). Orbital: no slot fixo dos vitais clássicos.
+  const cardBus = createCardBus({
+    root,
+    catalog: ROGUELIKE_CARDS,
+    categoryColors: CARD_CATEGORY_COLOR,
+    mode: useOrbitalVitals ? 'orbital' : 'classic',
+    vitalsEl: useOrbitalVitals ? null : vitalsCluster,
+  })
+  cardBus.reposition()
 
   const question = document.createElement('p')
   question.className = 'hud-question'
@@ -2624,44 +2616,7 @@ export function createGameHud() {
     },
 
     updateCollectedCards(cardsMap) {
-      if (!cardsMap) {
-        cardsTray.innerHTML = ''
-        prevCardsSignature = ''
-        updateWingmanRadioAnchor()
-        return
-      }
-      const entries = Array.from(cardsMap.entries()).filter(([_, count]) => count > 0)
-      const sig = entries.map(([id, count]) => `${id}:${count}`).sort().join(';')
-      if (sig === prevCardsSignature) return
-      prevCardsSignature = sig
-
-      cardsTray.innerHTML = ''
-      for (const [id, count] of entries) {
-        const card = CARD_MAP.get(id)
-        if (!card) continue
-        const catColor = CARD_CATEGORY_COLOR[card.category] || '#3ea6ff'
-        const catLabel = CARD_CATEGORY_LABEL[card.category] || card.category
-
-        const chip = document.createElement('div')
-        chip.className = 'hud-card-chip'
-        chip.style.setProperty('--card-color', catColor)
-        chip.style.setProperty('--card-glow', `${catColor}44`)
-
-        chip.innerHTML = `
-          <span class="hud-card-icon">${card.icon || '📦'}</span>
-          <span class="hud-card-count">x${count}</span>
-          <div class="hud-card-tooltip">
-            <div class="hud-card-tooltip-header">
-              <span class="hud-card-tooltip-title">${card.label}</span>
-              <span class="hud-card-tooltip-cat">${catLabel}</span>
-            </div>
-            <div class="hud-card-tooltip-body">${card.description}</div>
-            <div class="hud-card-tooltip-stacks">Nível acumulado: x${count}</div>
-          </div>
-        `
-        cardsTray.appendChild(chip)
-      }
-      updateWingmanRadioAnchor()
+      cardBus.update(cardsMap)
     },
 
     // 4 slots fixos (ver criação de abilityHexEls acima) — states vem de combat.getAbilityStates(),
@@ -3001,9 +2956,7 @@ export function createGameHud() {
       // listener global de keydown daquela seção vazava pra depois do fim da partida
       pauseOverlay.hide()
       root.classList.remove('cinematic-active', 'game-paused')
-      cardsTray.innerHTML = ''
-      prevCardsSignature = ''
-      radioTrayResizeObserver?.disconnect()
+      cardBus.destroy()
       root.innerHTML = ''
     },
   }

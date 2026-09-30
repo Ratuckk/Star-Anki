@@ -1,6 +1,6 @@
 # Barramentos por Categoria — Overhaul dos Cards Roguelike
 
-> **Status:** `ready` — decisão visual/estrutural fechada pelo usuário; implementação **ainda não iniciada**.
+> **Status:** `ready` — estrutura, layout e renderer **implementados** (`src/hud-card-bus.js`; legado removido). **Pendente:** escolha da linguagem visual (skin) e validação visual pelo usuário. A skin atual é neutra/funcional, apenas base para o protótipo.
 > **Tipo:** especificação de implementação/layout (não é ADR: reversível e restrita ao HUD).
 > **Origem:** decisão do usuário produzida fora do GitHub (documento "STAR-ANKI_IMPLEMENTACAO_BARRAMENTOS"), registrada aqui para se tornar canônica.
 > **Autoridade:** esta spec substitui qualquer regra anterior sobre onde os cards roguelike ficam na HUD (inclusive as antigas seções 9.1/9.5/27/34.3 do `CLAUDE.md`, já atualizadas junto com esta spec).
