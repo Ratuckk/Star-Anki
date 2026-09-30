@@ -95,7 +95,82 @@ O renderer atual **deve ser removido de verdade**, não apenas escondido:
 - `updateCollectedCards(cardsMap)` continua sendo o ponto de entrada, mas passa a alimentar somente o novo componente;
 - não construir os barramentos "em cima" do tray antigo como camada extra.
 
-Critério de aceite: `grep -rn "hud-cards-tray\|hud-card-chip" src/` retorna **zero** ocorrências ao final da implementação.
+Critério de aceite: teste DOM de ausência do legado (§7, item 1) e `grep -rn "hud-cards-tray\|hud-card-chip" src/` com **zero** ocorrências ao final da implementação.
+
+---
+
+## 3.1 Estrutura DOM autoritativa (contrato)
+
+```text
+.hud-card-bus                                  ← raiz única, filha do root do HUD
+  .hud-card-rail.hud-card-rail--offensive      ← categoria "ofensivo"
+    .hud-card-rail-label                       ← texto "O"
+    .hud-card-rail-items
+      .hud-card-bus-item                       ← 1 por cardId distinto com count > 0
+        .hud-card-bus-icon
+        .hud-card-bus-stack                    ← "x{count}"; único nó atualizado quando o stack muda
+  .hud-card-rail.hud-card-rail--defensive      ← "defensivo" (label "D")
+  .hud-card-rail.hud-card-rail--utility        ← "utilitario" (label "U")
+```
+
+Regras:
+
+- `hud-cards-tray` e `hud-card-chip` **não são reaproveitados**, renomeados por alias, nem mantidos "por compatibilidade".
+- O renderer antigo **não fica escondido** (`display:none`, `hidden`, opacidade 0) nem criado e deixado vazio.
+- A cor da categoria vem de `CARD_CATEGORY_COLOR`; o rail expõe a cor via custom property (ex.: `--card-color`), não por classes de raridade.
+- `.hud-card-rail-items` é `display:flex; flex-wrap:nowrap; overflow:visible` — nunca `wrap`, nunca `overflow:auto|scroll`.
+- Rail sem cartas: `hidden` (não ocupa espaço) — o `.hud-card-bus` inteiro também fica `hidden` quando não há nenhuma carta.
+
+## 3.2 Algoritmo de `updateCollectedCards(cardsMap)`
+
+1. Ler o `Map<cardId, count>` (`null`/`undefined` → limpar os rails e a assinatura).
+2. Ignorar entradas com `count <= 0`.
+3. Resolver cada `cardId` em `CARD_MAP`; id sem definição é ignorado com log de debug (como hoje).
+4. Separar por `card.category` em ofensivo / defensivo / utilitário.
+5. Preservar a **ordem do catálogo** `ROGUELIKE_CARDS` dentro de cada grupo (não a ordem de inserção do Map, nem ordem por stack).
+6. Renderizar cada grupo no rail correspondente.
+7. **Categoria desconhecida não cai silenciosamente em Ofensivo.** Deve ser tratada como erro observável: `aiValidator.expect(...)` falho e/ou log de debug, sem ser exibida num rail errado. A decisão de fallback visual (ex.: não renderizar) deve estar coberta por teste.
+8. Manter a **otimização por assinatura** (`id:count` ordenado): sem mudança de assinatura, não toca no DOM.
+9. Quando só o `count` muda para um `cardId` que já existe: **reusar a mesma célula**, atualizar apenas `.hud-card-bus-stack` e disparar a microanimação do contador; a ordem e os demais itens não são recriados nem piscam. Recriar rails só quando o *conjunto* de ids muda.
+
+## 3.3 Ancoragem — vitais CLÁSSICOS
+
+Não usar `top` fixo chutado. A posição é **derivada da medição real** do cluster de vitais clássicos (`.hud-vitals-cluster.hud-left-vitals`):
+
+```text
+cardsBus.top = vitals.getBoundingClientRect().bottom (relativo ao root do HUD) + gap
+gap de referência: 8–12 px
+```
+
+## 3.4 Ancoragem — vitais ORBITAIS
+
+Existe uma **única fonte de verdade** para o slot dos vitais clássicos: um token/variável compartilhada, equivalente a `--hud-classic-vitals-top` (nome final livre, mas único). Vitais clássicos e barramento no modo orbital consomem **a mesma** variável. Os cards continuam screen-space e **jamais** usam a posição dos vitais orbitais (`.hud-vitals-orbital`) ou da nave.
+
+## 3.5 Recalcular posição: função e gatilhos
+
+- Conceito: `updateCardsBusPosition()` (nome livre) escolhe modo (clássico/orbital), lê a medição/token e escreve **uma** custom property/`top` no `.hud-card-bus`.
+- Gatilhos permitidos: montagem, troca de modo de vitais, mudança estrutural do cluster de vitais, resize da janela, mudança do conjunto de cartas (se afetar altura).
+- Usar `ResizeObserver` no root do HUD e/ou no cluster de vitais quando necessário.
+- **PROIBIDO recalcular a cada frame** (`tick`/`update` por frame): sem `getBoundingClientRect()` em hot loop.
+- Esta função **substitui** `updateWingmanRadioAnchor()`, que hoje deriva o topo de abilities da altura do tray. Nenhum layout de rádio/abilities pode continuar dependendo do tamanho dos cards.
+
+## 3.6 Ciclo de vida — `unmount()`
+
+`unmount()` do HUD deve limpar tudo que o sistema novo (e o legado removido) criou, sem órfãos:
+
+- `ResizeObserver`(s) → `disconnect()` (hoje `radioTrayResizeObserver`, ligado ao tray, deve sumir);
+- referências DOM (`cardsBus`, rails, mapa `cardId → elemento`);
+- timers/animações pendentes da microanimação (novo card / contador);
+- assinatura/cache (`prevCardsSignature` ou equivalente);
+- qualquer estado específico do tray antigo.
+
+Remontar o HUD depois de `unmount()` não pode duplicar listeners nem itens.
+
+## 3.7 Pointer events e hover
+
+- Durante gameplay: `pointer-events: none` no bus e descendentes.
+- Só em pausa (`#game-screen.game-paused`), e somente se o tooltip for mantido, liberar `pointer-events`.
+- Hover **nunca** altera geometria/layout (sem `transform: scale`, sem mudar `width/height/padding/margin`); só brightness/outline/glow.
 
 ---
 
@@ -134,18 +209,42 @@ Documentos antigos descreviam o rádio como painel projetado em world-space abai
 - **não segue a nave**;
 - rádio serve só para chatter trivial (gate global de ≥ 6 s);
 - **abilities de wingmen não usam rádio**: ativação = somente ícone brilhante acima da nave do aliado;
+- o feedback de ability é **edge-triggered** (transição inativo → ativo), não repetido por frame/salva;
 - os barramentos **nunca invadem** a região inferior-central do rádio, e o rádio **nunca move** os barramentos; o aparecimento de uma fala não pode fazer a HUD saltar.
 
 ---
 
-## 7. Validação obrigatória (na implementação)
+## 7. Testes e validação obrigatórios (na implementação)
 
-1. Testes de layout com `getBoundingClientRect()` e helper de interseção, para **ambos** os modos de vitais (clássicos/orbitais), em **1280×720, 1366×768, 1600×900, 1920×1080**.
-2. O bus não pode intersectar: Score/Stats, Recursos, FOCO/SWIRL/CADEIA, vitais clássicos (quando ativos), timer/nível, rádio inferior-central, região central de gameplay.
-3. Casos: 0, 1, 4, 8, 16, 24, 32 cartas e stress 14/11/7; stacks `x1…x12`; categorias vazias ocultas; sem `flex-wrap`/scroll; ordem estável; nenhuma duplicação de cartas; `grep` do renderer antigo = 0.
-4. Rodar suíte específica, regressões de HUD/selftest/audits e `git diff --check` (ver `CLAUDE.md` §6).
-5. Instrumentar com `aiValidator.expect(...)` invariantes mensuráveis (ex.: nº de células == nº de cartas com count > 0; nenhuma carta em rail errado).
-6. **Validação visual:** somente com screenshots/aprovação do usuário. Sem evidência visual, reportar `VALIDADO VISUALMENTE: NÃO — NÃO FOI POSSÍVEL VALIDAR VISUALMENTE.`
+Testes de renderer montado (DOM), **não substituíveis por `grep`** (o `grep` pode existir como proteção adicional):
+
+1. **Ausência do legado:** teste falha se `document.querySelector('.hud-cards-tray') !== null` ou `document.querySelector('.hud-card-chip') !== null`. Teste positivo: `document.querySelector('.hud-card-bus') !== null`. Proteção adicional: `grep -rn "hud-cards-tray\|hud-card-chip" src/` = 0.
+2. **Nº de itens:** `.hud-card-bus-item` == nº de ids distintos com `count > 0`. Stack não multiplica elementos (A x7 + B x3 → 2 itens, não 10).
+3. **Atualização de stack:** `x3 → x4` mantém a **mesma** célula (identidade do nó), mesma ordem, muda só o contador/estado visual; os demais itens não são recriados nem mudam de posição.
+4. **Categoria:** `ofensivo → O`, `defensivo → D`, `utilitario → U`. Categoria desconhecida gera fallback/log observável, nunca reclassificação silenciosa em Ofensivo.
+5. **Catálogo inteiro:** fixture/debug `Map` com **todas as 32 cartas** e stacks variados, incluindo dois dígitos: 32 itens distintos; 14 em O, 11 em D, 7 em U; sem overflow, sem wrap, sem scroll, sem overlap; stacks de 2 dígitos legíveis.
+6. **Layout:** `getBoundingClientRect()` + helper de interseção, em **ambos** os modos de vitais, em **1280×720, 1366×768, 1600×900, 1920×1080**. O bus não pode intersectar Score/Stats, Recursos, FOCO/SWIRL/CADEIA, vitais clássicos (quando ativos), timer/nível, rádio inferior-central nem a região central de gameplay.
+7. **Casos de densidade:** 0, 1, 4, 8, 16, 24, 32 cartas e stress 14/11/7; stacks `x1, x2, x3, x5, x9, x10, x12`; rails vazios ocultos; ordem estável; nenhuma duplicação.
+8. **Ciclo de vida:** após `unmount()` não restam observers, timers, referências nem nós; remontar não duplica itens.
+9. **Rádio:** com fala de rádio visível o bus não se move e o rádio não é deslocado pelo bus.
+10. Suíte específica + regressões de HUD/selftest/audits + `git diff --check` (ver `CLAUDE.md` §6).
+11. Instrumentar `aiValidator.expect(...)` para invariantes mensuráveis (nº de células == nº de cartas com count > 0; nenhuma carta em rail errado).
+12. **Validação visual:** somente com screenshots/aprovação do usuário. Sem evidência visual, reportar `VALIDADO VISUALMENTE: NÃO — NÃO FOI POSSÍVEL VALIDAR VISUALMENTE.`
+
+## 7.1 Ordem de implementação (obrigatória)
+
+1. Remover o renderer legado (criação do tray, `.hud-card-chip`, `updateWingmanRadioAnchor` acoplado ao tray, `radioTrayResizeObserver`).
+2. Remover o CSS legado em `src/hud-styles.js`.
+3. Criar `cardsBus` (DOM da §3.1).
+4. Reescrever `updateCollectedCards` (§3.2).
+5. Implementar ancoragem clássica/orbital (§3.3–3.5).
+6. Responsividade/densidade (§4.1).
+7. Teste com as 32 cartas.
+8. Teste com rádio.
+9. Teste DOM garantindo ausência do legado.
+10. Runtime no navegador e screenshots.
+
+Não avançar para polish visual (skins, glow, microanimações finas) enquanto o renderer antigo ainda existir.
 
 ---
 
