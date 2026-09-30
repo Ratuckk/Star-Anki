@@ -15,8 +15,16 @@
 
 ---
 
+## 0.3 CORREÇÃO INTEGRADA DE GAMEPLAY E FEEDBACK (2026-09-30; validação visual pendente)
+- **Decisões superseded em 2026-09-30 pela validação de gameplay do usuário:** “FOCO sem rádio” (agora o **Fox** fala em `focus_activated` e `focus_ready`) e “ability = ícone/glifo” (agora **retrato do piloto** sobre a nave). Detalhes: `CLAUDE.md` §10.4, §11, §34.1.
+- **Rádio deslocado à direita:** keyframe `hud-wingman-radio-glitch-in` redefinia `transform` na própria âncora (`left:50%` + `translateX(-50%)`), deslocando o painel até **75,2 px** por ~260 ms (medido em Chromium, 1280×720, no head `7326851`). Corrigido com âncora fixa + `.hud-wingman-radio-shell` animado; após a correção o erro máximo de `centerX` é 0,000 px em 1280×720/1366×768/1600×900/1920×1080 (Falco e Fox, entrada/hold/saída e transmissão imediata).
+- **Tank inerte:** estados `RECOVERING`/`DYING` inexistentes colidiam na chave `"undefined"` → o Tank se autodestruía depois do 1º ataque. Corrigido + guarda no motor de FSM + números do design restaurados. Ver `docs/design/enemies/tank.md`.
+- **Caças do Dourado “decorativos”:** rodízio de participantes e Pincer real. Ver `docs/specs/completed/overhaul-dourado-esquadrao.md` (nota de 2026-09-30).
+- Validators: `tools/validate-radio-runtime.mjs` (Chromium), `tools/validate-tank-runtime.mjs`, `tools/validate-golden-runtime.mjs` (headless Node); testes na CI: `radio-fox-priority`, `tank-runtime`, `golden-runtime`. Auditoria: `docs/audits/tank-golden-runtime-audit.md`.
+- **VALIDAÇÃO VISUAL: NÃO** — nada aqui foi avaliado visualmente; depende do playtest do usuário.
+
 ## 0.2 RÁDIO DOS WINGMEN — dispatcher único (implementado; playtest pendente)
-- Decisões da auditoria implementadas: FOCO sem rádio nem cooldown consumido; Call & Response com janela alinhada ao gate de 6 s; urgentes nunca furam o gate e só substituem pendente depois de aceitas; código morto removido (`radioQueue`, `isAbility`, linhas `ability_*`, painéis world-space). Código: `src/combat/wingman-radio-dispatcher.js`; teste na CI: `src/wingman-radio-dispatcher.test.mjs`. Ver `CLAUDE.md` §34.1.
+- Decisões da auditoria implementadas: Call & Response com janela alinhada ao gate de 6 s; urgentes nunca furam o gate e só substituem pendente depois de aceitas; código morto removido (`radioQueue`, `isAbility`, linhas `ability_*`, painéis world-space). (A decisão “FOCO sem rádio” foi **superseded em 2026-09-30**, ver 0.3.) Código: `src/combat/wingman-radio-dispatcher.js`; teste na CI: `src/wingman-radio-dispatcher.test.mjs`. Ver `CLAUDE.md` §34.1.
 
 ## 0.1 HUD — FOCO / SWIRL Display de Armamento (implementado; validação visual pendente)
 - Opção B do protótipo `foco-swirl-v2`: [`docs/specs/active/focus-swirl-armament-display.md`](../specs/active/focus-swirl-armament-display.md). Código: `src/hud-armament.js`. Feedback antigo do comando acima da nave (`hud-squadron-notice`, `worldRadio.showFoxFocus`) removido; o widget FOCO é a fonte visual autoritativa. Pendências: validação visual do usuário; auditoria do scheduler/cooldown do rádio (`CLAUDE.md` §34.1) segue separada; `showWingman()` do world-radio é código morto candidato a remoção.

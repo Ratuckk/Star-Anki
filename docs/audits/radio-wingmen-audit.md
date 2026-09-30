@@ -1,5 +1,7 @@
 # Auditoria do rádio dos wingmen — mapa de produtores de fala
 
+> **Nota de 2026-09-30:** a decisão “FOCO sem rádio” desta auditoria foi **superseded pela validação de gameplay do usuário** — o Fox fala na ativação e no retorno a READY do FOCO (`CLAUDE.md` §10.4); e “ability = ícone” virou retrato do piloto (§11). As demais decisões continuam válidas.
+>
 > **Tipo:** auditoria somente leitura (nenhum arquivo de produção foi alterado por ela). **Status: as 4 decisões foram aprovadas e implementadas** no dispatcher único (`src/combat/wingman-radio-dispatcher.js`, `CLAUDE.md` §34.1); este documento descreve o estado ANTERIOR à correção. A sonda `tools/radio-audit-probe.mjs` hoje verifica o estado pós-correção.
 > **Base auditada:** head `6485768` da PR #23 (`claude/relaxed-gates-3ulj5x`), que já removeu o painel world-space do Fox no Focus. Os números de linha abaixo são desse commit.
 > **Contrato de referência:** `CLAUDE.md` §10 e §34.1 (rádio = chatter trivial; gate global ≥ 6 s; sem bypass; abilities nunca usam rádio; Focus não pode gerar rajada; painel fixo inferior-central).

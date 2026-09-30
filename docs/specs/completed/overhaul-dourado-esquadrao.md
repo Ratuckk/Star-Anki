@@ -1,5 +1,8 @@
 # STAR-ANKI — OVERHAUL DO INIMIGO DOURADO E ESQUADRÃO DE CAÇAS
 
+> **Nota de 2026-09-30 (validação de runtime):** a instrumentação do esquadrão no sistema de inimigos real mostrou que as ordens escolhiam sempre os mesmos primeiros caças (`slice(0, cap)`) e que o Pincer não tinha flancos reais (os campos `flankOffset`/`elevationOffset` nunca eram lidos). Agora: rodízio por “agiu há mais tempo” e pontos de flanco ±22u à frente do jogador, com convergência simultânea. Evidência e causa raiz: [`docs/audits/tank-golden-runtime-audit.md`](../../audits/tank-golden-runtime-audit.md). Testes: `src/golden-runtime.test.mjs`, `tools/validate-golden-runtime.mjs`.
+
+
 > **Status:** CONCLUÍDO NA v0.99.36
 > **Data:** 2026-09-23
 > **Implementação:** `src/enemies/golden-squadron.js` e `src/enemies/golden.js`

@@ -2024,7 +2024,7 @@ export function injectHudExtraStyles() {
   transition: opacity 140ms ease-out;
   pointer-events: none;
   z-index: 45;
-  /* âncora: NUNCA recebe animation/transform além do translateX(-50%) de centralização */
+  /* âncora fixa: só a centralização (translateX(-50%)); efeitos de entrada/saída ficam no shell interno */
 }
 .hud-wingman-radio.active {
   opacity: 1;

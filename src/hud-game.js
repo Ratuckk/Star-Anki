@@ -175,14 +175,6 @@ export function createGameHud() {
     </div>
    </div>
   `
-  // Ability quote recebe uma camada exclusiva de speedlines. O painel trivial mantém o markup
-  // original: o destaque visual pertence só à ativação de habilidade, nunca à conversa comum.
-  const WINGMAN_ABILITY_PANEL_MARKUP = `
-    <div class="hud-wingman-ability-speedlines" aria-hidden="true">
-      <i></i><i></i><i></i><i></i><i></i>
-    </div>
-    ${WINGMAN_RADIO_PANEL_MARKUP}
-  `
   wingmanRadioPanel.innerHTML = WINGMAN_RADIO_PANEL_MARKUP
   root.appendChild(wingmanRadioPanel)
 
@@ -210,7 +202,6 @@ export function createGameHud() {
     let timers = []
     let playing = false
     let currentPilotId = null
-    let currentSpeakerId = null
 
     function clearTimers() {
       for (const t of timers) { if (t.type === 'interval') clearInterval(t.id); else clearTimeout(t.id) }
@@ -245,7 +236,6 @@ export function createGameHud() {
       if (voiceCueDef) triggerSoundCue(voiceCueDef, { pilotId, speakerId })
       let frameIdx = 0
       setFrame(0)
-      currentSpeakerId = speakerId
       panelEl.dataset.speaker = speakerId || (pilotId != null ? `wingman-${pilotId}` : '')
       const sprite = avatar || WINGMAN_RADIO_AVATARS[pilotId]
       if (sprite) portraitEl.src = sprite
