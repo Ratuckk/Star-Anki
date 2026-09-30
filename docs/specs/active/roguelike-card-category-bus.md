@@ -1,6 +1,6 @@
 # Barramentos por Categoria — Overhaul dos Cards Roguelike
 
-> **Status:** `ready` — estrutura, layout e renderer **implementados** (`src/hud-card-bus.js`; legado removido). **Pendente:** escolha da linguagem visual (skin) e validação visual pelo usuário. A skin atual é neutra/funcional, apenas base para o protótipo.
+> **Status:** `active` — em andamento: estrutura, layout e renderer **implementados** (`src/hud-card-bus.js`; legado removido). **Pendente:** escolha da linguagem visual (skin) e validação visual pelo usuário. A skin atual é neutra/funcional, apenas base para o protótipo.
 > **Tipo:** especificação de implementação/layout (não é ADR: reversível e restrita ao HUD).
 > **Origem:** decisão do usuário produzida fora do GitHub (documento "STAR-ANKI_IMPLEMENTACAO_BARRAMENTOS"), registrada aqui para se tornar canônica.
 > **Autoridade:** esta spec substitui qualquer regra anterior sobre onde os cards roguelike ficam na HUD (inclusive as antigas seções 9.1/9.5/27/34.3 do `CLAUDE.md`, já atualizadas junto com esta spec).
@@ -116,6 +116,7 @@ Critério de aceite: teste DOM de ausência do legado (§7, item 1) e `grep -rn 
 Regras:
 
 - `hud-cards-tray` e `hud-card-chip` **não são reaproveitados**, renomeados por alias, nem mantidos "por compatibilidade".
+- O tooltip (só em pausa) usa classes **do próprio bus**: `.hud-card-bus-tooltip`, `-header`, `-title`, `-body`, `-stacks`. As classes `.hud-card-tooltip*` do renderer antigo foram removidas e não podem voltar.
 - O renderer antigo **não fica escondido** (`display:none`, `hidden`, opacidade 0) nem criado e deixado vazio.
 - A cor da categoria vem de `CARD_CATEGORY_COLOR`; o rail expõe a cor via custom property (ex.: `--card-color`), não por classes de raridade.
 - `.hud-card-rail-items` é `display:flex; flex-wrap:nowrap; overflow:visible` — nunca `wrap`, nunca `overflow:auto|scroll`.
@@ -205,7 +206,7 @@ Remontar o HUD depois de `unmount()` não pode duplicar listeners nem itens.
 
 Documentos antigos descreviam o rádio como painel projetado em world-space abaixo da nave. **Isso está obsoleto.** A regra vigente:
 
-- rádio = **HUD fixa em screen-space**, região **inferior-central**, referência Star Fox;
+- rádio = **HUD fixa em screen-space**, região **inferior-central**, referência Star Fox (implementado: `.hud-wingman-radio` com `left:50%` e ancorado embaixo; a projeção `shipBelow`/`updateRadioPosition` foi removida do `game-loop.js`/`hud-game.js`);
 - **não segue a nave**;
 - rádio serve só para chatter trivial (gate global de ≥ 6 s);
 - **abilities de wingmen não usam rádio**: ativação = somente ícone brilhante acima da nave do aliado;
@@ -218,7 +219,7 @@ Documentos antigos descreviam o rádio como painel projetado em world-space abai
 
 Testes de renderer montado (DOM), **não substituíveis por `grep`** (o `grep` pode existir como proteção adicional):
 
-1. **Ausência do legado:** teste falha se `document.querySelector('.hud-cards-tray') !== null` ou `document.querySelector('.hud-card-chip') !== null`. Teste positivo: `document.querySelector('.hud-card-bus') !== null`. Proteção adicional (só código de produção, excluindo os testes que citam os seletores): `grep -rn "hud-cards-tray\|hud-card-chip" src/ --exclude="*.test.mjs"` = 0.
+1. **Ausência do legado (renderer e tooltip):** teste falha se `document.querySelector('.hud-cards-tray') !== null` ou `document.querySelector('.hud-card-chip') !== null`. Teste positivo: `document.querySelector('.hud-card-bus') !== null`. Proteção adicional (só código de produção, excluindo os testes que citam os seletores): `grep -rn "hud-cards-tray\|hud-card-chip" src/ --exclude="*.test.mjs"` = 0.
 2. **Nº de itens:** `.hud-card-bus-item` == nº de ids distintos com `count > 0`. Stack não multiplica elementos (A x7 + B x3 → 2 itens, não 10).
 3. **Atualização de stack:** `x3 → x4` mantém a **mesma** célula (identidade do nó), mesma ordem, muda só o contador/estado visual; os demais itens não são recriados nem mudam de posição.
 4. **Categoria:** `ofensivo → O`, `defensivo → D`, `utilitario → U`. Categoria desconhecida gera fallback/log observável, nunca reclassificação silenciosa em Ofensivo.

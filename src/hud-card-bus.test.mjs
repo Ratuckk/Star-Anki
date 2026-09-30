@@ -274,7 +274,7 @@ const railItems = (root, mod) => root.querySelector(`.hud-card-rail--${mod}`).qu
   const hudStyles = readFileSync(new URL('./hud-styles.js', import.meta.url), 'utf8')
   const busSrc = readFileSync(new URL('./hud-card-bus.js', import.meta.url), 'utf8')
   for (const [name, src] of [['hud-game', hudGame], ['hud-styles', hudStyles], ['hud-card-bus', busSrc]]) {
-    assert.ok(!/hud-cards-tray|hud-card-chip|hud-card-icon\b|hud-card-count\b/.test(src), `${name}: sem renderer legado`)
+    assert.ok(!/hud-cards-tray|hud-card-chip|hud-card-icon\b|hud-card-count\b|hud-card-tooltip/.test(src), `${name}: sem renderer legado`)
   }
   assert.ok(/createCardBus\(/.test(hudGame), 'hud-game monta o bus')
   assert.ok(/cardBus\.destroy\(\)/.test(hudGame), 'unmount destrói o bus')

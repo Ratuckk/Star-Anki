@@ -26,7 +26,7 @@ Este documento serve como índice canônico e centralizador de todas as pendênc
 - [ ] **Mira Direcional por Movimento:** Retículo adaptativo guiado por inércia e vetor de velocidade ([`docs/specs/ready/mira-direcional-por-movimento.md`](../specs/ready/mira-direcional-por-movimento.md)).
 - [ ] **Cutscene de Vida Perdida:** Transição dramática e recuperação sem quebra de fluxo ([`docs/specs/ready/cutscene-vida-perdida.md`](../specs/ready/cutscene-vida-perdida.md)).
 - [ ] **Boss Colmeia-Mãe:** Arena orgânica com enxames em espiral e pontos fracos expostos ([`docs/specs/ready/boss-colmeia-mae.md`](../specs/ready/boss-colmeia-mae.md)).
-- [ ] **Barramentos por Categoria (Cards Roguelike):** estrutura/layout/renderer implementados (tray/chips antigos removidos); pendente escolha da linguagem visual (skin) e validação visual do usuário ([`docs/specs/ready/roguelike-card-category-bus.md`](../specs/ready/roguelike-card-category-bus.md)).
+- [ ] **Barramentos por Categoria (Cards Roguelike):** estrutura/layout/renderer implementados (tray/chips antigos removidos); pendente escolha da linguagem visual (skin) e validação visual do usuário ([`docs/specs/active/roguelike-card-category-bus.md`](../specs/active/roguelike-card-category-bus.md)).
 - [ ] **Novos Obstáculos:** Detritos magnéticos, portais de gravidade e campos de asteroides reativos ([`docs/specs/ready/obstaculos-novos.md`](../specs/ready/obstaculos-novos.md)).
 
 ---

@@ -310,7 +310,7 @@ Baseline integrada antes deste arquivo:
 
 ## 9.1 Layout escolhido: Opção 4 — Coluna Esquerda Clássica (+ Barramentos de Cards)
 
-A direção aprovada pelo usuário é uma composição vertical no canto esquerdo. A posição dos cards roguelike foi definida pela decisão "Barramentos por Categoria" (spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md)) e **depende do modo de vitais**.
+A direção aprovada pelo usuário é uma composição vertical no canto esquerdo. A posição dos cards roguelike foi definida pela decisão "Barramentos por Categoria" (spec canônica: [`docs/specs/active/roguelike-card-category-bus.md`](docs/specs/active/roguelike-card-category-bus.md)) e **depende do modo de vitais**.
 
 **VITAIS CLÁSSICOS** — ordem obrigatória:
 
@@ -407,7 +407,7 @@ Nível fica no topo direito, abaixo/associado ao timer.
 
 O overhaul dos cards roguelike **foi decidido**: três rails `O / D / U` (ofensivo vermelho/rosa, defensivo azul, utilitário amarelo/dourado), uma linha por categoria, **sem wrap e sem scroll**, ordem estável, categoria vazia oculta, 1 célula + 1 contador por carta, suporte às 32 cartas atuais (stress 14/11/7) e stacks de dois dígitos.
 
-O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` e `.hud-card-chip` devem ser removidos (não escondidos), sem duplicação de cards. Spec canônica: [`docs/specs/ready/roguelike-card-category-bus.md`](docs/specs/ready/roguelike-card-category-bus.md).
+O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` e `.hud-card-chip` devem ser removidos (não escondidos), sem duplicação de cards. Spec canônica: [`docs/specs/active/roguelike-card-category-bus.md`](docs/specs/active/roguelike-card-category-bus.md).
 
 Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
@@ -1085,7 +1085,9 @@ Não remover atribuições de assets/portraits históricos sem verificar origem.
 
 # 34. PROBLEMAS CONHECIDOS QUE NÃO DEVEM SER “ESQUECIDOS”
 
-## 34.1 Rádio ainda precisa de correção arquitetural final
+## 34.1 Rádio — posicionamento corrigido; dispatcher único ainda a auditar
+
+O painel do rádio agora é fixo inferior-central (não é mais projetado a partir da nave). Continua pendente a auditoria de bypass do gate de fala descrita abaixo.
 
 Mesmo após o pacote integrado, o usuário relatou spam e ability radio ainda aparecendo.
 
@@ -1109,7 +1111,7 @@ Se rádio abrir junto, falhou.
 
 ## 34.3 Tray/chips de cards — renderer legado REMOVIDO
 
-`.hud-cards-tray` / `.hud-card-chip` foram substituídos pelos Barramentos por Categoria (§9.5 e spec `docs/specs/ready/roguelike-card-category-bus.md`). Não reintroduzir o renderer antigo nem construir nada em cima dele; o teste `src/hud-card-bus.test.mjs` falha se ele voltar.
+`.hud-cards-tray` / `.hud-card-chip` foram substituídos pelos Barramentos por Categoria (§9.5 e spec `docs/specs/active/roguelike-card-category-bus.md`). Não reintroduzir o renderer antigo nem construir nada em cima dele; o teste `src/hud-card-bus.test.mjs` falha se ele voltar.
 
 ## 34.4 Visual de inimigos pode estar tecnicamente implementado sem estar aprovado
 

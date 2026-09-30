@@ -1,5 +1,5 @@
 // Validação em navegador real dos Barramentos por Categoria (spec:
-// docs/specs/ready/roguelike-card-category-bus.md §7). NÃO roda na CI (precisa de Chromium).
+// docs/specs/active/roguelike-card-category-bus.md §7). NÃO roda na CI (precisa de Chromium).
 // Monta o HUD REAL (createGameHud) num harness, alimenta com catálogo/stress e mede
 // getBoundingClientRect() contra o restante da HUD, em 2 modos de vitais × 4 resoluções.
 //
@@ -197,6 +197,13 @@ for (const mode of MODES) {
         check(m.docScroll.every((x) => !x), `${tag} página com scroll`)
         for (const [n, r] of [['stats', m.stats], ['resources', m.resources], ['actions', m.actions], ['vitais clássicos', m.vitalsClassic], ['timer/nível', m.timerStack], ['rádio', m.radio]]) {
           if (r && r.width > 0) check(!overlaps(b, r), `${tag} bus sobrepõe ${n}: bus=${JSON.stringify(b)} ${n}=${JSON.stringify(r)}`)
+        }
+        // rádio real: HUD fixa inferior-central (não projetada a partir da nave)
+        if (m.radio && m.radio.width > 0) {
+          check(Math.abs((m.radio.left + m.radio.right) / 2 - m.vw / 2) <= 2, `${tag} rádio fora do centro horizontal (${(m.radio.left + m.radio.right) / 2} vs ${m.vw / 2})`)
+          check(m.radio.top >= m.vh * 0.6 && m.radio.bottom <= m.vh, `${tag} rádio fora da região inferior (${JSON.stringify(m.radio)})`)
+        } else {
+          check(false, `${tag} rádio sem retângulo medível`)
         }
         // centro reservado de gameplay: 30%–70% da largura; e alinhado à coluna esquerda (mesmo eixo X do Score)
         check(b.right <= m.vw * 0.30, `${tag} bus invade o centro (right=${b.right}, 30%=${m.vw * 0.30})`)

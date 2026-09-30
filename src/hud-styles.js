@@ -985,7 +985,7 @@ export function injectHudExtraStyles() {
 }
 
 /* ============ BARRAMENTOS POR CATEGORIA — CARDS ROGUELIKE ============ */
-/* Spec: docs/specs/ready/roguelike-card-category-bus.md. HUD fixa (screen-space), três rails O/D/U,
+/* Spec: docs/specs/active/roguelike-card-category-bus.md. HUD fixa (screen-space), três rails O/D/U,
    uma linha cada (sem wrap, sem scroll). Posição vertical vem do JS (clássico: medição do cluster de
    vitais) ou do token --hud-classic-vitals-top (orbital). Skin final ainda pendente de escolha. */
 .hud-card-bus {
@@ -1091,7 +1091,7 @@ export function injectHudExtraStyles() {
 }
 
 /* tooltip: somente em pausa (a HUD de gameplay nunca depende dele); hover não altera geometria */
-.hud-card-tooltip { display: none; }
+.hud-card-bus-tooltip { display: none; }
 #game-screen.game-paused .hud-card-bus-item { pointer-events: auto; }
 #game-screen.game-paused .hud-card-bus-item { cursor: pointer; }
 #game-screen.game-paused .hud-card-bus-item:hover {
@@ -1099,7 +1099,7 @@ export function injectHudExtraStyles() {
   outline: 1px solid var(--card-color);
   z-index: 55;
 }
-#game-screen.game-paused .hud-card-bus-item:hover .hud-card-tooltip {
+#game-screen.game-paused .hud-card-bus-item:hover .hud-card-bus-tooltip {
   display: block;
   position: absolute;
   top: calc(100% + 6px);
@@ -1116,10 +1116,10 @@ export function injectHudExtraStyles() {
   text-align: left;
   white-space: normal;
 }
-.hud-card-tooltip-header { margin-bottom: 6px; }
-.hud-card-tooltip-title { font-weight: 700; font-size: 0.85rem; color: #ffffff; }
-.hud-card-tooltip-body { font-size: 0.78rem; color: #cbd5e1; line-height: 1.4; margin-bottom: 6px; }
-.hud-card-tooltip-stacks {
+.hud-card-bus-tooltip-header { margin-bottom: 6px; }
+.hud-card-bus-tooltip-title { font-weight: 700; font-size: 0.85rem; color: #ffffff; }
+.hud-card-bus-tooltip-body { font-size: 0.78rem; color: #cbd5e1; line-height: 1.4; margin-bottom: 6px; }
+.hud-card-bus-tooltip-stacks {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.72rem;
   color: #94a3b8;
@@ -2082,13 +2082,13 @@ export function injectHudExtraStyles() {
   letter-spacing: 0.03em;
 }
 
-/* ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============ */
+/* ============ RÁDIO DOS ALIADOS — HUD fixa, inferior-central (não segue a nave) ============ */
 .hud-wingman-radio {
   position: absolute;
-  left: var(--wingman-radio-x, 50%);
-  top: var(--wingman-radio-y, 82%);
-  transform: translate(-50%, 0);
-  bottom: auto;
+  left: 50%;
+  bottom: clamp(24px, 6vh, 64px);
+  top: auto;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 15px;

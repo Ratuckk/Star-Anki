@@ -1,5 +1,5 @@
 // Barramentos por Categoria — HUD dos cards roguelike coletados.
-// Spec canônica: docs/specs/ready/roguelike-card-category-bus.md. Substitui por completo o renderer
+// Spec canônica: docs/specs/active/roguelike-card-category-bus.md. Substitui por completo o renderer
 // legado de bandeja/chips; nada daquele renderer é reaproveitado aqui.
 import { aiValidator } from './ai-validator.js'
 
@@ -94,23 +94,23 @@ export function createCardBus({
     el.appendChild(icon)
     el.appendChild(stackEl)
     el.appendChild(buildTooltip(card, count))
-    return { el, stackEl, count, tooltipStackEl: el.querySelector('.hud-card-tooltip-stacks') }
+    return { el, stackEl, count, tooltipStackEl: el.querySelector('.hud-card-bus-tooltip-stacks') }
   }
 
   // Tooltip só aparece em pausa (CSS); a HUD de gameplay nunca depende dele.
   function buildTooltip(card, count) {
     const tip = doc.createElement('div')
-    tip.className = 'hud-card-tooltip'
+    tip.className = 'hud-card-bus-tooltip'
     const header = doc.createElement('div')
-    header.className = 'hud-card-tooltip-header'
+    header.className = 'hud-card-bus-tooltip-header'
     const title = doc.createElement('span')
-    title.className = 'hud-card-tooltip-title'
+    title.className = 'hud-card-bus-tooltip-title'
     title.textContent = card.label
     const body = doc.createElement('div')
-    body.className = 'hud-card-tooltip-body'
+    body.className = 'hud-card-bus-tooltip-body'
     body.textContent = card.description || ''
     const stacks = doc.createElement('div')
-    stacks.className = 'hud-card-tooltip-stacks'
+    stacks.className = 'hud-card-bus-tooltip-stacks'
     stacks.textContent = `Nível acumulado: x${count}`
     header.appendChild(title)
     tip.appendChild(header)

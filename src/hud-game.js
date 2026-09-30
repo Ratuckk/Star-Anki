@@ -733,7 +733,7 @@ export function createGameHud() {
   }
 
   // ============ BARRAMENTOS POR CATEGORIA (cards roguelike) ============
-  // Spec: docs/specs/ready/roguelike-card-category-bus.md. Substitui a antiga bandeja/chips.
+  // Spec: docs/specs/active/roguelike-card-category-bus.md. Substitui a antiga bandeja/chips.
   // Clássico: abaixo do cluster de vitais (medido). Orbital: no slot fixo dos vitais clássicos.
   const cardBus = createCardBus({
     root,
@@ -2778,20 +2778,6 @@ export function createGameHud() {
       const trivialPayloads = payloads.filter((p) => p && !p.isAbility)
       if (trivialPayloads.length === 0) return
       wingmanRadioRegion.showQueue(trivialPayloads)
-    },
-
-    // Fase 1.3: Posicionamento 3D do rádio abaixo da nave do jogador
-    updateRadioPosition(xFrac, yFrac, isVisible = true) {
-      if (!wingmanRadioPanel) return
-      if (!isVisible) {
-        wingmanRadioPanel.style.display = 'none'
-        return
-      }
-      wingmanRadioPanel.style.display = ''
-      const safeX = Math.max(0.18, Math.min(0.82, xFrac))
-      const safeY = Math.max(0.55, Math.min(0.92, yFrac))
-      wingmanRadioPanel.style.setProperty('--wingman-radio-x', `${(safeX * 100).toFixed(1)}%`)
-      wingmanRadioPanel.style.setProperty('--wingman-radio-y', `${(safeY * 100).toFixed(1)}%`)
     },
 
     // Fase 1.4: Ícones de habilidade projetados no mundo acima de cada nave de wingman

@@ -16,7 +16,7 @@
 ---
 
 ## 0. HUD — BARRAMENTOS POR CATEGORIA (implementado; skin e validação visual pendentes)
-- **Barramentos por Categoria (cards roguelike):** layout O/D/U em [`docs/specs/ready/roguelike-card-category-bus.md`](../specs/ready/roguelike-card-category-bus.md). Implementado em `src/hud-card-bus.js` (integração em `hud-game.js`, CSS em `hud-styles.js`, token `--hud-classic-vitals-top`); renderer legado `.hud-cards-tray`/`.hud-card-chip` removido. Testes: `src/hud-card-bus.test.mjs` (CI) e `tools/validate-card-bus.mjs` (Chromium, fora da CI). Pendente: escolha da linguagem visual e aprovação visual do usuário. Rádio = HUD fixa inferior-central (não segue a nave).
+- **Barramentos por Categoria (cards roguelike):** layout O/D/U em [`docs/specs/active/roguelike-card-category-bus.md`](../specs/active/roguelike-card-category-bus.md). Implementado em `src/hud-card-bus.js` (integração em `hud-game.js`, CSS em `hud-styles.js`, token `--hud-classic-vitals-top`); renderer legado `.hud-cards-tray`/`.hud-card-chip` removido. Testes: `src/hud-card-bus.test.mjs` (CI) e `tools/validate-card-bus.mjs` (Chromium, fora da CI). Pendente: escolha da linguagem visual e aprovação visual do usuário. Rádio = HUD fixa inferior-central (não segue a nave).
 
 ## 1. IMPLEMENTADO RECENTEMENTE
 - **Hotfix Bloqueador de Runtime — ReferenceError THREE em setReticleCharge (PR #19):**

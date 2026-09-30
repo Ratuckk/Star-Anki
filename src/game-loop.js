@@ -684,15 +684,10 @@ export function createGameLoop(deps) {
       (events.goldenSpecialHit && events.goldenSpecialHitIsHoming)
     if (chargedKillHappened) state.hitShakeTimer = Math.max(state.hitShakeTimer, HOMING_KILL_SHAKE_MS)
 
-    // ============ RÁDIO DOS ALIADOS (Fase 1.3: Posicionado abaixo da nave do jogador) ============
+    // ============ RÁDIO DOS ALIADOS ============
+    // Painel de HUD FIXO em screen-space, região inferior-central (estilo Star Fox; posição no CSS
+    // .hud-wingman-radio). Não é projetado a partir da nave: não segue o jogador.
     if (getSettings().wingmanRadioEnabled) {
-      const shipBelow = playerPos.clone().addScaledVector(noseFrame.up, -2.8)
-      const ndcR = shipBelow.project(camera)
-      const radioVisible = ndcR.z >= -1 && ndcR.z <= 1
-      const xFrac = (ndcR.x + 1) / 2
-      const yFrac = (1 - ndcR.y) / 2
-      hud.updateRadioPosition?.(xFrac, yFrac, radioVisible)
-
       // radioQueue (rajada de "prontidão" do [D], vários pilotos em fila) tem prioridade sobre um
       // radioMessage avulso do mesmo frame — na prática nunca competem de verdade (o toggleCommand
       // não passa pelo mesmo laço que gera radioMessage), mas a ordem deixa a intenção explícita.
