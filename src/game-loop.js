@@ -676,12 +676,8 @@ export function createGameLoop(deps) {
     // Painel de HUD FIXO em screen-space, região inferior-central (estilo Star Fox; posição no CSS
     // .hud-wingman-radio). Não é projetado a partir da nave: não segue o jogador.
     if (getSettings().wingmanRadioEnabled) {
-      // radioQueue (rajada de "prontidão" do [D], vários pilotos em fila) tem prioridade sobre um
-      // radioMessage avulso do mesmo frame — na prática nunca competem de verdade (o toggleCommand
-      // não passa pelo mesmo laço que gera radioMessage), mas a ordem deixa a intenção explícita.
-      if (events.radioQueue && hud.showWingmanRadioQueue) {
-        hud.showWingmanRadioQueue(events.radioQueue)
-      } else if (events.radioMessage && hud.showWingmanRadio) {
+      // No máximo uma transmissão por frame, já filtrada pelo dispatcher único (gate global de 6 s).
+      if (events.radioMessage && hud.showWingmanRadio) {
         hud.showWingmanRadio(events.radioMessage)
       }
     }

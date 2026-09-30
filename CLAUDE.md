@@ -261,6 +261,7 @@ node src/playtest-polish.test.mjs
 node src/lockon-miyu-reticle-fog.test.mjs
 node src/hud-card-bus.test.mjs
 node src/hud-armament.test.mjs
+node src/wingman-radio-dispatcher.test.mjs
 node src/selftest.mjs
 node tools/state-fuzz-audit.mjs
 node tools/wingman-runtime-fuzz-audit.mjs
@@ -1094,21 +1095,18 @@ Não remover atribuições de assets/portraits históricos sem verificar origem.
 
 # 34. PROBLEMAS CONHECIDOS QUE NÃO DEVEM SER “ESQUECIDOS”
 
-## 34.1 Rádio — posicionamento corrigido; dispatcher único ainda a auditar
+## 34.1 Rádio — dispatcher único IMPLEMENTADO (validação de gameplay pendente)
 
-O painel do rádio agora é fixo inferior-central (não é mais projetado a partir da nave). Continua pendente a auditoria de bypass do gate de fala descrita abaixo.
+O painel do rádio é fixo inferior-central (não é projetado a partir da nave) e **toda fala passa pelo dispatcher único** `src/combat/wingman-radio-dispatcher.js` (auditoria: `docs/audits/radio-wingmen-audit.md`). Contrato, coberto por `src/wingman-radio-dispatcher.test.mjs` (esquadrão real, na CI):
 
-Mesmo após o pacote integrado, o usuário relatou spam e ability radio ainda aparecendo.
+- `wingmen.js` **não** escolhe linhas nem tem fila própria: o scheduler não exporta mais `getLine`, `markSpoken` nem `speakAbility`; qualquer produtor só chama `radioDispatcher.request(...)`. Reintroduzir esses acessos quebra o teste estático.
+- Gate global de **6 s absoluto**: vale também para `retreat` e `state_critical` (urgentes ignoram só cooldown/dedupe do piloto). Urgente só substitui a mensagem pendente depois de ser realmente aceita.
+- **FOCO nunca fala** e não consome cooldown de piloto algum; o widget FOCO é o feedback. `focus_ready` e `ability_focus_upgrade` não existem no rádio.
+- **Habilidade nunca usa rádio** (`ABILITY_EVENT_IDS` é recusado no dispatcher e no scheduler); feedback = ícone/brilho sobre o aliado (`triggerAbilityGlow`).
+- **Call & Response** permanece, com a janela alinhada ao gate (a resposta só vence depois dos 6 s; sem garantia se outro evento ocupar o canal).
+- Código morto removido: `radioQueue`/`showQueue`/`clearQueue`, ramo `isAbility`, linhas e respostas `ability_*`, painéis world-space de mensagem, `clearPilot?.()`.
 
-Auditoria recente encontrou caminhos como resposta de FOCO que podem buscar linha diretamente e enfileirar mensagens fora do gate normal.
-
-Portanto:
-
-- não presumir que `wingman-radio.js` estar correto significa sistema inteiro correto;
-- procurar bypass em `wingmen.js` e HUD;
-- consolidar emissão num dispatcher único;
-- ability nunca deve virar rádio;
-- rádio deve mudar para região inferior-central fixa.
+Ainda vale: qualquer nova fonte de fala nasce como `radioDispatcher.request`, nunca como `getLine`+`push`.
 
 ## 34.2 Ability icon existe, mas não basta se o rádio também aparece
 

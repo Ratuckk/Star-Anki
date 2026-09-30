@@ -49,7 +49,7 @@ check('Bug 4: markWingmanDown acontece na entrada do retreat', () => {
 
 check('Bug 5: retreat cancela rádio pendente do piloto', () => {
   assert.match(wingmen, /wingmanRadio\.cancelPendingResponse\?\.\('pilot-retreated'\)/)
-  assert.match(wingmen, /pendingRadioMessages\[i\]\?\.pilotId === w\.profile\.id/)
+  assert.match(wingmen, /radioDispatcher\.cancelForPilot\(w\.profile\.id\)/)
 })
 
 check('Bug 6: retreat limpa escudo auxiliar e cor crítica', () => {

@@ -111,7 +111,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
       lockon.getLockedEntities ? lockon.getLockedEntities() : [],
       playerPos,
       player.getSlippyMoraleStacks?.() || 0,
-      player.getPeppyAuxShieldStacks?.() || 0,
     ),
     getAbilityStates: () => squadron.getAbilityStates(),
     getSubAbilityStates: (cardStacks) => squadron.getSubAbilityStates(cardStacks),
@@ -425,7 +424,6 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
         focusFrenzyActivated,
         isFrenzyActive: focusFrenzyTimer > 0,
         radioMessage: wingmanResult.radioMessage || null,
-        radioQueue: wingmanResult.radioQueue || null,
       }
     },
 

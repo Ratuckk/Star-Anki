@@ -15,6 +15,9 @@
 
 ---
 
+## 0.2 RÁDIO DOS WINGMEN — dispatcher único (implementado; playtest pendente)
+- Decisões da auditoria implementadas: FOCO sem rádio nem cooldown consumido; Call & Response com janela alinhada ao gate de 6 s; urgentes nunca furam o gate e só substituem pendente depois de aceitas; código morto removido (`radioQueue`, `isAbility`, linhas `ability_*`, painéis world-space). Código: `src/combat/wingman-radio-dispatcher.js`; teste na CI: `src/wingman-radio-dispatcher.test.mjs`. Ver `CLAUDE.md` §34.1.
+
 ## 0.1 HUD — FOCO / SWIRL Display de Armamento (implementado; validação visual pendente)
 - Opção B do protótipo `foco-swirl-v2`: [`docs/specs/active/focus-swirl-armament-display.md`](../specs/active/focus-swirl-armament-display.md). Código: `src/hud-armament.js`. Feedback antigo do comando acima da nave (`hud-squadron-notice`, `worldRadio.showFoxFocus`) removido; o widget FOCO é a fonte visual autoritativa. Pendências: validação visual do usuário; auditoria do scheduler/cooldown do rádio (`CLAUDE.md` §34.1) segue separada; `showWingman()` do world-radio é código morto candidato a remoção.
 

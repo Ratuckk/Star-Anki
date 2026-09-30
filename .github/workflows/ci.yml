@@ -69,6 +69,7 @@ jobs:
           node src/lockon-miyu-reticle-fog.test.mjs
           node src/hud-card-bus.test.mjs
           node src/hud-armament.test.mjs
+          node src/wingman-radio-dispatcher.test.mjs
 
       - name: Run Comprehensive Selftest
         run: |

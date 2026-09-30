@@ -86,7 +86,7 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
   assert.ok(line0, 'Primeira fala trivial emitida')
 
   // Habilidade aos 2000ms: NUNCA usa rádio (retorna null)
-  const abilityLine = radio.speakAbility(1, 'ability_guard', 2000, { activePilotIds: [0, 1, 2, 3] })
+  const abilityLine = radio.trySpeak(1, 'ability_guard', 2000, { activePilotIds: [0, 1, 2, 3] })
   assert.strictEqual(abilityLine, null, 'Habilidade nunca emite fala de rádio')
 
   // Fala trivial durante a janela de silêncio DEVE continuar bloqueada
@@ -147,11 +147,11 @@ console.log('--- TEST: Rate Limit Global do Rádio do Esquadrão ---')
     }
     // Aos 20s e 40s há uma habilidade
     if (t === 20000) {
-      const text = radio.speakAbility(0, 'ability_ram', t, { activePilotIds: activePilots })
+      const text = radio.trySpeak(0, 'ability_ram', t, { activePilotIds: activePilots })
       if (text) emittedAbilities.push({ pilotId: 0, time: t, text })
     }
     if (t === 40000) {
-      const text = radio.speakAbility(1, 'ability_guard', t, { activePilotIds: activePilots })
+      const text = radio.trySpeak(1, 'ability_guard', t, { activePilotIds: activePilots })
       if (text) emittedAbilities.push({ pilotId: 1, time: t, text })
     }
   }

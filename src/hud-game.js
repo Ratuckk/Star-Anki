@@ -201,7 +201,6 @@ export function createGameHud() {
     // uma vez tanto ao reiniciar (nova fala chega enquanto a anterior ainda anima) quanto no
     // unmount().
     let timers = []
-    let queue = []
     let playing = false
     let currentPilotId = null
 
@@ -266,19 +265,12 @@ export function createGameHud() {
           panelEl.classList.remove('active', 'leaving')
           playing = false
           currentPilotId = null
-          // Fila (ex.: rajada de prontidão do foco) — encadeia a próxima fala automaticamente.
-          if (queue.length > 0) {
-            const next = queue.shift()
-            if (next && (!next.createdAt || (performance.now() - next.createdAt) < 4000)) {
-              play(next)
-            }
-          }
         }, leaveMs)
         timers.push({ type: 'timeout', id: removeId })
       }, WINGMAN_RADIO_HOLD_MS)
       timers.push({ type: 'timeout', id: leaveStartId })
     }
-    // Esconde na hora (fade-out rápido), sem encadear a fila — usado pela regra "não pode estar
+    // Esconde na hora (fade-out rápido) — usado pela regra "não pode estar
     // nas 2 regiões ao mesmo tempo pro mesmo piloto" (Documento de Implementação, item 2.1-2.3).
     function forceHide() {
       if (!playing) return
@@ -295,29 +287,15 @@ export function createGameHud() {
     }
     function show(payload) {
       clearTimers()
-      queue = []
       play(payload)
-    }
-    function clearQueue() {
-      queue = []
-    }
-    function showQueue(payloads) {
-      if (!payloads || payloads.length === 0) return
-      const now = performance.now()
-      const stamped = payloads.map((p) => ({ ...p, createdAt: p.createdAt || now }))
-      if (playing) { queue.push(...stamped); return }
-      const [first, ...rest] = stamped
-      queue = rest
-      play(first)
     }
     function unmount() {
       clearTimers()
       panelEl.classList.remove('active', 'entering', 'leaving')
       playing = false
       currentPilotId = null
-      queue = []
     }
-    return { show, showQueue, forceHide, clearQueue, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
+    return { show, forceHide, unmount, isPlaying: () => playing, currentPilotId: () => currentPilotId, getLeaveMs: () => leaveMs }
   }
 
   const wingmanRadioRegion = createWingmanRadioRegion(wingmanRadioPanel)
@@ -2668,15 +2646,8 @@ export function createGameHud() {
 
     // Rádio dos Aliados — Fase 1.1: somente trivial. Habilidade nunca usa rádio.
     showWingmanRadio(payload) {
-      if (!payload || payload.isAbility) return
+      if (!payload) return
       wingmanRadioRegion.show(payload)
-    },
-
-    showWingmanRadioQueue(payloads) {
-      if (!payloads || payloads.length === 0) return
-      const trivialPayloads = payloads.filter((p) => p && !p.isAbility)
-      if (trivialPayloads.length === 0) return
-      wingmanRadioRegion.showQueue(trivialPayloads)
     },
 
     // Fase 1.4: Ícones de habilidade projetados no mundo acima de cada nave de wingman

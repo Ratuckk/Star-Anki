@@ -4,118 +4,6 @@ export const CALL_RESPONSE_TTL_AFTER_DUE_MS = 2200
 export const CALL_RESPONSE_THREAD_COOLDOWN_MS = 10000
 
 const RESPONSE_LINES = Object.freeze({
-  "ability_ram": {
-    "1": [
-      "Falco, don't overcommit.",
-      "Keep an exit vector, Falco."
-    ],
-    "2": [
-      "Falco, that's way too close!",
-      "Try not to hit EVERYTHING!"
-    ],
-    "3": [
-      "Impact vector confirmed.",
-      "Aggressive. Effective."
-    ]
-  },
-  "ability_intercept": {
-    "1": [
-      "Good catch, Falco.",
-      "Threat cleared. Stay on the line."
-    ],
-    "2": [
-      "Whoa! Nice save, Falco!",
-      "That was way too close!"
-    ],
-    "3": [
-      "Projectile neutralized.",
-      "Intercept confirmed."
-    ]
-  },
-  "ability_guard": {
-    "0": [
-      "I've got the offense. Keep that shield up.",
-      "Good cover, Peppy."
-    ],
-    "2": [
-      "Nice cover, Peppy!",
-      "Okay, I'll stay behind you!"
-    ],
-    "3": [
-      "Defensive lane confirmed.",
-      "Guard pattern acknowledged."
-    ]
-  },
-  "ability_rescue": {
-    "0": [
-      "Get him out clean, Peppy.",
-      "I'll keep the heat off you."
-    ],
-    "2": [
-      "I've got the systems side!",
-      "Rescue lane looks clear!"
-    ],
-    "3": [
-      "Rescue corridor is clear.",
-      "Covering the extraction vector."
-    ]
-  },
-  "ability_aux_shield": {
-    "0": [
-      "I'll use the opening.",
-      "Keep that wall facing forward."
-    ],
-    "2": [
-      "Barrier looks solid!",
-      "I'll stay inside the cover!"
-    ],
-    "3": [
-      "Shield geometry confirmed.",
-      "Barrier coverage acknowledged."
-    ]
-  },
-  "ability_repair": {
-    "0": [
-      "Good timing, Slippy.",
-      "That patch better hold."
-    ],
-    "1": [
-      "Keep those repairs coming.",
-      "Good work, Slippy."
-    ],
-    "3": [
-      "Repair package acknowledged.",
-      "Integrity support confirmed."
-    ]
-  },
-  "ability_assist": {
-    "0": [
-      "Now that's a firing solution.",
-      "Keep those locks on me."
-    ],
-    "1": [
-      "Keep the link stable.",
-      "Targeting support received."
-    ],
-    "2": [
-      "Whoa, those locks are clean!",
-      "Miyu, that sync is awesome!"
-    ]
-  },
-  "ability_boombuster": {
-    "0": [
-      "Okay, that was flashy.",
-      "Not bad, Miyu."
-    ],
-    "1": [
-      "Good spread. Keep pressure.",
-      "Heavy strike confirmed."
-    ],
-    "2": [
-      "Whoa! That lit up everything!",
-      "Remind me not to stand in front of that!"
-    ]
-  },
   "state_critical": {
     "0": [
       "I see it. Get clear!",
@@ -248,7 +136,9 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
     return cancelWhere((thread) => thread.openerPilotId === pilotId || thread.responderPilotId === pilotId, reason) > 0
   }
 
-  function openFromEvent({ openerPilotId, triggerEventId, now, activePilotIds = [], force = false }) {
+  // minDeliveryDelayMs: atraso mínimo até a resposta poder vencer. O rádio passa o gate global (6 s):
+  // assim `dueAt` nunca cai antes de a resposta poder ser transmitida (antes ~2/3 morriam por TTL).
+  function openFromEvent({ openerPilotId, triggerEventId, now, activePilotIds = [], force = false, minDeliveryDelayMs = 0 }) {
     const byResponder = RESPONSE_LINES[triggerEventId]
     if (!byResponder) return null
 
@@ -269,7 +159,8 @@ export function createWingmanRadioConversationManager({ random = Math.random } =
     const text = pick(random, byResponder[responderPilotId])
     if (!text) return null
 
-    const delayMs = CALL_RESPONSE_DELAY_MIN_MS + random() * (CALL_RESPONSE_DELAY_MAX_MS - CALL_RESPONSE_DELAY_MIN_MS)
+    const delayMs = Math.max(CALL_RESPONSE_DELAY_MIN_MS, minDeliveryDelayMs) +
+      random() * (CALL_RESPONSE_DELAY_MAX_MS - CALL_RESPONSE_DELAY_MIN_MS)
     const thread = {
       threadId: 'wr-' + nextThreadId++,
       openerPilotId,

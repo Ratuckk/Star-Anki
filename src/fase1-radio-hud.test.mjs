@@ -82,8 +82,9 @@ function createMockRail() {
 
   for (const abilityId of ABILITY_EVENT_IDS) {
     for (const pilotId of [0, 1, 2, 3]) {
-      const result = radio.speakAbility(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] })
-      assert.strictEqual(result, null, `speakAbility(${pilotId}, ${abilityId}) deve retornar null`)
+      const result = radio.trySpeak(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] })
+      assert.strictEqual(result, null, `trySpeak(${pilotId}, ${abilityId}) deve retornar null`)
+      assert.strictEqual(radio.forceSpeak(pilotId, abilityId, 1000, { activePilotIds: [0, 1, 2, 3] }), null, `forceSpeak(${pilotId}, ${abilityId}) deve retornar null`)
     }
   }
 

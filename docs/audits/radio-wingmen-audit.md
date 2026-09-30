@@ -1,6 +1,6 @@
 # Auditoria do rádio dos wingmen — mapa de produtores de fala
 
-> **Tipo:** auditoria somente leitura (nenhum arquivo de produção foi alterado). Não há implementação nem plano aprovado ainda.
+> **Tipo:** auditoria somente leitura (nenhum arquivo de produção foi alterado por ela). **Status: as 4 decisões foram aprovadas e implementadas** no dispatcher único (`src/combat/wingman-radio-dispatcher.js`, `CLAUDE.md` §34.1); este documento descreve o estado ANTERIOR à correção. A sonda `tools/radio-audit-probe.mjs` hoje verifica o estado pós-correção.
 > **Base auditada:** head `6485768` da PR #23 (`claude/relaxed-gates-3ulj5x`), que já removeu o painel world-space do Fox no Focus. Os números de linha abaixo são desse commit.
 > **Contrato de referência:** `CLAUDE.md` §10 e §34.1 (rádio = chatter trivial; gate global ≥ 6 s; sem bypass; abilities nunca usam rádio; Focus não pode gerar rajada; painel fixo inferior-central).
 > **Evidência dinâmica:** `tools/radio-audit-probe.mjs` (esquadrão e scheduler reais; fora da CI; `node tools/radio-audit-probe.mjs`).
@@ -82,7 +82,7 @@ Ao acionar FOCO: nenhum painel acima da nave (já removido); no máximo **uma** 
 | Ramo `abilities.length > 0` da consolidação e o filtro `isAbility` no HUD | `wingmen.js:1560-1566`, `hud-game.js:2676,2682` | Só existem para tolerar o payload de ability do Focus (§3.1). Sem ele, nada é `isAbility`. |
 | `speakAbility()` | `wingman-radio.js` (retorna sempre `null`) | Só é chamado por testes. |
 | Linhas `ability_*` do catálogo (`LINES`): **60 linhas** (10/20/20/10 por piloto) | `wingman-radio.js` | `emit()` bloqueia qualquer ability; a única exceção é `getLine` no Focus, que também nunca aparece. Usadas só por estatísticas/testes de validação. |
-| `RESPONSE_LINES` de `ability_*` (7 chaves) | `wingman-radio-callresponse.js:7-118` | `openFromEvent` só é chamado por `emit`, que bloqueia ability antes. Nenhuma thread C&R de ability pode abrir. |
+| `RESPONSE_LINES` de `ability_*` (8 chaves) | `wingman-radio-callresponse.js:7-118` | `openFromEvent` só é chamado por `emit`, que bloqueia ability antes. Nenhuma thread C&R de ability pode abrir. |
 | `worldRadio.showWingman()` + painéis in-world (`makePanelSprite`, `WINGMAN_AVATARS`, `messages[]`, `showMessage`) | `wingman-world-radio.js` | Sem chamadores desde a migração para o rádio lateral (`wingman-radio-overhaul.test.mjs` até proíbe). Só `triggerAbilityGlow`/`update`/`clear` são usados. |
 | `worldRadio.clearPilot?.(…)` | `wingmen.js:991, 1022` | A função não existe em `createWingmanWorldRadio`; o `?.()` é um no-op silencioso. |
 
