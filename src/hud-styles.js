@@ -987,7 +987,8 @@ export function injectHudExtraStyles() {
 /* ============ BARRAMENTOS POR CATEGORIA — CARDS ROGUELIKE ============ */
 /* Spec: docs/specs/active/roguelike-card-category-bus.md. HUD fixa (screen-space), três rails O/D/U,
    uma linha cada (sem wrap, sem scroll). Posição vertical vem do JS (clássico: medição do cluster de
-   vitais) ou do token --hud-classic-vitals-top (orbital). Skin final ainda pendente de escolha. */
+   vitais) ou do token --hud-classic-vitals-top (orbital). SKIN: Tático / Militar (escolhida pelo
+   usuário) — só pintura (borda/fundo/acento/tipografia); nenhuma propriedade de geometria muda. */
 .hud-card-bus {
   position: absolute;
   left: var(--hud-left-x);
@@ -999,7 +1000,7 @@ export function injectHudExtraStyles() {
   z-index: 22;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   user-select: none;
-  filter: drop-shadow(0 1px 3px #000);
+  filter: drop-shadow(0 1px 2px #000);
   transition: opacity 0.35s ease;
 }
 .hud-card-bus[hidden],
@@ -1016,12 +1017,17 @@ export function injectHudExtraStyles() {
 .hud-card-rail--offensive { --card-color: #ff4d6d; }
 .hud-card-rail--defensive { --card-color: #3ea6ff; }
 .hud-card-rail--utility   { --card-color: #ffd700; }
+/* Tático: rótulo do rail em mono, com barra de acento de categoria (linha fina, sem preencher o rail) */
 .hud-card-rail-label {
   flex: 0 0 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font: 800 10px/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   text-align: center;
   color: var(--card-color);
-  text-shadow: 0 0 4px var(--card-color);
+  box-shadow: inset -2px 0 0 var(--card-color);
 }
 .hud-card-rail-items {
   flex: 1 1 auto;
@@ -1042,9 +1048,10 @@ export function injectHudExtraStyles() {
   justify-content: center;
   gap: 3px;
   padding: 0 4px;
-  border-radius: 4px;
-  background: rgba(10, 16, 26, 0.88);
-  border: 1px solid var(--card-color);
+  border-radius: 1px;
+  background: rgba(6, 10, 16, 0.94);
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  box-shadow: inset 0 2px 0 var(--card-color);
   color: #fff;
   cursor: default;
 }
@@ -1057,7 +1064,8 @@ export function injectHudExtraStyles() {
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  color: #f1f5f9;
+  color: #ffffff;
+  text-shadow: 0 1px 0 #000;
   white-space: nowrap;
 }
 /* densidade média (5–8 cartas no maior rail) */
@@ -1081,13 +1089,13 @@ export function injectHudExtraStyles() {
 /* microanimações: nova carta = flash curto na célula; stack = só o contador */
 .hud-card-bus-item.is-new { animation: hud-card-bus-new 300ms ease-out; }
 @keyframes hud-card-bus-new {
-  0%   { filter: brightness(2.2); box-shadow: 0 0 10px var(--card-color); }
-  100% { filter: brightness(1); box-shadow: 0 0 0 transparent; }
+  0%   { filter: brightness(1.9); outline: 1px solid var(--card-color); }
+  100% { filter: brightness(1); outline: 1px solid transparent; }
 }
 .hud-card-bus-stack.is-bump { animation: hud-card-bus-bump 240ms ease-out; }
 @keyframes hud-card-bus-bump {
-  0%   { color: var(--card-color); text-shadow: 0 0 6px var(--card-color); }
-  100% { color: #f1f5f9; text-shadow: none; }
+  0%   { color: var(--card-color); }
+  100% { color: #ffffff; }
 }
 
 /* tooltip: somente em pausa (a HUD de gameplay nunca depende dele); hover não altera geometria */

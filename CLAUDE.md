@@ -411,7 +411,7 @@ O sistema novo **substitui completamente** o renderer antigo: `.hud-cards-tray` 
 
 Posição: ver §9.1 (abaixo dos vitais clássicos; no slot dos vitais clássicos quando os vitais são orbitais). Se não couber, **compactar o componente**, nunca mover outro elemento da HUD.
 
-Estado: estrutura/layout/renderer **implementados** em `src/hud-card-bus.js` (renderer legado removido; testes `src/hud-card-bus.test.mjs` e `tools/validate-card-bus.mjs`). Ainda pendente: escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout) e validação visual pelo usuário. Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
+Estado: estrutura/layout/renderer **implementados** em `src/hud-card-bus.js` (renderer legado removido; testes `src/hud-card-bus.test.mjs` e `tools/validate-card-bus.mjs`). Skin escolhida pelo usuário: **Tático / Militar** (aplicada). Ainda pendente: validação visual pelo usuário. Alternar skin não pode mudar nenhuma posição. Não afirmar aprovação visual sem evidência.
 
 ---
 

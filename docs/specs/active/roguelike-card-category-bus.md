@@ -1,6 +1,6 @@
 # Barramentos por Categoria — Overhaul dos Cards Roguelike
 
-> **Status:** `active` — em andamento: estrutura, layout e renderer **implementados** (`src/hud-card-bus.js`; legado removido). **Pendente:** escolha da linguagem visual (skin) e validação visual pelo usuário. A skin atual é neutra/funcional, apenas base para o protótipo.
+> **Status:** `active` — em andamento: estrutura, layout e renderer **implementados** (`src/hud-card-bus.js`; legado removido). **Skin escolhida pelo usuário: Tático / Militar** (aplicada só em pintura: borda fina cinza, acento de categoria em linha, pouco glow, cantos retos, stack branco em mono). **Pendente:** validação visual pelo usuário.
 > **Tipo:** especificação de implementação/layout (não é ADR: reversível e restrita ao HUD).
 > **Origem:** decisão do usuário produzida fora do GitHub (documento "STAR-ANKI_IMPLEMENTACAO_BARRAMENTOS"), registrada aqui para se tornar canônica.
 > **Autoridade:** esta spec substitui qualquer regra anterior sobre onde os cards roguelike ficam na HUD (inclusive as antigas seções 9.1/9.5/27/34.3 do `CLAUDE.md`, já atualizadas junto com esta spec).
@@ -259,4 +259,4 @@ A implementação está errada se: colocar cards no topo / entre Combo e FOCO / 
 
 - Mudar comportamento/efeito das cartas ou o draft (`card-choice`, arcade draft).
 - Redesenhar o restante da HUD.
-- A escolha da linguagem visual (protótipo HTML com 3 skins do mesmo layout, pendente do usuário). Alternar skin **não pode** mudar nenhuma posição.
+- Outras linguagens visuais (Arcade Neon, Módulos de Nave): descartadas neste ciclo; a escolhida é Tático / Militar. Qualquer skin **não pode** mudar nenhuma posição.
