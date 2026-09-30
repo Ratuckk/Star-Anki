@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { computeFocoView, computeSwirlView, createArmamentWidget } from './hud-armament.js'
+import { aiValidator } from './ai-validator.js'
 
 console.log('--- TEST SUITE: Display de Armamento (FOCO / SWIRL, Opção B) ---')
 
@@ -188,6 +189,81 @@ const doc = { createElement: (t) => new FakeEl(t) }
   assert.equal(value(), 'PRONTO')
   assert.ok(!w.el.classList.contains('is-active'), 'SWIRL nunca fica ACTIVE')
   w.destroy()
+}
+
+// ============================================================================
+// 4b. Contrato "100% runtime": sem 6/10 sintéticos; wiring inválido é DETECTADO, não mascarado
+// ============================================================================
+{
+  console.log('Testing 4b: sem fallbacks 6/10; max inválido não gera NaN/Infinity e é reportado...')
+  const src = readFileSync(new URL('./hud-armament.js', import.meta.url), 'utf8')
+  assert.ok(!/FALLBACK/i.test(src), 'não pode haver constantes de fallback de FOCO')
+  assert.ok(!/(durationMax|cooldownMax|DURATION|COOLDOWN)\w*\s*[:=]\s*(6|10)\b/.test(src), 'nenhum 6/10 como duração/cooldown')
+  assert.ok(!/(durationMax|cooldownMax)\s*=\s*\d/.test(src), 'nenhum default numérico para durationMax/cooldownMax')
+
+  // 1) valores customizados reais continuam sendo usados
+  const act8 = computeFocoView({ mode: 'focus', durationRemaining: 4, durationMax: 8, cooldownRemaining: 0, cooldownMax: 10 })
+  assert.equal(act8.frac, 0.5, 'duração 8 s, restante 4 s = 50%')
+  assert.deepEqual(act8.wiring, [])
+  const cd12 = computeFocoView({ mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 3, cooldownMax: 12 })
+  assert.equal(cd12.frac, 0.75, 'cooldown 12 s, restante 3 s = 75% preenchido')
+  assert.deepEqual(cd12.wiring, [])
+
+  // 3) durationMax inválido durante ACTIVE
+  for (const bad of [undefined, null, 0, -3, NaN, Infinity, '6']) {
+    const v = computeFocoView({ mode: 'focus', durationRemaining: 3.7, durationMax: bad, cooldownRemaining: 0, cooldownMax: 10 })
+    assert.equal(v.state, 'active')
+    assert.equal(v.value, '3.7s', `texto usa o tempo real mesmo com durationMax=${String(bad)}`)
+    assert.ok(Number.isFinite(v.frac) && v.frac >= 0 && v.frac <= 1, `frac finita com durationMax=${String(bad)}`)
+    assert.ok(v.wiring.includes('durationMax'), `durationMax=${String(bad)} deve ser sinalizado`)
+    assert.ok(!v.value.includes('NaN') && !v.value.includes('Infinity'))
+  }
+  // 4) cooldownMax inválido durante COOLDOWN
+  for (const bad of [undefined, null, 0, -1, NaN, Infinity]) {
+    const v = computeFocoView({ mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 4, cooldownMax: bad })
+    assert.equal(v.state, 'cooling')
+    assert.equal(v.value, '4s')
+    assert.ok(Number.isFinite(v.frac) && v.frac >= 0 && v.frac <= 1, `frac finita com cooldownMax=${String(bad)}`)
+    assert.ok(v.wiring.includes('cooldownMax'), `cooldownMax=${String(bad)} deve ser sinalizado`)
+  }
+  // remaining não-finito não vira texto "NaN"
+  const nanRem = computeFocoView({ mode: 'focus', durationRemaining: NaN, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 })
+  assert.equal(nanRem.state, 'ready')
+  assert.ok(nanRem.wiring.includes('durationRemaining'))
+  // SWIRL: total inválido também é sinalizado, sem NaN
+  for (const bad of [undefined, 0, NaN, -5]) {
+    const v = computeSwirlView(2500, bad)
+    assert.ok(Number.isFinite(v.frac) && v.value === '2.5s' && v.wiring.includes('totalMs'))
+  }
+  // 6) READY continua normal, sem wiring
+  const ready = computeFocoView({ mode: 'free', durationRemaining: 0, cooldownRemaining: 0 })
+  assert.deepEqual([ready.state, ready.value, ready.sub, ready.frac, ready.wiring.length], ['ready', 'PRONTO', 'DISPONÍVEL', 1, 0])
+  assert.equal(computeFocoView({ mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 }).wiring.length, 0)
+
+  // 5) o problema é REPORTADO pelo aiValidator (uma vez por combinação; READY/válido não reporta)
+  const warn = console.warn
+  console.warn = () => {}
+  try {
+    aiValidator.reset()
+    const w = createArmamentWidget({ doc, kind: 'foco', tag: 'FOCO', schedule: () => 1 })
+    const failures = () => aiValidator.buildReport().expectativas_falhas.filter((f) => f.description.includes('duração/cooldown válidos'))
+    w.update(computeFocoView({ mode: 'free', durationRemaining: 0, cooldownRemaining: 0 }))
+    assert.equal(failures().length, 0, 'READY normal não reporta nada')
+    w.update(computeFocoView({ mode: 'focus', durationRemaining: 5, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 }))
+    assert.equal(failures().length, 0, 'wiring válido não reporta')
+    for (let i = 0; i < 30; i++) w.update(computeFocoView({ mode: 'focus', durationRemaining: 5 - i * 0.01 }))
+    assert.equal(failures().length, 1, 'wiring quebrado reportado UMA vez (sem spam por frame)')
+    assert.deepEqual(failures()[0].context.invalid, ['durationMax'])
+    assert.equal(w.el.q('hud-arm-value').textContent.includes('NaN'), false)
+    w.update(computeFocoView({ mode: 'focus', durationRemaining: 4, durationMax: 6, cooldownRemaining: 0, cooldownMax: 10 }))
+    w.update(computeFocoView({ mode: 'free', durationRemaining: 0, durationMax: 6, cooldownRemaining: 5, cooldownMax: undefined }))
+    assert.equal(failures().length, 2, 'novo problema (cooldownMax) é reportado')
+    assert.deepEqual(failures()[1].context.invalid, ['cooldownMax'])
+    w.destroy()
+  } finally {
+    console.warn = warn
+    aiValidator.reset()
+  }
 }
 
 // ============================================================================

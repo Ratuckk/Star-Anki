@@ -12,52 +12,71 @@ export const ARMAMENT_READY_SUB = 'DISPONÍVEL'
 const IGNITE_MS = 280
 const FIRE_MS = 240
 const READY_FLASH_MS = 260
-const FALLBACK_FOCUS_DURATION_S = 6
-const FALLBACK_FOCUS_COOLDOWN_S = 10
 
 const clamp01 = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0)
+const validMax = (v) => Number.isFinite(v) && v > 0
+const validRemaining = (v) => (Number.isFinite(v) && v > 0 ? v : 0)
+
+// Contrato: o HUD só REPRESENTA o estado real do runtime; nunca reconstrói duração/cooldown.
+// Se o wiring vier incompleto (max ausente/<=0/não-finito) NADA é inventado: o texto usa o tempo
+// restante real e a barra assume um valor visual seguro (ACTIVE = cheia, COOLDOWN = vazia), sem
+// fingir proporção. O problema é devolvido em `wiring` e reportado pelo widget via aiValidator.
 
 // FOCO: READY / ACTIVE / COOLDOWN, com os valores reais fornecidos por combat.getSquadronCommandState().
 export function computeFocoView(cmd) {
-  const {
-    mode = 'free',
-    durationRemaining = 0,
-    durationMax = FALLBACK_FOCUS_DURATION_S,
-    cooldownRemaining = 0,
-    cooldownMax = FALLBACK_FOCUS_COOLDOWN_S,
-  } = cmd || {}
+  const { mode = 'free' } = cmd || {}
+  const wiring = []
+  const rawDur = cmd?.durationRemaining
+  const rawCd = cmd?.cooldownRemaining
+  if (rawDur != null && !Number.isFinite(rawDur)) wiring.push('durationRemaining')
+  if (rawCd != null && !Number.isFinite(rawCd)) wiring.push('cooldownRemaining')
+  const durationRemaining = validRemaining(rawDur)
+  const cooldownRemaining = validRemaining(rawCd)
   const isActive = mode === 'focus' && durationRemaining > 0
   const isCooling = !isActive && cooldownRemaining > 0
   if (isActive) {
+    const ok = validMax(cmd.durationMax)
+    if (!ok) wiring.push('durationMax')
     return {
       state: 'active',
       value: `${durationRemaining.toFixed(1)}s`,
       sub: ARMAMENT_WORD.active,
-      frac: durationMax > 0 ? clamp01(durationRemaining / durationMax) : 0,
+      frac: ok ? clamp01(durationRemaining / cmd.durationMax) : 1,
+      wiring,
     }
   }
   if (isCooling) {
+    const ok = validMax(cmd.cooldownMax)
+    if (!ok) wiring.push('cooldownMax')
     return {
       state: 'cooling',
       value: `${Math.ceil(cooldownRemaining)}s`,
       sub: ARMAMENT_WORD.cooling,
-      frac: cooldownMax > 0 ? clamp01((cooldownMax - cooldownRemaining) / cooldownMax) : 1,
+      frac: ok ? clamp01((cmd.cooldownMax - cooldownRemaining) / cmd.cooldownMax) : 0,
+      wiring,
     }
   }
-  return { state: 'ready', value: ARMAMENT_WORD.ready, sub: ARMAMENT_READY_SUB, frac: 1 }
+  return { state: 'ready', value: ARMAMENT_WORD.ready, sub: ARMAMENT_READY_SUB, frac: 1, wiring }
 }
 
-// SWIRL: só READY / COOLDOWN. O total efetivo (pode ser alterado por cartas) vem do player.
+// SWIRL: só READY / COOLDOWN. O total efetivo (pode ser alterado por cartas) vem do player; se
+// vier inválido nada é inventado (barra vazia + `wiring`).
 export function computeSwirlView(cooldownMs, totalMs) {
-  if (cooldownMs > 0) {
+  const wiring = []
+  if (cooldownMs != null && !Number.isFinite(cooldownMs)) wiring.push('cooldownMs')
+  const remaining = validRemaining(cooldownMs)
+  if (remaining > 0) {
+    const ok = validMax(totalMs)
+    if (!ok) wiring.push('totalMs')
     return {
       state: 'cooling',
-      value: `${(cooldownMs / 1000).toFixed(1)}s`,
+      value: `${(remaining / 1000).toFixed(1)}s`,
       sub: ARMAMENT_WORD.cooling,
-      frac: totalMs > 0 ? clamp01((totalMs - cooldownMs) / totalMs) : 1,
+      frac: ok ? clamp01((totalMs - remaining) / totalMs) : 0,
+      wiring,
     }
   }
-  return { state: 'ready', value: ARMAMENT_WORD.ready, sub: ARMAMENT_READY_SUB, frac: 1 }
+  return { state: 'ready', value: ARMAMENT_WORD.ready, sub: ARMAMENT_READY_SUB, frac: 1, wiring }
 }
 
 // kind: 'foco' | 'swirl'. schedule(fn, ms) deve ser um timeout rastreado pelo dono (limpo no unmount).
@@ -97,6 +116,7 @@ export function createArmamentWidget({ doc = document, kind, tag, schedule = (fn
   let lastSub = null
   let lastPct = null
   let destroyed = false
+  let reportedWiring = ''
   const timers = new Set()
 
   function flash(className, ms) {
@@ -113,6 +133,18 @@ export function createArmamentWidget({ doc = document, kind, tag, schedule = (fn
   // Só toca o DOM quando algo muda (nada de recriar nós por frame).
   function update(view) {
     if (destroyed) return
+    // wiring quebrado é REPORTADO (uma vez por combinação de problemas), nunca mascarado
+    const wiringKey = (view.wiring || []).join(',')
+    if (wiringKey !== reportedWiring) {
+      reportedWiring = wiringKey
+      if (wiringKey) {
+        aiValidator.expect(
+          `armament(${kind}): runtime forneceu duração/cooldown válidos`,
+          () => false,
+          { kind, state: view.state, invalid: view.wiring },
+        )
+      }
+    }
     if (state === null || view.state !== state) {
       const prev = state
       el.classList.remove('is-ready', 'is-active', 'is-cooling')

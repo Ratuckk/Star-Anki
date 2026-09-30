@@ -16,6 +16,7 @@
 | COOLDOWN | tempo restante (FOCO: `Ns` inteiro; SWIRL: `N.Ns`) | `RECARGA` | cinza listrado, **enche** (`1 − cooldownRemaining / cooldownMax`) |
 
 - SWIRL só tem READY/COOLDOWN (dispara instantâneo). O **total efetivo** vem do player (`getSwirlCooldownTotalMs`, alterado por cartas); nada de 10 s hardcoded. FOCO usa os valores reais de `combat.getSquadronCommandState()`.
+- **Sem valores sintéticos:** `computeFocoView` não tem fallback de duração/cooldown. Se `durationMax`/`cooldownMax` (ou o total do SWIRL) vierem ausentes/<=0/não-finitos, nada é inventado: o texto usa o tempo restante real, a barra assume um valor visual seguro (ACTIVE cheia, COOLDOWN vazia) e o problema é reportado uma vez via `aiValidator` ("runtime forneceu duração/cooldown válidos"). Wiring quebrado é detectado, não mascarado.
 - Nenhum relógio visual próprio: o widget só reflete `hud.setSquadronCommandState()` / `hud.setSwirlCooldown()` chamados pelo `game-loop.js` com o estado real.
 - Microanimações locais: FOCO READY→ACTIVE (sweep + flash ~220–280 ms), SWIRL disparo (pulso + colapso da barra ~200–240 ms), retorno a READY (flash ~260 ms). `prefers-reduced-motion: reduce` remove animações e mantém toda a informação.
 
