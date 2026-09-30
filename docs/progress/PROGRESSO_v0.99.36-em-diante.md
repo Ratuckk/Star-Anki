@@ -143,7 +143,7 @@ A versão **v0.99.36** consolida a reconstrução e modernização tática de tr
   - **Fase 1 — Rádio dos Aliados, Miyu, HUD e Timer Único:**
     - Rádio restrito estritamente a chatter trivial e falas de personalidade; abilities completamente desacopladas do rádio (nenhum diálogo ou painel de rádio emitido por habilidades).
     - Rate limit global autoritativo de no máximo 1 fala trivial a cada 6.0s no esquadrão inteiro.
-    - Painel do rádio projetado em world-space abaixo da nave do jogador (`distToCam * 0.16`), com clamp de segurança de viewport e ocultação se atrás da câmera.
+    - Painel do rádio projetado em world-space abaixo da nave do jogador (`distToCam * 0.16`), com clamp de segurança de viewport e ocultação se atrás da câmera. **[OBSOLETO — substituído pela decisão atual: rádio é HUD fixa screen-space, região inferior-central, não segue a nave. Ver `CLAUDE.md` §10.3.]**
     - Ícones visuais 3D holográficos de ability acima da nave do aliado executor (duração 1.5s, halo com cor do piloto, pulso de escala e fade-out, sem gerar rádio).
     - Carga Compartilhada da Miyu condicionada cumulativamente a: estar viva/ativa, fora de cooldown, jogador carregando o tiro E com mira válida/lock ativo sobre inimigo elegível (zero disparo/cooldown mirando o vazio).
     - Remoção do cluster estático superior central (`top-center-cluster`): widgets de FOCO, SWIRL, KILL CHAIN agrupados à esquerda; retícula limpa no centro.

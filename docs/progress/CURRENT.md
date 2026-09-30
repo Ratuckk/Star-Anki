@@ -15,6 +15,9 @@
 
 ---
 
+## 0. DECISÃO DE HUD REGISTRADA (ainda NÃO implementada)
+- **Barramentos por Categoria (cards roguelike):** layout O/D/U decidido e registrado em [`docs/specs/ready/roguelike-card-category-bus.md`](../specs/ready/roguelike-card-category-bus.md). O renderer atual (`.hud-cards-tray` / `.hud-card-chip`) segue no código até a implementação e será removido por ela. Rádio = HUD fixa inferior-central (não segue a nave).
+
 ## 1. IMPLEMENTADO RECENTEMENTE
 - **Hotfix Bloqueador de Runtime — ReferenceError THREE em setReticleCharge (PR #19):**
   - Substituição da chamada `THREE.MathUtils.clamp` por clamp JS puro `Math.max(0, Math.min(1, Number(chargeFrac) || 0))` em `src/hud-game.js`.
