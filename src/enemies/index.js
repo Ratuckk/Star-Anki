@@ -1258,7 +1258,7 @@ export function createEnemiesSystem(scene, rail, effects = null) {
     spawnTankEnemy(hp = null) {
       const level = currentDifficultyLevel()
       const resolvedHp = hp ?? tankStatsForLevel(level).hp
-      const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp)
+      const enemy = spawnTankEnemy(scene, rail, nextEnemyId++, resolvedHp, level)
       enemy.level = level
       enemy.fireTimer = randomEnemyFireInterval()
       registerSpawn(enemy)

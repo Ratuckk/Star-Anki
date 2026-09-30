@@ -2541,6 +2541,14 @@ export function createSquadronSystem(scene, rail, effects, enemies) {
     dumpTelemetry: () => telemetry.dumpToConsole(),
     copyFlightLog: () => telemetry.copyToClipboard(),
     getTelemetryText: () => telemetry.getFormattedText(),
+    // Harness/debug: dispara o MESMO feedback de ativação (glow + retrato) de um aliado, sem alterar
+    // estado de combate. Usado só por tools/validate-radio-runtime.mjs.
+    debugTriggerAbilityFeedback: (pilotId) => {
+      const w = activeWingmen.find((m) => m.profile.id === pilotId) || spawnMember(pilotId)
+      if (!w) return false
+      announceAbility(w, 'ability_debug')
+      return true
+    },
     getActiveAbilityPortraits: () => activeAbilityPortraits.map((e) => {
       const t = e.age / e.duration
       const scale = t < 0.2 ? 1.0 + (t / 0.2) * 0.35 : (t < 0.4 ? 1.35 - ((t - 0.2) / 0.2) * 0.35 : 1.0)

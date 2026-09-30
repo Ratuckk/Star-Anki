@@ -118,6 +118,7 @@ export function createCombatSystem(scene, rail, effects, enemies, player) {
     getAssistChargeMult: () => squadron.getAssistChargeMult ? squadron.getAssistChargeMult() : 1,
     getAssistExtraTargets: () => squadron.getAssistExtraTargets ? squadron.getAssistExtraTargets(player.getMiyuAssistStacks?.() || 0) : 0,
     getMoraleDamageBonus: () => squadron.getMoraleDamageBonus?.() || 0,
+    debugTriggerAbilityFeedback: (pilotId) => squadron.debugTriggerAbilityFeedback?.(pilotId) ?? false,
     getActiveAbilityPortraits: () => squadron.getActiveAbilityPortraits?.() || [],
 
     // Telemetria da Esquadrilha
